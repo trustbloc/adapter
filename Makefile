@@ -43,9 +43,24 @@ adapter-rest-docker:
 unit-test:
 	@scripts/check_unit.sh
 
+.PHONY: bdd-test
+bdd-test: clean adapter-rest-docker generate-test-keys
+	@scripts/check_integration.sh
+
+
+.PHONY: generate-test-keys
+generate-test-keys: clean
+	@mkdir -p -p test/bdd/fixtures/keys/tls
+	@docker run -i --rm \
+		-v $(abspath .):/opt/workspace/edge-adapter \
+		--entrypoint "/opt/workspace/edge-adapter/scripts/generate_test_keys.sh" \
+		frapsoft/openssl
+
 .PHONY: clean
 clean: clean-build
 
 .PHONY: clean-build
 clean-build:
 	@rm -Rf ./.build
+	@rm -Rf ./test/bdd/fixtures/keys/tls
+	@rm -Rf ./test/bdd/docker-compose.log

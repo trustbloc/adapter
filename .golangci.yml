@@ -60,15 +60,24 @@ linters-settings:
       - opinionated
     disabled-checks:
       - unnamedResult
+      - whyNoLint # TODO enable.
   funlen:
     lines: 60
     statements: 40
+  wsl:
+    strict-append: true
+    allow-assign-and-call: true
+    allow-multiline-assign: true
+    allow-case-traling-whitespace: true
+    allow-cuddle-declarations: false
 
 linters:
   enable-all: true
   disable:
     - maligned
     - prealloc
+    - testpackage
+    - goerr113
 
 issues:
   exclude-use-default: false
@@ -77,6 +86,10 @@ issues:
       linters:
         - dupl
         - funlen
+        - gomnd
+    - source: "swagger:route"
+      linters:
+        - lll
 
   exclude:
     # Allow package logger variables (for now)
@@ -84,3 +97,5 @@ issues:
     -  Line contains TODO/BUG/FIXME
     # Add comments for package
     -  at least one file in a package should have a package comment
+    # Allow magic number 1
+    - Magic number[:] 1[^\d]

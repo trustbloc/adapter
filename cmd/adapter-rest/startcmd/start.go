@@ -146,7 +146,7 @@ func startAdapterService(parameters *adapterRestParameters, srv server) error {
 		return err
 	}
 
-	log.Infof("root ca's %v", rootCAs)
+	log.Debugf("root ca's %v", rootCAs)
 
 	router := mux.NewRouter()
 
