@@ -13,7 +13,7 @@ ALPINE_VER ?= 3.11
 GO_VER ?= 1.14
 
 .PHONY: all
-all: checks unit-test
+all: checks unit-test adapter-vue adapter-rest-docker
 
 .PHONY: checks
 checks: license lint
@@ -26,6 +26,14 @@ lint:
 license:
 	@scripts/check_license.sh
 
+.PHONY: adapter-vue
+adapter-vue:
+	@echo "Building adapter-vue frontend"
+	@mkdir -p ./.build/bin/adapter-vue
+	@npm --prefix cmd/adapter-vue install
+	@npm --prefix cmd/adapter-vue run build
+	@cp -rp cmd/adapter-vue/dist/* ./.build/bin/adapter-vue
+
 .PHONY: adapter-rest
 adapter-rest:
 	@echo "Building adapter-rest"
@@ -33,11 +41,12 @@ adapter-rest:
 	@cd ${ADAPTER_REST_PATH} && go build -o ../../.build/bin/adapter-rest main.go
 
 .PHONY: adapter-rest-docker
-adapter-rest-docker:
+adapter-rest-docker: adapter-vue
 	@echo "Building adapter rest docker image"
 	@docker build -f ./images/adapter-rest/Dockerfile --no-cache -t $(DOCKER_OUTPUT_NS)/$(ADAPTER_REST_IMAGE_NAME):latest \
 	--build-arg GO_VER=$(GO_VER) \
-	--build-arg ALPINE_VER=$(ALPINE_VER) .
+	--build-arg ALPINE_VER=$(ALPINE_VER) \
+	--build-arg STATIC_FILES=./.build/bin/adapter-vue .
 
 .PHONY: unit-test
 unit-test:

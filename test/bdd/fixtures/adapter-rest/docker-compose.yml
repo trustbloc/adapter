@@ -14,12 +14,60 @@ services:
       - ADAPTER_REST_HOST_URL=0.0.0.0:8070
       - ADAPTER_REST_TLS_CACERTS=/etc/tls/ec-cacert.pem
       - ADAPTER_REST_TLS_SYSTEMCERTPOOL=true
+      - ADAPTER_REST_MYSQL_DATASOURCE=mysql://root:secret@tcp(mysql:3306)/mysql
+      - ADAPTER_REST_OP_URL=http://PUT-SOMETHING-HERE.com
     ports:
       - 8070:8070
     entrypoint: ""
     command:  /bin/sh -c "adapter-rest start"
     volumes:
       - ../keys/tls:/etc/tls
+    networks:
+      - bdd_net
+    depends_on:
+      - mysql
+      - hydra
+
+  hydra:
+    container_name: hydra.trustbloc.local
+    image: oryd/hydra:v1.3.2-alpine
+    ports:
+      - "4444:4444" # Public port
+      - "4445:4445" # Admin port
+    command:  /bin/sh -c "hydra migrate sql --read-from-env --yes; hydra serve all"
+    entrypoint: ""
+    environment:
+      - DSN=mysql://root:secret@tcp(mysql:3306)/mysql?max_conns=20&max_idle_conns=4
+      - URLS_SELF_ISSUER=https://hydra.trustbloc.local
+      - URLS_CONSENT=https://adapter.vc.rest.example.com/consent
+      - URLS_LOGIN=https://adapter.vc.rest.example.com/login
+      - SECRETS_SYSTEM=testSecretsSystem
+      - OIDC_SUBJECT_TYPES_SUPPORTED=public
+      - OIDC_SUBJECT_TYPE_PAIRWISE_SALT=testSecretsSystem
+      - SERVE_TLS_KEY_PATH=/etc/tls/ec-key.pem
+      - SERVE_TLS_CERT_PATH=/etc/tls/ec-pubCert.pem
+      - VIRTUAL_HOST=hydra.trustbloc.local
+      - VIRTUAL_PORT=4444
+      - VIRTUAL_PROTO=https
+    restart: unless-stopped
+    volumes:
+      - ../keys/tls:/etc/tls
+    depends_on:
+      - mysql
+    networks:
+      - bdd_net
+
+  mysql:
+    container_name: mysql
+    image: mysql:${MYSQL_IMAGE_TAG}
+    restart: always
+    command: --default-authentication-plugin=mysql_native_password
+    environment:
+      MYSQL_USER: user
+      MYSQL_PASSWORD: secret
+      MYSQL_ROOT_PASSWORD: secret
+    logging:
+      driver: "none"
     networks:
       - bdd_net
 

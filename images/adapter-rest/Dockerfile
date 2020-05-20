@@ -26,6 +26,10 @@ RUN make adapter-rest
 FROM alpine:${ALPINE_VER} as base
 COPY --from=edge-adapter /go/src/github.com/trustbloc/edge-adapter/.build/bin/adapter-rest /usr/local/bin
 
+ARG STATIC_FILES
+ADD ${STATIC_FILES} /usr/local/static/adapter-vue/
+ENV ADAPTER_REST_STATIC_FILES=/usr/local/static/adapter-vue
+
 # set up nsswitch.conf for Go's "netgo" implementation
 # - https://github.com/golang/go/blob/go1.9.1/src/net/conf.go#L194-L275
 RUN [ ! -e /etc/nsswitch.conf ] && echo 'hosts: files dns' > /etc/nsswitch.conf

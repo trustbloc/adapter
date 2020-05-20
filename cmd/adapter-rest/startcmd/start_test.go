@@ -6,8 +6,10 @@ SPDX-License-Identifier: Apache-2.0
 package startcmd
 
 import (
+	"errors"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"os"
 	"testing"
 
@@ -95,6 +97,48 @@ func TestHealthCheck(t *testing.T) {
 	require.Equal(t, http.StatusOK, b.Code)
 }
 
+func TestHydraLoginHandler(t *testing.T) {
+	r := &httptest.ResponseRecorder{}
+	hydraLoginHandler(r, nil)
+
+	require.Equal(t, http.StatusOK, r.Code)
+}
+
+func TestOidcCallbackHandler(t *testing.T) {
+	r := &httptest.ResponseRecorder{}
+	oidcCallbackHandler(r, nil)
+
+	require.Equal(t, http.StatusOK, r.Code)
+}
+
+func TestHydraConsentHandler(t *testing.T) {
+	r := &httptest.ResponseRecorder{}
+	hydraConsentHandler(r, nil)
+
+	require.Equal(t, http.StatusOK, r.Code)
+}
+
+func TestGetPresentationRequestHandler(t *testing.T) {
+	r := &httptest.ResponseRecorder{}
+	getPresentationRequestHandler(r, nil)
+
+	require.Equal(t, http.StatusOK, r.Code)
+}
+
+func TestPresentationResponseHandler(t *testing.T) {
+	r := &httptest.ResponseRecorder{}
+	presentationResponseHandler(r, nil)
+
+	require.Equal(t, http.StatusOK, r.Code)
+}
+
+func TestUserInfoHandler(t *testing.T) {
+	r := &httptest.ResponseRecorder{}
+	userInfoHandler(r, nil)
+
+	require.Equal(t, http.StatusOK, r.Code)
+}
+
 func TestStartCmdValidArgsEnvVar(t *testing.T) {
 	startCmd := GetStartCmd(&mockServer{})
 
@@ -119,6 +163,32 @@ func TestTLSSystemCertPoolInvalidArgsEnvVar(t *testing.T) {
 	require.Contains(t, err.Error(), "invalid syntax")
 }
 
+func TestTestResponse(t *testing.T) {
+	t.Run("error", func(t *testing.T) {
+		testResponse(&stubWriter{})
+	})
+}
+
+func TestUIHandler(t *testing.T) {
+	t.Run("handle base path", func(t *testing.T) {
+		handled := false
+		uiHandler(uiEndpoint, func(_ http.ResponseWriter, _ *http.Request, path string) {
+			handled = true
+			require.Equal(t, uiEndpoint+"/index.html", path)
+		})(nil, &http.Request{URL: &url.URL{Path: uiEndpoint}})
+		require.True(t, handled)
+	})
+	t.Run("handle subpaths", func(t *testing.T) {
+		const expected = uiEndpoint + "/css/abc123.css"
+		handled := false
+		uiHandler(uiEndpoint, func(_ http.ResponseWriter, _ *http.Request, path string) {
+			handled = true
+			require.Equal(t, expected, path)
+		})(nil, &http.Request{URL: &url.URL{Path: expected}})
+		require.True(t, handled)
+	})
+}
+
 func setEnvVars(t *testing.T) {
 	err := os.Setenv(hostURLEnvKey, "localhost:8080")
 	require.NoError(t, err)
@@ -140,4 +210,11 @@ func checkFlagPropertiesCorrect(t *testing.T, cmd *cobra.Command, flagName, flag
 
 	flagAnnotations := flag.Annotations
 	require.Nil(t, flagAnnotations)
+}
+
+type stubWriter struct {
+}
+
+func (s *stubWriter) Write(p []byte) (n int, err error) {
+	return -1, errors.New("test")
 }
