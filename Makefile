@@ -41,12 +41,11 @@ adapter-rest:
 	@cd ${ADAPTER_REST_PATH} && go build -o ../../.build/bin/adapter-rest main.go
 
 .PHONY: adapter-rest-docker
-adapter-rest-docker: adapter-vue
+adapter-rest-docker:
 	@echo "Building adapter rest docker image"
 	@docker build -f ./images/adapter-rest/Dockerfile --no-cache -t $(DOCKER_OUTPUT_NS)/$(ADAPTER_REST_IMAGE_NAME):latest \
 	--build-arg GO_VER=$(GO_VER) \
-	--build-arg ALPINE_VER=$(ALPINE_VER) \
-	--build-arg STATIC_FILES=./.build/bin/adapter-vue .
+	--build-arg ALPINE_VER=$(ALPINE_VER) .
 
 .PHONY: unit-test
 unit-test:
