@@ -9,9 +9,10 @@ go 1.14
 require (
 	github.com/gorilla/mux v1.7.4
 	github.com/rs/cors v1.7.0
-	github.com/sirupsen/logrus v1.4.2
-	github.com/spf13/cobra v0.0.6
+	github.com/sirupsen/logrus v1.6.0
+	github.com/spf13/cobra v1.0.0
 	github.com/stretchr/testify v1.5.1
+	github.com/trustbloc/edge-adapter v0.0.0-00010101000000-000000000000
 	github.com/trustbloc/edge-core v0.1.3
 )
 
