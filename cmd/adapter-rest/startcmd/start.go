@@ -7,21 +7,19 @@ SPDX-License-Identifier: Apache-2.0
 package startcmd
 
 import (
-	"encoding/json"
-	"fmt"
-	"io"
 	"net/http"
 	"strconv"
 	"strings"
-	"time"
 
 	"github.com/gorilla/mux"
 	"github.com/rs/cors"
 	log "github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
-
 	cmdutils "github.com/trustbloc/edge-core/pkg/utils/cmd"
 	tlsutils "github.com/trustbloc/edge-core/pkg/utils/tls"
+
+	"github.com/trustbloc/edge-adapter/pkg/restapi/rp"
+	"github.com/trustbloc/edge-adapter/pkg/restapi/rp/operation"
 )
 
 const (
@@ -60,14 +58,7 @@ const (
 
 // API endpoints.
 const (
-	healthCheckEndpoint                = "/healthcheck"
-	hydraLoginEndpoint                 = "/login"
-	hydraConsentEndpoint               = "/consent"
-	oidcCallbackEndpoint               = "/callback"
-	createPresentationRequestEndpoint  = "/presentations/create"
-	handlePresentationResponseEndpoint = "/presentations/handleResponse"
-	userInfoEndpoint                   = "/userinfo"
-	uiEndpoint                         = "/ui"
+	uiEndpoint = "/ui"
 )
 
 type adapterRestParameters struct {
@@ -77,11 +68,6 @@ type adapterRestParameters struct {
 	dbURL             string
 	oidcProviderURL   string
 	staticFiles       string
-}
-
-type healthCheckResp struct {
-	Status      string    `json:"status"`
-	CurrentTime time.Time `json:"currentTime"`
 }
 
 type server interface {
@@ -199,15 +185,16 @@ func startAdapterService(parameters *adapterRestParameters, srv server) error {
 
 	router := mux.NewRouter()
 
-	// health check
-	router.HandleFunc(healthCheckEndpoint, healthCheckHandler).Methods(http.MethodGet)
+	// add rp endpoints
+	rpService, err := rp.New(&operation.Config{})
+	if err != nil {
+		return err
+	}
 
-	router.HandleFunc(hydraLoginEndpoint, hydraLoginHandler).Methods(http.MethodGet)
-	router.HandleFunc(hydraConsentEndpoint, hydraConsentHandler).Methods(http.MethodGet)
-	router.HandleFunc(oidcCallbackEndpoint, oidcCallbackHandler).Methods(http.MethodGet)
-	router.HandleFunc(createPresentationRequestEndpoint, getPresentationRequestHandler).Methods(http.MethodPost)
-	router.HandleFunc(handlePresentationResponseEndpoint, presentationResponseHandler).Methods(http.MethodPost)
-	router.HandleFunc(userInfoEndpoint, userInfoHandler).Methods(http.MethodGet)
+	handlers := rpService.GetOperations()
+	for _, handler := range handlers {
+		router.HandleFunc(handler.Path(), handler.Handle()).Methods(handler.Method())
+	}
 
 	// static frontend
 	router.PathPrefix(uiEndpoint).
@@ -240,74 +227,4 @@ func constructCORSHandler(handler http.Handler) http.Handler {
 			AllowedHeaders: []string{"Origin", "Accept", "Content-Type", "X-Requested-With", "Authorization"},
 		},
 	).Handler(handler)
-}
-
-func healthCheckHandler(rw http.ResponseWriter, r *http.Request) {
-	rw.WriteHeader(http.StatusOK)
-
-	err := json.NewEncoder(rw).Encode(&healthCheckResp{
-		Status:      "success",
-		CurrentTime: time.Now(),
-	})
-	if err != nil {
-		log.Errorf("healthcheck response failure, %s", err)
-	}
-}
-
-// Hydra redirects the user here in the authentication phase.
-func hydraLoginHandler(w http.ResponseWriter, _ *http.Request) {
-	// TODO verify with hydra if we need to show the login screen. If so, save
-	//  hydra's login_challenge, redirect to OIDC provider (map login_challenge to state param).
-	//  Otherwise accept this login at hydra's /login/accept endpoint and redirect back to hydra.
-	testResponse(w)
-}
-
-// OIDC provider redirects the user here after they've been authenticated.
-func oidcCallbackHandler(w http.ResponseWriter, _ *http.Request) {
-	// TODO exchange auth code for access_token, then fetch id_token using access_token.
-	//  Accept this login at hydra's /login/accept and redirect back to hydra.
-	testResponse(w)
-}
-
-// Hydra redirects the user here in the consent phase.
-func hydraConsentHandler(w http.ResponseWriter, _ *http.Request) {
-	// TODO verify with hydra if we need to show the consent screen. If so, save hydra's
-	//  consent_challenge, create a request for presentation, save it, and redirect to the
-	//  ui endpoint (append a handle to the request for presentation).
-	//  Otherwise accept this consent at hydra's /consent/accept endpoint and redirect
-	//  back to hydra.
-	testResponse(w)
-}
-
-// Frontend requests a request for a presentation and provides a handle.
-func getPresentationRequestHandler(w http.ResponseWriter, _ *http.Request) {
-	// TODO extract handle and return the request for presentation.
-	testResponse(w)
-}
-
-// Frontend submits the user's presentation for evaluation.
-//
-// The user may have provided either:
-// - all required credentials in a single response, or
-// - consent credential + didcomm endpoint where the requested presentations can be obtained, or
-// - nothing (an error response?), indicating they cannot satisfy the request.
-func presentationResponseHandler(w http.ResponseWriter, _ *http.Request) {
-	// TODO validate response, do DIDComm with the issuer if required, gather all credentials,
-	//  make sure they're all valid and all present, load the consent_challenge and accept the user's
-	//  consent at hydra's /consent/accept endpoint and respond with hydra's redirect URL.
-	testResponse(w)
-}
-
-// RP requests user data.
-func userInfoHandler(w http.ResponseWriter, _ *http.Request) {
-	// TODO introspect RP's access_token (Authorization request header) with hydra and validate.
-	//  Load VPs related to the user and map them to a normal id_token and reply with that.
-	testResponse(w)
-}
-
-func testResponse(w io.Writer) {
-	_, err := w.Write([]byte("OK"))
-	if err != nil {
-		fmt.Printf("error writing test response: %s", err.Error())
-	}
 }
