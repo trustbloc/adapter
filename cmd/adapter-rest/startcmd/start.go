@@ -8,8 +8,11 @@ package startcmd
 
 import (
 	"encoding/json"
+	"fmt"
+	"io"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/gorilla/mux"
@@ -27,6 +30,22 @@ const (
 	hostURLFlagUsage     = "URL to run the adapter-rest instance on. Format: HostName:Port."
 	hostURLEnvKey        = "ADAPTER_REST_HOST_URL"
 
+	mysqlDatasourceFlagName  = "mysql-url"
+	mysqlDatasourceFlagUsage = "MySQL datasource URL with credentials if required," +
+		" eg. user:password@tcp(127.0.0.1:3306)/adapter." +
+		"Alternatively, this can be set with the following environment variable: " + mysqlDatasourceEnvKey
+	mysqlDatasourceEnvKey = "ADAPTER_REST_MYSQL_DATASOURCE"
+
+	oidcProviderURLFlagName  = "op-url"
+	oidcProviderURLFlagUsage = "URL for the OIDC provider." +
+		"Alternatively, this can be set with the following environment variable: " + oidcProviderEnvKey
+	oidcProviderEnvKey = "ADAPTER_REST_OP_URL"
+
+	staticFilesPathFlagName  = "static-path"
+	staticFilesPathFlagUsage = "Path to the folder where the static files are to be hosted under " + uiEndpoint + "." +
+		"Alternatively, this can be set with the following environment variable: " + staticFilesPathEnvKey
+	staticFilesPathEnvKey = "ADAPTER_REST_STATIC_FILES"
+
 	tlsSystemCertPoolFlagName  = "tls-systemcertpool"
 	tlsSystemCertPoolFlagUsage = "Use system certificate pool." +
 		" Possible values [true] [false]. Defaults to false if not set." +
@@ -39,16 +58,25 @@ const (
 	tlsCACertsEnvKey = "ADAPTER_REST_TLS_CACERTS"
 )
 
+// API endpoints.
 const (
-
-	// api
-	healthCheckEndpoint = "/healthcheck"
+	healthCheckEndpoint                = "/healthcheck"
+	hydraLoginEndpoint                 = "/login"
+	hydraConsentEndpoint               = "/consent"
+	oidcCallbackEndpoint               = "/callback"
+	createPresentationRequestEndpoint  = "/presentations/create"
+	handlePresentationResponseEndpoint = "/presentations/handleResponse"
+	userInfoEndpoint                   = "/userinfo"
+	uiEndpoint                         = "/ui"
 )
 
 type adapterRestParameters struct {
 	hostURL           string
 	tlsSystemCertPool bool
 	tlsCACerts        []string
+	dbURL             string
+	oidcProviderURL   string
+	staticFiles       string
 }
 
 type healthCheckResp struct {
@@ -104,10 +132,28 @@ func getAdapterRestParameters(cmd *cobra.Command) (*adapterRestParameters, error
 		return nil, err
 	}
 
+	dbURL, err := cmdutils.GetUserSetVarFromString(cmd, mysqlDatasourceFlagName, mysqlDatasourceEnvKey, true)
+	if err != nil {
+		return nil, err
+	}
+
+	oidcURL, err := cmdutils.GetUserSetVarFromString(cmd, oidcProviderURLFlagName, oidcProviderEnvKey, true)
+	if err != nil {
+		return nil, err
+	}
+
+	staticFiles, err := cmdutils.GetUserSetVarFromString(cmd, staticFilesPathFlagName, staticFilesPathEnvKey, true)
+	if err != nil {
+		return nil, err
+	}
+
 	return &adapterRestParameters{
 		hostURL:           hostURL,
 		tlsSystemCertPool: tlsSystemCertPool,
 		tlsCACerts:        tlsCACerts,
+		dbURL:             dbURL,
+		oidcProviderURL:   oidcURL,
+		staticFiles:       staticFiles,
 	}, nil
 }
 
@@ -138,6 +184,9 @@ func createFlags(startCmd *cobra.Command) {
 	startCmd.Flags().StringP(hostURLFlagName, hostURLFlagShorthand, "", hostURLFlagUsage)
 	startCmd.Flags().StringP(tlsSystemCertPoolFlagName, "", "", tlsSystemCertPoolFlagUsage)
 	startCmd.Flags().StringArrayP(tlsCACertsFlagName, "", []string{}, tlsCACertsFlagUsage)
+	startCmd.Flags().StringP(oidcProviderURLFlagName, "", "", oidcProviderURLFlagUsage)
+	startCmd.Flags().StringP(mysqlDatasourceFlagName, "", "", mysqlDatasourceFlagUsage)
+	startCmd.Flags().StringP(staticFilesPathFlagName, "", "", staticFilesPathFlagUsage)
 }
 
 func startAdapterService(parameters *adapterRestParameters, srv server) error {
@@ -153,9 +202,35 @@ func startAdapterService(parameters *adapterRestParameters, srv server) error {
 	// health check
 	router.HandleFunc(healthCheckEndpoint, healthCheckHandler).Methods(http.MethodGet)
 
+	router.HandleFunc(hydraLoginEndpoint, hydraLoginHandler).Methods(http.MethodGet)
+	router.HandleFunc(hydraConsentEndpoint, hydraConsentHandler).Methods(http.MethodGet)
+	router.HandleFunc(oidcCallbackEndpoint, oidcCallbackHandler).Methods(http.MethodGet)
+	router.HandleFunc(createPresentationRequestEndpoint, getPresentationRequestHandler).Methods(http.MethodPost)
+	router.HandleFunc(handlePresentationResponseEndpoint, presentationResponseHandler).Methods(http.MethodPost)
+	router.HandleFunc(userInfoEndpoint, userInfoHandler).Methods(http.MethodGet)
+
+	// static frontend
+	router.PathPrefix(uiEndpoint).
+		Subrouter().
+		Methods(http.MethodGet).
+		HandlerFunc(uiHandler(parameters.staticFiles, http.ServeFile))
+
 	log.Infof("starting adapter rest server on host %s", parameters.hostURL)
 
 	return srv.ListenAndServe(parameters.hostURL, constructCORSHandler(router))
+}
+
+func uiHandler(
+	basePath string,
+	fileServer func(http.ResponseWriter, *http.Request, string)) func(http.ResponseWriter, *http.Request) {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == uiEndpoint {
+			fileServer(w, r, strings.ReplaceAll(basePath+"/index.html", "//", "/"))
+			return
+		}
+
+		fileServer(w, r, strings.ReplaceAll(basePath+"/"+r.URL.Path[len(uiEndpoint):], "//", "/"))
+	}
 }
 
 func constructCORSHandler(handler http.Handler) http.Handler {
@@ -176,5 +251,63 @@ func healthCheckHandler(rw http.ResponseWriter, r *http.Request) {
 	})
 	if err != nil {
 		log.Errorf("healthcheck response failure, %s", err)
+	}
+}
+
+// Hydra redirects the user here in the authentication phase.
+func hydraLoginHandler(w http.ResponseWriter, _ *http.Request) {
+	// TODO verify with hydra if we need to show the login screen. If so, save
+	//  hydra's login_challenge, redirect to OIDC provider (map login_challenge to state param).
+	//  Otherwise accept this login at hydra's /login/accept endpoint and redirect back to hydra.
+	testResponse(w)
+}
+
+// OIDC provider redirects the user here after they've been authenticated.
+func oidcCallbackHandler(w http.ResponseWriter, _ *http.Request) {
+	// TODO exchange auth code for access_token, then fetch id_token using access_token.
+	//  Accept this login at hydra's /login/accept and redirect back to hydra.
+	testResponse(w)
+}
+
+// Hydra redirects the user here in the consent phase.
+func hydraConsentHandler(w http.ResponseWriter, _ *http.Request) {
+	// TODO verify with hydra if we need to show the consent screen. If so, save hydra's
+	//  consent_challenge, create a request for presentation, save it, and redirect to the
+	//  ui endpoint (append a handle to the request for presentation).
+	//  Otherwise accept this consent at hydra's /consent/accept endpoint and redirect
+	//  back to hydra.
+	testResponse(w)
+}
+
+// Frontend requests a request for a presentation and provides a handle.
+func getPresentationRequestHandler(w http.ResponseWriter, _ *http.Request) {
+	// TODO extract handle and return the request for presentation.
+	testResponse(w)
+}
+
+// Frontend submits the user's presentation for evaluation.
+//
+// The user may have provided either:
+// - all required credentials in a single response, or
+// - consent credential + didcomm endpoint where the requested presentations can be obtained, or
+// - nothing (an error response?), indicating they cannot satisfy the request.
+func presentationResponseHandler(w http.ResponseWriter, _ *http.Request) {
+	// TODO validate response, do DIDComm with the issuer if required, gather all credentials,
+	//  make sure they're all valid and all present, load the consent_challenge and accept the user's
+	//  consent at hydra's /consent/accept endpoint and respond with hydra's redirect URL.
+	testResponse(w)
+}
+
+// RP requests user data.
+func userInfoHandler(w http.ResponseWriter, _ *http.Request) {
+	// TODO introspect RP's access_token (Authorization request header) with hydra and validate.
+	//  Load VPs related to the user and map them to a normal id_token and reply with that.
+	testResponse(w)
+}
+
+func testResponse(w io.Writer) {
+	_, err := w.Write([]byte("OK"))
+	if err != nil {
+		fmt.Printf("error writing test response: %s", err.Error())
 	}
 }
