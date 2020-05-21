@@ -18,6 +18,7 @@ import (
 	cmdutils "github.com/trustbloc/edge-core/pkg/utils/cmd"
 	tlsutils "github.com/trustbloc/edge-core/pkg/utils/tls"
 
+	"github.com/trustbloc/edge-adapter/pkg/restapi/healthcheck"
 	"github.com/trustbloc/edge-adapter/pkg/restapi/rp"
 	"github.com/trustbloc/edge-adapter/pkg/restapi/rp/operation"
 )
@@ -185,14 +186,22 @@ func startAdapterService(parameters *adapterRestParameters, srv server) error {
 
 	router := mux.NewRouter()
 
+	// add health check endpoint
+	healthCheckService := healthcheck.New()
+
+	healthCheckHandlers := healthCheckService.GetOperations()
+	for _, handler := range healthCheckHandlers {
+		router.HandleFunc(handler.Path(), handler.Handle()).Methods(handler.Method())
+	}
+
 	// add rp endpoints
 	rpService, err := rp.New(&operation.Config{})
 	if err != nil {
 		return err
 	}
 
-	handlers := rpService.GetOperations()
-	for _, handler := range handlers {
+	rpHandlers := rpService.GetOperations()
+	for _, handler := range rpHandlers {
 		router.HandleFunc(handler.Path(), handler.Handle()).Methods(handler.Method())
 	}
 

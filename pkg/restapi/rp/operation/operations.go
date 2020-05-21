@@ -6,13 +6,9 @@ SPDX-License-Identifier: Apache-2.0
 package operation
 
 import (
-	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
-	"time"
-
-	log "github.com/sirupsen/logrus"
 
 	"github.com/trustbloc/edge-adapter/pkg/internal/common/support"
 )
@@ -25,13 +21,7 @@ const (
 	createPresentationRequestEndpoint  = "/presentations/create"
 	handlePresentationResponseEndpoint = "/presentations/handleResponse"
 	userInfoEndpoint                   = "/userinfo"
-	healthCheckEndpoint                = "/healthcheck"
 )
-
-type healthCheckResp struct {
-	Status      string    `json:"status"`
-	CurrentTime time.Time `json:"currentTime"`
-}
 
 // Handler http handler for each controller API endpoint.
 type Handler interface {
@@ -62,7 +52,6 @@ func (o *Operation) GetRESTHandlers() []Handler {
 		support.NewHTTPHandler(createPresentationRequestEndpoint, http.MethodPost, o.getPresentationRequestHandler),
 		support.NewHTTPHandler(handlePresentationResponseEndpoint, http.MethodPost, o.presentationResponseHandler),
 		support.NewHTTPHandler(userInfoEndpoint, http.MethodGet, o.userInfoHandler),
-		support.NewHTTPHandler(healthCheckEndpoint, http.MethodGet, o.healthCheckHandler),
 	}
 }
 
@@ -115,18 +104,6 @@ func (o *Operation) userInfoHandler(w http.ResponseWriter, _ *http.Request) {
 	// TODO introspect RP's access_token (Authorization request header) with hydra and validate.
 	//  Load VPs related to the user and map them to a normal id_token and reply with that.
 	testResponse(w)
-}
-
-func (o *Operation) healthCheckHandler(rw http.ResponseWriter, r *http.Request) {
-	rw.WriteHeader(http.StatusOK)
-
-	err := json.NewEncoder(rw).Encode(&healthCheckResp{
-		Status:      "success",
-		CurrentTime: time.Now(),
-	})
-	if err != nil {
-		log.Errorf("healthcheck response failure, %s", err)
-	}
 }
 
 func testResponse(w io.Writer) {
