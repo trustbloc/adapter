@@ -18,7 +18,7 @@ func TestGetRESTHandlers(t *testing.T) {
 	c, err := New(&Config{})
 	require.NoError(t, err)
 
-	require.Equal(t, 7, len(c.GetRESTHandlers()))
+	require.Equal(t, 6, len(c.GetRESTHandlers()))
 }
 
 func TestHydraLoginHandler(t *testing.T) {
@@ -79,16 +79,6 @@ func TestUserInfoHandler(t *testing.T) {
 	c.userInfoHandler(r, nil)
 
 	require.Equal(t, http.StatusOK, r.Code)
-}
-
-func TestHealthCheck(t *testing.T) {
-	c, err := New(&Config{})
-	require.NoError(t, err)
-
-	b := &httptest.ResponseRecorder{}
-	c.healthCheckHandler(b, nil)
-
-	require.Equal(t, http.StatusOK, b.Code)
 }
 
 func TestTestResponse(t *testing.T) {
