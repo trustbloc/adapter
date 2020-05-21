@@ -14,20 +14,19 @@ RUN apk add --no-cache \
 	git \
 	libtool \
 	bash \
+	npm \
 	make;
 ADD . src/github.com/trustbloc/edge-adapter
 WORKDIR src/github.com/trustbloc/edge-adapter
 ENV EXECUTABLES go git
 
 FROM golang as edge-adapter
-RUN make adapter-rest
+RUN make adapter-vue adapter-rest
 
 
 FROM alpine:${ALPINE_VER} as base
 COPY --from=edge-adapter /go/src/github.com/trustbloc/edge-adapter/.build/bin/adapter-rest /usr/local/bin
-
-ARG STATIC_FILES
-ADD ${STATIC_FILES} /usr/local/static/adapter-vue/
+COPY --from=edge-adapter /go/src/github.com/trustbloc/edge-adapter/.build/bin/adapter-vue /usr/local/static/adapter-vue/
 ENV ADAPTER_REST_STATIC_FILES=/usr/local/static/adapter-vue
 
 # set up nsswitch.conf for Go's "netgo" implementation
