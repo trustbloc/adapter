@@ -6,11 +6,14 @@ SPDX-License-Identifier: Apache-2.0
 package operation
 
 import (
+	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
 
 	"github.com/trustbloc/edge-adapter/pkg/internal/common/support"
+	"github.com/trustbloc/edge-adapter/pkg/presentationex"
+	commhttp "github.com/trustbloc/edge-adapter/pkg/restapi/internal/common/http"
 )
 
 // API endpoints.
@@ -23,6 +26,11 @@ const (
 	userInfoEndpoint                   = "/userinfo"
 )
 
+// errors.
+const (
+	invalidRequestErrMsg = "invalid request"
+)
+
 // Handler http handler for each controller API endpoint.
 type Handler interface {
 	Path() string
@@ -30,17 +38,23 @@ type Handler interface {
 	Handle() http.HandlerFunc
 }
 
+type presentationExProvider interface {
+	Create(scopes []string) (*presentationex.PresentationDefinitions, error)
+}
+
 // New returns CreateCredential instance.
 func New(config *Config) (*Operation, error) {
-	return &Operation{}, nil
+	return &Operation{presentationExProvider: config.PresentationExProvider}, nil
 }
 
 // Config defines configuration for rp operations.
 type Config struct {
+	PresentationExProvider presentationExProvider
 }
 
 // Operation defines handlers for rp operations.
 type Operation struct {
+	presentationExProvider presentationExProvider
 }
 
 // GetRESTHandlers get all controller API handler available for this service.
@@ -49,7 +63,7 @@ func (o *Operation) GetRESTHandlers() []Handler {
 		support.NewHTTPHandler(hydraLoginEndpoint, http.MethodGet, o.hydraLoginHandler),
 		support.NewHTTPHandler(hydraConsentEndpoint, http.MethodGet, o.hydraConsentHandler),
 		support.NewHTTPHandler(oidcCallbackEndpoint, http.MethodGet, o.oidcCallbackHandler),
-		support.NewHTTPHandler(createPresentationRequestEndpoint, http.MethodPost, o.getPresentationRequestHandler),
+		support.NewHTTPHandler(createPresentationRequestEndpoint, http.MethodPost, o.createPresentationDefinition),
 		support.NewHTTPHandler(handlePresentationResponseEndpoint, http.MethodPost, o.presentationResponseHandler),
 		support.NewHTTPHandler(userInfoEndpoint, http.MethodGet, o.userInfoHandler),
 	}
@@ -80,10 +94,28 @@ func (o *Operation) hydraConsentHandler(w http.ResponseWriter, _ *http.Request) 
 	testResponse(w)
 }
 
-// Frontend requests a request for a presentation and provides a handle.
-func (o *Operation) getPresentationRequestHandler(w http.ResponseWriter, _ *http.Request) {
-	// TODO extract handle and return the request for presentation.
-	testResponse(w)
+// Frontend requests to create presentation definition.
+func (o *Operation) createPresentationDefinition(rw http.ResponseWriter, req *http.Request) {
+	// get the request
+	verificationReq := CreatePresentationDefinitionReq{}
+
+	err := json.NewDecoder(req.Body).Decode(&verificationReq)
+	if err != nil {
+		commhttp.WriteErrorResponse(rw, http.StatusBadRequest, fmt.Sprintf(invalidRequestErrMsg+": %s", err.Error()))
+
+		return
+	}
+
+	// TODO remove scopes and use handle after this task https://github.com/trustbloc/edge-adapter/issues/14
+	presentationDefinition, err := o.presentationExProvider.Create(verificationReq.Scopes)
+	if err != nil {
+		commhttp.WriteErrorResponse(rw, http.StatusBadRequest, err.Error())
+
+		return
+	}
+
+	rw.WriteHeader(http.StatusOK)
+	commhttp.WriteResponse(rw, presentationDefinition)
 }
 
 // Frontend submits the user's presentation for evaluation.

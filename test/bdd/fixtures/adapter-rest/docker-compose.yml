@@ -16,12 +16,14 @@ services:
       - ADAPTER_REST_TLS_SYSTEMCERTPOOL=true
       - ADAPTER_REST_MYSQL_DATASOURCE=mysql://root:secret@tcp(mysql:3306)/mysql
       - ADAPTER_REST_OP_URL=http://PUT-SOMETHING-HERE.com
+      - ADAPTER_REST_PRESENTATION_DEFINITIONS_FILE=/etc/testdata/presentationdefinitions.json
     ports:
       - 8070:8070
     entrypoint: ""
     command:  /bin/sh -c "adapter-rest start"
     volumes:
       - ../keys/tls:/etc/tls
+      - ../testdata:/etc/testdata
     networks:
       - bdd_net
     depends_on:

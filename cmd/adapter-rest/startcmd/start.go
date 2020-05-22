@@ -18,6 +18,7 @@ import (
 	cmdutils "github.com/trustbloc/edge-core/pkg/utils/cmd"
 	tlsutils "github.com/trustbloc/edge-core/pkg/utils/tls"
 
+	"github.com/trustbloc/edge-adapter/pkg/presentationex"
 	"github.com/trustbloc/edge-adapter/pkg/restapi/healthcheck"
 	"github.com/trustbloc/edge-adapter/pkg/restapi/rp"
 	"github.com/trustbloc/edge-adapter/pkg/restapi/rp/operation"
@@ -55,6 +56,10 @@ const (
 	tlsCACertsFlagUsage = "Comma-Separated list of ca certs path." +
 		" Alternatively, this can be set with the following environment variable: " + tlsCACertsEnvKey
 	tlsCACertsEnvKey = "ADAPTER_REST_TLS_CACERTS"
+
+	presentationDefinitionsFlagName  = "presentation-definitions-file"
+	presentationDefinitionsFlagUsage = "Path to presentation definitions file with input_descriptors."
+	presentationDefinitionsEnvKey    = "ADAPTER_REST_PRESENTATION_DEFINITIONS_FILE"
 )
 
 // API endpoints.
@@ -63,12 +68,13 @@ const (
 )
 
 type adapterRestParameters struct {
-	hostURL           string
-	tlsSystemCertPool bool
-	tlsCACerts        []string
-	dbURL             string
-	oidcProviderURL   string
-	staticFiles       string
+	hostURL                     string
+	tlsSystemCertPool           bool
+	tlsCACerts                  []string
+	dbURL                       string
+	oidcProviderURL             string
+	staticFiles                 string
+	presentationDefinitionsFile string
 }
 
 type server interface {
@@ -134,13 +140,20 @@ func getAdapterRestParameters(cmd *cobra.Command) (*adapterRestParameters, error
 		return nil, err
 	}
 
+	presentationDefinitionsFile, err := cmdutils.GetUserSetVarFromString(cmd, presentationDefinitionsFlagName,
+		presentationDefinitionsEnvKey, false)
+	if err != nil {
+		return nil, err
+	}
+
 	return &adapterRestParameters{
-		hostURL:           hostURL,
-		tlsSystemCertPool: tlsSystemCertPool,
-		tlsCACerts:        tlsCACerts,
-		dbURL:             dbURL,
-		oidcProviderURL:   oidcURL,
-		staticFiles:       staticFiles,
+		hostURL:                     hostURL,
+		tlsSystemCertPool:           tlsSystemCertPool,
+		tlsCACerts:                  tlsCACerts,
+		dbURL:                       dbURL,
+		oidcProviderURL:             oidcURL,
+		staticFiles:                 staticFiles,
+		presentationDefinitionsFile: presentationDefinitionsFile,
 	}, nil
 }
 
@@ -174,6 +187,7 @@ func createFlags(startCmd *cobra.Command) {
 	startCmd.Flags().StringP(oidcProviderURLFlagName, "", "", oidcProviderURLFlagUsage)
 	startCmd.Flags().StringP(mysqlDatasourceFlagName, "", "", mysqlDatasourceFlagUsage)
 	startCmd.Flags().StringP(staticFilesPathFlagName, "", "", staticFilesPathFlagUsage)
+	startCmd.Flags().StringP(presentationDefinitionsFlagName, "", "", presentationDefinitionsFlagUsage)
 }
 
 func startAdapterService(parameters *adapterRestParameters, srv server) error {
@@ -183,6 +197,11 @@ func startAdapterService(parameters *adapterRestParameters, srv server) error {
 	}
 
 	log.Debugf("root ca's %v", rootCAs)
+
+	presentationExProvider, err := presentationex.New(parameters.presentationDefinitionsFile)
+	if err != nil {
+		return err
+	}
 
 	router := mux.NewRouter()
 
@@ -195,7 +214,7 @@ func startAdapterService(parameters *adapterRestParameters, srv server) error {
 	}
 
 	// add rp endpoints
-	rpService, err := rp.New(&operation.Config{})
+	rpService, err := rp.New(&operation.Config{PresentationExProvider: presentationExProvider})
 	if err != nil {
 		return err
 	}
