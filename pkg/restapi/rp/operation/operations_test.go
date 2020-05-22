@@ -13,11 +13,15 @@ import (
 	"io/ioutil"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"testing"
 
-	"github.com/trustbloc/edge-adapter/pkg/presentationex"
-
+	"github.com/google/uuid"
+	"github.com/ory/hydra-client-go/client/admin"
+	"github.com/ory/hydra-client-go/models"
 	"github.com/stretchr/testify/require"
+
+	"github.com/trustbloc/edge-adapter/pkg/presentationex"
 )
 
 func TestGetRESTHandlers(t *testing.T) {
@@ -28,13 +32,100 @@ func TestGetRESTHandlers(t *testing.T) {
 }
 
 func TestHydraLoginHandler(t *testing.T) {
-	c, err := New(&Config{})
-	require.NoError(t, err)
+	t.Run("TODO - implement redirect to OIDC provider", func(t *testing.T) {
+		o, err := New(&Config{
+			Hydra: &stubHydra{
+				loginRequestFunc: func(*admin.GetLoginRequestParams) (*admin.GetLoginRequestOK, error) {
+					return &admin.GetLoginRequestOK{
+						Payload: &models.LoginRequest{
+							Skip: false,
+						},
+					}, nil
+				},
+				acceptLoginFunc: func(*admin.AcceptLoginRequestParams) (*admin.AcceptLoginRequestOK, error) {
+					return &admin.AcceptLoginRequestOK{
+						Payload: &models.CompletedRequest{
+							RedirectTo: "http://test.hydra.com",
+						},
+					}, nil
+				},
+			},
+		})
+		require.NoError(t, err)
 
-	r := &httptest.ResponseRecorder{}
-	c.hydraLoginHandler(r, nil)
+		r := &httptest.ResponseRecorder{}
+		o.hydraLoginHandler(r, newHydraRequest(t))
 
-	require.Equal(t, http.StatusOK, r.Code)
+		require.Equal(t, http.StatusOK, r.Code)
+	})
+	t.Run("redirects back to hydra when skipping", func(t *testing.T) {
+		const redirectURL = "http://redirect.com"
+		o, err := New(&Config{
+			Hydra: &stubHydra{
+				loginRequestFunc: func(*admin.GetLoginRequestParams) (*admin.GetLoginRequestOK, error) {
+					return &admin.GetLoginRequestOK{
+						Payload: &models.LoginRequest{
+							Skip: true,
+						},
+					}, nil
+				},
+				acceptLoginFunc: func(*admin.AcceptLoginRequestParams) (*admin.AcceptLoginRequestOK, error) {
+					return &admin.AcceptLoginRequestOK{
+						Payload: &models.CompletedRequest{
+							RedirectTo: redirectURL,
+						},
+					}, nil
+				},
+			},
+		})
+		require.NoError(t, err)
+		w := &httptest.ResponseRecorder{}
+		o.hydraLoginHandler(w, newHydraRequest(t))
+		require.Equal(t, http.StatusFound, w.Code)
+		require.Equal(t, w.Header().Get("Location"), redirectURL)
+	})
+	t.Run("fails on missing login_challenge", func(t *testing.T) {
+		o, err := New(&Config{})
+		require.NoError(t, err)
+		r := newHydraRequestNoChallenge(t)
+		r.URL.Query().Del("login_challenge")
+		w := &httptest.ResponseRecorder{}
+		o.hydraLoginHandler(w, r)
+		require.Equal(t, http.StatusBadRequest, w.Code)
+	})
+	t.Run("error while fetching hydra login request", func(t *testing.T) {
+		o, err := New(&Config{
+			Hydra: &stubHydra{
+				loginRequestFunc: func(*admin.GetLoginRequestParams) (*admin.GetLoginRequestOK, error) {
+					return nil, errors.New("test")
+				},
+			},
+		})
+		require.NoError(t, err)
+		w := &httptest.ResponseRecorder{}
+		o.hydraLoginHandler(w, newHydraRequest(t))
+		require.Equal(t, http.StatusInternalServerError, w.Code)
+	})
+	t.Run("error while accepting login request at hydra", func(t *testing.T) {
+		o, err := New(&Config{
+			Hydra: &stubHydra{
+				loginRequestFunc: func(*admin.GetLoginRequestParams) (*admin.GetLoginRequestOK, error) {
+					return &admin.GetLoginRequestOK{
+						Payload: &models.LoginRequest{
+							Skip: true,
+						},
+					}, nil
+				},
+				acceptLoginFunc: func(*admin.AcceptLoginRequestParams) (*admin.AcceptLoginRequestOK, error) {
+					return nil, errors.New("test")
+				},
+			},
+		})
+		require.NoError(t, err)
+		w := &httptest.ResponseRecorder{}
+		o.hydraLoginHandler(w, newHydraRequest(t))
+		require.Equal(t, http.StatusInternalServerError, w.Code)
+	})
 }
 
 func TestOidcCallbackHandler(t *testing.T) {
@@ -145,4 +236,35 @@ type mockPresentationExProvider struct {
 
 func (m *mockPresentationExProvider) Create(scopes []string) (*presentationex.PresentationDefinitions, error) {
 	return m.createValue, m.createErr
+}
+
+func newHydraRequest(t *testing.T) *http.Request {
+	u, err := url.Parse("http://example.com?login_challenge=" + uuid.New().String())
+	require.NoError(t, err)
+
+	return &http.Request{
+		URL: u,
+	}
+}
+
+func newHydraRequestNoChallenge(t *testing.T) *http.Request {
+	u, err := url.Parse("http://example.com")
+	require.NoError(t, err)
+
+	return &http.Request{
+		URL: u,
+	}
+}
+
+type stubHydra struct {
+	loginRequestFunc func(*admin.GetLoginRequestParams) (*admin.GetLoginRequestOK, error)
+	acceptLoginFunc  func(*admin.AcceptLoginRequestParams) (*admin.AcceptLoginRequestOK, error)
+}
+
+func (s *stubHydra) GetLoginRequest(params *admin.GetLoginRequestParams) (*admin.GetLoginRequestOK, error) {
+	return s.loginRequestFunc(params)
+}
+
+func (s *stubHydra) AcceptLoginRequest(params *admin.AcceptLoginRequestParams) (*admin.AcceptLoginRequestOK, error) {
+	return s.acceptLoginFunc(params)
 }

@@ -8,10 +8,12 @@ package startcmd
 
 import (
 	"net/http"
+	"net/url"
 	"strconv"
 	"strings"
 
 	"github.com/gorilla/mux"
+	"github.com/ory/hydra-client-go/client"
 	"github.com/rs/cors"
 	log "github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
@@ -60,6 +62,11 @@ const (
 	presentationDefinitionsFlagName  = "presentation-definitions-file"
 	presentationDefinitionsFlagUsage = "Path to presentation definitions file with input_descriptors."
 	presentationDefinitionsEnvKey    = "ADAPTER_REST_PRESENTATION_DEFINITIONS_FILE"
+
+	hydraURLFlagName  = "hydra-url"
+	hydraURLFlagUsage = "Base URL to the hydra service." +
+		"Alternatively, this can be set with the following environment variable: " + hydraURLEnvKey
+	hydraURLEnvKey = "ADAPTER_REST_HYDRA_URL"
 )
 
 // API endpoints.
@@ -75,6 +82,8 @@ type adapterRestParameters struct {
 	oidcProviderURL             string
 	staticFiles                 string
 	presentationDefinitionsFile string
+	// TODO assuming same base path for all hydra endpoints for now
+	hydraURL string
 }
 
 type server interface {
@@ -146,6 +155,11 @@ func getAdapterRestParameters(cmd *cobra.Command) (*adapterRestParameters, error
 		return nil, err
 	}
 
+	hydraURL, err := cmdutils.GetUserSetVarFromString(cmd, hydraURLFlagName, hydraURLEnvKey, true)
+	if err != nil {
+		return nil, err
+	}
+
 	return &adapterRestParameters{
 		hostURL:                     hostURL,
 		tlsSystemCertPool:           tlsSystemCertPool,
@@ -154,6 +168,7 @@ func getAdapterRestParameters(cmd *cobra.Command) (*adapterRestParameters, error
 		oidcProviderURL:             oidcURL,
 		staticFiles:                 staticFiles,
 		presentationDefinitionsFile: presentationDefinitionsFile,
+		hydraURL:                    hydraURL,
 	}, nil
 }
 
@@ -188,6 +203,7 @@ func createFlags(startCmd *cobra.Command) {
 	startCmd.Flags().StringP(mysqlDatasourceFlagName, "", "", mysqlDatasourceFlagUsage)
 	startCmd.Flags().StringP(staticFilesPathFlagName, "", "", staticFilesPathFlagUsage)
 	startCmd.Flags().StringP(presentationDefinitionsFlagName, "", "", presentationDefinitionsFlagUsage)
+	startCmd.Flags().StringP(hydraURLFlagName, "", "", hydraURLFlagUsage)
 }
 
 func startAdapterService(parameters *adapterRestParameters, srv server) error {
@@ -213,8 +229,16 @@ func startAdapterService(parameters *adapterRestParameters, srv server) error {
 		router.HandleFunc(handler.Path(), handler.Handle()).Methods(handler.Method())
 	}
 
+	hydraURL, err := url.Parse(parameters.hydraURL)
+	if err != nil {
+		return err
+	}
+
 	// add rp endpoints
-	rpService, err := rp.New(&operation.Config{PresentationExProvider: presentationExProvider})
+	rpService, err := rp.New(&operation.Config{
+		PresentationExProvider: presentationExProvider,
+		Hydra:                  newHydraClient(hydraURL).Admin,
+	})
 	if err != nil {
 		return err
 	}
@@ -255,4 +279,15 @@ func constructCORSHandler(handler http.Handler) http.Handler {
 			AllowedHeaders: []string{"Origin", "Accept", "Content-Type", "X-Requested-With", "Authorization"},
 		},
 	).Handler(handler)
+}
+
+func newHydraClient(hydraURL *url.URL) *client.OryHydra {
+	return client.NewHTTPClientWithConfig(
+		nil,
+		&client.TransportConfig{
+			Schemes:  []string{hydraURL.Scheme},
+			Host:     hydraURL.Host,
+			BasePath: hydraURL.Path,
+		},
+	)
 }

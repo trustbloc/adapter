@@ -8,6 +8,7 @@ go 1.14
 
 require (
 	github.com/gorilla/mux v1.7.4
+	github.com/ory/hydra-client-go v1.4.10
 	github.com/rs/cors v1.7.0
 	github.com/sirupsen/logrus v1.6.0
 	github.com/spf13/cobra v1.0.0
