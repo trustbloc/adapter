@@ -6,6 +6,7 @@ SPDX-License-Identifier: Apache-2.0
 package startcmd
 
 import (
+	"io/ioutil"
 	"net/http"
 	"net/url"
 	"os"
@@ -14,6 +15,50 @@ import (
 	"github.com/spf13/cobra"
 	"github.com/stretchr/testify/require"
 )
+
+// nolint: gochecknoglobals
+var inputDescriptors = `{
+ "input_descriptors": [
+  {
+    "id": "banking_input_1",
+    "group": ["A"],
+    "schema": {
+      "uri": "https://bank-standards.com/customer.json",
+      "name": "Bank Account Information",
+      "purpose": "We need your bank and account information."
+    },
+    "constraints": {
+      "fields": [
+        {
+          "path": ["$.issuer", "$.vc.issuer", "$.iss"],
+          "purpose": "The credential must be from one of the specified issuers",
+          "filter": {
+            "type": "string",
+            "pattern": "did:example:123|did:example:456"
+          }
+        },
+        { 
+          "path": ["$.credentialSubject.account[*].id", "$.vc.credentialSubject.account[*].id"],
+          "purpose": "We need your bank account number for processing purposes",
+          "filter": {
+            "type": "string",
+            "minLength": 10,
+            "maxLength": 12
+          }
+        },
+        {
+          "path": ["$.credentialSubject.account[*].route", "$.vc.credentialSubject.account[*].route"],
+          "purpose": "You must have an account with a German, US, or Japanese bank account",
+          "filter": {
+            "type": "string",
+            "pattern": "^DE|^US|^JP"
+          }
+        }
+      ]
+    }
+  }
+]
+}`
 
 type mockServer struct{}
 
@@ -80,29 +125,45 @@ func TestStartCmdWithBlankEnvVar(t *testing.T) {
 func TestStartCmdValidArgs(t *testing.T) {
 	startCmd := GetStartCmd(&mockServer{})
 
-	args := []string{"--" + hostURLFlagName, "localhost:8080"}
+	file, err := ioutil.TempFile("", "*.json")
+	require.NoError(t, err)
+
+	_, err = file.WriteString(inputDescriptors)
+	require.NoError(t, err)
+
+	defer func() { require.NoError(t, os.Remove(file.Name())) }()
+
+	args := []string{"--" + hostURLFlagName, "localhost:8080", "--" + presentationDefinitionsFlagName, file.Name()}
 	startCmd.SetArgs(args)
 
-	err := startCmd.Execute()
+	err = startCmd.Execute()
 
-	require.Nil(t, err)
+	require.NoError(t, err)
 }
 
 func TestStartCmdValidArgsEnvVar(t *testing.T) {
+	file, err := ioutil.TempFile("", "*.json")
+	require.NoError(t, err)
+
+	_, err = file.WriteString(inputDescriptors)
+	require.NoError(t, err)
+
+	defer func() { require.NoError(t, os.Remove(file.Name())) }()
+
 	startCmd := GetStartCmd(&mockServer{})
 
-	setEnvVars(t)
+	setEnvVars(t, file.Name())
 
 	defer unsetEnvVars(t)
 
-	err := startCmd.Execute()
+	err = startCmd.Execute()
 	require.NoError(t, err)
 }
 
 func TestTLSSystemCertPoolInvalidArgsEnvVar(t *testing.T) {
 	startCmd := GetStartCmd(&mockServer{})
 
-	setEnvVars(t)
+	setEnvVars(t, "")
 
 	defer unsetEnvVars(t)
 	require.NoError(t, os.Setenv(tlsSystemCertPoolEnvKey, "wrongvalue"))
@@ -132,13 +193,19 @@ func TestUIHandler(t *testing.T) {
 	})
 }
 
-func setEnvVars(t *testing.T) {
+func setEnvVars(t *testing.T, fileName string) {
 	err := os.Setenv(hostURLEnvKey, "localhost:8080")
+	require.NoError(t, err)
+
+	err = os.Setenv(presentationDefinitionsEnvKey, fileName)
 	require.NoError(t, err)
 }
 
 func unsetEnvVars(t *testing.T) {
 	err := os.Unsetenv(hostURLEnvKey)
+	require.NoError(t, err)
+
+	err = os.Unsetenv(presentationDefinitionsEnvKey)
 	require.NoError(t, err)
 }
 
