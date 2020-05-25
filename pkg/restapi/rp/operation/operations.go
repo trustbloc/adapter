@@ -11,6 +11,9 @@ import (
 	"io"
 	"net/http"
 
+	"github.com/ory/hydra-client-go/client/admin"
+	"github.com/ory/hydra-client-go/models"
+
 	"github.com/trustbloc/edge-adapter/pkg/internal/common/support"
 	"github.com/trustbloc/edge-adapter/pkg/presentationex"
 	commhttp "github.com/trustbloc/edge-adapter/pkg/restapi/internal/common/http"
@@ -42,19 +45,30 @@ type presentationExProvider interface {
 	Create(scopes []string) (*presentationex.PresentationDefinitions, error)
 }
 
+// Hydra is the client used to interface with the Hydra service.
+type Hydra interface {
+	GetLoginRequest(*admin.GetLoginRequestParams) (*admin.GetLoginRequestOK, error)
+	AcceptLoginRequest(*admin.AcceptLoginRequestParams) (*admin.AcceptLoginRequestOK, error)
+}
+
 // New returns CreateCredential instance.
 func New(config *Config) (*Operation, error) {
-	return &Operation{presentationExProvider: config.PresentationExProvider}, nil
+	return &Operation{
+		presentationExProvider: config.PresentationExProvider,
+		hydra:                  config.Hydra,
+	}, nil
 }
 
 // Config defines configuration for rp operations.
 type Config struct {
 	PresentationExProvider presentationExProvider
+	Hydra                  Hydra
 }
 
 // Operation defines handlers for rp operations.
 type Operation struct {
 	presentationExProvider presentationExProvider
+	hydra                  Hydra
 }
 
 // GetRESTHandlers get all controller API handler available for this service.
@@ -70,11 +84,56 @@ func (o *Operation) GetRESTHandlers() []Handler {
 }
 
 // Hydra redirects the user here in the authentication phase.
-func (o *Operation) hydraLoginHandler(w http.ResponseWriter, _ *http.Request) {
-	// TODO verify with hydra if we need to show the login screen. If so, save
-	//  hydra's login_challenge, redirect to OIDC provider (map login_challenge to state param).
-	//  Otherwise accept this login at hydra's /login/accept endpoint and redirect back to hydra.
+// TODO redirect to UI when not skipping
+// TODO ensure request's origin is the same as the hydraUrl
+//  https://stackoverflow.com/q/27234861/1623885
+func (o *Operation) hydraLoginHandler(w http.ResponseWriter, r *http.Request) {
+	challenge := r.URL.Query().Get("login_challenge")
+	if challenge == "" {
+		commhttp.WriteErrorResponse(w, http.StatusBadRequest, "missing challenge")
+		return
+	}
+
+	req := admin.NewGetLoginRequestParams()
+
+	req.SetLoginChallenge(challenge)
+
+	login, err := o.hydra.GetLoginRequest(req)
+	if err != nil {
+		commhttp.WriteErrorResponse(
+			w, http.StatusInternalServerError, fmt.Sprintf("failed to contact hydra : %s", err.Error()))
+		return
+	}
+
+	if login.GetPayload().Skip {
+		err := acceptLoginAndRedirectToHydra(w, r, o.hydra, login.GetPayload().Subject)
+		if err != nil {
+			commhttp.WriteErrorResponse(
+				w, http.StatusInternalServerError, fmt.Sprintf("failed to accept login request : %s", err.Error()))
+		}
+
+		return
+	}
+
+	// TODO redirect to OIDC provider
 	testResponse(w)
+}
+
+func acceptLoginAndRedirectToHydra(w http.ResponseWriter, r *http.Request, hydra Hydra, subject string) error {
+	accept := admin.NewAcceptLoginRequestParams()
+
+	accept.SetBody(&models.AcceptLoginRequest{
+		Subject: &subject,
+	})
+
+	loginResponse, err := hydra.AcceptLoginRequest(accept)
+	if err != nil {
+		return fmt.Errorf("failed to accept login request : %w", err)
+	}
+
+	http.Redirect(w, r, loginResponse.GetPayload().RedirectTo, http.StatusFound)
+
+	return nil
 }
 
 // OIDC provider redirects the user here after they've been authenticated.
