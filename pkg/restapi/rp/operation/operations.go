@@ -6,14 +6,21 @@ SPDX-License-Identifier: Apache-2.0
 package operation
 
 import (
+	"context"
+	"database/sql"
 	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
+	"sync"
 
+	"github.com/coreos/go-oidc"
+	"github.com/google/uuid"
 	"github.com/ory/hydra-client-go/client/admin"
 	"github.com/ory/hydra-client-go/models"
+	"github.com/pkg/errors"
 
+	"github.com/trustbloc/edge-adapter/pkg/db"
 	"github.com/trustbloc/edge-adapter/pkg/internal/common/support"
 	"github.com/trustbloc/edge-adapter/pkg/presentationex"
 	commhttp "github.com/trustbloc/edge-adapter/pkg/restapi/internal/common/http"
@@ -23,7 +30,7 @@ import (
 const (
 	hydraLoginEndpoint                 = "/login"
 	hydraConsentEndpoint               = "/consent"
-	oidcCallbackEndpoint               = "/callback"
+	OIDCCallbackEndpoint               = "/callback"
 	createPresentationRequestEndpoint  = "/presentations/create"
 	handlePresentationResponseEndpoint = "/presentations/handleResponse"
 	userInfoEndpoint                   = "/userinfo"
@@ -51,11 +58,39 @@ type Hydra interface {
 	AcceptLoginRequest(*admin.AcceptLoginRequestParams) (*admin.AcceptLoginRequestOK, error)
 }
 
+// OAuth2Config is an OAuth2 client.
+type OAuth2Config interface {
+	ClientID() string
+	AuthCodeURL(string) string
+}
+
+// UsersDAO is the EndUser DAO.
+type UsersDAO interface {
+	Insert(*db.EndUser) error
+}
+
+// OidcRequestsDAO is the OIDCRequest DAO.
+type OidcRequestsDAO interface {
+	Insert(*db.OIDCRequest) error
+}
+
+// Trx is a DB transaction.
+type Trx interface {
+	Commit() error
+	Rollback() error
+}
+
 // New returns CreateCredential instance.
 func New(config *Config) (*Operation, error) {
 	return &Operation{
 		presentationExProvider: config.PresentationExProvider,
 		hydra:                  config.Hydra,
+		oidc:                   config.OIDC,
+		oauth2Config:           config.OAuth2Config,
+		oidcStates:             make(map[string]*models.LoginRequest),
+		trxProvider:            config.TrxProvider,
+		users:                  config.UsersDAO,
+		oidcRequests:           config.OIDCrequestsDAO,
 	}, nil
 }
 
@@ -63,12 +98,24 @@ func New(config *Config) (*Operation, error) {
 type Config struct {
 	PresentationExProvider presentationExProvider
 	Hydra                  Hydra
+	OIDC                   func(string, context.Context) (*oidc.IDToken, error)
+	OAuth2Config           OAuth2Config
+	TrxProvider            func(context.Context, *sql.TxOptions) (Trx, error)
+	UsersDAO               UsersDAO
+	OIDCrequestsDAO        OidcRequestsDAO
 }
 
 // Operation defines handlers for rp operations.
 type Operation struct {
 	presentationExProvider presentationExProvider
 	hydra                  Hydra
+	oidc                   func(string, context.Context) (*oidc.IDToken, error)
+	oauth2Config           OAuth2Config
+	oidcStates             map[string]*models.LoginRequest
+	lock                   sync.Mutex
+	trxProvider            func(context.Context, *sql.TxOptions) (Trx, error)
+	users                  UsersDAO
+	oidcRequests           OidcRequestsDAO
 }
 
 // GetRESTHandlers get all controller API handler available for this service.
@@ -76,7 +123,7 @@ func (o *Operation) GetRESTHandlers() []Handler {
 	return []Handler{
 		support.NewHTTPHandler(hydraLoginEndpoint, http.MethodGet, o.hydraLoginHandler),
 		support.NewHTTPHandler(hydraConsentEndpoint, http.MethodGet, o.hydraConsentHandler),
-		support.NewHTTPHandler(oidcCallbackEndpoint, http.MethodGet, o.oidcCallbackHandler),
+		support.NewHTTPHandler(OIDCCallbackEndpoint, http.MethodGet, o.oidcCallbackHandler),
 		support.NewHTTPHandler(createPresentationRequestEndpoint, http.MethodPost, o.createPresentationDefinition),
 		support.NewHTTPHandler(handlePresentationResponseEndpoint, http.MethodPost, o.presentationResponseHandler),
 		support.NewHTTPHandler(userInfoEndpoint, http.MethodGet, o.userInfoHandler),
@@ -106,7 +153,7 @@ func (o *Operation) hydraLoginHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if login.GetPayload().Skip {
-		err := acceptLoginAndRedirectToHydra(w, r, o.hydra, login.GetPayload().Subject)
+		err := acceptLoginAndRedirectToHydra(w, r, o.hydra, login.GetPayload())
 		if err != nil {
 			commhttp.WriteErrorResponse(
 				w, http.StatusInternalServerError, fmt.Sprintf("failed to accept login request : %s", err.Error()))
@@ -115,15 +162,35 @@ func (o *Operation) hydraLoginHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// TODO redirect to OIDC provider
-	testResponse(w)
+	state := uuid.New().String()
+	o.setLoginRequestForState(state, login.GetPayload())
+	http.Redirect(w, r, o.oauth2Config.AuthCodeURL(state), http.StatusFound)
 }
 
-func acceptLoginAndRedirectToHydra(w http.ResponseWriter, r *http.Request, hydra Hydra, subject string) error {
+func (o *Operation) setLoginRequestForState(state string, request *models.LoginRequest) {
+	o.lock.Lock()
+	defer o.lock.Unlock()
+
+	o.oidcStates[state] = request
+}
+
+func (o *Operation) getAndUnsetLoginRequest(state string) *models.LoginRequest {
+	o.lock.Lock()
+	defer o.lock.Unlock()
+
+	r := o.oidcStates[state]
+	delete(o.oidcStates, state)
+
+	return r
+}
+
+func acceptLoginAndRedirectToHydra(
+	w http.ResponseWriter, r *http.Request, hydra Hydra, login *models.LoginRequest) error {
 	accept := admin.NewAcceptLoginRequestParams()
 
+	accept.SetLoginChallenge(login.Challenge)
 	accept.SetBody(&models.AcceptLoginRequest{
-		Subject: &subject,
+		Subject: &login.Subject,
 	})
 
 	loginResponse, err := hydra.AcceptLoginRequest(accept)
@@ -137,10 +204,81 @@ func acceptLoginAndRedirectToHydra(w http.ResponseWriter, r *http.Request, hydra
 }
 
 // OIDC provider redirects the user here after they've been authenticated.
-func (o *Operation) oidcCallbackHandler(w http.ResponseWriter, _ *http.Request) {
-	// TODO exchange auth code for access_token, then fetch id_token using access_token.
-	//  Accept this login at hydra's /login/accept and redirect back to hydra.
-	testResponse(w)
+func (o *Operation) oidcCallbackHandler(w http.ResponseWriter, r *http.Request) {
+	login := o.getAndUnsetLoginRequest(r.URL.Query().Get("state"))
+
+	if login == nil {
+		commhttp.WriteErrorResponse(w, http.StatusBadRequest, "bad request")
+		return
+	}
+
+	idToken, err := o.oidc(r.URL.Query().Get("code"), r.Context())
+	if err != nil {
+		commhttp.WriteErrorResponse(
+			w, http.StatusInternalServerError, fmt.Sprintf("failed to exchange code for an id_token : %s", err))
+		return
+	}
+
+	err = o.saveUserAndRequest(r.Context(), login, idToken.Subject)
+	if err != nil {
+		commhttp.WriteErrorResponse(w,
+			http.StatusInternalServerError, fmt.Sprintf("failed to save user and request : %s", err))
+		return
+	}
+
+	accept := admin.NewAcceptLoginRequestParams()
+
+	accept.SetLoginChallenge(login.Challenge)
+	accept.SetBody(&models.AcceptLoginRequest{
+		Subject: &idToken.Subject,
+	})
+
+	resp, err := o.hydra.AcceptLoginRequest(accept)
+	if err != nil {
+		commhttp.WriteErrorResponse(w,
+			http.StatusInternalServerError, fmt.Sprintf("failed to accept login request at hydra : %s", err))
+		return
+	}
+
+	http.Redirect(w, r, resp.GetPayload().RedirectTo, http.StatusFound)
+}
+
+func (o *Operation) saveUserAndRequest(ctx context.Context, l *models.LoginRequest, sub string) (errResult error) {
+	tx, err := o.trxProvider(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("failed to start a db transaction : %w", err)
+	}
+
+	defer func() {
+		switch errResult {
+		case nil:
+			errResult = tx.Commit()
+		default:
+			txErr := tx.Rollback()
+			if txErr != nil {
+				errResult = errors.Wrap(errResult, err.Error())
+			}
+		}
+	}()
+
+	user := &db.EndUser{
+		Sub: sub,
+	}
+
+	err = o.users.Insert(user)
+	if err != nil {
+		return fmt.Errorf("failed to insert user : %w", err)
+	}
+
+	err = o.oidcRequests.Insert(&db.OIDCRequest{
+		EndUserID: user.ID,
+		Scopes:    l.RequestedScope,
+	})
+	if err != nil {
+		return fmt.Errorf("failed to insert oidc requests : %w", err)
+	}
+
+	return nil
 }
 
 // Hydra redirects the user here in the consent phase.
