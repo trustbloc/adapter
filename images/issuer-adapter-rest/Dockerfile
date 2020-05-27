@@ -21,13 +21,13 @@ WORKDIR src/github.com/trustbloc/edge-adapter
 ENV EXECUTABLES go git
 
 FROM golang as edge-adapter
-RUN make adapter-vue adapter-rest
-
+RUN make issuer-adapter-vue adapter-rest
 
 FROM alpine:${ALPINE_VER} as base
 COPY --from=edge-adapter /go/src/github.com/trustbloc/edge-adapter/.build/bin/adapter-rest /usr/local/bin
-COPY --from=edge-adapter /go/src/github.com/trustbloc/edge-adapter/.build/bin/adapter-vue /usr/local/static/adapter-vue/
-ENV ADAPTER_REST_STATIC_FILES=/usr/local/static/adapter-vue
+COPY --from=edge-adapter /go/src/github.com/trustbloc/edge-adapter/.build/bin/issuer-adapter-vue /usr/local/static/issuer-adapter-vue/
+ENV ADAPTER_REST_STATIC_FILES=/usr/local/static/issuer-adapter-vue
+ENV ADAPTER_REST_MODE=issuer
 
 # set up nsswitch.conf for Go's "netgo" implementation
 # - https://github.com/golang/go/blob/go1.9.1/src/net/conf.go#L194-L275

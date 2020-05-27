@@ -133,11 +133,14 @@ func TestStartCmdValidArgs(t *testing.T) {
 
 	defer func() { require.NoError(t, os.Remove(file.Name())) }()
 
-	args := []string{"--" + hostURLFlagName, "localhost:8080", "--" + presentationDefinitionsFlagName, file.Name()}
+	args := []string{
+		"--" + modeFlagName, rpMode,
+		"--" + hostURLFlagName, "localhost:8080",
+		"--" + presentationDefinitionsFlagName, file.Name(),
+	}
 	startCmd.SetArgs(args)
 
 	err = startCmd.Execute()
-
 	require.NoError(t, err)
 }
 
@@ -151,6 +154,10 @@ func TestStartCmdValidArgsEnvVar(t *testing.T) {
 	defer func() { require.NoError(t, os.Remove(file.Name())) }()
 
 	startCmd := GetStartCmd(&mockServer{})
+	args := []string{
+		"--" + modeFlagName, "rp",
+	}
+	startCmd.SetArgs(args)
 
 	setEnvVars(t, file.Name())
 
@@ -158,6 +165,57 @@ func TestStartCmdValidArgsEnvVar(t *testing.T) {
 
 	err = startCmd.Execute()
 	require.NoError(t, err)
+}
+
+func TestAdapterModes(t *testing.T) {
+	t.Run("test adapter mode - rp", func(t *testing.T) {
+		startCmd := GetStartCmd(&mockServer{})
+
+		file, err := ioutil.TempFile("", "*.json")
+		require.NoError(t, err)
+
+		_, err = file.WriteString(inputDescriptors)
+		require.NoError(t, err)
+
+		defer func() { require.NoError(t, os.Remove(file.Name())) }()
+
+		args := []string{
+			"--" + modeFlagName, rpMode,
+			"--" + hostURLFlagName, "localhost:8080",
+			"--" + presentationDefinitionsFlagName, file.Name(),
+		}
+		startCmd.SetArgs(args)
+
+		err = startCmd.Execute()
+		require.NoError(t, err)
+	})
+
+	t.Run("test adapter mode - issuer", func(t *testing.T) {
+		startCmd := GetStartCmd(&mockServer{})
+
+		args := []string{
+			"--" + modeFlagName, issuerMode,
+			"--" + hostURLFlagName, "localhost:8080",
+		}
+		startCmd.SetArgs(args)
+
+		err := startCmd.Execute()
+		require.NoError(t, err)
+	})
+
+	t.Run("test adapter mode - unsupported mode", func(t *testing.T) {
+		startCmd := GetStartCmd(&mockServer{})
+
+		args := []string{
+			"--" + modeFlagName, "invalidMode",
+			"--" + hostURLFlagName, "localhost:8080",
+		}
+		startCmd.SetArgs(args)
+
+		err := startCmd.Execute()
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "invalid mode : invalidMode")
+	})
 }
 
 func TestTLSSystemCertPoolInvalidArgsEnvVar(t *testing.T) {

@@ -1,6 +1,6 @@
-# adapter-vue
+# rp-adapter-vue
 
-Frontend for the edge-adapter.
+Frontend for the rp adapter.
 
 ## Project setup
 ```

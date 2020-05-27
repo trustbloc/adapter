@@ -22,7 +22,7 @@ testCount=${#tests[@]}
 if [ "$agentNumber" -eq 0 ]; then agentNumber=1; fi
 
 if [ "$totalAgents" -eq 0 ]; then
-  echo "Running vc integration tests..."
+  echo "Running adapter integration tests..."
   go test -count=1 -v -cover . -p 1 -timeout=40m
 else
   if [ "$agentNumber" -gt $totalAgents ]; then
