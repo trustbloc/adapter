@@ -11,7 +11,8 @@ IS_RELEASE=false
 
 # Project Parameters
 SOURCE_REPO=edge-adapter
-BASE_ADAPTER_PKG_NAME=adapter-rest
+BASE_ISSUER_ADAPTER_PKG_NAME=rp-adapter-rest
+BASE_RP_ADAPTER_PKG_NAME=rp-adapter-rest
 RELEASE_REPO=docker.pkg.github.com/trustbloc/${SOURCE_REPO}
 SNAPSHOT_REPO=docker.pkg.github.com/trustbloc-cicd/snapshot
 
@@ -26,4 +27,5 @@ else
 fi
 
 export ADAPTER_REST_TAG=$PROJECT_VERSION
-export ADAPTER_REST_PKG=${PROJECT_PKG_REPO}/${BASE_ADAPTER_PKG_NAME}
+export ISSUER_ADAPTER_REST_PKG=${PROJECT_PKG_REPO}/${BASE_ISSUER_ADAPTER_PKG_NAME}
+export RP_ADAPTER_REST_PKG=${PROJECT_PKG_REPO}/${BASE_RP_ADAPTER_PKG_NAME}

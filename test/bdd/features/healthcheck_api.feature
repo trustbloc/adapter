@@ -9,6 +9,10 @@
 @healthcheck
 Feature: health check
 
-  Scenario:
-    When an HTTP GET is sent to "http://localhost:8070/healthcheck"
+  Scenario Outline:
+    When an HTTP GET is sent to "<url>"
     Then the JSON path "status" of the response equals "success"
+    Examples:
+      | url                                     |
+      | http://localhost:8070/healthcheck       |
+      | http://localhost:8069/healthcheck       |

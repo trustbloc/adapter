@@ -7,6 +7,7 @@ SPDX-License-Identifier: Apache-2.0
 package startcmd
 
 import (
+	"fmt"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -67,11 +68,20 @@ const (
 	hydraURLFlagUsage = "Base URL to the hydra service." +
 		"Alternatively, this can be set with the following environment variable: " + hydraURLEnvKey
 	hydraURLEnvKey = "ADAPTER_REST_HYDRA_URL"
+
+	modeFlagName  = "mode"
+	modeFlagUsage = "Mode in which the edge-adapter service will run. Possible values: " +
+		"['issuer', 'rp']."
+	modeEnvKey = "ADAPTER_REST_MODE"
 )
 
 // API endpoints.
 const (
 	uiEndpoint = "/ui"
+
+	// modes
+	issuerMode = "issuer"
+	rpMode     = "rp"
 )
 
 type adapterRestParameters struct {
@@ -84,6 +94,7 @@ type adapterRestParameters struct {
 	presentationDefinitionsFile string
 	// TODO assuming same base path for all hydra endpoints for now
 	hydraURL string
+	mode     string
 }
 
 type server interface {
@@ -149,8 +160,13 @@ func getAdapterRestParameters(cmd *cobra.Command) (*adapterRestParameters, error
 		return nil, err
 	}
 
+	mode, err := cmdutils.GetUserSetVarFromString(cmd, modeFlagName, modeEnvKey, true)
+	if err != nil {
+		return nil, err
+	}
+
 	presentationDefinitionsFile, err := cmdutils.GetUserSetVarFromString(cmd, presentationDefinitionsFlagName,
-		presentationDefinitionsEnvKey, false)
+		presentationDefinitionsEnvKey, mode != rpMode)
 	if err != nil {
 		return nil, err
 	}
@@ -169,6 +185,7 @@ func getAdapterRestParameters(cmd *cobra.Command) (*adapterRestParameters, error
 		staticFiles:                 staticFiles,
 		presentationDefinitionsFile: presentationDefinitionsFile,
 		hydraURL:                    hydraURL,
+		mode:                        mode,
 	}, nil
 }
 
@@ -204,6 +221,7 @@ func createFlags(startCmd *cobra.Command) {
 	startCmd.Flags().StringP(staticFilesPathFlagName, "", "", staticFilesPathFlagUsage)
 	startCmd.Flags().StringP(presentationDefinitionsFlagName, "", "", presentationDefinitionsFlagUsage)
 	startCmd.Flags().StringP(hydraURLFlagName, "", "", hydraURLFlagUsage)
+	startCmd.Flags().StringP(modeFlagName, "", "", modeFlagUsage)
 }
 
 func startAdapterService(parameters *adapterRestParameters, srv server) error {
@@ -213,11 +231,6 @@ func startAdapterService(parameters *adapterRestParameters, srv server) error {
 	}
 
 	log.Debugf("root ca's %v", rootCAs)
-
-	presentationExProvider, err := presentationex.New(parameters.presentationDefinitionsFile)
-	if err != nil {
-		return err
-	}
 
 	router := mux.NewRouter()
 
@@ -229,12 +242,35 @@ func startAdapterService(parameters *adapterRestParameters, srv server) error {
 		router.HandleFunc(handler.Path(), handler.Handle()).Methods(handler.Method())
 	}
 
+	// add endpoints
+	switch parameters.mode {
+	case rpMode:
+		err := addRPHandlers(parameters, router)
+		if err != nil {
+			return nil
+		}
+	case issuerMode:
+		addIssuerHandlers(parameters, router)
+	default:
+		return fmt.Errorf("invalid mode : %s", parameters.mode)
+	}
+
+	log.Infof("starting %s adapter rest server on host %s", parameters.mode, parameters.hostURL)
+
+	return srv.ListenAndServe(parameters.hostURL, constructCORSHandler(router))
+}
+
+func addRPHandlers(parameters *adapterRestParameters, router *mux.Router) error {
+	presentationExProvider, err := presentationex.New(parameters.presentationDefinitionsFile)
+	if err != nil {
+		return err
+	}
+
 	hydraURL, err := url.Parse(parameters.hydraURL)
 	if err != nil {
 		return err
 	}
 
-	// add rp endpoints
 	rpService, err := rp.New(&operation.Config{
 		PresentationExProvider: presentationExProvider,
 		Hydra:                  newHydraClient(hydraURL).Admin,
@@ -254,9 +290,15 @@ func startAdapterService(parameters *adapterRestParameters, srv server) error {
 		Methods(http.MethodGet).
 		HandlerFunc(uiHandler(parameters.staticFiles, http.ServeFile))
 
-	log.Infof("starting adapter rest server on host %s", parameters.hostURL)
+	return nil
+}
 
-	return srv.ListenAndServe(parameters.hostURL, constructCORSHandler(router))
+func addIssuerHandlers(parameters *adapterRestParameters, router *mux.Router) {
+	// static frontend
+	router.PathPrefix(uiEndpoint).
+		Subrouter().
+		Methods(http.MethodGet).
+		HandlerFunc(uiHandler(parameters.staticFiles, http.ServeFile))
 }
 
 func uiHandler(

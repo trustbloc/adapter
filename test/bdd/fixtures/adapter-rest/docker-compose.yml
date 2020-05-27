@@ -7,9 +7,25 @@ version: '2'
 
 services:
 
-  adapter.vc.rest.example.com:
-    container_name: adapter.vc.rest.example.com
-    image: ${ADAPTER_REST_IMAGE}:latest
+  issuer.adapter.rest.example.com:
+    container_name: issuer.adapter.rest.example.com
+    image: ${ISSUER_ADAPTER_REST_IMAGE}:latest
+    environment:
+      - ADAPTER_REST_HOST_URL=0.0.0.0:8069
+      - ADAPTER_REST_TLS_CACERTS=/etc/tls/ec-cacert.pem
+      - ADAPTER_REST_TLS_SYSTEMCERTPOOL=true
+    ports:
+      - 8069:8069
+    entrypoint: ""
+    command:  /bin/sh -c "adapter-rest start"
+    volumes:
+      - ../keys/tls:/etc/tls
+    networks:
+      - bdd_net
+
+  rp.adapter.rest.example.com:
+    container_name: rp.adapter.rest.example.com
+    image: ${RP_ADAPTER_REST_IMAGE}:latest
     environment:
       - ADAPTER_REST_HOST_URL=0.0.0.0:8070
       - ADAPTER_REST_TLS_CACERTS=/etc/tls/ec-cacert.pem
