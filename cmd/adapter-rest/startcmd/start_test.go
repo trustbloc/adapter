@@ -6,14 +6,25 @@ SPDX-License-Identifier: Apache-2.0
 package startcmd
 
 import (
+	"database/sql"
+	"fmt"
 	"io/ioutil"
 	"net/http"
 	"net/url"
 	"os"
+	"os/exec"
+	"strings"
 	"testing"
+	"time"
 
+	"github.com/cenkalti/backoff"
+
+	"github.com/google/uuid"
+	"github.com/phayes/freeport"
 	"github.com/spf13/cobra"
 	"github.com/stretchr/testify/require"
+
+	_ "github.com/go-sql-driver/mysql"
 )
 
 // nolint: gochecknoglobals
@@ -59,6 +70,74 @@ var inputDescriptors = `{
   }
 ]
 }`
+
+//nolint:gochecknoglobals
+var containerName = "edgeadapter_start_tests_" + strings.ReplaceAll(uuid.New().String(), "-", "")
+
+//nolint:gochecknoglobals
+var containerPort int
+
+func startMySQL() error {
+	var err error
+
+	containerPort, err = freeport.GetFreePort()
+	if err != nil {
+		return fmt.Errorf("failed to obtain a port from the os : %w", err)
+	}
+
+	//nolint:gosec
+	err = exec.Command("docker", "run",
+		"--name", containerName,
+		"-e", "MYSQL_ROOT_PASSWORD=secret",
+		"-e", "MYSQL_DATABASE=edgeadapter",
+		"-d",
+		"-p", fmt.Sprintf("%d:3306", containerPort),
+		"mysql:8.0.20").Run()
+	if err != nil {
+		return fmt.Errorf("failed to start mysql : %w", err)
+	}
+
+	db, err := sql.Open("mysql", fmt.Sprintf("root:secret@tcp(localhost:%d)/edgeadapter", containerPort))
+	if err != nil {
+		return fmt.Errorf("failed to start mysql : %w", err)
+	}
+
+	err = backoff.Retry(
+		db.Ping,
+		backoff.WithMaxRetries(backoff.NewConstantBackOff(500*time.Millisecond), 40),
+	)
+	if err != nil {
+		return fmt.Errorf("failed to ping mysql : %w", err)
+	}
+
+	return nil
+}
+
+func stopMySQL() error {
+	//nolint:gosec
+	err := exec.Command("docker", "stop", containerName).Run()
+	if err != nil {
+		return fmt.Errorf("failed to stop mysql : %w", err)
+	}
+
+	return nil
+}
+
+func TestMain(m *testing.M) {
+	err := startMySQL()
+	if err != nil {
+		panic(err)
+	}
+
+	code := m.Run()
+
+	err = stopMySQL()
+	if err != nil {
+		panic(fmt.Errorf("failed to stop mysql : %w", err))
+	}
+
+	os.Exit(code)
+}
 
 type mockServer struct{}
 
@@ -137,6 +216,7 @@ func TestStartCmdValidArgs(t *testing.T) {
 		"--" + modeFlagName, rpMode,
 		"--" + hostURLFlagName, "localhost:8080",
 		"--" + presentationDefinitionsFlagName, file.Name(),
+		"--" + mysqlDatasourceFlagName, fmt.Sprintf("mysql://root:secret@tcp(localhost:%d)/edgeadapter", containerPort),
 	}
 	startCmd.SetArgs(args)
 

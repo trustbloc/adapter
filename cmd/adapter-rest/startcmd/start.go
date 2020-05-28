@@ -7,11 +7,16 @@ SPDX-License-Identifier: Apache-2.0
 package startcmd
 
 import (
+	"context"
+	"database/sql"
 	"fmt"
 	"net/http"
 	"net/url"
 	"strconv"
 	"strings"
+	"time"
+
+	"github.com/cenkalti/backoff"
 
 	"github.com/gorilla/mux"
 	"github.com/ory/hydra-client-go/client"
@@ -21,10 +26,14 @@ import (
 	cmdutils "github.com/trustbloc/edge-core/pkg/utils/cmd"
 	tlsutils "github.com/trustbloc/edge-core/pkg/utils/tls"
 
+	"github.com/trustbloc/edge-adapter/pkg/db"
 	"github.com/trustbloc/edge-adapter/pkg/presentationex"
 	"github.com/trustbloc/edge-adapter/pkg/restapi/healthcheck"
 	"github.com/trustbloc/edge-adapter/pkg/restapi/rp"
 	"github.com/trustbloc/edge-adapter/pkg/restapi/rp/operation"
+
+	// mysql db driver
+	_ "github.com/go-sql-driver/mysql"
 )
 
 const (
@@ -35,7 +44,7 @@ const (
 
 	mysqlDatasourceFlagName  = "mysql-url"
 	mysqlDatasourceFlagUsage = "MySQL datasource URL with credentials if required," +
-		" eg. user:password@tcp(127.0.0.1:3306)/adapter." +
+		" eg. mysql://user:password@tcp(127.0.0.1:3306)/adapter." +
 		"Alternatively, this can be set with the following environment variable: " + mysqlDatasourceEnvKey
 	mysqlDatasourceEnvKey = "ADAPTER_REST_MYSQL_DATASOURCE"
 
@@ -88,7 +97,7 @@ type adapterRestParameters struct {
 	hostURL                     string
 	tlsSystemCertPool           bool
 	tlsCACerts                  []string
-	dbURL                       string
+	dsn                         string
 	oidcProviderURL             string
 	staticFiles                 string
 	presentationDefinitionsFile string
@@ -180,7 +189,7 @@ func getAdapterRestParameters(cmd *cobra.Command) (*adapterRestParameters, error
 		hostURL:                     hostURL,
 		tlsSystemCertPool:           tlsSystemCertPool,
 		tlsCACerts:                  tlsCACerts,
-		dbURL:                       dbURL,
+		dsn:                         dbURL,
 		oidcProviderURL:             oidcURL,
 		staticFiles:                 staticFiles,
 		presentationDefinitionsFile: presentationDefinitionsFile,
@@ -271,9 +280,20 @@ func addRPHandlers(parameters *adapterRestParameters, router *mux.Router) error 
 		return err
 	}
 
+	datasource, err := initDB(parameters.dsn)
+	if err != nil {
+		return err
+	}
+
+	// TODO init OIDC stuff in iteration 2 - https://github.com/trustbloc/edge-adapter/issues/24
+
+	// add rp endpoints
 	rpService, err := rp.New(&operation.Config{
 		PresentationExProvider: presentationExProvider,
 		Hydra:                  newHydraClient(hydraURL).Admin,
+		TrxProvider:            newTrxProvider(datasource),
+		UsersDAO:               db.NewEndUsers(datasource),
+		OIDCrequestsDAO:        db.NewOIDCRequests(datasource),
 	})
 	if err != nil {
 		return err
@@ -332,4 +352,45 @@ func newHydraClient(hydraURL *url.URL) *client.OryHydra {
 			BasePath: hydraURL.Path,
 		},
 	)
+}
+
+func initDB(dsn string) (*sql.DB, error) {
+	const (
+		sleep      = 1 * time.Second
+		numRetries = 30
+	)
+
+	var dbms *sql.DB
+
+	// TODO support parsing the driverName from the DSN
+	//  https://github.com/trustbloc/edge-adapter/issues/23
+	err := backoff.RetryNotify(
+		func() error {
+			var openErr error
+			dbms, openErr = sql.Open("mysql", dsn)
+			return openErr
+		},
+		backoff.WithMaxRetries(backoff.NewConstantBackOff(sleep), numRetries),
+		func(retryErr error, t time.Duration) {
+			fmt.Printf(
+				"warning - failed to connect to database, will sleep for %d before trying again : %s\n",
+				t, retryErr)
+		},
+	)
+	if err != nil {
+		return nil, fmt.Errorf("failed to connect to database at %s : %w", dsn, err)
+	}
+
+	return dbms, nil
+}
+
+func newTrxProvider(dbms *sql.DB) func(ctx context.Context, opts *sql.TxOptions) (operation.Trx, error) {
+	return func(ctx context.Context, opts *sql.TxOptions) (operation.Trx, error) {
+		trx, err := dbms.BeginTx(ctx, opts)
+		if err != nil {
+			return nil, fmt.Errorf("failed to open db transaction : %w", err)
+		}
+
+		return trx, nil
+	}
 }
