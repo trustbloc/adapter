@@ -19,7 +19,6 @@ require (
 	github.com/stretchr/testify v1.5.1
 	github.com/trustbloc/edge-adapter v0.0.0-00010101000000-000000000000
 	github.com/trustbloc/edge-core v0.1.3
-	github.com/xo/dburl v0.0.0-20200124232849-e9ec94f52bc3
 )
 
 replace github.com/trustbloc/edge-adapter => ../..
