@@ -8,10 +8,10 @@ package operation
 import (
 	"context"
 	"database/sql"
-	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"sync"
 
 	"github.com/coreos/go-oidc"
@@ -56,6 +56,8 @@ type presentationExProvider interface {
 type Hydra interface {
 	GetLoginRequest(*admin.GetLoginRequestParams) (*admin.GetLoginRequestOK, error)
 	AcceptLoginRequest(*admin.AcceptLoginRequestParams) (*admin.AcceptLoginRequestOK, error)
+	GetConsentRequest(*admin.GetConsentRequestParams) (*admin.GetConsentRequestOK, error)
+	AcceptConsentRequest(*admin.AcceptConsentRequestParams) (*admin.AcceptConsentRequestOK, error)
 }
 
 // OAuth2Config is an OAuth2 client.
@@ -67,17 +69,30 @@ type OAuth2Config interface {
 // UsersDAO is the EndUser DAO.
 type UsersDAO interface {
 	Insert(*db.EndUser) error
+	FindBySub(string) (*db.EndUser, error)
 }
 
 // OidcRequestsDAO is the OIDCRequest DAO.
 type OidcRequestsDAO interface {
 	Insert(*db.OIDCRequest) error
+	FindByUserSubAndRPClientID(string, string) (*db.OIDCRequest, error)
+	Update(*db.OIDCRequest) error
+}
+
+// RelyingPartiesDAO is the RelyingParty DAO.
+type RelyingPartiesDAO interface {
+	FindByClientID(string) (*db.RelyingParty, error)
 }
 
 // Trx is a DB transaction.
 type Trx interface {
 	Commit() error
 	Rollback() error
+}
+
+type consentRequest struct {
+	pd *presentationex.PresentationDefinitions
+	cr *admin.GetConsentRequestOK
 }
 
 // New returns CreateCredential instance.
@@ -90,7 +105,10 @@ func New(config *Config) (*Operation, error) {
 		oidcStates:             make(map[string]*models.LoginRequest),
 		trxProvider:            config.TrxProvider,
 		users:                  config.UsersDAO,
-		oidcRequests:           config.OIDCrequestsDAO,
+		oidcRequests:           config.OIDCRequestsDAO,
+		relyingPartiesDAO:      config.RelyingPartiesDAO,
+		consentRequests:        make(map[string]*consentRequest),
+		uiEndpoint:             config.UIEndpoint,
 	}, nil
 }
 
@@ -102,8 +120,13 @@ type Config struct {
 	OAuth2Config           OAuth2Config
 	TrxProvider            func(context.Context, *sql.TxOptions) (Trx, error)
 	UsersDAO               UsersDAO
-	OIDCrequestsDAO        OidcRequestsDAO
+	RelyingPartiesDAO      RelyingPartiesDAO
+	OIDCRequestsDAO        OidcRequestsDAO
+	UIEndpoint             string
 }
+
+// TODO implement an eviction strategy for Operation.oidcStates and OIDC.consentRequests
+//  https://github.com/trustbloc/edge-adapter/issues/29
 
 // Operation defines handlers for rp operations.
 type Operation struct {
@@ -112,10 +135,14 @@ type Operation struct {
 	oidc                   func(string, context.Context) (*oidc.IDToken, error)
 	oauth2Config           OAuth2Config
 	oidcStates             map[string]*models.LoginRequest
-	lock                   sync.Mutex
+	oidcStateLock          sync.Mutex
 	trxProvider            func(context.Context, *sql.TxOptions) (Trx, error)
 	users                  UsersDAO
 	oidcRequests           OidcRequestsDAO
+	relyingPartiesDAO      RelyingPartiesDAO
+	consentRequests        map[string]*consentRequest
+	presDefsLock           sync.Mutex
+	uiEndpoint             string
 }
 
 // GetRESTHandlers get all controller API handler available for this service.
@@ -168,18 +195,35 @@ func (o *Operation) hydraLoginHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func (o *Operation) setLoginRequestForState(state string, request *models.LoginRequest) {
-	o.lock.Lock()
-	defer o.lock.Unlock()
+	o.oidcStateLock.Lock()
+	defer o.oidcStateLock.Unlock()
 
 	o.oidcStates[state] = request
 }
 
 func (o *Operation) getAndUnsetLoginRequest(state string) *models.LoginRequest {
-	o.lock.Lock()
-	defer o.lock.Unlock()
+	o.oidcStateLock.Lock()
+	defer o.oidcStateLock.Unlock()
 
 	r := o.oidcStates[state]
 	delete(o.oidcStates, state)
+
+	return r
+}
+
+func (o *Operation) setConsentRequest(handle string, r *consentRequest) {
+	o.presDefsLock.Lock()
+	defer o.presDefsLock.Unlock()
+
+	o.consentRequests[handle] = r
+}
+
+func (o *Operation) getAndUnsetConsentRequest(handle string) *consentRequest {
+	o.presDefsLock.Lock()
+	defer o.presDefsLock.Unlock()
+
+	r := o.consentRequests[handle]
+	delete(o.consentRequests, handle)
 
 	return r
 }
@@ -243,7 +287,7 @@ func (o *Operation) oidcCallbackHandler(w http.ResponseWriter, r *http.Request) 
 	http.Redirect(w, r, resp.GetPayload().RedirectTo, http.StatusFound)
 }
 
-func (o *Operation) saveUserAndRequest(ctx context.Context, l *models.LoginRequest, sub string) (errResult error) {
+func (o *Operation) saveUserAndRequest(ctx context.Context, login *models.LoginRequest, sub string) (errResult error) {
 	tx, err := o.trxProvider(ctx, nil)
 	if err != nil {
 		return fmt.Errorf("failed to start a db transaction : %w", err)
@@ -261,6 +305,11 @@ func (o *Operation) saveUserAndRequest(ctx context.Context, l *models.LoginReque
 		}
 	}()
 
+	rp, err := o.relyingPartiesDAO.FindByClientID(login.Client.ClientID)
+	if err != nil {
+		return fmt.Errorf("failed to find a relying party with client_id=%s : %w", login.Client.ClientID, err)
+	}
+
 	user := &db.EndUser{
 		Sub: sub,
 	}
@@ -271,8 +320,9 @@ func (o *Operation) saveUserAndRequest(ctx context.Context, l *models.LoginReque
 	}
 
 	err = o.oidcRequests.Insert(&db.OIDCRequest{
-		EndUserID: user.ID,
-		Scopes:    l.RequestedScope,
+		EndUserID:      user.ID,
+		RelyingPartyID: rp.ID,
+		Scopes:         login.RequestedScope,
 	})
 	if err != nil {
 		return fmt.Errorf("failed to insert oidc requests : %w", err)
@@ -282,37 +332,126 @@ func (o *Operation) saveUserAndRequest(ctx context.Context, l *models.LoginReque
 }
 
 // Hydra redirects the user here in the consent phase.
-func (o *Operation) hydraConsentHandler(w http.ResponseWriter, _ *http.Request) {
-	// TODO verify with hydra if we need to show the consent screen. If so, save hydra's
-	//  consent_challenge, create a request for presentation, save it, and redirect to the
-	//  ui endpoint (append a handle to the request for presentation).
-	//  Otherwise accept this consent at hydra's /consent/accept endpoint and redirect
-	//  back to hydra.
-	testResponse(w)
+func (o *Operation) hydraConsentHandler(w http.ResponseWriter, r *http.Request) {
+	challenge := r.URL.Query().Get("consent_challenge")
+	if challenge == "" {
+		commhttp.WriteErrorResponse(w, http.StatusBadRequest, invalidRequestErrMsg)
+		return
+	}
+
+	req := admin.NewGetConsentRequestParamsWithContext(r.Context())
+	req.SetConsentChallenge(challenge)
+
+	consent, err := o.hydra.GetConsentRequest(req)
+	if err != nil {
+		commhttp.WriteErrorResponse(
+			w, http.StatusInternalServerError, fmt.Sprintf("failed to contact hydra : %s", err))
+
+		return
+	}
+
+	if consent.GetPayload().Skip {
+		params := admin.NewAcceptConsentRequestParamsWithContext(r.Context())
+
+		params.SetConsentChallenge(consent.GetPayload().Challenge)
+
+		accepted, acceptErr := o.hydra.AcceptConsentRequest(params)
+		if acceptErr != nil {
+			commhttp.WriteErrorResponse(
+				w, http.StatusInternalServerError, fmt.Sprintf("hydra failed to accept consent request : %s", acceptErr))
+
+			return
+		}
+
+		http.Redirect(w, r, accepted.GetPayload().RedirectTo, http.StatusFound)
+
+		return
+	}
+
+	presentationDefinition, err := o.presentationExProvider.Create(consent.GetPayload().RequestedScope)
+	if err != nil {
+		commhttp.WriteErrorResponse(
+			w, http.StatusInternalServerError, fmt.Sprintf("failed to create the presentation definition : %s", err))
+
+		return
+	}
+
+	handle := url.QueryEscape(uuid.New().String())
+	o.setConsentRequest(handle, &consentRequest{
+		cr: consent,
+		pd: presentationDefinition,
+	})
+
+	http.Redirect(w, r, fmt.Sprintf("%s?pd=%s", o.uiEndpoint, handle), http.StatusFound)
 }
 
 // Frontend requests to create presentation definition.
 func (o *Operation) createPresentationDefinition(rw http.ResponseWriter, req *http.Request) {
 	// get the request
-	verificationReq := CreatePresentationDefinitionReq{}
-
-	err := json.NewDecoder(req.Body).Decode(&verificationReq)
-	if err != nil {
-		commhttp.WriteErrorResponse(rw, http.StatusBadRequest, fmt.Sprintf(invalidRequestErrMsg+": %s", err.Error()))
+	handle := req.URL.Query().Get("pd")
+	if handle == "" {
+		commhttp.WriteErrorResponse(rw, http.StatusBadRequest, invalidRequestErrMsg)
 
 		return
 	}
 
-	// TODO remove scopes and use handle after this task https://github.com/trustbloc/edge-adapter/issues/14
-	presentationDefinition, err := o.presentationExProvider.Create(verificationReq.Scopes)
+	cr := o.getAndUnsetConsentRequest(handle)
+	if cr == nil {
+		commhttp.WriteErrorResponse(rw, http.StatusBadRequest, invalidRequestErrMsg)
+
+		return
+	}
+
+	err := o.saveConsentRequest(req.Context(), cr)
 	if err != nil {
-		commhttp.WriteErrorResponse(rw, http.StatusBadRequest, err.Error())
+		commhttp.WriteErrorResponse(
+			rw, http.StatusInternalServerError, fmt.Sprintf("failed to save consent request : %s", err))
 
 		return
 	}
 
 	rw.WriteHeader(http.StatusOK)
-	commhttp.WriteResponse(rw, presentationDefinition)
+	commhttp.WriteResponse(rw, cr.pd)
+}
+
+func (o *Operation) saveConsentRequest(ctx context.Context, r *consentRequest) (errResult error) {
+	trx, err := o.trxProvider(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("failed to obtain a db transaction : %w", err)
+	}
+
+	defer func() {
+		switch errResult {
+		case nil:
+			errResult = trx.Commit()
+		default:
+			errRollback := trx.Rollback()
+			if errRollback != nil {
+				errResult = errors.Wrap(errResult, errRollback.Error())
+			}
+		}
+	}()
+
+	user, err := o.users.FindBySub(r.cr.GetPayload().Subject)
+	if err != nil {
+		return fmt.Errorf("failed to find user with sub=%s : %w", r.cr.GetPayload().Subject, err)
+	}
+
+	oidcReq, err := o.oidcRequests.FindByUserSubAndRPClientID(user.Sub, r.cr.GetPayload().Client.ClientID)
+	if err != nil {
+		return fmt.Errorf(
+			"failed to find oidc request for sub=%s clientID=%s : %w",
+			user.Sub, r.cr.GetPayload().Client.ClientID, err)
+	}
+
+	oidcReq.PresDef = r.pd
+
+	err = o.oidcRequests.Update(oidcReq)
+	if err != nil {
+		return fmt.Errorf("failed to update oidc request with id=%d: %w", oidcReq.ID, err)
+	}
+
+	return nil
 }
 
 // Frontend submits the user's presentation for evaluation.

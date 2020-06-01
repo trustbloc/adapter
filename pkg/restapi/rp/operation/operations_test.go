@@ -6,13 +6,12 @@ SPDX-License-Identifier: Apache-2.0
 package operation
 
 import (
-	"bytes"
 	"context"
 	"database/sql"
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io/ioutil"
+	"math/rand"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -60,7 +59,7 @@ func TestHydraLoginHandler(t *testing.T) {
 		require.NoError(t, err)
 
 		r := &httptest.ResponseRecorder{}
-		o.hydraLoginHandler(r, newHydraRequest(t))
+		o.hydraLoginHandler(r, newHydraLoginRequest(t))
 
 		require.Equal(t, http.StatusFound, r.Code)
 	})
@@ -86,7 +85,7 @@ func TestHydraLoginHandler(t *testing.T) {
 		})
 		require.NoError(t, err)
 		w := &httptest.ResponseRecorder{}
-		o.hydraLoginHandler(w, newHydraRequest(t))
+		o.hydraLoginHandler(w, newHydraLoginRequest(t))
 		require.Equal(t, http.StatusFound, w.Code)
 		require.Equal(t, w.Header().Get("Location"), redirectURL)
 	})
@@ -109,7 +108,7 @@ func TestHydraLoginHandler(t *testing.T) {
 		})
 		require.NoError(t, err)
 		w := &httptest.ResponseRecorder{}
-		o.hydraLoginHandler(w, newHydraRequest(t))
+		o.hydraLoginHandler(w, newHydraLoginRequest(t))
 		require.Equal(t, http.StatusInternalServerError, w.Code)
 	})
 	t.Run("error while accepting login request at hydra", func(t *testing.T) {
@@ -129,7 +128,7 @@ func TestHydraLoginHandler(t *testing.T) {
 		})
 		require.NoError(t, err)
 		w := &httptest.ResponseRecorder{}
-		o.hydraLoginHandler(w, newHydraRequest(t))
+		o.hydraLoginHandler(w, newHydraLoginRequest(t))
 		require.Equal(t, http.StatusInternalServerError, w.Code)
 	})
 }
@@ -137,6 +136,7 @@ func TestHydraLoginHandler(t *testing.T) {
 func TestOidcCallbackHandler(t *testing.T) {
 	t.Run("redirects to hydra", func(t *testing.T) {
 		const redirectURL = "http://hydra.example.com"
+		const state = "123"
 		const code = "test_code"
 		const clientID = "test_client_id"
 
@@ -159,13 +159,17 @@ func TestOidcCallbackHandler(t *testing.T) {
 				return &stubTrx{}, nil
 			},
 			UsersDAO:        &stubUsersDAO{},
-			OIDCrequestsDAO: &stubOidcRequestsDAO{},
+			OIDCRequestsDAO: &stubOidcRequestsDAO{},
+			RelyingPartiesDAO: &stubRelyingPartiesDAO{
+				findByClientIDFunc: func(id string) (*db.RelyingParty, error) {
+					require.Equal(t, clientID, id)
+					return &db.RelyingParty{ClientID: id}, nil
+				},
+			},
 		})
 		require.NoError(t, err)
 
-		const state = "123"
-
-		c.setLoginRequestForState(state, &models.LoginRequest{})
+		c.setLoginRequestForState(state, &models.LoginRequest{Client: &models.OAuth2Client{ClientID: clientID}})
 
 		r := &httptest.ResponseRecorder{}
 		c.oidcCallbackHandler(r, newOidcCallbackRequest(t, state, code))
@@ -238,13 +242,18 @@ func TestOidcCallbackHandler(t *testing.T) {
 			},
 			TrxProvider:     func(context.Context, *sql.TxOptions) (Trx, error) { return &stubTrx{}, nil },
 			UsersDAO:        &stubUsersDAO{},
-			OIDCrequestsDAO: &stubOidcRequestsDAO{},
+			OIDCRequestsDAO: &stubOidcRequestsDAO{},
+			RelyingPartiesDAO: &stubRelyingPartiesDAO{
+				findByClientIDFunc: func(id string) (*db.RelyingParty, error) {
+					return &db.RelyingParty{}, nil
+				},
+			},
 		})
 		require.NoError(t, err)
 
 		const state = "123"
 
-		c.setLoginRequestForState(state, &models.LoginRequest{})
+		c.setLoginRequestForState(state, &models.LoginRequest{Client: &models.OAuth2Client{}})
 
 		r := &httptest.ResponseRecorder{}
 		c.oidcCallbackHandler(r, newOidcCallbackRequest(t, state, "code"))
@@ -264,12 +273,17 @@ func TestSaveUserAndRequest(t *testing.T) {
 			UsersDAO: &stubUsersDAO{
 				insertErr: errors.New("test"),
 			},
+			RelyingPartiesDAO: &stubRelyingPartiesDAO{
+				findByClientIDFunc: func(id string) (*db.RelyingParty, error) {
+					return &db.RelyingParty{}, nil
+				},
+			},
 		})
 		require.NoError(t, err)
 
 		err = c.saveUserAndRequest(
 			context.Background(),
-			&models.LoginRequest{},
+			&models.LoginRequest{Client: &models.OAuth2Client{}},
 			"sub",
 		)
 		require.Error(t, err)
@@ -283,15 +297,20 @@ func TestSaveUserAndRequest(t *testing.T) {
 			},
 			TrxProvider: func(context.Context, *sql.TxOptions) (Trx, error) { return &stubTrx{}, nil },
 			UsersDAO:    &stubUsersDAO{},
-			OIDCrequestsDAO: &stubOidcRequestsDAO{
+			OIDCRequestsDAO: &stubOidcRequestsDAO{
 				insertErr: errors.New("test"),
+			},
+			RelyingPartiesDAO: &stubRelyingPartiesDAO{
+				findByClientIDFunc: func(id string) (*db.RelyingParty, error) {
+					return &db.RelyingParty{}, nil
+				},
 			},
 		})
 		require.NoError(t, err)
 
 		err = c.saveUserAndRequest(
 			context.Background(),
-			&models.LoginRequest{},
+			&models.LoginRequest{Client: &models.OAuth2Client{}},
 			"sub",
 		)
 		require.Error(t, err)
@@ -299,60 +318,311 @@ func TestSaveUserAndRequest(t *testing.T) {
 }
 
 func TestHydraConsentHandler(t *testing.T) {
-	c, err := New(&Config{})
-	require.NoError(t, err)
+	t.Run("requiring user consent", func(t *testing.T) {
+		t.Run("redirects to consent ui with handle", func(t *testing.T) {
+			uiEndpoint := "http://ui.example.com"
+			challenge := uuid.New().String()
 
-	r := &httptest.ResponseRecorder{}
-	c.hydraConsentHandler(r, nil)
+			c, err := New(&Config{
+				UIEndpoint: uiEndpoint,
+				Hydra: &stubHydra{
+					getConsentRequestFunc: func(r *admin.GetConsentRequestParams) (*admin.GetConsentRequestOK, error) {
+						require.Equal(t, challenge, r.ConsentChallenge)
+						return &admin.GetConsentRequestOK{Payload: &models.ConsentRequest{
+							Skip: false,
+						}}, nil
+					},
+				},
+				PresentationExProvider: mockPresentationDefinitionsProvider(),
+			})
+			require.NoError(t, err)
 
-	require.Equal(t, http.StatusOK, r.Code)
+			w := &httptest.ResponseRecorder{}
+			c.hydraConsentHandler(w, newHydraConsentRequest(t, challenge))
+
+			require.Equal(t, http.StatusFound, w.Code)
+
+			expected, err := url.Parse(uiEndpoint)
+			require.NoError(t, err)
+			redirectURL, err := url.Parse(w.Header().Get("location"))
+			require.NoError(t, err)
+			require.Equal(t, expected.Scheme, redirectURL.Scheme)
+			require.Equal(t, expected.Host, redirectURL.Host)
+			handle := redirectURL.Query().Get("pd")
+			require.NotEmpty(t, handle)
+		})
+
+		t.Run("bad request if consent challenge is missing", func(t *testing.T) {
+			c, err := New(&Config{})
+			require.NoError(t, err)
+			w := &httptest.ResponseRecorder{}
+			c.hydraConsentHandler(w, newHydraRequestNoChallenge(t))
+			require.Equal(t, http.StatusBadRequest, w.Code)
+		})
+
+		t.Run("internal server error if hydra fails to deliver consent request details", func(t *testing.T) {
+			c, err := New(&Config{
+				Hydra: &stubHydra{getConsentRequestFunc: func(*admin.GetConsentRequestParams) (*admin.GetConsentRequestOK, error) {
+					return nil, errors.New("test")
+				}},
+			})
+			require.NoError(t, err)
+			w := &httptest.ResponseRecorder{}
+			c.hydraConsentHandler(w, newHydraConsentRequest(t, "challenge"))
+			require.Equal(t, http.StatusInternalServerError, w.Code)
+		})
+
+		t.Run("internal server error if presentation-exchange provider fails", func(t *testing.T) {
+			c, err := New(&Config{
+				Hydra: &stubHydra{getConsentRequestFunc: func(*admin.GetConsentRequestParams) (*admin.GetConsentRequestOK, error) {
+					return &admin.GetConsentRequestOK{Payload: &models.ConsentRequest{Skip: false}}, nil
+				}},
+				PresentationExProvider: &mockPresentationExProvider{createErr: errors.New("test")},
+			})
+			require.NoError(t, err)
+			w := &httptest.ResponseRecorder{}
+			c.hydraConsentHandler(w, newHydraConsentRequest(t, "challenge"))
+			require.Equal(t, http.StatusInternalServerError, w.Code)
+		})
+	})
+
+	t.Run("skipping user consent", func(t *testing.T) {
+		t.Run("redirects to hydra", func(t *testing.T) {
+			const redirectTo = "http://hydra.example.com"
+			challenge := uuid.New().String()
+
+			c, err := New(&Config{
+				Hydra: &stubHydra{
+					getConsentRequestFunc: func(r *admin.GetConsentRequestParams) (*admin.GetConsentRequestOK, error) {
+						require.Equal(t, challenge, r.ConsentChallenge)
+						return &admin.GetConsentRequestOK{Payload: &models.ConsentRequest{
+							Skip:      true,
+							Challenge: challenge,
+						}}, nil
+					},
+					acceptConsentRequestFunc: func(params *admin.AcceptConsentRequestParams) (*admin.AcceptConsentRequestOK, error) {
+						require.Equal(t, challenge, params.ConsentChallenge)
+						return &admin.AcceptConsentRequestOK{Payload: &models.CompletedRequest{
+							RedirectTo: redirectTo,
+						}}, nil
+					},
+				},
+				PresentationExProvider: mockPresentationDefinitionsProvider(),
+			})
+			require.NoError(t, err)
+
+			w := &httptest.ResponseRecorder{}
+			c.hydraConsentHandler(w, newHydraConsentRequest(t, challenge))
+
+			require.Equal(t, http.StatusFound, w.Code)
+			require.Equal(t, redirectTo, w.Header().Get("location"))
+		})
+
+		t.Run("internal server error if hydra fails to accept consent request", func(t *testing.T) {
+			c, err := New(&Config{
+				Hydra: &stubHydra{
+					getConsentRequestFunc: func(r *admin.GetConsentRequestParams) (*admin.GetConsentRequestOK, error) {
+						return &admin.GetConsentRequestOK{Payload: &models.ConsentRequest{
+							Skip: true,
+						}}, nil
+					},
+					acceptConsentRequestFunc: func(params *admin.AcceptConsentRequestParams) (*admin.AcceptConsentRequestOK, error) {
+						return nil, errors.New("test")
+					},
+				},
+			})
+			require.NoError(t, err)
+
+			w := &httptest.ResponseRecorder{}
+			c.hydraConsentHandler(w, newHydraConsentRequest(t, "challenge"))
+			require.Equal(t, http.StatusInternalServerError, w.Code)
+		})
+	})
+}
+
+func TestSaveConsentRequest(t *testing.T) {
+	t.Run("wraps error from trx provider", func(t *testing.T) {
+		expected := errors.New("test")
+		c, err := New(&Config{
+			TrxProvider: func(context.Context, *sql.TxOptions) (Trx, error) {
+				return nil, expected
+			},
+		})
+		require.NoError(t, err)
+
+		err = c.saveConsentRequest(context.Background(), &consentRequest{})
+		require.Error(t, err)
+		require.True(t, errors.Is(err, expected))
+	})
+
+	t.Run("wraps error from user DAO", func(t *testing.T) {
+		expected := errors.New("test")
+		c, err := New(&Config{
+			TrxProvider: func(context.Context, *sql.TxOptions) (Trx, error) {
+				return &stubTrx{}, nil
+			},
+			UsersDAO: &stubUsersDAO{
+				findBySubFunc: func(string) (*db.EndUser, error) {
+					return nil, expected
+				},
+			},
+		})
+		require.NoError(t, err)
+
+		err = c.saveConsentRequest(context.Background(), &consentRequest{
+			cr: &admin.GetConsentRequestOK{Payload: &models.ConsentRequest{}},
+		})
+		require.Error(t, err)
+		require.True(t, errors.Is(err, expected))
+	})
+
+	t.Run("wraps error from oidcrequests DAO", func(t *testing.T) {
+		t.Run("when searching", func(t *testing.T) {
+			expected := errors.New("test")
+			c, err := New(&Config{
+				TrxProvider: func(context.Context, *sql.TxOptions) (Trx, error) {
+					return &stubTrx{}, nil
+				},
+				UsersDAO: &stubUsersDAO{
+					findBySubFunc: func(string) (*db.EndUser, error) {
+						return &db.EndUser{}, nil
+					},
+				},
+				OIDCRequestsDAO: &stubOidcRequestsDAO{
+					findBySubAndClientIDFunc: func(string, string) (*db.OIDCRequest, error) {
+						return nil, expected
+					},
+				},
+			})
+			require.NoError(t, err)
+
+			err = c.saveConsentRequest(context.Background(), &consentRequest{
+				cr: &admin.GetConsentRequestOK{Payload: &models.ConsentRequest{
+					Client: &models.OAuth2Client{},
+				}},
+			})
+			require.Error(t, err)
+			require.True(t, errors.Is(err, expected))
+		})
+
+		t.Run("when updating", func(t *testing.T) {
+			expected := errors.New("test")
+			c, err := New(&Config{
+				TrxProvider: func(context.Context, *sql.TxOptions) (Trx, error) {
+					return &stubTrx{}, nil
+				},
+				UsersDAO: &stubUsersDAO{
+					findBySubFunc: func(string) (*db.EndUser, error) {
+						return &db.EndUser{}, nil
+					},
+				},
+				OIDCRequestsDAO: &stubOidcRequestsDAO{
+					findBySubAndClientIDFunc: func(string, string) (*db.OIDCRequest, error) {
+						return &db.OIDCRequest{}, nil
+					},
+					updateFunc: func(*db.OIDCRequest) error {
+						return expected
+					},
+				},
+			})
+			require.NoError(t, err)
+
+			err = c.saveConsentRequest(context.Background(), &consentRequest{
+				cr: &admin.GetConsentRequestOK{Payload: &models.ConsentRequest{
+					Client: &models.OAuth2Client{},
+				}},
+			})
+			require.Error(t, err)
+			require.True(t, errors.Is(err, expected))
+		})
+	})
 }
 
 func TestCreatePresentationDefinition(t *testing.T) {
 	t.Run("test success", func(t *testing.T) {
-		c, err := New(&Config{PresentationExProvider: &mockPresentationExProvider{
-			createValue: &presentationex.PresentationDefinitions{
-				InputDescriptors: []presentationex.InputDescriptors{{ID: "1"}}}}})
+		userSubject := uuid.New().String()
+		rpClientID := uuid.New().String()
+		handle := uuid.New().String()
+		presDefs := &presentationex.PresentationDefinitions{
+			InputDescriptors: []presentationex.InputDescriptors{{ID: uuid.New().String()}},
+		}
+
+		c, err := New(&Config{
+			PresentationExProvider: &mockPresentationExProvider{createValue: presDefs},
+			TrxProvider: func(context.Context, *sql.TxOptions) (Trx, error) {
+				return &stubTrx{}, nil
+			},
+			UsersDAO: &stubUsersDAO{
+				findBySubFunc: func(sub string) (*db.EndUser, error) {
+					require.Equal(t, userSubject, sub)
+					return &db.EndUser{Sub: sub}, nil
+				},
+			},
+			OIDCRequestsDAO: &stubOidcRequestsDAO{
+				findBySubAndClientIDFunc: func(sub, clientID string) (*db.OIDCRequest, error) {
+					require.Equal(t, userSubject, sub)
+					require.Equal(t, rpClientID, clientID)
+					return &db.OIDCRequest{
+						ID:             rand.Int63(),
+						EndUserID:      rand.Int63(),
+						RelyingPartyID: rand.Int63(),
+						Scopes:         []string{"test"},
+					}, nil
+				},
+				updateFunc: func(r *db.OIDCRequest) error {
+					require.Equal(t, presDefs, r.PresDef)
+					return nil
+				},
+			},
+		})
 		require.NoError(t, err)
 
-		reqBytes, err := json.Marshal(CreatePresentationDefinitionReq{Scopes: []string{"scope1", "scope2"}})
-		require.NoError(t, err)
+		c.setConsentRequest(handle, &consentRequest{
+			pd: presDefs,
+			cr: &admin.GetConsentRequestOK{Payload: &models.ConsentRequest{
+				Subject: userSubject,
+				Client:  &models.OAuth2Client{ClientID: rpClientID},
+			}},
+		})
 
 		r := httptest.NewRecorder()
-		c.createPresentationDefinition(r, &http.Request{Body: ioutil.NopCloser(bytes.NewReader(reqBytes))})
+		c.createPresentationDefinition(r, newCreatePresentationDefinitionRequest(t, handle))
 
 		require.Equal(t, http.StatusOK, r.Code)
 
 		var resp presentationex.PresentationDefinitions
 		require.NoError(t, json.Unmarshal(r.Body.Bytes(), &resp))
 
-		require.Equal(t, "1", resp.InputDescriptors[0].ID)
+		require.Equal(t, presDefs, &resp)
 	})
 
-	t.Run("test failure from create presentation definition request", func(t *testing.T) {
-		c, err := New(&Config{PresentationExProvider: &mockPresentationExProvider{
-			createErr: fmt.Errorf("failed to create presentation definition request")}})
-		require.NoError(t, err)
-
-		reqBytes, err := json.Marshal(CreatePresentationDefinitionReq{Scopes: []string{"scope1", "scope2"}})
-		require.NoError(t, err)
-
-		r := httptest.NewRecorder()
-		c.createPresentationDefinition(r, &http.Request{Body: ioutil.NopCloser(bytes.NewReader(reqBytes))})
-
-		require.Equal(t, http.StatusBadRequest, r.Code)
-		require.Contains(t, r.Body.String(), "failed to create presentation definition request")
-	})
-
-	t.Run("test failure from decode request", func(t *testing.T) {
+	t.Run("bad request if handle is invalid", func(t *testing.T) {
 		c, err := New(&Config{})
 		require.NoError(t, err)
 
+		c.setConsentRequest(uuid.New().String(), &consentRequest{
+			pd: &presentationex.PresentationDefinitions{},
+			cr: &admin.GetConsentRequestOK{Payload: &models.ConsentRequest{
+				Subject: uuid.New().String(),
+				Client:  &models.OAuth2Client{ClientID: uuid.New().String()},
+			}},
+		})
+
 		r := httptest.NewRecorder()
-		c.createPresentationDefinition(r, &http.Request{Body: ioutil.NopCloser(bytes.NewReader([]byte("w")))})
+		c.createPresentationDefinition(r, newCreatePresentationDefinitionRequest(t, "invalid"))
 
 		require.Equal(t, http.StatusBadRequest, r.Code)
 		require.Contains(t, r.Body.String(), "invalid request")
+	})
+
+	t.Run("bad request if handle is missing", func(t *testing.T) {
+		c, err := New(&Config{})
+		require.NoError(t, err)
+
+		w := httptest.NewRecorder()
+		c.createPresentationDefinition(
+			w, httptest.NewRequest(http.MethodGet, "http://adapter.example.com/createPresentation", nil))
+		require.Equal(t, http.StatusBadRequest, w.Code)
 	})
 }
 
@@ -398,8 +668,15 @@ func (m *mockPresentationExProvider) Create(scopes []string) (*presentationex.Pr
 	return m.createValue, m.createErr
 }
 
-func newHydraRequest(t *testing.T) *http.Request {
+func newHydraLoginRequest(t *testing.T) *http.Request {
 	u, err := url.Parse("http://example.com?login_challenge=" + uuid.New().String())
+	require.NoError(t, err)
+
+	return &http.Request{URL: u}
+}
+
+func newHydraConsentRequest(t *testing.T, challenge string) *http.Request {
+	u, err := url.Parse("http://example.com?consent_challenge=" + challenge)
 	require.NoError(t, err)
 
 	return &http.Request{URL: u}
@@ -421,9 +698,18 @@ func newHydraRequestNoChallenge(t *testing.T) *http.Request {
 	}
 }
 
+func newCreatePresentationDefinitionRequest(t *testing.T, handle string) *http.Request {
+	u, err := url.Parse(fmt.Sprintf("http://adapter.example.com?pd=%s", handle))
+	require.NoError(t, err)
+
+	return &http.Request{URL: u}
+}
+
 type stubHydra struct {
-	loginRequestFunc func(*admin.GetLoginRequestParams) (*admin.GetLoginRequestOK, error)
-	acceptLoginFunc  func(*admin.AcceptLoginRequestParams) (*admin.AcceptLoginRequestOK, error)
+	loginRequestFunc         func(*admin.GetLoginRequestParams) (*admin.GetLoginRequestOK, error)
+	acceptLoginFunc          func(*admin.AcceptLoginRequestParams) (*admin.AcceptLoginRequestOK, error)
+	getConsentRequestFunc    func(*admin.GetConsentRequestParams) (*admin.GetConsentRequestOK, error)
+	acceptConsentRequestFunc func(*admin.AcceptConsentRequestParams) (*admin.AcceptConsentRequestOK, error)
 }
 
 func (s *stubHydra) GetLoginRequest(params *admin.GetLoginRequestParams) (*admin.GetLoginRequestOK, error) {
@@ -432,6 +718,15 @@ func (s *stubHydra) GetLoginRequest(params *admin.GetLoginRequestParams) (*admin
 
 func (s *stubHydra) AcceptLoginRequest(params *admin.AcceptLoginRequestParams) (*admin.AcceptLoginRequestOK, error) {
 	return s.acceptLoginFunc(params)
+}
+
+func (s *stubHydra) GetConsentRequest(params *admin.GetConsentRequestParams) (*admin.GetConsentRequestOK, error) {
+	return s.getConsentRequestFunc(params)
+}
+
+func (s *stubHydra) AcceptConsentRequest(
+	params *admin.AcceptConsentRequestParams) (*admin.AcceptConsentRequestOK, error) {
+	return s.acceptConsentRequestFunc(params)
 }
 
 type stubOAuth2Config struct {
@@ -461,8 +756,9 @@ func (s stubTrx) Rollback() error {
 }
 
 type stubUsersDAO struct {
-	insertErr  error
-	insertFunc func(*db.EndUser) error
+	insertErr     error
+	insertFunc    func(*db.EndUser) error
+	findBySubFunc func(string) (*db.EndUser, error)
 }
 
 func (s *stubUsersDAO) Insert(u *db.EndUser) error {
@@ -477,9 +773,15 @@ func (s *stubUsersDAO) Insert(u *db.EndUser) error {
 	return nil
 }
 
+func (s *stubUsersDAO) FindBySub(sub string) (*db.EndUser, error) {
+	return s.findBySubFunc(sub)
+}
+
 type stubOidcRequestsDAO struct {
-	insertErr  error
-	insertFunc func(*db.OIDCRequest) error
+	insertErr                error
+	insertFunc               func(*db.OIDCRequest) error
+	findBySubAndClientIDFunc func(string, string) (*db.OIDCRequest, error)
+	updateFunc               func(request *db.OIDCRequest) error
 }
 
 func (s *stubOidcRequestsDAO) Insert(r *db.OIDCRequest) error {
@@ -492,4 +794,28 @@ func (s *stubOidcRequestsDAO) Insert(r *db.OIDCRequest) error {
 	}
 
 	return nil
+}
+
+func (s *stubOidcRequestsDAO) FindByUserSubAndRPClientID(sub, clientID string) (*db.OIDCRequest, error) {
+	return s.findBySubAndClientIDFunc(sub, clientID)
+}
+
+func (s *stubOidcRequestsDAO) Update(req *db.OIDCRequest) error {
+	return s.updateFunc(req)
+}
+
+type stubRelyingPartiesDAO struct {
+	findByClientIDFunc func(string) (*db.RelyingParty, error)
+}
+
+func (s *stubRelyingPartiesDAO) FindByClientID(clientID string) (*db.RelyingParty, error) {
+	return s.findByClientIDFunc(clientID)
+}
+
+func mockPresentationDefinitionsProvider() presentationExProvider {
+	return &mockPresentationExProvider{
+		createValue: &presentationex.PresentationDefinitions{
+			InputDescriptors: []presentationex.InputDescriptors{{ID: "1"}},
+		},
+	}
 }

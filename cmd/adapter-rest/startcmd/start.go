@@ -293,7 +293,8 @@ func addRPHandlers(parameters *adapterRestParameters, router *mux.Router) error 
 		Hydra:                  newHydraClient(hydraURL).Admin,
 		TrxProvider:            newTrxProvider(datasource),
 		UsersDAO:               db.NewEndUsers(datasource),
-		OIDCrequestsDAO:        db.NewOIDCRequests(datasource),
+		OIDCRequestsDAO:        db.NewOIDCRequests(datasource),
+		UIEndpoint:             uiEndpoint,
 	})
 	if err != nil {
 		return err
