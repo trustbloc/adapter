@@ -55,7 +55,7 @@ func TestOIDCRequests_Insert(t *testing.T) {
 	})
 }
 
-func TestOIDCRequests_FindBySubAndRPClientID(t *testing.T) {
+func TestOIDCRequests_FindBySubRPClientIDAndScopes(t *testing.T) {
 	t.Run("returns oidc request", func(t *testing.T) {
 		user := &EndUser{Sub: uuid.New().String()}
 		rp := &RelyingParty{ClientID: uuid.New().String()}
@@ -76,7 +76,7 @@ func TestOIDCRequests_FindBySubAndRPClientID(t *testing.T) {
 		err = NewOIDCRequests(db).Insert(expected)
 		require.NoError(t, err)
 
-		result, err := NewOIDCRequests(db).FindByUserSubAndRPClientID(user.Sub, rp.ClientID)
+		result, err := NewOIDCRequests(db).FindBySubRPClientIDAndScopes(user.Sub, rp.ClientID, expected.Scopes)
 		require.NoError(t, err)
 		require.Equal(t, expected, result)
 	})
@@ -86,7 +86,7 @@ func TestOIDCRequests_FindBySubAndRPClientID(t *testing.T) {
 		err := db.Close()
 		require.NoError(t, err)
 
-		_, err = NewOIDCRequests(db).FindByUserSubAndRPClientID("abc", "123")
+		_, err = NewOIDCRequests(db).FindBySubRPClientIDAndScopes("abc", "123", []string{"xyz"})
 		require.Error(t, err)
 	})
 }
@@ -121,12 +121,13 @@ func verifyOidcRequest(t *testing.T, expected *OIDCRequest, db *sql.DB) {
 	result := &OIDCRequest{}
 
 	var (
-		scopes  string
-		presDef string
+		scopes     string
+		scopesHash string
+		presDef    string
 	)
 
 	err := db.QueryRow("select * from oidc_request where id = ?", expected.ID).
-		Scan(&result.ID, &result.EndUserID, &result.RelyingPartyID, &scopes, &presDef)
+		Scan(&result.ID, &result.EndUserID, &result.RelyingPartyID, &scopes, &scopesHash, &presDef)
 	require.NoError(t, err)
 
 	result.Scopes = strings.Split(scopes, ",")

@@ -7,7 +7,9 @@ SPDX-License-Identifier: Apache-2.0
 package db
 
 import (
+	"crypto/sha256"
 	"database/sql"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"strings"
@@ -17,8 +19,8 @@ import (
 
 //nolint:lll
 const (
-	sqlInsertOIDCRequest            = "insert into oidc_request (end_user_id, relying_party_id, scopes, pres_def) values (?, ?, ?, ?)"
-	sqlUpdateOIDCRequest            = `update oidc_request set end_user_id = ?, relying_party_id = ?, scopes = ?, pres_def = ? where id = ?`
+	sqlInsertOIDCRequest            = "insert into oidc_request (end_user_id, relying_party_id, scopes, scopes_hash, pres_def) values (?, ?, ?, ?, ?)"
+	sqlUpdateOIDCRequest            = `update oidc_request set end_user_id = ?, relying_party_id = ?, scopes = ?, scopes_hash = ?, pres_def = ? where id = ?`
 	sqlSelectOIDCRequestByEndUserID = `
 select oidc_request.*
 from oidc_request
@@ -28,6 +30,7 @@ inner join relying_party
 	on oidc_request.relying_party_id = relying_party.id
 where end_user.sub = ?
 and relying_party.client_id = ?
+and oidc_request.scopes_hash = ?
 `
 )
 
@@ -57,7 +60,12 @@ func (o *OIDCRequests) Insert(r *OIDCRequest) error {
 		return err
 	}
 
-	result, err := o.DB.Exec(sqlInsertOIDCRequest, r.EndUserID, r.RelyingPartyID, strings.Join(r.Scopes, ","), presDef)
+	scopesHash := base64.StdEncoding.
+		WithPadding(base64.NoPadding).
+		EncodeToString(sha256.New().Sum([]byte(strings.Join(r.Scopes, ""))))
+
+	result, err := o.DB.Exec(
+		sqlInsertOIDCRequest, r.EndUserID, r.RelyingPartyID, strings.Join(r.Scopes, ","), scopesHash, presDef)
 	if err != nil {
 		return fmt.Errorf("failed to insert oidc request %+v : %w", r, err)
 	}
@@ -70,24 +78,27 @@ func (o *OIDCRequests) Insert(r *OIDCRequest) error {
 	return nil
 }
 
-// FindByUserSubAndRPClientID fetches the OIDC request sent by `clientID` with `sub` as the user subject.
-// TODO FindByUserSubAndRPClientID should return a list of oidc requests with just sub and clientID as args.
+// FindBySubRPClientIDAndScopes fetches the OIDC request sent by `clientID` with `sub` as the user subject.
+// TODO FindBySubRPClientIDAndScopes should return a list of oidc requests with just sub and clientID as args.
 //  How can we triangulate a single record? https://github.com/trustbloc/edge-adapter/issues/30
-func (o *OIDCRequests) FindByUserSubAndRPClientID(sub, clientID string) (*OIDCRequest, error) {
+func (o *OIDCRequests) FindBySubRPClientIDAndScopes(sub, clientID string, scopes []string) (*OIDCRequest, error) {
 	var (
-		scopes  string
-		presDef string
+		scopesInDB string
+		presDef    string
+		scopesHash = base64.StdEncoding.
+				WithPadding(base64.NoPadding).
+				EncodeToString(sha256.New().Sum([]byte(strings.Join(scopes, ""))))
 	)
 
 	result := &OIDCRequest{}
 
-	err := o.DB.QueryRow(sqlSelectOIDCRequestByEndUserID, sub, clientID).
-		Scan(&result.ID, &result.EndUserID, &result.RelyingPartyID, &scopes, &presDef)
+	err := o.DB.QueryRow(sqlSelectOIDCRequestByEndUserID, sub, clientID, scopesHash).
+		Scan(&result.ID, &result.EndUserID, &result.RelyingPartyID, &scopesInDB, &scopesHash, &presDef)
 	if err != nil {
 		return nil, fmt.Errorf("failed to query oidc request by user sub : %w", err)
 	}
 
-	result.Scopes = strings.Split(scopes, ",")
+	result.Scopes = strings.Split(scopesInDB, ",")
 	result.PresDef = &presentationex.PresentationDefinitions{}
 
 	err = json.Unmarshal([]byte(presDef), &result.PresDef)
@@ -105,8 +116,12 @@ func (o *OIDCRequests) Update(r *OIDCRequest) error {
 		return err
 	}
 
+	scopesHash := base64.StdEncoding.
+		WithPadding(base64.NoPadding).
+		EncodeToString(sha256.New().Sum([]byte(strings.Join(r.Scopes, ""))))
+
 	result, err := o.DB.Exec(
-		sqlUpdateOIDCRequest, r.EndUserID, r.RelyingPartyID, strings.Join(r.Scopes, ","), presDef, r.ID)
+		sqlUpdateOIDCRequest, r.EndUserID, r.RelyingPartyID, strings.Join(r.Scopes, ","), scopesHash, presDef, r.ID)
 	if err != nil {
 		return fmt.Errorf("update oidc_request : %w", err)
 	}

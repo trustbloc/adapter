@@ -78,7 +78,7 @@ type UsersDAO interface {
 // OidcRequestsDAO is the OIDCRequest DAO.
 type OidcRequestsDAO interface {
 	Insert(*db.OIDCRequest) error
-	FindByUserSubAndRPClientID(string, string) (*db.OIDCRequest, error)
+	FindBySubRPClientIDAndScopes(string, string, []string) (*db.OIDCRequest, error)
 	Update(*db.OIDCRequest) error
 }
 
@@ -161,7 +161,6 @@ func (o *Operation) GetRESTHandlers() []Handler {
 }
 
 // Hydra redirects the user here in the authentication phase.
-// TODO redirect to UI when not skipping
 // TODO ensure request's origin is the same as the hydraUrl
 //  https://stackoverflow.com/q/27234861/1623885
 func (o *Operation) hydraLoginHandler(w http.ResponseWriter, r *http.Request) {
@@ -488,7 +487,8 @@ func (o *Operation) saveConsentRequest(ctx context.Context, r *consentRequest) (
 		return fmt.Errorf("failed to find user with sub=%s : %w", r.cr.GetPayload().Subject, err)
 	}
 
-	oidcReq, err := o.oidcRequests.FindByUserSubAndRPClientID(user.Sub, r.cr.GetPayload().Client.ClientID)
+	oidcReq, err := o.oidcRequests.FindBySubRPClientIDAndScopes(
+		user.Sub, r.cr.GetPayload().Client.ClientID, r.cr.GetPayload().RequestedScope)
 	if err != nil {
 		return fmt.Errorf(
 			"failed to find oidc request for sub=%s clientID=%s : %w",
