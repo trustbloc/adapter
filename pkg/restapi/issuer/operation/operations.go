@@ -11,6 +11,7 @@ import (
 	"net/http"
 
 	"github.com/hyperledger/aries-framework-go/pkg/client/didexchange"
+	"github.com/trustbloc/edge-core/pkg/log"
 
 	"github.com/trustbloc/edge-adapter/pkg/aries"
 	"github.com/trustbloc/edge-adapter/pkg/internal/common/support"
@@ -21,6 +22,8 @@ const (
 	// API endpoints
 	generateInvitationEndpoint = "/didexchange/invitation"
 )
+
+var logger = log.New("edge-adapter/issuer-operations")
 
 // Handler http handler for each controller API endpoint.
 type Handler interface {
@@ -53,14 +56,18 @@ func (o *Operation) GetRESTHandlers() []Handler {
 	}
 }
 
-func (o *Operation) generateInvitation(rw http.ResponseWriter, r *http.Request) {
+func (o *Operation) generateInvitation(rw http.ResponseWriter, _ *http.Request) {
+	logger.Debugf("handling request to generate did-exchange invitation")
+
 	invitation, err := o.didExClient.CreateInvitation("issuer")
 	if err != nil {
-		commhttp.WriteErrorResponse(rw, http.StatusInternalServerError,
-			fmt.Sprintf("failed to create invitation : %s", err.Error()))
+		msg := fmt.Sprintf("failed to create invitation : %s", err.Error())
+		logger.Errorf(msg)
+		commhttp.WriteErrorResponse(rw, http.StatusInternalServerError, msg)
 
 		return
 	}
 
 	commhttp.WriteResponse(rw, invitation)
+	logger.Debugf("response: %+v", invitation)
 }

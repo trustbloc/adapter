@@ -20,8 +20,8 @@ import (
 	"github.com/gorilla/mux"
 	"github.com/ory/hydra-client-go/client"
 	"github.com/rs/cors"
-	log "github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
+	"github.com/trustbloc/edge-core/pkg/log"
 	cmdutils "github.com/trustbloc/edge-core/pkg/utils/cmd"
 	tlsutils "github.com/trustbloc/edge-core/pkg/utils/tls"
 	"github.com/xo/dburl"
@@ -35,6 +35,8 @@ import (
 	// mysql db driver
 	_ "github.com/go-sql-driver/mysql"
 )
+
+var logger = log.New("edge-adapter")
 
 const (
 	hostURLFlagName      = "host-url"
@@ -239,7 +241,7 @@ func startAdapterService(parameters *adapterRestParameters, srv server) error {
 		return err
 	}
 
-	log.Debugf("root ca's %v", rootCAs)
+	logger.Debugf("root ca's %v", rootCAs)
 
 	router := mux.NewRouter()
 
@@ -264,7 +266,7 @@ func startAdapterService(parameters *adapterRestParameters, srv server) error {
 		return fmt.Errorf("invalid mode : %s", parameters.mode)
 	}
 
-	log.Infof("starting %s adapter rest server on host %s", parameters.mode, parameters.hostURL)
+	logger.Infof("starting %s adapter rest server on host %s", parameters.mode, parameters.hostURL)
 
 	return srv.ListenAndServe(parameters.hostURL, constructCORSHandler(router))
 }
@@ -371,8 +373,8 @@ func initDB(dsn string) (*sql.DB, error) {
 		},
 		backoff.WithMaxRetries(backoff.NewConstantBackOff(sleep), numRetries),
 		func(retryErr error, t time.Duration) {
-			fmt.Printf(
-				"warning - failed to connect to database, will sleep for %d before trying again : %s\n",
+			logger.Warnf(
+				"failed to connect to database, will sleep for %d before trying again : %s\n",
 				t, retryErr)
 		},
 	)

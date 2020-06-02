@@ -19,6 +19,7 @@ import (
 	"github.com/ory/hydra-client-go/client/admin"
 	"github.com/ory/hydra-client-go/models"
 	"github.com/pkg/errors"
+	"github.com/trustbloc/edge-core/pkg/log"
 
 	"github.com/trustbloc/edge-adapter/pkg/db"
 	"github.com/trustbloc/edge-adapter/pkg/internal/common/support"
@@ -40,6 +41,8 @@ const (
 const (
 	invalidRequestErrMsg = "invalid request"
 )
+
+var logger = log.New("edge-adapter/rp-operations")
 
 // Handler http handler for each controller API endpoint.
 type Handler interface {
@@ -162,9 +165,13 @@ func (o *Operation) GetRESTHandlers() []Handler {
 // TODO ensure request's origin is the same as the hydraUrl
 //  https://stackoverflow.com/q/27234861/1623885
 func (o *Operation) hydraLoginHandler(w http.ResponseWriter, r *http.Request) {
+	logger.Debugf("hydra login request: %s", r.URL.String())
+
 	challenge := r.URL.Query().Get("login_challenge")
 	if challenge == "" {
-		commhttp.WriteErrorResponse(w, http.StatusBadRequest, "missing challenge")
+		logger.Warnf("missing challenge on login request")
+		commhttp.WriteErrorResponse(w, http.StatusBadRequest, invalidRequestErrMsg)
+
 		return
 	}
 
@@ -174,24 +181,34 @@ func (o *Operation) hydraLoginHandler(w http.ResponseWriter, r *http.Request) {
 
 	login, err := o.hydra.GetLoginRequest(req)
 	if err != nil {
-		commhttp.WriteErrorResponse(
-			w, http.StatusInternalServerError, fmt.Sprintf("failed to contact hydra : %s", err.Error()))
+		msg := fmt.Sprintf("failed to contact hydra : %s", err.Error())
+		logger.Errorf(msg)
+		commhttp.WriteErrorResponse(w, http.StatusInternalServerError, msg)
+
 		return
 	}
 
 	if login.GetPayload().Skip {
+		logger.Debugf("hydra instruction to skip login screen")
+
 		err := acceptLoginAndRedirectToHydra(w, r, o.hydra, login.GetPayload())
 		if err != nil {
-			commhttp.WriteErrorResponse(
-				w, http.StatusInternalServerError, fmt.Sprintf("failed to accept login request : %s", err.Error()))
+			msg := fmt.Sprintf("failed to accept login request : %s", err.Error())
+			logger.Errorf(msg)
+			commhttp.WriteErrorResponse(w, http.StatusInternalServerError, msg)
 		}
 
 		return
 	}
 
 	state := uuid.New().String()
+
 	o.setLoginRequestForState(state, login.GetPayload())
-	http.Redirect(w, r, o.oauth2Config.AuthCodeURL(state), http.StatusFound)
+
+	authURL := o.oauth2Config.AuthCodeURL(state)
+
+	http.Redirect(w, r, authURL, http.StatusFound)
+	logger.Debugf("redirected to: %s", authURL)
 }
 
 func (o *Operation) setLoginRequestForState(state string, request *models.LoginRequest) {
@@ -243,30 +260,38 @@ func acceptLoginAndRedirectToHydra(
 	}
 
 	http.Redirect(w, r, loginResponse.GetPayload().RedirectTo, http.StatusFound)
+	logger.Debugf("redirected to: %s", loginResponse.GetPayload().RedirectTo)
 
 	return nil
 }
 
 // OIDC provider redirects the user here after they've been authenticated.
 func (o *Operation) oidcCallbackHandler(w http.ResponseWriter, r *http.Request) {
+	logger.Debugf("oidc callback request: %s", r.URL.String())
 	login := o.getAndUnsetLoginRequest(r.URL.Query().Get("state"))
 
 	if login == nil {
-		commhttp.WriteErrorResponse(w, http.StatusBadRequest, "bad request")
+		logger.Warnf("missing state parameter in oidc callback request")
+		commhttp.WriteErrorResponse(w, http.StatusBadRequest, invalidRequestErrMsg)
+
 		return
 	}
 
 	idToken, err := o.oidc(r.URL.Query().Get("code"), r.Context())
 	if err != nil {
-		commhttp.WriteErrorResponse(
-			w, http.StatusInternalServerError, fmt.Sprintf("failed to exchange code for an id_token : %s", err))
+		msg := fmt.Sprintf("failed to exchange code for an id_token : %s", err)
+		logger.Errorf(msg)
+		commhttp.WriteErrorResponse(w, http.StatusInternalServerError, msg)
+
 		return
 	}
 
 	err = o.saveUserAndRequest(r.Context(), login, idToken.Subject)
 	if err != nil {
-		commhttp.WriteErrorResponse(w,
-			http.StatusInternalServerError, fmt.Sprintf("failed to save user and request : %s", err))
+		msg := fmt.Sprintf("failed to save user and request : %s", err)
+		logger.Errorf(msg)
+		commhttp.WriteErrorResponse(w, http.StatusInternalServerError, msg)
+
 		return
 	}
 
@@ -279,12 +304,15 @@ func (o *Operation) oidcCallbackHandler(w http.ResponseWriter, r *http.Request) 
 
 	resp, err := o.hydra.AcceptLoginRequest(accept)
 	if err != nil {
-		commhttp.WriteErrorResponse(w,
-			http.StatusInternalServerError, fmt.Sprintf("failed to accept login request at hydra : %s", err))
+		msg := fmt.Sprintf("failed to accept login request at hydra : %s", err)
+		logger.Errorf(msg)
+		commhttp.WriteErrorResponse(w, http.StatusInternalServerError, msg)
+
 		return
 	}
 
 	http.Redirect(w, r, resp.GetPayload().RedirectTo, http.StatusFound)
+	logger.Debugf("redirected to: %s", resp.GetPayload().RedirectTo)
 }
 
 func (o *Operation) saveUserAndRequest(ctx context.Context, login *models.LoginRequest, sub string) (errResult error) {
@@ -333,9 +361,13 @@ func (o *Operation) saveUserAndRequest(ctx context.Context, login *models.LoginR
 
 // Hydra redirects the user here in the consent phase.
 func (o *Operation) hydraConsentHandler(w http.ResponseWriter, r *http.Request) {
+	logger.Debugf("hydraConsentHandler request: " + r.URL.String())
+
 	challenge := r.URL.Query().Get("consent_challenge")
 	if challenge == "" {
+		logger.Warnf("missing consent_challenge")
 		commhttp.WriteErrorResponse(w, http.StatusBadRequest, invalidRequestErrMsg)
+
 		return
 	}
 
@@ -344,6 +376,7 @@ func (o *Operation) hydraConsentHandler(w http.ResponseWriter, r *http.Request) 
 
 	consent, err := o.hydra.GetConsentRequest(req)
 	if err != nil {
+		logger.Errorf("failed to get fetch consent request from hydra : %s", err)
 		commhttp.WriteErrorResponse(
 			w, http.StatusInternalServerError, fmt.Sprintf("failed to contact hydra : %s", err))
 
@@ -351,25 +384,14 @@ func (o *Operation) hydraConsentHandler(w http.ResponseWriter, r *http.Request) 
 	}
 
 	if consent.GetPayload().Skip {
-		params := admin.NewAcceptConsentRequestParamsWithContext(r.Context())
-
-		params.SetConsentChallenge(consent.GetPayload().Challenge)
-
-		accepted, acceptErr := o.hydra.AcceptConsentRequest(params)
-		if acceptErr != nil {
-			commhttp.WriteErrorResponse(
-				w, http.StatusInternalServerError, fmt.Sprintf("hydra failed to accept consent request : %s", acceptErr))
-
-			return
-		}
-
-		http.Redirect(w, r, accepted.GetPayload().RedirectTo, http.StatusFound)
+		o.skipConsentScreen(w, r, consent)
 
 		return
 	}
 
 	presentationDefinition, err := o.presentationExProvider.Create(consent.GetPayload().RequestedScope)
 	if err != nil {
+		logger.Errorf("failed to create presentation-exchange request: %s", err)
 		commhttp.WriteErrorResponse(
 			w, http.StatusInternalServerError, fmt.Sprintf("failed to create the presentation definition : %s", err))
 
@@ -382,14 +404,40 @@ func (o *Operation) hydraConsentHandler(w http.ResponseWriter, r *http.Request) 
 		pd: presentationDefinition,
 	})
 
-	http.Redirect(w, r, fmt.Sprintf("%s?pd=%s", o.uiEndpoint, handle), http.StatusFound)
+	redirectURL := fmt.Sprintf("%s?pd=%s", o.uiEndpoint, handle)
+
+	http.Redirect(w, r, redirectURL, http.StatusFound)
+	logger.Debugf("redirected to: %s", redirectURL)
+}
+
+func (o *Operation) skipConsentScreen(w http.ResponseWriter, r *http.Request, consent *admin.GetConsentRequestOK) {
+	logger.Debugf("skipping consent screen")
+
+	params := admin.NewAcceptConsentRequestParamsWithContext(r.Context())
+
+	params.SetConsentChallenge(consent.GetPayload().Challenge)
+
+	accepted, err := o.hydra.AcceptConsentRequest(params)
+	if err != nil {
+		logger.Errorf("failed to accept consent request at hydra: %s", err)
+		commhttp.WriteErrorResponse(
+			w, http.StatusInternalServerError, fmt.Sprintf("hydra failed to accept consent request : %s", err))
+
+		return
+	}
+
+	http.Redirect(w, r, accepted.GetPayload().RedirectTo, http.StatusFound)
+	logger.Debugf("redirected to: %s", accepted.GetPayload().RedirectTo)
 }
 
 // Frontend requests to create presentation definition.
 func (o *Operation) createPresentationDefinition(rw http.ResponseWriter, req *http.Request) {
+	logger.Debugf("createPresentationDefinition request: %s", req.URL.String())
+
 	// get the request
 	handle := req.URL.Query().Get("pd")
 	if handle == "" {
+		logger.Warnf("missing handle for presentation definition")
 		commhttp.WriteErrorResponse(rw, http.StatusBadRequest, invalidRequestErrMsg)
 
 		return
@@ -397,6 +445,7 @@ func (o *Operation) createPresentationDefinition(rw http.ResponseWriter, req *ht
 
 	cr := o.getAndUnsetConsentRequest(handle)
 	if cr == nil {
+		logger.Warnf("unrecognized handle for presentation definition: %s", handle)
 		commhttp.WriteErrorResponse(rw, http.StatusBadRequest, invalidRequestErrMsg)
 
 		return
@@ -404,6 +453,7 @@ func (o *Operation) createPresentationDefinition(rw http.ResponseWriter, req *ht
 
 	err := o.saveConsentRequest(req.Context(), cr)
 	if err != nil {
+		logger.Errorf("failed to save consent request: %s", err)
 		commhttp.WriteErrorResponse(
 			rw, http.StatusInternalServerError, fmt.Sprintf("failed to save consent request : %s", err))
 
@@ -412,6 +462,7 @@ func (o *Operation) createPresentationDefinition(rw http.ResponseWriter, req *ht
 
 	rw.WriteHeader(http.StatusOK)
 	commhttp.WriteResponse(rw, cr.pd)
+	logger.Debugf("wrote response: %+v", cr.pd)
 }
 
 func (o *Operation) saveConsentRequest(ctx context.Context, r *consentRequest) (errResult error) {
