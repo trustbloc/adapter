@@ -12,6 +12,7 @@ RP_ADAPTER_REST_IMAGE_NAME   ?= trustbloc/edge-adapter/rp-adapter-rest
 # Tool commands (overridable)
 ALPINE_VER ?= 3.11
 GO_VER ?= 1.14
+GOBIN_PATH=$(abspath .)/.build/bin
 
 .PHONY: all
 all: checks unit-test bdd-test
@@ -47,7 +48,8 @@ rp-adapter-vue:
 adapter-rest:
 	@echo "Building adapter-rest"
 	@mkdir -p ./.build/bin
-	@cd ${ADAPTER_REST_PATH} && go build -o ../../.build/bin/adapter-rest main.go
+	@GO111MODULE=off GOBIN=$(GOBIN_PATH) go get github.com/myitcv/gobin
+	@cd ${ADAPTER_REST_PATH} && $(GOBIN_PATH)/gobin -run github.com/gobuffalo/packr/v2/packr2@v2.8.0 build -o ../../.build/bin/adapter-rest main.go
 
 .PHONY: issuer-adapter-rest-docker
 issuer-adapter-rest-docker:

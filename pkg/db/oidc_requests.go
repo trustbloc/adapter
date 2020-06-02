@@ -15,23 +15,10 @@ import (
 	"github.com/trustbloc/edge-adapter/pkg/presentationex"
 )
 
-const (
-	ddlCreateOidcRequest = `
-CREATE TABLE oidc_request (
-    id int PRIMARY KEY AUTO_INCREMENT,
-    end_user_id int NOT NULL,
-	relying_party_id int NOT NULL,
-    scopes varchar(2000) NOT NULL,
-	pres_def text(65535),
-    FOREIGN KEY (end_user_id) REFERENCES end_user(id),
-    FOREIGN KEY (relying_party_id) REFERENCES relying_party(id)
-)`
-	ddlOidcRequestRelyingPartyIDIndex = `create index oidc_requests_rpid_idx on oidc_request(relying_party_id)`
-)
-
 //nolint:lll
 const (
 	sqlInsertOIDCRequest            = "insert into oidc_request (end_user_id, relying_party_id, scopes, pres_def) values (?, ?, ?, ?)"
+	sqlUpdateOIDCRequest            = `update oidc_request set end_user_id = ?, relying_party_id = ?, scopes = ?, pres_def = ? where id = ?`
 	sqlSelectOIDCRequestByEndUserID = `
 select oidc_request.*
 from oidc_request
@@ -42,7 +29,6 @@ inner join relying_party
 where end_user.sub = ?
 and relying_party.client_id = ?
 `
-	sqlUpdateOIDCRequest = `update oidc_request set end_user_id = ?, relying_party_id = ?, scopes = ?, pres_def = ? where id = ?`
 )
 
 // OIDCRequest is a Relying Party's OIDC request for user data.
