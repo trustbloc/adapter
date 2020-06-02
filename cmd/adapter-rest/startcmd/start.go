@@ -17,7 +17,6 @@ import (
 	"time"
 
 	"github.com/cenkalti/backoff"
-
 	"github.com/gorilla/mux"
 	"github.com/ory/hydra-client-go/client"
 	"github.com/rs/cors"
@@ -25,6 +24,7 @@ import (
 	"github.com/spf13/cobra"
 	cmdutils "github.com/trustbloc/edge-core/pkg/utils/cmd"
 	tlsutils "github.com/trustbloc/edge-core/pkg/utils/tls"
+	"github.com/xo/dburl"
 
 	"github.com/trustbloc/edge-adapter/pkg/db"
 	"github.com/trustbloc/edge-adapter/pkg/presentationex"
@@ -42,11 +42,11 @@ const (
 	hostURLFlagUsage     = "URL to run the adapter-rest instance on. Format: HostName:Port."
 	hostURLEnvKey        = "ADAPTER_REST_HOST_URL"
 
-	mysqlDatasourceFlagName  = "mysql-url"
-	mysqlDatasourceFlagUsage = "MySQL datasource URL with credentials if required," +
-		" eg. mysql://user:password@tcp(127.0.0.1:3306)/adapter." +
-		"Alternatively, this can be set with the following environment variable: " + mysqlDatasourceEnvKey
-	mysqlDatasourceEnvKey = "ADAPTER_REST_MYSQL_DATASOURCE"
+	datasourceNameFlagName  = "dsn"
+	datasourceNameFlagUsage = "Datasource Name with credentials if required," +
+		" eg. mysql://root:secret@localhost:3306/adapter" +
+		"Alternatively, this can be set with the following environment variable: " + datasourceNameEnvKey
+	datasourceNameEnvKey = "ADAPTER_REST_DSN"
 
 	oidcProviderURLFlagName  = "op-url"
 	oidcProviderURLFlagUsage = "URL for the OIDC provider." +
@@ -154,7 +154,7 @@ func getAdapterRestParameters(cmd *cobra.Command) (*adapterRestParameters, error
 		return nil, err
 	}
 
-	dbURL, err := cmdutils.GetUserSetVarFromString(cmd, mysqlDatasourceFlagName, mysqlDatasourceEnvKey, true)
+	dsn, err := cmdutils.GetUserSetVarFromString(cmd, datasourceNameFlagName, datasourceNameEnvKey, true)
 	if err != nil {
 		return nil, err
 	}
@@ -189,7 +189,7 @@ func getAdapterRestParameters(cmd *cobra.Command) (*adapterRestParameters, error
 		hostURL:                     hostURL,
 		tlsSystemCertPool:           tlsSystemCertPool,
 		tlsCACerts:                  tlsCACerts,
-		dsn:                         dbURL,
+		dsn:                         dsn,
 		oidcProviderURL:             oidcURL,
 		staticFiles:                 staticFiles,
 		presentationDefinitionsFile: presentationDefinitionsFile,
@@ -226,7 +226,7 @@ func createFlags(startCmd *cobra.Command) {
 	startCmd.Flags().StringP(tlsSystemCertPoolFlagName, "", "", tlsSystemCertPoolFlagUsage)
 	startCmd.Flags().StringArrayP(tlsCACertsFlagName, "", []string{}, tlsCACertsFlagUsage)
 	startCmd.Flags().StringP(oidcProviderURLFlagName, "", "", oidcProviderURLFlagUsage)
-	startCmd.Flags().StringP(mysqlDatasourceFlagName, "", "", mysqlDatasourceFlagUsage)
+	startCmd.Flags().StringP(datasourceNameFlagName, "", "", datasourceNameFlagUsage)
 	startCmd.Flags().StringP(staticFilesPathFlagName, "", "", staticFilesPathFlagUsage)
 	startCmd.Flags().StringP(presentationDefinitionsFlagName, "", "", presentationDefinitionsFlagUsage)
 	startCmd.Flags().StringP(hydraURLFlagName, "", "", hydraURLFlagUsage)
@@ -362,12 +362,10 @@ func initDB(dsn string) (*sql.DB, error) {
 
 	var dbms *sql.DB
 
-	// TODO support parsing the driverName from the DSN
-	//  https://github.com/trustbloc/edge-adapter/issues/23
 	err := backoff.RetryNotify(
 		func() error {
 			var openErr error
-			dbms, openErr = sql.Open("mysql", dsn)
+			dbms, openErr = dburl.Open(dsn)
 			return openErr
 		},
 		backoff.WithMaxRetries(backoff.NewConstantBackOff(sleep), numRetries),
