@@ -30,7 +30,7 @@ services:
       - ADAPTER_REST_HOST_URL=0.0.0.0:8070
       - ADAPTER_REST_TLS_CACERTS=/etc/tls/ec-cacert.pem
       - ADAPTER_REST_TLS_SYSTEMCERTPOOL=true
-      - ADAPTER_REST_MYSQL_DATASOURCE=root:secret@tcp(mysql:3306)/mysql
+      - ADAPTER_REST_DSN=mysql://root:secret@mysql:3306/mysql
       - ADAPTER_REST_OP_URL=http://PUT-SOMETHING-HERE.com
       - ADAPTER_REST_PRESENTATION_DEFINITIONS_FILE=/etc/testdata/presentationdefinitions.json
     ports:

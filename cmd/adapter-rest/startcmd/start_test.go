@@ -216,7 +216,7 @@ func TestStartCmdValidArgs(t *testing.T) {
 		"--" + modeFlagName, rpMode,
 		"--" + hostURLFlagName, "localhost:8080",
 		"--" + presentationDefinitionsFlagName, file.Name(),
-		"--" + mysqlDatasourceFlagName, fmt.Sprintf("mysql://root:secret@tcp(localhost:%d)/edgeadapter", containerPort),
+		"--" + datasourceNameFlagName, fmt.Sprintf("mysql://root:secret@localhost:%d/edgeadapter", containerPort),
 	}
 	startCmd.SetArgs(args)
 
