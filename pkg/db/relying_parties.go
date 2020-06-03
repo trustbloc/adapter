@@ -12,15 +12,6 @@ import (
 )
 
 const (
-	ddlCreateRelyingParty = `
-CREATE TABLE relying_party (
-    id int PRIMARY KEY AUTO_INCREMENT,
-	client_id varchar(255) NOT NULL
-)`
-	ddlRelyingPartyClientIDIndex = `create index relying_party_clientid_idx on relying_party(client_id)`
-)
-
-const (
 	sqlInsertRelyingParty         = `insert into relying_party (client_id) values (?)`
 	sqlRelyingPartyFindByClientID = `select * from relying_party where client_id = ?`
 )

@@ -12,15 +12,6 @@ import (
 )
 
 const (
-	ddlCreateEndUser = `
-CREATE TABLE end_user (
-    id int PRIMARY KEY AUTO_INCREMENT,
-    sub VARCHAR(255) NOT NULL
-)`
-	ddlCreateIndexOnSub = `create index end_user_sub_idx on end_user (sub)`
-)
-
-const (
 	sqlInsertEndUser      = `insert into end_user (sub) values (?)`
 	sqlSelectEndUserBySub = `select * from end_user where sub = ?`
 )

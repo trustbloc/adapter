@@ -20,6 +20,8 @@ import (
 	"github.com/phayes/freeport"
 	"github.com/stretchr/testify/require"
 
+	"github.com/trustbloc/edge-adapter/pkg/db/migrate"
+
 	_ "github.com/go-sql-driver/mysql"
 )
 
@@ -68,7 +70,7 @@ func TestMain(m *testing.M) {
 		panic(err)
 	}
 
-	err = createSchemas(schemas())
+	err = createSchemas()
 	if err != nil {
 		mysqlErr := stopMySQL()
 		if mysqlErr != nil {
@@ -102,8 +104,8 @@ func newDB(t *testing.T) *sql.DB {
 	return db
 }
 
-func createSchemas(schemas []string) (e error) {
-	db, err := sql.Open("mysql", fmt.Sprintf("root:secret@tcp(localhost:%d)/edgeadapter", containerPort))
+func createSchemas() (e error) {
+	db, err := sql.Open("mysql", fmt.Sprintf("root:secret@tcp(localhost:%d)/edgeadapter?parseTime=true", containerPort))
 	if err != nil {
 		return fmt.Errorf("failed to open db : %w", err)
 	}
@@ -123,11 +125,9 @@ func createSchemas(schemas []string) (e error) {
 		return fmt.Errorf("failed to ping mysql : %w", err)
 	}
 
-	for _, s := range schemas {
-		_, err = db.Exec(s)
-		if err != nil {
-			return fmt.Errorf("failed to execute DDL [%s] : %w", s, err)
-		}
+	_, err = migrate.Up("mysql", db)
+	if err != nil {
+		return fmt.Errorf("failed to execute migrations : %w", err)
 	}
 
 	return nil
