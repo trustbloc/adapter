@@ -15,7 +15,7 @@ SPDX-License-Identifier: Apache-2.0
 
 <script>
     export default {
-        name: 'HelloFrameworkGo',
+        name: 'credentials',
         created: function() {
             const handle = this.getRequestPresentationHandle()
             const request = this.getRequestForPresentation(handle)
