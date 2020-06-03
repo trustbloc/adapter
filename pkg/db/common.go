@@ -6,9 +6,14 @@ SPDX-License-Identifier: Apache-2.0
 
 package db
 
+// TODO implement schema migrations https://github.com/trustbloc/edge-adapter/issues/25
 func schemas() []string {
 	return []string{
-		sqlCreateEndUser,
-		sqlCreateOidcRequest,
+		ddlCreateEndUser,
+		ddlCreateIndexOnSub,
+		ddlCreateRelyingParty,
+		ddlRelyingPartyClientIDIndex,
+		ddlCreateOidcRequest,
+		ddlOidcRequestRelyingPartyIDIndex,
 	}
 }

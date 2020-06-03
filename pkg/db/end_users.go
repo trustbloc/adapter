@@ -12,15 +12,20 @@ import (
 )
 
 const (
-	sqlCreateEndUser = `
+	ddlCreateEndUser = `
 CREATE TABLE end_user (
     id int PRIMARY KEY AUTO_INCREMENT,
-    sub VARCHAR(2000) NOT NULL
+    sub VARCHAR(255) NOT NULL
 )`
-	sqlInsertEndUser = `insert into end_user (sub) values (?)`
+	ddlCreateIndexOnSub = `create index end_user_sub_idx on end_user (sub)`
 )
 
-// EndUser is human user operating the User Agent and the Web Wallet.
+const (
+	sqlInsertEndUser      = `insert into end_user (sub) values (?)`
+	sqlSelectEndUserBySub = `select * from end_user where sub = ?`
+)
+
+// EndUser is the human user operating the User Agent and the Web Wallet.
 type EndUser struct {
 	ID  int64
 	Sub string
@@ -49,4 +54,16 @@ func (e *EndUsers) Insert(u *EndUser) error {
 	}
 
 	return nil
+}
+
+// FindBySub returns an EndUser with the given subject.
+func (e *EndUsers) FindBySub(s string) (*EndUser, error) {
+	result := &EndUser{}
+
+	err := e.DB.QueryRow(sqlSelectEndUserBySub, s).Scan(&result.ID, &result.Sub)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query user by sub : %w", err)
+	}
+
+	return result, nil
 }

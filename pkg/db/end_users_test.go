@@ -37,6 +37,28 @@ func TestEndUsers_Insert(t *testing.T) {
 	})
 }
 
+func TestEndUsers_FindBySub(t *testing.T) {
+	t.Run("returns user", func(t *testing.T) {
+		expected := uuid.New().String()
+		db := newDB(t)
+		insertUser(t, expected, db)
+		result, err := NewEndUsers(db).FindBySub(expected)
+		require.NoError(t, err)
+		require.Equal(t, expected, result.Sub)
+		require.NotZero(t, result.ID)
+	})
+
+	t.Run("fails if db is closed", func(t *testing.T) {
+		expected := uuid.New().String()
+		db := newDB(t)
+		insertUser(t, expected, db)
+		err := db.Close()
+		require.NoError(t, err)
+		_, err = NewEndUsers(db).FindBySub(expected)
+		require.Error(t, err)
+	})
+}
+
 func verifyEndUser(t *testing.T, expected *EndUser, db *sql.DB) {
 	result := &EndUser{}
 	row := db.QueryRow("select * from end_user where id = ?", expected.ID)
@@ -45,4 +67,9 @@ func verifyEndUser(t *testing.T, expected *EndUser, db *sql.DB) {
 	require.NoError(t, err)
 	require.Equal(t, expected.ID, result.ID)
 	require.Equal(t, expected.Sub, result.Sub)
+}
+
+func insertUser(t *testing.T, sub string, db *sql.DB) {
+	_, err := db.Exec("insert into end_user (sub) values (?)", sub)
+	require.NoError(t, err)
 }
