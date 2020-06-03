@@ -489,7 +489,7 @@ func TestSaveConsentRequest(t *testing.T) {
 					},
 				},
 				OIDCRequestsDAO: &stubOidcRequestsDAO{
-					findBySubAndClientIDFunc: func(string, string) (*db.OIDCRequest, error) {
+					findBySubAndClientIDFunc: func(string, string, []string) (*db.OIDCRequest, error) {
 						return nil, expected
 					},
 				},
@@ -517,7 +517,7 @@ func TestSaveConsentRequest(t *testing.T) {
 					},
 				},
 				OIDCRequestsDAO: &stubOidcRequestsDAO{
-					findBySubAndClientIDFunc: func(string, string) (*db.OIDCRequest, error) {
+					findBySubAndClientIDFunc: func(string, string, []string) (*db.OIDCRequest, error) {
 						return &db.OIDCRequest{}, nil
 					},
 					updateFunc: func(*db.OIDCRequest) error {
@@ -542,6 +542,7 @@ func TestCreatePresentationDefinition(t *testing.T) {
 	t.Run("test success", func(t *testing.T) {
 		userSubject := uuid.New().String()
 		rpClientID := uuid.New().String()
+		scopes := []string{uuid.New().String(), uuid.New().String()}
 		handle := uuid.New().String()
 		presDefs := &presentationex.PresentationDefinitions{
 			InputDescriptors: []presentationex.InputDescriptors{{ID: uuid.New().String()}},
@@ -559,14 +560,15 @@ func TestCreatePresentationDefinition(t *testing.T) {
 				},
 			},
 			OIDCRequestsDAO: &stubOidcRequestsDAO{
-				findBySubAndClientIDFunc: func(sub, clientID string) (*db.OIDCRequest, error) {
+				findBySubAndClientIDFunc: func(sub, clientID string, scopesIn []string) (*db.OIDCRequest, error) {
 					require.Equal(t, userSubject, sub)
 					require.Equal(t, rpClientID, clientID)
+					require.Equal(t, scopes, scopesIn)
 					return &db.OIDCRequest{
 						ID:             rand.Int63(),
 						EndUserID:      rand.Int63(),
 						RelyingPartyID: rand.Int63(),
-						Scopes:         []string{"test"},
+						Scopes:         scopes,
 					}, nil
 				},
 				updateFunc: func(r *db.OIDCRequest) error {
@@ -580,8 +582,9 @@ func TestCreatePresentationDefinition(t *testing.T) {
 		c.setConsentRequest(handle, &consentRequest{
 			pd: presDefs,
 			cr: &admin.GetConsentRequestOK{Payload: &models.ConsentRequest{
-				Subject: userSubject,
-				Client:  &models.OAuth2Client{ClientID: rpClientID},
+				Subject:        userSubject,
+				Client:         &models.OAuth2Client{ClientID: rpClientID},
+				RequestedScope: scopes,
 			}},
 		})
 
@@ -780,7 +783,7 @@ func (s *stubUsersDAO) FindBySub(sub string) (*db.EndUser, error) {
 type stubOidcRequestsDAO struct {
 	insertErr                error
 	insertFunc               func(*db.OIDCRequest) error
-	findBySubAndClientIDFunc func(string, string) (*db.OIDCRequest, error)
+	findBySubAndClientIDFunc func(string, string, []string) (*db.OIDCRequest, error)
 	updateFunc               func(request *db.OIDCRequest) error
 }
 
@@ -796,8 +799,9 @@ func (s *stubOidcRequestsDAO) Insert(r *db.OIDCRequest) error {
 	return nil
 }
 
-func (s *stubOidcRequestsDAO) FindByUserSubAndRPClientID(sub, clientID string) (*db.OIDCRequest, error) {
-	return s.findBySubAndClientIDFunc(sub, clientID)
+func (s *stubOidcRequestsDAO) FindBySubRPClientIDAndScopes(
+	sub, clientID string, scopes []string) (*db.OIDCRequest, error) {
+	return s.findBySubAndClientIDFunc(sub, clientID, scopes)
 }
 
 func (s *stubOidcRequestsDAO) Update(req *db.OIDCRequest) error {
