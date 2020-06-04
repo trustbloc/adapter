@@ -8,7 +8,9 @@ package startcmd
 
 import (
 	"context"
+	"crypto/tls"
 	"database/sql"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/url"
@@ -18,6 +20,10 @@ import (
 
 	"github.com/cenkalti/backoff"
 	"github.com/gorilla/mux"
+	arieshttp "github.com/hyperledger/aries-framework-go/pkg/didcomm/transport/http"
+	"github.com/hyperledger/aries-framework-go/pkg/framework/aries"
+	"github.com/hyperledger/aries-framework-go/pkg/framework/aries/defaults"
+	ariesctx "github.com/hyperledger/aries-framework-go/pkg/framework/context"
 	"github.com/ory/hydra-client-go/client"
 	"github.com/rs/cors"
 	"github.com/spf13/cobra"
@@ -26,14 +32,16 @@ import (
 	tlsutils "github.com/trustbloc/edge-core/pkg/utils/tls"
 	"github.com/xo/dburl"
 
+	// mysql db driver
+	_ "github.com/go-sql-driver/mysql"
+
+	ariespai "github.com/trustbloc/edge-adapter/pkg/aries"
 	"github.com/trustbloc/edge-adapter/pkg/db"
 	"github.com/trustbloc/edge-adapter/pkg/presentationex"
 	"github.com/trustbloc/edge-adapter/pkg/restapi/healthcheck"
+	"github.com/trustbloc/edge-adapter/pkg/restapi/issuer"
 	"github.com/trustbloc/edge-adapter/pkg/restapi/rp"
 	"github.com/trustbloc/edge-adapter/pkg/restapi/rp/operation"
-
-	// mysql db driver
-	_ "github.com/go-sql-driver/mysql"
 )
 
 var logger = log.New("edge-adapter")
@@ -84,6 +92,26 @@ const (
 	modeFlagUsage = "Mode in which the edge-adapter service will run. Possible values: " +
 		"['issuer', 'rp']."
 	modeEnvKey = "ADAPTER_REST_MODE"
+
+	// inbound host url flag
+	didCommInboundHostFlagName  = "didcomm-inbound-host"
+	didCommInboundHostEnvKey    = "ADAPTER_REST_DIDCOMM_INBOUND_HOST"
+	didCommInboundHostFlagUsage = "Inbound Host Name:Port. This is used internally to start the didcomm server." +
+		" Alternatively, this can be set with the following environment variable: " + didCommInboundHostEnvKey
+
+	// inbound host external url flag
+	didCommInboundHostExternalFlagName  = "didcomm-inbound-host-external"
+	didCommInboundHostExternalEnvKey    = "ADAPTER_REST_DIDCOMM_INBOUND_HOST_EXTERNAL"
+	didCommInboundHostExternalFlagUsage = "Inbound Host External Name:Port." +
+		" This is the URL for the inbound server as seen externally." +
+		" If not provided, then the internal inbound host will be used here." +
+		" Alternatively, this can be set with the following environment variable: " + didCommInboundHostExternalEnvKey
+
+	// db path
+	didCommDBPathFlagName  = "didcomm-db-path"
+	didCommDBPathEnvKey    = "ADAPTER_REST_DIDCOMM_DB_PATH"
+	didCommDBPathFlagUsage = "Path to database." +
+		" Alternatively, this can be set with the following environment variable: " + didCommDBPathEnvKey
 )
 
 // API endpoints.
@@ -95,6 +123,12 @@ const (
 	rpMode     = "rp"
 )
 
+type didCommParameters struct {
+	inboundHostInternal string
+	inboundHostExternal string
+	dbPath              string
+}
+
 type adapterRestParameters struct {
 	hostURL                     string
 	tlsSystemCertPool           bool
@@ -104,8 +138,9 @@ type adapterRestParameters struct {
 	staticFiles                 string
 	presentationDefinitionsFile string
 	// TODO assuming same base path for all hydra endpoints for now
-	hydraURL string
-	mode     string
+	hydraURL          string
+	mode              string
+	didCommParameters *didCommParameters // didcomm
 }
 
 type server interface {
@@ -187,6 +222,12 @@ func getAdapterRestParameters(cmd *cobra.Command) (*adapterRestParameters, error
 		return nil, err
 	}
 
+	// didcomm
+	didCommParameters, err := getDIDCommParams(cmd)
+	if err != nil {
+		return nil, err
+	}
+
 	return &adapterRestParameters{
 		hostURL:                     hostURL,
 		tlsSystemCertPool:           tlsSystemCertPool,
@@ -197,6 +238,32 @@ func getAdapterRestParameters(cmd *cobra.Command) (*adapterRestParameters, error
 		presentationDefinitionsFile: presentationDefinitionsFile,
 		hydraURL:                    hydraURL,
 		mode:                        mode,
+		didCommParameters:           didCommParameters,
+	}, nil
+}
+
+func getDIDCommParams(cmd *cobra.Command) (*didCommParameters, error) {
+	inboundHostInternal, err := cmdutils.GetUserSetVarFromString(cmd, didCommInboundHostFlagName,
+		didCommInboundHostEnvKey, true)
+	if err != nil {
+		return nil, err
+	}
+
+	inboundHostExternal, err := cmdutils.GetUserSetVarFromString(cmd, didCommInboundHostExternalFlagName,
+		didCommInboundHostExternalEnvKey, true)
+	if err != nil {
+		return nil, err
+	}
+
+	dbPath, err := cmdutils.GetUserSetVarFromString(cmd, didCommDBPathFlagName, didCommDBPathEnvKey, true)
+	if err != nil {
+		return nil, err
+	}
+
+	return &didCommParameters{
+		inboundHostInternal: inboundHostInternal,
+		inboundHostExternal: inboundHostExternal,
+		dbPath:              dbPath,
 	}, nil
 }
 
@@ -233,6 +300,11 @@ func createFlags(startCmd *cobra.Command) {
 	startCmd.Flags().StringP(presentationDefinitionsFlagName, "", "", presentationDefinitionsFlagUsage)
 	startCmd.Flags().StringP(hydraURLFlagName, "", "", hydraURLFlagUsage)
 	startCmd.Flags().StringP(modeFlagName, "", "", modeFlagUsage)
+
+	// didcomm
+	startCmd.Flags().StringP(didCommInboundHostFlagName, "", "", didCommInboundHostFlagUsage)
+	startCmd.Flags().StringP(didCommInboundHostExternalFlagName, "", "", didCommInboundHostExternalFlagUsage)
+	startCmd.Flags().StringP(didCommDBPathFlagName, "", "", didCommDBPathFlagUsage)
 }
 
 func startAdapterService(parameters *adapterRestParameters, srv server) error {
@@ -261,7 +333,15 @@ func startAdapterService(parameters *adapterRestParameters, srv server) error {
 			return nil
 		}
 	case issuerMode:
-		addIssuerHandlers(parameters, router)
+		ariesCtx, err := createAriesAgent(parameters, &tls.Config{RootCAs: rootCAs})
+		if err != nil {
+			return err
+		}
+
+		err = addIssuerHandlers(parameters, ariesCtx, router)
+		if err != nil {
+			return nil
+		}
 	default:
 		return fmt.Errorf("invalid mode : %s", parameters.mode)
 	}
@@ -316,12 +396,25 @@ func addRPHandlers(parameters *adapterRestParameters, router *mux.Router) error 
 	return nil
 }
 
-func addIssuerHandlers(parameters *adapterRestParameters, router *mux.Router) {
+func addIssuerHandlers(parameters *adapterRestParameters, ariesCtx ariespai.CtxProvider, router *mux.Router) error {
+	// add issuer endpoints
+	issuerService, err := issuer.New(ariesCtx)
+	if err != nil {
+		return err
+	}
+
+	rpHandlers := issuerService.GetOperations()
+	for _, handler := range rpHandlers {
+		router.HandleFunc(handler.Path(), handler.Handle()).Methods(handler.Method())
+	}
+
 	// static frontend
 	router.PathPrefix(uiEndpoint).
 		Subrouter().
 		Methods(http.MethodGet).
 		HandlerFunc(uiHandler(parameters.staticFiles, http.ServeFile))
+
+	return nil
 }
 
 func uiHandler(
@@ -394,4 +487,40 @@ func newTrxProvider(dbms *sql.DB) func(ctx context.Context, opts *sql.TxOptions)
 
 		return trx, nil
 	}
+}
+
+func createAriesAgent(parameters *adapterRestParameters, tlsConfig *tls.Config) (*ariesctx.Provider, error) {
+	var opts []aries.Option
+
+	if parameters.didCommParameters.inboundHostInternal == "" {
+		return nil, errors.New("didcomm inbound host is mandatory")
+	}
+
+	if parameters.didCommParameters.dbPath != "" {
+		opts = append(opts, defaults.WithStorePath(parameters.didCommParameters.dbPath))
+	}
+
+	inboundTransportOpt := defaults.WithInboundHTTPAddr(parameters.didCommParameters.inboundHostInternal,
+		parameters.didCommParameters.inboundHostExternal)
+
+	opts = append(opts, inboundTransportOpt)
+
+	outbound, err := arieshttp.NewOutbound(arieshttp.WithOutboundTLSConfig(tlsConfig))
+	if err != nil {
+		return nil, fmt.Errorf("aries-framework - failed to create outbound tranpsort opts : %w", err)
+	}
+
+	opts = append(opts, aries.WithOutboundTransports(outbound))
+
+	framework, err := aries.New(opts...)
+	if err != nil {
+		return nil, fmt.Errorf("aries-framework - failed to initialize framework : %w", err)
+	}
+
+	ctx, err := framework.Context()
+	if err != nil {
+		return nil, fmt.Errorf("aries-framework - failed to get aries context : %w", err)
+	}
+
+	return ctx, nil
 }
