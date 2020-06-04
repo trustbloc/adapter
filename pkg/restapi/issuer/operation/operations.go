@@ -20,7 +20,7 @@ import (
 
 const (
 	// API endpoints
-	generateInvitationEndpoint = "/didexchange/invitation"
+	generateInvitationEndpoint = "/didcomm/invitation"
 )
 
 var logger = log.New("edge-adapter/issuer-operations")
@@ -63,6 +63,7 @@ func (o *Operation) generateInvitation(rw http.ResponseWriter, _ *http.Request) 
 	if err != nil {
 		msg := fmt.Sprintf("failed to create invitation : %s", err.Error())
 		logger.Errorf(msg)
+
 		commhttp.WriteErrorResponse(rw, http.StatusInternalServerError, msg)
 
 		return

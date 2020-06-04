@@ -22,6 +22,7 @@ require (
 	github.com/sirupsen/logrus v1.6.0
 	github.com/stretchr/testify v1.5.1
 	github.com/trustbloc/edge-core v0.1.4-0.20200520210037-e95d2dd69134
+	github.com/xo/dburl v0.0.0-20200124232849-e9ec94f52bc3 // indirect
 	gopkg.in/check.v1 v1.0.0-20200227125254-8fa46927fb4f // indirect
 	gopkg.in/square/go-jose.v2 v2.5.1 // indirect
 )

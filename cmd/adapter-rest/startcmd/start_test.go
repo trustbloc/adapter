@@ -9,6 +9,7 @@ import (
 	"database/sql"
 	"fmt"
 	"io/ioutil"
+	"net"
 	"net/http"
 	"net/url"
 	"os"
@@ -186,6 +187,32 @@ func TestStartCmdWithMissingArg(t *testing.T) {
 			"Neither host-url (command line flag) nor ADAPTER_REST_HOST_URL (environment variable) have been set.",
 			err.Error())
 	})
+
+	t.Run("test missing presentation definition file arg (rpMode)", func(t *testing.T) {
+		startCmd := GetStartCmd(&mockServer{})
+
+		file, err := ioutil.TempFile("", "*.json")
+		require.NoError(t, err)
+
+		_, err = file.WriteString(inputDescriptors)
+		require.NoError(t, err)
+
+		defer func() { require.NoError(t, os.Remove(file.Name())) }()
+
+		args := []string{
+			"--" + modeFlagName, rpMode,
+			"--" + hostURLFlagName, "localhost:8080",
+			"--" + datasourceNameFlagName, fmt.Sprintf("mysql://root:secret@localhost:%d/edgeadapter", containerPort),
+		}
+		startCmd.SetArgs(args)
+
+		err = startCmd.Execute()
+		require.Error(t, err)
+		require.Equal(t,
+			"Neither presentation-definitions-file (command line flag) nor "+
+				"ADAPTER_REST_PRESENTATION_DEFINITIONS_FILE (environment variable) have been set.",
+			err.Error())
+	})
 }
 
 func TestStartCmdWithBlankEnvVar(t *testing.T) {
@@ -247,6 +274,62 @@ func TestStartCmdValidArgsEnvVar(t *testing.T) {
 	require.NoError(t, err)
 }
 
+func TestStartCmdDIDComm(t *testing.T) {
+	t.Run("test start didcomm - success", func(t *testing.T) {
+		path, cleanup := generateTempDir(t)
+		defer cleanup()
+
+		startCmd := GetStartCmd(&mockServer{})
+
+		args := []string{
+			"--" + modeFlagName, issuerMode,
+			"--" + hostURLFlagName, "localhost:8080",
+			"--" + didCommInboundHostFlagName, randomURL(),
+			"--" + didCommDBPathFlagName, path,
+		}
+		startCmd.SetArgs(args)
+
+		err := startCmd.Execute()
+		require.NoError(t, err)
+	})
+
+	t.Run("test start didcomm - empty inbound host", func(t *testing.T) {
+		path, cleanup := generateTempDir(t)
+		defer cleanup()
+
+		startCmd := GetStartCmd(&mockServer{})
+
+		args := []string{
+			"--" + modeFlagName, issuerMode,
+			"--" + hostURLFlagName, "localhost:8080",
+			"--" + didCommDBPathFlagName, path,
+		}
+		startCmd.SetArgs(args)
+
+		err := startCmd.Execute()
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "didcomm inbound host is mandatory")
+	})
+
+	t.Run("test start didcomm - empty inbound host", func(t *testing.T) {
+		startCmd := GetStartCmd(&mockServer{})
+
+		args := []string{
+			"--" + modeFlagName, issuerMode,
+			"--" + hostURLFlagName, "localhost:8080",
+			"--" + didCommInboundHostFlagName, randomURL(),
+		}
+		startCmd.SetArgs(args)
+
+		err := startCmd.Execute()
+		require.NoError(t, err)
+
+		err = startCmd.Execute()
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "aries-framework - failed to initialize framework")
+	})
+}
+
 func TestAdapterModes(t *testing.T) {
 	t.Run("test adapter mode - rp", func(t *testing.T) {
 		startCmd := GetStartCmd(&mockServer{})
@@ -271,11 +354,18 @@ func TestAdapterModes(t *testing.T) {
 	})
 
 	t.Run("test adapter mode - issuer", func(t *testing.T) {
+		path, cleanup := generateTempDir(t)
+		defer cleanup()
+
 		startCmd := GetStartCmd(&mockServer{})
+
+		testInboundHostURL := randomURL()
 
 		args := []string{
 			"--" + modeFlagName, issuerMode,
 			"--" + hostURLFlagName, "localhost:8080",
+			"--" + didCommInboundHostFlagName, testInboundHostURL,
+			"--" + didCommDBPathFlagName, path,
 		}
 		startCmd.SetArgs(args)
 
@@ -358,4 +448,55 @@ func checkFlagPropertiesCorrect(t *testing.T, cmd *cobra.Command, flagName, flag
 
 	flagAnnotations := flag.Annotations
 	require.Nil(t, flagAnnotations)
+}
+
+func randomURL() string {
+	return fmt.Sprintf("localhost:%d", mustGetRandomPort(3))
+}
+
+func mustGetRandomPort(n int) int {
+	for ; n > 0; n-- {
+		port, err := getRandomPort()
+		if err != nil {
+			continue
+		}
+
+		return port
+	}
+	panic("cannot acquire the random port")
+}
+
+func getRandomPort() (int, error) {
+	const network = "tcp"
+
+	addr, err := net.ResolveTCPAddr(network, "localhost:0")
+	if err != nil {
+		return 0, err
+	}
+
+	listener, err := net.ListenTCP(network, addr)
+	if err != nil {
+		return 0, err
+	}
+
+	err = listener.Close()
+	if err != nil {
+		return 0, err
+	}
+
+	return listener.Addr().(*net.TCPAddr).Port, nil
+}
+
+func generateTempDir(t testing.TB) (string, func()) {
+	path, err := ioutil.TempDir("", "db")
+	if err != nil {
+		t.Fatalf("Failed to create leveldb directory: %s", err)
+	}
+
+	return path, func() {
+		err := os.RemoveAll(path)
+		if err != nil {
+			t.Fatalf("Failed to clear leveldb directory: %s", err)
+		}
+	}
 }
