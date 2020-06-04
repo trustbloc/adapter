@@ -10,35 +10,51 @@ SPDX-License-Identifier: Apache-2.0
         <!--
             TODO pretty UI
         -->
+
+        <textarea v-model="presDef"></textarea>
     </div>
 </template>
 
 <script>
     export default {
         name: 'credentials',
-        created: function() {
-            const handle = this.getRequestPresentationHandle()
-            const request = this.getRequestForPresentation(handle)
-            const presentation = this.requestPresentation(request)
-            const redirectURL = this.validatePresentation(presentation)
+        created: async function() {
+            await this.$polyfill.loadOnce()
+            this.getRequestForPresentation()
+            // TODO fetch didcomm endpoint from backend
+            const credentialQuery = {
+                web: {
+                    VerifiablePresentation: {
+                        query: {type: "CredentialsQuery"},
+                        presentationDefinition: this.presDef,
+                        didcommEndpoint: null,
+                    }
+                }
+            }
+            const webCredential = await navigator.credentials.get(credentialQuery)
+            console.log("received from user: " + JSON.stringify(webCredential))
+            const redirectURL = this.validatePresentation(webCredential)
             // redirect user
             console.log(`redirecting user to ${redirectURL}`)
         },
+        data() {
+            return {
+                presDef: null
+            }
+        },
         methods: {
-            getRequestPresentationHandle() {
-                // TODO extract handle for a presentation request from URL
-            },
-            getRequestForPresentation(handle) {
-                // TODO call backend to exchange this handle for a request for presentation
-                const result = {}
-                console.log(`exchanged handle=${handle} for a request=${result}`)
-                return result
-            },
-            requestPresentation(request) {
-                // TODO submit request for presentation to the user via CHAPI, await and return response
-                const response = {}
-                console.log(`submitted CHAPI request=${request} and received response=${response}`)
-                return response
+            getRequestForPresentation() {
+                const handle = this.$route.query.pd
+                console.info(`using handle: ${handle}`)
+                this.$http.get(`/presentations/create?pd=${handle}`).then(
+                    resp => {
+                        this.presDef = JSON.stringify(resp.data, null, 2)
+                        console.log(`exchanged handle=${handle} for a request=${resp}`)
+                    },
+                    err => {
+                        console.error(`failed to retrieve presentation-definitions: ${err}`)
+                    }
+                )
             },
             validatePresentation(presentation) {
                 // TODO submit user presentation to the backend for validation and return redirect URL
