@@ -154,7 +154,7 @@ func (o *Operation) GetRESTHandlers() []Handler {
 		support.NewHTTPHandler(hydraLoginEndpoint, http.MethodGet, o.hydraLoginHandler),
 		support.NewHTTPHandler(hydraConsentEndpoint, http.MethodGet, o.hydraConsentHandler),
 		support.NewHTTPHandler(OIDCCallbackEndpoint, http.MethodGet, o.oidcCallbackHandler),
-		support.NewHTTPHandler(createPresentationRequestEndpoint, http.MethodPost, o.createPresentationDefinition),
+		support.NewHTTPHandler(createPresentationRequestEndpoint, http.MethodGet, o.createPresentationDefinition),
 		support.NewHTTPHandler(handlePresentationResponseEndpoint, http.MethodPost, o.presentationResponseHandler),
 		support.NewHTTPHandler(userInfoEndpoint, http.MethodGet, o.userInfoHandler),
 	}

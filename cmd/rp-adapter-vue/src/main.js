@@ -9,6 +9,9 @@ import App from './App.vue'
 import VueRouter from "vue-router";
 import routes from "./router/index";
 
+import axios from "axios"
+Vue.prototype.$http = axios
+
 import * as polyfill from "credential-handler-polyfill";
 import * as webCredentialHandler from "web-credential-handler";
 Vue.prototype.$polyfill = polyfill
