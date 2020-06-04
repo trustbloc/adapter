@@ -5,29 +5,11 @@ SPDX-License-Identifier: Apache-2.0
 -->
 
 <template>
-  <div id="app">
-    <Credentials/>
+  <div>
+    <router-view></router-view>
   </div>
 </template>
 
 <script>
-import Credentials from './components/Credentials.vue'
-
-export default {
-  name: 'App',
-  components: {
-    Credentials
-  }
-}
+  export default {};
 </script>
-
-<style>
-#app {
-  font-family: Avenir, Helvetica, Arial, sans-serif;
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
-  text-align: center;
-  color: #2c3e50;
-  margin-top: 60px;
-}
-</style>
