@@ -42,7 +42,11 @@ func TestNew(t *testing.T) {
 
 func TestConnectWallet(t *testing.T) {
 	t.Run("test connect wallet - success", func(t *testing.T) {
-		c, err := New(&Config{AriesCtx: getAriesCtx()})
+		uiEndpoint := "/ui"
+		c, err := New(&Config{
+			AriesCtx:   getAriesCtx(),
+			UIEndpoint: uiEndpoint,
+		})
 		require.NoError(t, err)
 
 		walletConnectHandler := getHandler(t, c, walletConnectEndpoint)
@@ -50,6 +54,7 @@ func TestConnectWallet(t *testing.T) {
 		rr := serveHTTP(t, walletConnectHandler.Handle(), http.MethodGet, generateInvitationEndpoint, nil)
 
 		require.Equal(t, http.StatusFound, rr.Code)
+		require.Equal(t, uiEndpoint, rr.Header().Get("Location"))
 	})
 }
 
