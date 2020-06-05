@@ -40,8 +40,9 @@ import (
 	"github.com/trustbloc/edge-adapter/pkg/presentationex"
 	"github.com/trustbloc/edge-adapter/pkg/restapi/healthcheck"
 	"github.com/trustbloc/edge-adapter/pkg/restapi/issuer"
+	issuerops "github.com/trustbloc/edge-adapter/pkg/restapi/issuer/operation"
 	"github.com/trustbloc/edge-adapter/pkg/restapi/rp"
-	"github.com/trustbloc/edge-adapter/pkg/restapi/rp/operation"
+	rpops "github.com/trustbloc/edge-adapter/pkg/restapi/rp/operation"
 )
 
 var logger = log.New("edge-adapter")
@@ -370,7 +371,7 @@ func addRPHandlers(parameters *adapterRestParameters, router *mux.Router) error 
 	// TODO init OIDC stuff in iteration 2 - https://github.com/trustbloc/edge-adapter/issues/24
 
 	// add rp endpoints
-	rpService, err := rp.New(&operation.Config{
+	rpService, err := rp.New(&rpops.Config{
 		PresentationExProvider: presentationExProvider,
 		Hydra:                  newHydraClient(hydraURL).Admin,
 		TrxProvider:            newTrxProvider(datasource),
@@ -398,7 +399,11 @@ func addRPHandlers(parameters *adapterRestParameters, router *mux.Router) error 
 
 func addIssuerHandlers(parameters *adapterRestParameters, ariesCtx ariespai.CtxProvider, router *mux.Router) error {
 	// add issuer endpoints
-	issuerService, err := issuer.New(ariesCtx)
+	issuerService, err := issuer.New(&issuerops.Config{
+		AriesCtx:   ariesCtx,
+		UIEndpoint: uiEndpoint,
+	})
+
 	if err != nil {
 		return err
 	}
@@ -478,8 +483,8 @@ func initDB(dsn string) (*sql.DB, error) {
 	return dbms, nil
 }
 
-func newTrxProvider(dbms *sql.DB) func(ctx context.Context, opts *sql.TxOptions) (operation.Trx, error) {
-	return func(ctx context.Context, opts *sql.TxOptions) (operation.Trx, error) {
+func newTrxProvider(dbms *sql.DB) func(ctx context.Context, opts *sql.TxOptions) (rpops.Trx, error) {
+	return func(ctx context.Context, opts *sql.TxOptions) (rpops.Trx, error) {
 		trx, err := dbms.BeginTx(ctx, opts)
 		if err != nil {
 			return nil, fmt.Errorf("failed to open db transaction : %w", err)

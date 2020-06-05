@@ -15,4 +15,4 @@ Feature: health check
       | url                                             | respKey       | respKeyVal                                      |
       | http://localhost:8070/healthcheck               | status        | success                                         |
       | http://localhost:8060/healthcheck               | status        | success                                         |
-      | http://localhost:8060/didcomm/invitation        | @type         | https://didcomm.org/didexchange/1.0/invitation  |
+      | http://localhost:8060/issuer/didcomm/invitation | @type         | https://didcomm.org/didexchange/1.0/invitation  |

@@ -15,6 +15,8 @@ import (
 	mockprovider "github.com/hyperledger/aries-framework-go/pkg/mock/provider"
 	mockstore "github.com/hyperledger/aries-framework-go/pkg/mock/storage"
 	"github.com/stretchr/testify/require"
+
+	"github.com/trustbloc/edge-adapter/pkg/restapi/issuer/operation"
 )
 
 func TestNew(t *testing.T) {
@@ -28,19 +30,19 @@ func TestNew(t *testing.T) {
 			},
 		}
 
-		controller, err := New(ariesCtx)
+		controller, err := New(&operation.Config{AriesCtx: ariesCtx})
 		require.NoError(t, err)
 		require.NotNil(t, controller)
 
 		ops := controller.GetOperations()
 
-		require.Equal(t, 1, len(ops))
+		require.Equal(t, 2, len(ops))
 	})
 
 	t.Run("test new - fail", func(t *testing.T) {
 		ariesCtx := &mockprovider.Provider{}
 
-		controller, err := New(ariesCtx)
+		controller, err := New(&operation.Config{AriesCtx: ariesCtx})
 		require.Nil(t, controller)
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "failed to create aries did exchange client")

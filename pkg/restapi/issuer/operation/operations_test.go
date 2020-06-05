@@ -26,23 +26,36 @@ import (
 
 func TestNew(t *testing.T) {
 	t.Run("test new - success", func(t *testing.T) {
-		c, err := New(getAriesCtx())
+		c, err := New(&Config{AriesCtx: getAriesCtx()})
 		require.NoError(t, err)
 
-		require.Equal(t, 1, len(c.GetRESTHandlers()))
+		require.Equal(t, 2, len(c.GetRESTHandlers()))
 	})
 
 	t.Run("test new - fail", func(t *testing.T) {
-		c, err := New(&mockprovider.Provider{})
+		c, err := New(&Config{AriesCtx: &mockprovider.Provider{}})
 		require.Nil(t, c)
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "failed to create aries did exchange client")
 	})
 }
 
+func TestConnectWallet(t *testing.T) {
+	t.Run("test connect wallet - success", func(t *testing.T) {
+		c, err := New(&Config{AriesCtx: getAriesCtx()})
+		require.NoError(t, err)
+
+		walletConnectHandler := getHandler(t, c, walletConnectEndpoint)
+
+		rr := serveHTTP(t, walletConnectHandler.Handle(), http.MethodGet, generateInvitationEndpoint, nil)
+
+		require.Equal(t, http.StatusFound, rr.Code)
+	})
+}
+
 func TestGenerateInvitation(t *testing.T) {
 	t.Run("test new - success", func(t *testing.T) {
-		c, err := New(getAriesCtx())
+		c, err := New(&Config{AriesCtx: getAriesCtx()})
 		require.NoError(t, err)
 
 		generateInvitationHandler := getHandler(t, c, generateInvitationEndpoint)
@@ -64,7 +77,7 @@ func TestGenerateInvitation(t *testing.T) {
 			ServiceEndpointValue: "endpoint",
 		}
 
-		c, err := New(ariesCtx)
+		c, err := New(&Config{AriesCtx: ariesCtx})
 		require.NoError(t, err)
 
 		generateInvitationHandler := getHandler(t, c, generateInvitationEndpoint)
