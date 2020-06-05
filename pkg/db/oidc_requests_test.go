@@ -24,7 +24,7 @@ func TestOIDCRequests_Insert(t *testing.T) {
 		db := newDB(t)
 
 		user := &EndUser{Sub: "test"}
-		rp := &RelyingParty{ClientID: uuid.New().String()}
+		rp := &RelyingParty{ClientID: uuid.New().String(), DID: newDID(t)}
 		err := NewEndUsers(db).Insert(user)
 		require.NoError(t, err)
 		err = NewRelyingParties(db).Insert(rp)
@@ -58,7 +58,7 @@ func TestOIDCRequests_Insert(t *testing.T) {
 func TestOIDCRequests_FindBySubRPClientIDAndScopes(t *testing.T) {
 	t.Run("returns oidc request", func(t *testing.T) {
 		user := &EndUser{Sub: uuid.New().String()}
-		rp := &RelyingParty{ClientID: uuid.New().String()}
+		rp := &RelyingParty{ClientID: uuid.New().String(), DID: newDID(t)}
 
 		db := newDB(t)
 		err := NewEndUsers(db).Insert(user)
@@ -176,7 +176,7 @@ func presDefs() *presentationex.PresentationDefinitions {
 
 func newPersistedOIDCRequest(t *testing.T, db *sql.DB) *OIDCRequest {
 	user := &EndUser{Sub: "test"}
-	rp := &RelyingParty{ClientID: uuid.New().String()}
+	rp := &RelyingParty{ClientID: uuid.New().String(), DID: newDID(t)}
 	err := NewEndUsers(db).Insert(user)
 	require.NoError(t, err)
 	err = NewRelyingParties(db).Insert(rp)

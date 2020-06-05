@@ -18,7 +18,8 @@ CREATE INDEX end_user_sub_idx ON end_user (sub);
 
 CREATE TABLE relying_party (
     id int PRIMARY KEY AUTO_INCREMENT,
-	client_id varchar(255) NOT NULL
+	client_id varchar(255) NOT NULL,
+	did varchar(2000) NOT NULL
 );
 
 create index relying_party_clientid_idx on relying_party(client_id);

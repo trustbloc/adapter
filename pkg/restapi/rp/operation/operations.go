@@ -16,6 +16,7 @@ import (
 
 	"github.com/coreos/go-oidc"
 	"github.com/google/uuid"
+	"github.com/hyperledger/aries-framework-go/pkg/doc/did"
 	"github.com/ory/hydra-client-go/client/admin"
 	"github.com/ory/hydra-client-go/models"
 	"github.com/pkg/errors"
@@ -32,7 +33,7 @@ const (
 	hydraLoginEndpoint                 = "/login"
 	hydraConsentEndpoint               = "/consent"
 	OIDCCallbackEndpoint               = "/callback"
-	createPresentationRequestEndpoint  = "/presentations/create"
+	getPresentationsRequestEndpoint    = "/presentations/create"
 	handlePresentationResponseEndpoint = "/presentations/handleResponse"
 	userInfoEndpoint                   = "/userinfo"
 )
@@ -94,8 +95,9 @@ type Trx interface {
 }
 
 type consentRequest struct {
-	pd *presentationex.PresentationDefinitions
-	cr *admin.GetConsentRequestOK
+	pd    *presentationex.PresentationDefinitions
+	cr    *admin.GetConsentRequestOK
+	rpDID *did.DID
 }
 
 // New returns CreateCredential instance.
@@ -154,7 +156,7 @@ func (o *Operation) GetRESTHandlers() []Handler {
 		support.NewHTTPHandler(hydraLoginEndpoint, http.MethodGet, o.hydraLoginHandler),
 		support.NewHTTPHandler(hydraConsentEndpoint, http.MethodGet, o.hydraConsentHandler),
 		support.NewHTTPHandler(OIDCCallbackEndpoint, http.MethodGet, o.oidcCallbackHandler),
-		support.NewHTTPHandler(createPresentationRequestEndpoint, http.MethodGet, o.createPresentationDefinition),
+		support.NewHTTPHandler(getPresentationsRequestEndpoint, http.MethodGet, o.getPresentationsRequest),
 		support.NewHTTPHandler(handlePresentationResponseEndpoint, http.MethodPost, o.presentationResponseHandler),
 		support.NewHTTPHandler(userInfoEndpoint, http.MethodGet, o.userInfoHandler),
 	}
@@ -397,10 +399,21 @@ func (o *Operation) hydraConsentHandler(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
+	rp, err := o.relyingPartiesDAO.FindByClientID(consent.GetPayload().Client.ClientID)
+	if err != nil {
+		msg := fmt.Sprintf(
+			"failed to fetch rp with clientID=%s : %s", consent.GetPayload().Client.ClientID, err)
+		logger.Errorf(msg)
+		commhttp.WriteErrorResponse(w, http.StatusInternalServerError, msg)
+
+		return
+	}
+
 	handle := url.QueryEscape(uuid.New().String())
 	o.setConsentRequest(handle, &consentRequest{
-		cr: consent,
-		pd: presentationDefinition,
+		cr:    consent,
+		pd:    presentationDefinition,
+		rpDID: rp.DID,
 	})
 
 	redirectURL := fmt.Sprintf("%s?pd=%s", o.uiEndpoint, handle)
@@ -430,8 +443,8 @@ func (o *Operation) skipConsentScreen(w http.ResponseWriter, r *http.Request, co
 }
 
 // Frontend requests to create presentation definition.
-func (o *Operation) createPresentationDefinition(rw http.ResponseWriter, req *http.Request) {
-	logger.Debugf("createPresentationDefinition request: %s", req.URL.String())
+func (o *Operation) getPresentationsRequest(rw http.ResponseWriter, req *http.Request) {
+	logger.Debugf("getPresentationsRequest request: %s", req.URL.String())
 
 	// get the request
 	handle := req.URL.Query().Get("pd")
@@ -459,9 +472,15 @@ func (o *Operation) createPresentationDefinition(rw http.ResponseWriter, req *ht
 		return
 	}
 
+	response := &GetPresentationRequestResponse{
+		PD:  cr.pd,
+		DID: cr.rpDID.String(),
+	}
+
 	rw.WriteHeader(http.StatusOK)
-	commhttp.WriteResponse(rw, cr.pd)
-	logger.Debugf("wrote response: %+v", cr.pd)
+	commhttp.WriteResponse(rw, response)
+
+	logger.Debugf("wrote response: %+v", response)
 }
 
 func (o *Operation) saveConsentRequest(ctx context.Context, r *consentRequest) (errResult error) {
