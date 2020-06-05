@@ -9,10 +9,12 @@ package db
 import (
 	"database/sql"
 	"fmt"
+
+	"github.com/hyperledger/aries-framework-go/pkg/doc/did"
 )
 
 const (
-	sqlInsertRelyingParty         = `insert into relying_party (client_id) values (?)`
+	sqlInsertRelyingParty         = `insert into relying_party (client_id, did) values (?, ?)`
 	sqlRelyingPartyFindByClientID = `select * from relying_party where client_id = ?`
 )
 
@@ -20,6 +22,7 @@ const (
 type RelyingParty struct {
 	ID       int64
 	ClientID string
+	DID      *did.DID
 }
 
 // RelyingParties is a RelyingParty DAO.
@@ -34,7 +37,7 @@ func NewRelyingParties(db *sql.DB) *RelyingParties {
 
 // Insert the relying party.
 func (r *RelyingParties) Insert(rp *RelyingParty) error {
-	result, err := r.DB.Exec(sqlInsertRelyingParty, rp.ClientID)
+	result, err := r.DB.Exec(sqlInsertRelyingParty, rp.ClientID, rp.DID.String())
 	if err != nil {
 		return fmt.Errorf("failed to insert relying party : %w", err)
 	}
@@ -51,11 +54,18 @@ func (r *RelyingParties) Insert(rp *RelyingParty) error {
 
 // FindByClientID returns the RelyingParty registered with the given clientID.
 func (r *RelyingParties) FindByClientID(id string) (*RelyingParty, error) {
+	var dbDID string
+
 	result := &RelyingParty{}
 
-	err := r.DB.QueryRow(sqlRelyingPartyFindByClientID, id).Scan(&result.ID, &result.ClientID)
+	err := r.DB.QueryRow(sqlRelyingPartyFindByClientID, id).Scan(&result.ID, &result.ClientID, &dbDID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to query relying_party by client_id : %w", err)
+	}
+
+	result.DID, err = did.Parse(dbDID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse rpDID %s : %w", dbDID, err)
 	}
 
 	return result, nil

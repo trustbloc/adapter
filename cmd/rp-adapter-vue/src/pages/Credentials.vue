@@ -11,7 +11,7 @@ SPDX-License-Identifier: Apache-2.0
             TODO pretty UI
         -->
 
-        <textarea v-model="presDef"></textarea>
+        <textarea v-model="presentationRequest"></textarea>
     </div>
 </template>
 
@@ -26,8 +26,8 @@ SPDX-License-Identifier: Apache-2.0
                 web: {
                     VerifiablePresentation: {
                         query: {type: "CredentialsQuery"},
-                        presentationDefinition: this.presDef,
-                        didcommEndpoint: null,
+                        presentationDefinition: this.presentationRequest.pd,
+                        did: this.presentationRequest.did,
                     }
                 }
             }
@@ -39,7 +39,7 @@ SPDX-License-Identifier: Apache-2.0
         },
         data() {
             return {
-                presDef: null
+                presentationRequest: null
             }
         },
         methods: {
@@ -48,7 +48,7 @@ SPDX-License-Identifier: Apache-2.0
                 console.info(`using handle: ${handle}`)
                 this.$http.get(`/presentations/create?pd=${handle}`).then(
                     resp => {
-                        this.presDef = JSON.stringify(resp.data, null, 2)
+                        this.presentationRequest = JSON.stringify(resp.data, null, 2)
                         console.log(`exchanged handle=${handle} for a request=${resp}`)
                     },
                     err => {

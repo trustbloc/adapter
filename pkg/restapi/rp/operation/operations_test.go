@@ -20,6 +20,7 @@ import (
 	"github.com/coreos/go-oidc"
 	_ "github.com/go-sql-driver/mysql"
 	"github.com/google/uuid"
+	"github.com/hyperledger/aries-framework-go/pkg/doc/did"
 	"github.com/ory/hydra-client-go/client/admin"
 	"github.com/ory/hydra-client-go/models"
 	"github.com/stretchr/testify/require"
@@ -322,6 +323,7 @@ func TestHydraConsentHandler(t *testing.T) {
 		t.Run("redirects to consent ui with handle", func(t *testing.T) {
 			uiEndpoint := "http://ui.example.com"
 			challenge := uuid.New().String()
+			rpClientID := uuid.New().String()
 
 			c, err := New(&Config{
 				UIEndpoint: uiEndpoint,
@@ -329,11 +331,18 @@ func TestHydraConsentHandler(t *testing.T) {
 					getConsentRequestFunc: func(r *admin.GetConsentRequestParams) (*admin.GetConsentRequestOK, error) {
 						require.Equal(t, challenge, r.ConsentChallenge)
 						return &admin.GetConsentRequestOK{Payload: &models.ConsentRequest{
-							Skip: false,
+							Skip:   false,
+							Client: &models.OAuth2Client{ClientID: rpClientID},
 						}}, nil
 					},
 				},
 				PresentationExProvider: mockPresentationDefinitionsProvider(),
+				RelyingPartiesDAO: &stubRelyingPartiesDAO{
+					findByClientIDFunc: func(id string) (*db.RelyingParty, error) {
+						require.Equal(t, rpClientID, id)
+						return &db.RelyingParty{ClientID: rpClientID}, nil
+					},
+				},
 			})
 			require.NoError(t, err)
 
@@ -378,6 +387,29 @@ func TestHydraConsentHandler(t *testing.T) {
 					return &admin.GetConsentRequestOK{Payload: &models.ConsentRequest{Skip: false}}, nil
 				}},
 				PresentationExProvider: &mockPresentationExProvider{createErr: errors.New("test")},
+			})
+			require.NoError(t, err)
+			w := &httptest.ResponseRecorder{}
+			c.hydraConsentHandler(w, newHydraConsentRequest(t, "challenge"))
+			require.Equal(t, http.StatusInternalServerError, w.Code)
+		})
+
+		t.Run("internal server error if cannot find relying party", func(t *testing.T) {
+			c, err := New(&Config{
+				Hydra: &stubHydra{getConsentRequestFunc: func(*admin.GetConsentRequestParams) (*admin.GetConsentRequestOK, error) {
+					return &admin.GetConsentRequestOK{Payload: &models.ConsentRequest{
+						Skip:   false,
+						Client: &models.OAuth2Client{},
+					}}, nil
+				}},
+				PresentationExProvider: &mockPresentationExProvider{
+					createValue: &presentationex.PresentationDefinitions{},
+				},
+				RelyingPartiesDAO: &stubRelyingPartiesDAO{
+					findByClientIDFunc: func(string) (*db.RelyingParty, error) {
+						return nil, sql.ErrNoRows
+					},
+				},
 			})
 			require.NoError(t, err)
 			w := &httptest.ResponseRecorder{}
@@ -542,6 +574,7 @@ func TestCreatePresentationDefinition(t *testing.T) {
 	t.Run("test success", func(t *testing.T) {
 		userSubject := uuid.New().String()
 		rpClientID := uuid.New().String()
+		rpDID := newDID(t)
 		scopes := []string{uuid.New().String(), uuid.New().String()}
 		handle := uuid.New().String()
 		presDefs := &presentationex.PresentationDefinitions{
@@ -576,6 +609,15 @@ func TestCreatePresentationDefinition(t *testing.T) {
 					return nil
 				},
 			},
+			RelyingPartiesDAO: &stubRelyingPartiesDAO{
+				findByClientIDFunc: func(id string) (*db.RelyingParty, error) {
+					require.Equal(t, rpClientID, id)
+					return &db.RelyingParty{
+						ClientID: rpClientID,
+						DID:      rpDID,
+					}, nil
+				},
+			},
 		})
 		require.NoError(t, err)
 
@@ -586,17 +628,19 @@ func TestCreatePresentationDefinition(t *testing.T) {
 				Client:         &models.OAuth2Client{ClientID: rpClientID},
 				RequestedScope: scopes,
 			}},
+			rpDID: rpDID,
 		})
 
 		r := httptest.NewRecorder()
-		c.createPresentationDefinition(r, newCreatePresentationDefinitionRequest(t, handle))
+		c.getPresentationsRequest(r, newCreatePresentationDefinitionRequest(t, handle))
 
 		require.Equal(t, http.StatusOK, r.Code)
 
-		var resp presentationex.PresentationDefinitions
+		var resp GetPresentationRequestResponse
 		require.NoError(t, json.Unmarshal(r.Body.Bytes(), &resp))
 
-		require.Equal(t, presDefs, &resp)
+		require.Equal(t, presDefs, resp.PD)
+		require.Equal(t, rpDID.String(), resp.DID)
 	})
 
 	t.Run("bad request if handle is invalid", func(t *testing.T) {
@@ -612,7 +656,7 @@ func TestCreatePresentationDefinition(t *testing.T) {
 		})
 
 		r := httptest.NewRecorder()
-		c.createPresentationDefinition(r, newCreatePresentationDefinitionRequest(t, "invalid"))
+		c.getPresentationsRequest(r, newCreatePresentationDefinitionRequest(t, "invalid"))
 
 		require.Equal(t, http.StatusBadRequest, r.Code)
 		require.Contains(t, r.Body.String(), "invalid request")
@@ -623,7 +667,7 @@ func TestCreatePresentationDefinition(t *testing.T) {
 		require.NoError(t, err)
 
 		w := httptest.NewRecorder()
-		c.createPresentationDefinition(
+		c.getPresentationsRequest(
 			w, httptest.NewRequest(http.MethodGet, "http://adapter.example.com/createPresentation", nil))
 		require.Equal(t, http.StatusBadRequest, w.Code)
 	})
@@ -822,4 +866,11 @@ func mockPresentationDefinitionsProvider() presentationExProvider {
 			InputDescriptors: []presentationex.InputDescriptors{{ID: "1"}},
 		},
 	}
+}
+
+func newDID(t *testing.T) *did.DID {
+	d, err := did.Parse("did:example:" + uuid.New().String())
+	require.NoError(t, err)
+
+	return d
 }
