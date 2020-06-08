@@ -21,13 +21,12 @@ SPDX-License-Identifier: Apache-2.0
         created: async function() {
             await this.$polyfill.loadOnce()
             this.getRequestForPresentation()
-            // TODO fetch didcomm endpoint from backend
             const credentialQuery = {
                 web: {
                     VerifiablePresentation: {
                         query: {type: "CredentialsQuery"},
                         presentationDefinition: this.presentationRequest.pd,
-                        did: this.presentationRequest.did,
+                        did: this.presentationRequest.invitation,
                     }
                 }
             }
