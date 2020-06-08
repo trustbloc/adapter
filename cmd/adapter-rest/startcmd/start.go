@@ -28,6 +28,7 @@ import (
 	"github.com/rs/cors"
 	"github.com/spf13/cobra"
 	"github.com/trustbloc/edge-core/pkg/log"
+	"github.com/trustbloc/edge-core/pkg/storage/memstore"
 	cmdutils "github.com/trustbloc/edge-core/pkg/utils/cmd"
 	tlsutils "github.com/trustbloc/edge-core/pkg/utils/tls"
 	"github.com/xo/dburl"
@@ -402,6 +403,8 @@ func addIssuerHandlers(parameters *adapterRestParameters, ariesCtx ariespai.CtxP
 	issuerService, err := issuer.New(&issuerops.Config{
 		AriesCtx:   ariesCtx,
 		UIEndpoint: uiEndpoint,
+		// TODO https://github.com/trustbloc/edge-adapter/issues/42 use sql store
+		StoreProvider: memstore.NewProvider(),
 	})
 
 	if err != nil {

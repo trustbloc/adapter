@@ -12,6 +12,7 @@ require (
 	github.com/go-sql-driver/mysql v1.5.0
 	github.com/gobuffalo/packr/v2 v2.8.0
 	github.com/google/uuid v1.1.1
+	github.com/gorilla/mux v1.7.3
 	github.com/hyperledger/aries-framework-go v0.1.4-0.20200529175104-77739a47bafa
 	github.com/kr/text v0.2.0 // indirect
 	github.com/niemeyer/pretty v0.0.0-20200227124842-a10e7caefd8e // indirect
