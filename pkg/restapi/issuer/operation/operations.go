@@ -52,6 +52,7 @@ func New(config *Config) (*Operation, error) {
 
 	return &Operation{
 		didExClient: didExClient,
+		uiEndpoint:  config.UIEndpoint,
 	}, nil
 }
 
