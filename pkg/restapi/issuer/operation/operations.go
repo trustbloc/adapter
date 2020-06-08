@@ -7,15 +7,20 @@ SPDX-License-Identifier: Apache-2.0
 package operation
 
 import (
+	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 
+	"github.com/gorilla/mux"
 	"github.com/hyperledger/aries-framework-go/pkg/client/didexchange"
 	"github.com/hyperledger/aries-framework-go/pkg/didcomm/common/service"
 	"github.com/trustbloc/edge-core/pkg/log"
+	"github.com/trustbloc/edge-core/pkg/storage"
 
 	"github.com/trustbloc/edge-adapter/pkg/aries"
 	"github.com/trustbloc/edge-adapter/pkg/internal/common/support"
+	"github.com/trustbloc/edge-adapter/pkg/profile/issuer"
 	commhttp "github.com/trustbloc/edge-adapter/pkg/restapi/internal/common/http"
 )
 
@@ -24,8 +29,13 @@ const (
 	issuerBasePath  = "/issuer"
 	didCommBasePath = issuerBasePath + "/didcomm"
 
+	profileEndpoint            = "/profile"
+	getProfileEndpoint         = profileEndpoint + "/{id}"
 	walletConnectEndpoint      = didCommBasePath + "/connect/wallet"
 	generateInvitationEndpoint = didCommBasePath + "/invitation"
+
+	// http params
+	profileIDPathParam = "id"
 )
 
 var logger = log.New("edge-adapter/issuer-operations")
@@ -37,10 +47,11 @@ type Handler interface {
 	Handle() http.HandlerFunc
 }
 
-// Config defines configuration for rp operations.
+// Config defines configuration for issuer operations.
 type Config struct {
-	AriesCtx   aries.CtxProvider
-	UIEndpoint string
+	AriesCtx      aries.CtxProvider
+	UIEndpoint    string
+	StoreProvider storage.Provider
 }
 
 // New returns issuer rest instance.
@@ -50,24 +61,88 @@ func New(config *Config) (*Operation, error) {
 		return nil, fmt.Errorf("failed to create aries did exchange client : %s", err)
 	}
 
+	p, err := issuer.New(config.StoreProvider)
+	if err != nil {
+		return nil, err
+	}
+
 	return &Operation{
-		didExClient: didExClient,
-		uiEndpoint:  config.UIEndpoint,
+		didExClient:  didExClient,
+		uiEndpoint:   config.UIEndpoint,
+		profileStore: p,
 	}, nil
 }
 
 // Operation defines handlers for rp operations.
 type Operation struct {
-	didExClient *didexchange.Client
-	uiEndpoint  string
+	didExClient  *didexchange.Client
+	uiEndpoint   string
+	profileStore *issuer.Profile
 }
 
 // GetRESTHandlers get all controller API handler available for this service.
 func (o *Operation) GetRESTHandlers() []Handler {
 	return []Handler{
+		// profile
+		support.NewHTTPHandler(profileEndpoint, http.MethodPost, o.createIssuerProfileHandler),
+		support.NewHTTPHandler(getProfileEndpoint, http.MethodGet, o.getIssuerProfileHandler),
+
+		// didcomm
 		support.NewHTTPHandler(walletConnectEndpoint, http.MethodGet, o.walletConnect),
 		support.NewHTTPHandler(generateInvitationEndpoint, http.MethodGet, o.generateInvitation),
 	}
+}
+
+func (o *Operation) createIssuerProfileHandler(rw http.ResponseWriter, req *http.Request) {
+	data := &issuer.ProfileData{}
+
+	if err := json.NewDecoder(req.Body).Decode(&data); err != nil {
+		commhttp.WriteErrorResponse(rw, http.StatusBadRequest, fmt.Sprintf("invalid request: %s", err.Error()))
+
+		return
+	}
+
+	profile, err := o.profileStore.GetProfile(data.ID)
+	if err != nil && !errors.Is(err, storage.ErrValueNotFound) {
+		commhttp.WriteErrorResponse(rw, http.StatusBadRequest, err.Error())
+
+		return
+	}
+
+	if profile != nil {
+		commhttp.WriteErrorResponse(rw, http.StatusBadRequest, fmt.Sprintf("profile %s already exists", profile.ID))
+
+		return
+	}
+
+	if err = validateProfileRequest(data); err != nil {
+		commhttp.WriteErrorResponse(rw, http.StatusBadRequest, err.Error())
+
+		return
+	}
+
+	err = o.profileStore.SaveProfile(data)
+	if err != nil {
+		commhttp.WriteErrorResponse(rw, http.StatusBadRequest, err.Error())
+
+		return
+	}
+
+	rw.WriteHeader(http.StatusCreated)
+	commhttp.WriteResponse(rw, data)
+}
+
+func (o *Operation) getIssuerProfileHandler(rw http.ResponseWriter, req *http.Request) {
+	profileID := mux.Vars(req)[profileIDPathParam]
+
+	profile, err := o.profileStore.GetProfile(profileID)
+	if err != nil {
+		commhttp.WriteErrorResponse(rw, http.StatusBadRequest, err.Error())
+
+		return
+	}
+
+	commhttp.WriteResponse(rw, profile)
 }
 
 func (o *Operation) walletConnect(w http.ResponseWriter, r *http.Request) {
@@ -107,4 +182,20 @@ func didExchangeClient(ariesCtx aries.CtxProvider) (*didexchange.Client, error) 
 	go service.AutoExecuteActionEvent(actionCh)
 
 	return didExClient, nil
+}
+
+func validateProfileRequest(pr *issuer.ProfileData) error {
+	if pr.ID == "" {
+		return fmt.Errorf("missing profile id")
+	}
+
+	if pr.Name == "" {
+		return fmt.Errorf("missing profile name")
+	}
+
+	if pr.CallbackURL == "" {
+		return fmt.Errorf("missing callback url")
+	}
+
+	return nil
 }

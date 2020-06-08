@@ -7,13 +7,15 @@ package operation
 
 import (
 	"bytes"
+	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"testing"
 
-	"github.com/trustbloc/edge-adapter/pkg/aries"
-
+	"github.com/google/uuid"
+	"github.com/gorilla/mux"
 	"github.com/hyperledger/aries-framework-go/pkg/didcomm/protocol/didexchange"
 	"github.com/hyperledger/aries-framework-go/pkg/didcomm/protocol/mediator"
 	mocksvc "github.com/hyperledger/aries-framework-go/pkg/mock/didcomm/protocol/didexchange"
@@ -22,21 +24,181 @@ import (
 	mockprovider "github.com/hyperledger/aries-framework-go/pkg/mock/provider"
 	mockstore "github.com/hyperledger/aries-framework-go/pkg/mock/storage"
 	"github.com/stretchr/testify/require"
+	"github.com/trustbloc/edge-core/pkg/storage/memstore"
+	mockstorage "github.com/trustbloc/edge-core/pkg/storage/mockstore"
+
+	"github.com/trustbloc/edge-adapter/pkg/aries"
+	"github.com/trustbloc/edge-adapter/pkg/profile/issuer"
 )
 
 func TestNew(t *testing.T) {
 	t.Run("test new - success", func(t *testing.T) {
-		c, err := New(&Config{AriesCtx: getAriesCtx()})
+		c, err := New(&Config{
+			AriesCtx:      getAriesCtx(),
+			StoreProvider: memstore.NewProvider(),
+		})
 		require.NoError(t, err)
 
-		require.Equal(t, 2, len(c.GetRESTHandlers()))
+		require.Equal(t, 4, len(c.GetRESTHandlers()))
 	})
 
-	t.Run("test new - fail", func(t *testing.T) {
+	t.Run("test new - aries provider fail", func(t *testing.T) {
 		c, err := New(&Config{AriesCtx: &mockprovider.Provider{}})
 		require.Nil(t, c)
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "failed to create aries did exchange client")
+	})
+
+	t.Run("test new - store fail", func(t *testing.T) {
+		c, err := New(&Config{
+			AriesCtx:      getAriesCtx(),
+			StoreProvider: &mockstorage.Provider{ErrCreateStore: errors.New("error creating the store")},
+		})
+		require.Nil(t, c)
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "error creating the store")
+	})
+}
+
+func TestCreateProfile(t *testing.T) {
+	op, err := New(&Config{
+		StoreProvider: memstore.NewProvider(),
+		AriesCtx:      getAriesCtx(),
+	})
+	require.NoError(t, err)
+
+	endpoint := profileEndpoint
+	handler := getHandler(t, op, endpoint)
+
+	t.Run("create profile - success", func(t *testing.T) {
+		vReq := &issuer.ProfileData{
+			ID:          uuid.New().String(),
+			Name:        "test",
+			CallbackURL: "http://issuer.example.com/callback",
+		}
+
+		vReqBytes, err := json.Marshal(vReq)
+		require.NoError(t, err)
+
+		rr := serveHTTP(t, handler.Handle(), http.MethodPost, endpoint, vReqBytes)
+
+		require.Equal(t, http.StatusCreated, rr.Code)
+
+		profileRes := &issuer.ProfileData{}
+		err = json.Unmarshal(rr.Body.Bytes(), &profileRes)
+		require.NoError(t, err)
+		require.Equal(t, vReq, profileRes)
+	})
+
+	t.Run("create profile - invalid request", func(t *testing.T) {
+		rr := serveHTTP(t, handler.Handle(), http.MethodPost, endpoint, []byte("invalid-json"))
+
+		require.Equal(t, http.StatusBadRequest, rr.Code)
+		require.Contains(t, rr.Body.String(), "invalid request")
+	})
+
+	t.Run("create profile - missing profile id", func(t *testing.T) {
+		vReq := &issuer.ProfileData{}
+
+		vReqBytes, err := json.Marshal(vReq)
+		require.NoError(t, err)
+
+		rr := serveHTTP(t, handler.Handle(), http.MethodPost, endpoint, vReqBytes)
+
+		require.Equal(t, http.StatusBadRequest, rr.Code)
+		require.Contains(t, rr.Body.String(), "missing profile id")
+	})
+
+	t.Run("create profile - missing profile name", func(t *testing.T) {
+		vReq := &issuer.ProfileData{
+			ID: "test1",
+		}
+
+		vReqBytes, err := json.Marshal(vReq)
+		require.NoError(t, err)
+
+		rr := serveHTTP(t, handler.Handle(), http.MethodPost, endpoint, vReqBytes)
+
+		require.Equal(t, http.StatusBadRequest, rr.Code)
+		require.Contains(t, rr.Body.String(), "missing profile name")
+	})
+
+	t.Run("create profile - missing call back url", func(t *testing.T) {
+		vReq := &issuer.ProfileData{
+			ID:   "test1",
+			Name: "test 1",
+		}
+
+		vReqBytes, err := json.Marshal(vReq)
+		require.NoError(t, err)
+
+		rr := serveHTTP(t, handler.Handle(), http.MethodPost, endpoint, vReqBytes)
+
+		require.Equal(t, http.StatusBadRequest, rr.Code)
+		require.Contains(t, rr.Body.String(), "missing callback url")
+	})
+
+	t.Run("create profile - profile already exists", func(t *testing.T) {
+		vReq := &issuer.ProfileData{
+			ID:          "test1",
+			Name:        "test 1",
+			CallbackURL: "http://issuer.example.com/callback",
+		}
+
+		vReqBytes, err := json.Marshal(vReq)
+		require.NoError(t, err)
+
+		rr := serveHTTP(t, handler.Handle(), http.MethodPost, endpoint, vReqBytes)
+
+		require.Equal(t, http.StatusCreated, rr.Code)
+
+		rr = serveHTTP(t, handler.Handle(), http.MethodPost, endpoint, vReqBytes)
+
+		require.Equal(t, http.StatusBadRequest, rr.Code)
+		require.Contains(t, rr.Body.String(), "profile test1 already exists")
+	})
+}
+
+func TestGetProfile(t *testing.T) {
+	op, err := New(&Config{
+		StoreProvider: memstore.NewProvider(),
+		AriesCtx:      getAriesCtx(),
+	})
+	require.NoError(t, err)
+
+	endpoint := getProfileEndpoint
+	handler := getHandler(t, op, endpoint)
+
+	urlVars := make(map[string]string)
+
+	t.Run("get profile - success", func(t *testing.T) {
+		vReq := &issuer.ProfileData{
+			ID: "test",
+		}
+
+		err := op.profileStore.SaveProfile(vReq)
+		require.NoError(t, err)
+
+		urlVars[profileIDPathParam] = vReq.ID
+
+		rr := serveHTTPMux(t, handler, endpoint, nil, urlVars)
+
+		require.Equal(t, http.StatusOK, rr.Code)
+
+		profileRes := &issuer.ProfileData{}
+		err = json.Unmarshal(rr.Body.Bytes(), &profileRes)
+		require.NoError(t, err)
+		require.Equal(t, vReq.ID, profileRes.ID)
+	})
+
+	t.Run("get profile - no data found", func(t *testing.T) {
+		urlVars[profileIDPathParam] = "invalid-name"
+
+		rr := serveHTTPMux(t, handler, endpoint, nil, urlVars)
+
+		fmt.Println(rr.Body.String())
+		require.Equal(t, http.StatusBadRequest, rr.Code)
+		require.Contains(t, rr.Body.String(), "store does not have a value associated with this key")
 	})
 }
 
@@ -44,8 +206,9 @@ func TestConnectWallet(t *testing.T) {
 	t.Run("test connect wallet - success", func(t *testing.T) {
 		uiEndpoint := "/ui"
 		c, err := New(&Config{
-			AriesCtx:   getAriesCtx(),
-			UIEndpoint: uiEndpoint,
+			AriesCtx:      getAriesCtx(),
+			StoreProvider: memstore.NewProvider(),
+			UIEndpoint:    uiEndpoint,
 		})
 		require.NoError(t, err)
 
@@ -60,7 +223,10 @@ func TestConnectWallet(t *testing.T) {
 
 func TestGenerateInvitation(t *testing.T) {
 	t.Run("test new - success", func(t *testing.T) {
-		c, err := New(&Config{AriesCtx: getAriesCtx()})
+		c, err := New(&Config{
+			StoreProvider: memstore.NewProvider(),
+			AriesCtx:      getAriesCtx(),
+		})
 		require.NoError(t, err)
 
 		generateInvitationHandler := getHandler(t, c, generateInvitationEndpoint)
@@ -82,7 +248,10 @@ func TestGenerateInvitation(t *testing.T) {
 			ServiceEndpointValue: "endpoint",
 		}
 
-		c, err := New(&Config{AriesCtx: ariesCtx})
+		c, err := New(&Config{
+			StoreProvider: memstore.NewProvider(),
+			AriesCtx:      ariesCtx,
+		})
 		require.NoError(t, err)
 
 		generateInvitationHandler := getHandler(t, c, generateInvitationEndpoint)
@@ -141,6 +310,20 @@ func serveHTTP(t *testing.T, handler http.HandlerFunc, method, path string, req 
 	rr := httptest.NewRecorder()
 
 	handler.ServeHTTP(rr, httpReq)
+
+	return rr
+}
+
+func serveHTTPMux(t *testing.T, handler Handler, endpoint string, reqBytes []byte,
+	urlVars map[string]string) *httptest.ResponseRecorder {
+	r, err := http.NewRequest(handler.Method(), endpoint, bytes.NewBuffer(reqBytes))
+	require.NoError(t, err)
+
+	rr := httptest.NewRecorder()
+
+	req1 := mux.SetURLVars(r, urlVars)
+
+	handler.Handle().ServeHTTP(rr, req1)
 
 	return rr
 }

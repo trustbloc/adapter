@@ -15,6 +15,7 @@ import (
 	mockprovider "github.com/hyperledger/aries-framework-go/pkg/mock/provider"
 	mockstore "github.com/hyperledger/aries-framework-go/pkg/mock/storage"
 	"github.com/stretchr/testify/require"
+	"github.com/trustbloc/edge-core/pkg/storage/memstore"
 
 	"github.com/trustbloc/edge-adapter/pkg/restapi/issuer/operation"
 )
@@ -30,13 +31,16 @@ func TestNew(t *testing.T) {
 			},
 		}
 
-		controller, err := New(&operation.Config{AriesCtx: ariesCtx})
+		controller, err := New(&operation.Config{
+			AriesCtx:      ariesCtx,
+			StoreProvider: memstore.NewProvider(),
+		})
 		require.NoError(t, err)
 		require.NotNil(t, controller)
 
 		ops := controller.GetOperations()
 
-		require.Equal(t, 2, len(ops))
+		require.Equal(t, 4, len(ops))
 	})
 
 	t.Run("test new - fail", func(t *testing.T) {
