@@ -6,10 +6,14 @@ SPDX-License-Identifier: Apache-2.0
 
 package operation
 
-import "github.com/trustbloc/edge-adapter/pkg/presentationex"
+import (
+	"github.com/hyperledger/aries-framework-go/pkg/client/didexchange"
+
+	"github.com/trustbloc/edge-adapter/pkg/presentationex"
+)
 
 // GetPresentationRequestResponse API response of getPresentationRequest.
 type GetPresentationRequestResponse struct {
 	PD  *presentationex.PresentationDefinitions `json:"pd"`
-	DID string                                  `json:"did"`
+	Inv *didexchange.Invitation                 `json:"invitation"`
 }

@@ -244,6 +244,8 @@ func TestStartCmdValidArgs(t *testing.T) {
 		"--" + hostURLFlagName, "localhost:8080",
 		"--" + presentationDefinitionsFlagName, file.Name(),
 		"--" + datasourceNameFlagName, fmt.Sprintf("mysql://root:secret@localhost:%d/edgeadapter", containerPort),
+		"--" + didCommInboundHostFlagName, randomURL(),
+		"--" + didCommDBPathFlagName, generateTempDir(t),
 	}
 	startCmd.SetArgs(args)
 
@@ -263,6 +265,8 @@ func TestStartCmdValidArgsEnvVar(t *testing.T) {
 	startCmd := GetStartCmd(&mockServer{})
 	args := []string{
 		"--" + modeFlagName, "rp",
+		"--" + didCommInboundHostFlagName, randomURL(),
+		"--" + didCommDBPathFlagName, generateTempDir(t),
 	}
 	startCmd.SetArgs(args)
 
@@ -276,8 +280,7 @@ func TestStartCmdValidArgsEnvVar(t *testing.T) {
 
 func TestStartCmdDIDComm(t *testing.T) {
 	t.Run("test start didcomm - success", func(t *testing.T) {
-		path, cleanup := generateTempDir(t)
-		defer cleanup()
+		path := generateTempDir(t)
 
 		startCmd := GetStartCmd(&mockServer{})
 
@@ -294,8 +297,7 @@ func TestStartCmdDIDComm(t *testing.T) {
 	})
 
 	t.Run("test start didcomm - empty inbound host", func(t *testing.T) {
-		path, cleanup := generateTempDir(t)
-		defer cleanup()
+		path := generateTempDir(t)
 
 		startCmd := GetStartCmd(&mockServer{})
 
@@ -346,6 +348,8 @@ func TestAdapterModes(t *testing.T) {
 			"--" + modeFlagName, rpMode,
 			"--" + hostURLFlagName, "localhost:8080",
 			"--" + presentationDefinitionsFlagName, file.Name(),
+			"--" + didCommInboundHostFlagName, randomURL(),
+			"--" + didCommDBPathFlagName, generateTempDir(t),
 		}
 		startCmd.SetArgs(args)
 
@@ -354,8 +358,7 @@ func TestAdapterModes(t *testing.T) {
 	})
 
 	t.Run("test adapter mode - issuer", func(t *testing.T) {
-		path, cleanup := generateTempDir(t)
-		defer cleanup()
+		path := generateTempDir(t)
 
 		startCmd := GetStartCmd(&mockServer{})
 
@@ -379,6 +382,8 @@ func TestAdapterModes(t *testing.T) {
 		args := []string{
 			"--" + modeFlagName, "invalidMode",
 			"--" + hostURLFlagName, "localhost:8080",
+			"--" + didCommInboundHostFlagName, randomURL(),
+			"--" + didCommDBPathFlagName, generateTempDir(t),
 		}
 		startCmd.SetArgs(args)
 
@@ -487,16 +492,18 @@ func getRandomPort() (int, error) {
 	return listener.Addr().(*net.TCPAddr).Port, nil
 }
 
-func generateTempDir(t testing.TB) (string, func()) {
+func generateTempDir(t testing.TB) string {
 	path, err := ioutil.TempDir("", "db")
 	if err != nil {
 		t.Fatalf("Failed to create leveldb directory: %s", err)
 	}
 
-	return path, func() {
+	t.Cleanup(func() {
 		err := os.RemoveAll(path)
 		if err != nil {
 			t.Fatalf("Failed to clear leveldb directory: %s", err)
 		}
-	}
+	})
+
+	return path
 }

@@ -20,6 +20,7 @@ import (
 
 	"github.com/cenkalti/backoff"
 	"github.com/gorilla/mux"
+	"github.com/hyperledger/aries-framework-go/pkg/client/didexchange"
 	arieshttp "github.com/hyperledger/aries-framework-go/pkg/didcomm/transport/http"
 	"github.com/hyperledger/aries-framework-go/pkg/framework/aries"
 	"github.com/hyperledger/aries-framework-go/pkg/framework/aries/defaults"
@@ -327,19 +328,19 @@ func startAdapterService(parameters *adapterRestParameters, srv server) error {
 		router.HandleFunc(handler.Path(), handler.Handle()).Methods(handler.Method())
 	}
 
+	ariesCtx, err := createAriesAgent(parameters, &tls.Config{RootCAs: rootCAs})
+	if err != nil {
+		return err
+	}
+
 	// add endpoints
 	switch parameters.mode {
 	case rpMode:
-		err := addRPHandlers(parameters, router)
+		err = addRPHandlers(parameters, ariesCtx, router)
 		if err != nil {
 			return nil
 		}
 	case issuerMode:
-		ariesCtx, err := createAriesAgent(parameters, &tls.Config{RootCAs: rootCAs})
-		if err != nil {
-			return err
-		}
-
 		err = addIssuerHandlers(parameters, ariesCtx, router)
 		if err != nil {
 			return nil
@@ -353,7 +354,7 @@ func startAdapterService(parameters *adapterRestParameters, srv server) error {
 	return srv.ListenAndServe(parameters.hostURL, constructCORSHandler(router))
 }
 
-func addRPHandlers(parameters *adapterRestParameters, router *mux.Router) error {
+func addRPHandlers(parameters *adapterRestParameters, ctx ariespai.CtxProvider, router *mux.Router) error {
 	presentationExProvider, err := presentationex.New(parameters.presentationDefinitionsFile)
 	if err != nil {
 		return err
@@ -369,6 +370,11 @@ func addRPHandlers(parameters *adapterRestParameters, router *mux.Router) error 
 		return err
 	}
 
+	didClient, err := didexchange.New(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to initialized didexchange client : %w", err)
+	}
+
 	// TODO init OIDC stuff in iteration 2 - https://github.com/trustbloc/edge-adapter/issues/24
 
 	// add rp endpoints
@@ -379,6 +385,7 @@ func addRPHandlers(parameters *adapterRestParameters, router *mux.Router) error 
 		UsersDAO:               db.NewEndUsers(datasource),
 		OIDCRequestsDAO:        db.NewOIDCRequests(datasource),
 		UIEndpoint:             uiEndpoint,
+		DIDExchClient:          didClient,
 	})
 	if err != nil {
 		return err

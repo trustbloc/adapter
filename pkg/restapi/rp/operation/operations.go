@@ -16,6 +16,9 @@ import (
 
 	"github.com/coreos/go-oidc"
 	"github.com/google/uuid"
+	"github.com/hyperledger/aries-framework-go/pkg/client/didexchange"
+	"github.com/hyperledger/aries-framework-go/pkg/didcomm/common/service"
+	didexchangesvc "github.com/hyperledger/aries-framework-go/pkg/didcomm/protocol/didexchange"
 	"github.com/hyperledger/aries-framework-go/pkg/doc/did"
 	"github.com/ory/hydra-client-go/client/admin"
 	"github.com/ory/hydra-client-go/models"
@@ -94,27 +97,60 @@ type Trx interface {
 	Rollback() error
 }
 
+// DIDClient is the didexchange Client.
+type DIDClient interface {
+	RegisterActionEvent(chan<- service.DIDCommAction) error
+	RegisterMsgEvent(chan<- service.StateMsg) error
+	CreateInvitationWithDID(string, string) (*didexchange.Invitation, error)
+}
+
 type consentRequest struct {
 	pd    *presentationex.PresentationDefinitions
 	cr    *admin.GetConsentRequestOK
 	rpDID *did.DID
 }
 
+type invitationData struct {
+	id          string
+	userSubject string
+	rpPublicDID *did.DID
+}
+
 // New returns CreateCredential instance.
 func New(config *Config) (*Operation, error) {
-	return &Operation{
-		presentationExProvider: config.PresentationExProvider,
-		hydra:                  config.Hydra,
-		oidc:                   config.OIDC,
-		oauth2Config:           config.OAuth2Config,
-		oidcStates:             make(map[string]*models.LoginRequest),
-		trxProvider:            config.TrxProvider,
-		users:                  config.UsersDAO,
-		oidcRequests:           config.OIDCRequestsDAO,
-		relyingPartiesDAO:      config.RelyingPartiesDAO,
-		consentRequests:        make(map[string]*consentRequest),
-		uiEndpoint:             config.UIEndpoint,
-	}, nil
+	o := &Operation{
+		presentationExProvider:  config.PresentationExProvider,
+		hydra:                   config.Hydra,
+		oidc:                    config.OIDC,
+		oauth2Config:            config.OAuth2Config,
+		oidcStates:              make(map[string]*models.LoginRequest),
+		trxProvider:             config.TrxProvider,
+		users:                   config.UsersDAO,
+		oidcRequests:            config.OIDCRequestsDAO,
+		relyingPartiesDAO:       config.RelyingPartiesDAO,
+		consentRequests:         make(map[string]*consentRequest),
+		uiEndpoint:              config.UIEndpoint,
+		didClient:               config.DIDExchClient,
+		didActions:              make(chan service.DIDCommAction),
+		didStateMsgs:            make(chan service.StateMsg),
+		transientInvitationData: make(map[string]*invitationData),
+	}
+
+	err := o.didClient.RegisterActionEvent(o.didActions)
+	if err != nil {
+		return nil, fmt.Errorf("failed to register listener for action events on didexchange client : %w", err)
+	}
+
+	err = o.didClient.RegisterMsgEvent(o.didStateMsgs)
+	if err != nil {
+		return nil, fmt.Errorf("failed to register listener for state msgs on didexchange client : %w", err)
+	}
+
+	go o.listenForIncomingConnections()
+
+	go o.listenForConnectionCompleteEvents()
+
+	return o, nil
 }
 
 // Config defines configuration for rp operations.
@@ -128,6 +164,7 @@ type Config struct {
 	RelyingPartiesDAO      RelyingPartiesDAO
 	OIDCRequestsDAO        OidcRequestsDAO
 	UIEndpoint             string
+	DIDExchClient          DIDClient
 }
 
 // TODO implement an eviction strategy for Operation.oidcStates and OIDC.consentRequests
@@ -135,19 +172,24 @@ type Config struct {
 
 // Operation defines handlers for rp operations.
 type Operation struct {
-	presentationExProvider presentationExProvider
-	hydra                  Hydra
-	oidc                   func(string, context.Context) (*oidc.IDToken, error)
-	oauth2Config           OAuth2Config
-	oidcStates             map[string]*models.LoginRequest
-	oidcStateLock          sync.Mutex
-	trxProvider            func(context.Context, *sql.TxOptions) (Trx, error)
-	users                  UsersDAO
-	oidcRequests           OidcRequestsDAO
-	relyingPartiesDAO      RelyingPartiesDAO
-	consentRequests        map[string]*consentRequest
-	presDefsLock           sync.Mutex
-	uiEndpoint             string
+	presentationExProvider  presentationExProvider
+	hydra                   Hydra
+	oidc                    func(string, context.Context) (*oidc.IDToken, error)
+	oauth2Config            OAuth2Config
+	oidcStates              map[string]*models.LoginRequest
+	oidcStateLock           sync.Mutex
+	trxProvider             func(context.Context, *sql.TxOptions) (Trx, error)
+	users                   UsersDAO
+	oidcRequests            OidcRequestsDAO
+	relyingPartiesDAO       RelyingPartiesDAO
+	consentRequests         map[string]*consentRequest
+	presDefsLock            sync.Mutex
+	uiEndpoint              string
+	didClient               DIDClient
+	didActions              chan service.DIDCommAction
+	didStateMsgs            chan service.StateMsg
+	invLock                 sync.RWMutex
+	transientInvitationData map[string]*invitationData
 }
 
 // GetRESTHandlers get all controller API handler available for this service.
@@ -244,6 +286,23 @@ func (o *Operation) getAndUnsetConsentRequest(handle string) *consentRequest {
 	delete(o.consentRequests, handle)
 
 	return r
+}
+
+func (o *Operation) setInvitationData(i *invitationData) {
+	o.invLock.Lock()
+	defer o.invLock.Unlock()
+
+	o.transientInvitationData[i.id] = i
+}
+
+func (o *Operation) getAndUnsetInvitationData(id string) *invitationData {
+	o.invLock.Lock()
+	defer o.invLock.Unlock()
+
+	i := o.transientInvitationData[id]
+	delete(o.transientInvitationData, id)
+
+	return i
 }
 
 func acceptLoginAndRedirectToHydra(
@@ -472,9 +531,25 @@ func (o *Operation) getPresentationsRequest(rw http.ResponseWriter, req *http.Re
 		return
 	}
 
+	// TODO set label on RP's invitation
+	invitation, err := o.didClient.CreateInvitationWithDID("RP", cr.rpDID.String())
+	if err != nil {
+		msg := fmt.Sprintf("failed to create didexchange invitation with DID : %s", err)
+		logger.Errorf(msg)
+		commhttp.WriteErrorResponse(rw, http.StatusInternalServerError, msg)
+
+		return
+	}
+
+	o.setInvitationData(&invitationData{
+		id:          invitation.ID,
+		userSubject: cr.cr.GetPayload().Subject,
+		rpPublicDID: cr.rpDID,
+	})
+
 	response := &GetPresentationRequestResponse{
 		PD:  cr.pd,
-		DID: cr.rpDID.String(),
+		Inv: invitation,
 	}
 
 	rw.WriteHeader(http.StatusOK)
@@ -542,6 +617,42 @@ func (o *Operation) userInfoHandler(w http.ResponseWriter, _ *http.Request) {
 	// TODO introspect RP's access_token (Authorization request header) with hydra and validate.
 	//  Load VPs related to the user and map them to a normal id_token and reply with that.
 	testResponse(w)
+}
+
+func (o *Operation) listenForIncomingConnections() {
+	for action := range o.didActions {
+		if action.Message.Type() == didexchange.RequestMsgType {
+			// TODO submit to worker pool?
+			o.handleIncomingDIDExchangeRequestAction(action)
+			continue
+		}
+
+		logger.Warnf("stopping action for unsupported didexchange action message type %s", action.Message.Type())
+		action.Stop(nil)
+	}
+}
+
+// We accept incoming did-exchange requests on the following conditions:
+// - the request has a parent invitation ID found in our transient store
+// - the parent invitation has not been used (the invitationID is evicted once used).
+func (o *Operation) handleIncomingDIDExchangeRequestAction(action service.DIDCommAction) {
+	invitation := o.getAndUnsetInvitationData(action.Message.ParentThreadID())
+	if invitation == nil {
+		action.Stop(fmt.Errorf("no such invitation with id %s", action.Message.ParentThreadID()))
+
+		return
+	}
+
+	action.Continue(nil)
+}
+
+func (o *Operation) listenForConnectionCompleteEvents() {
+	// TODO record the user's and RP's pairwise DIDs for later use
+	for msg := range o.didStateMsgs {
+		if msg.Type != service.PostState || msg.StateID != didexchangesvc.StateIDCompleted {
+			continue
+		}
+	}
 }
 
 func testResponse(w io.Writer) {

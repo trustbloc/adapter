@@ -35,6 +35,7 @@ services:
       - ADAPTER_REST_DSN=mysql://root:secret@mysql:3306/mysql
       - ADAPTER_REST_OP_URL=http://PUT-SOMETHING-HERE.com
       - ADAPTER_REST_PRESENTATION_DEFINITIONS_FILE=/etc/testdata/presentationdefinitions.json
+      - ADAPTER_REST_DIDCOMM_INBOUND_HOST=0.0.0.0:8071
     ports:
       - 8070:8070
     entrypoint: ""

@@ -16,10 +16,15 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"testing"
+	"time"
 
 	"github.com/coreos/go-oidc"
 	_ "github.com/go-sql-driver/mysql"
 	"github.com/google/uuid"
+	"github.com/hyperledger/aries-framework-go/pkg/client/didexchange"
+	"github.com/hyperledger/aries-framework-go/pkg/didcomm/common/service"
+	"github.com/hyperledger/aries-framework-go/pkg/didcomm/protocol/decorator"
+	didexchangesvc "github.com/hyperledger/aries-framework-go/pkg/didcomm/protocol/didexchange"
 	"github.com/hyperledger/aries-framework-go/pkg/doc/did"
 	"github.com/ory/hydra-client-go/client/admin"
 	"github.com/ory/hydra-client-go/models"
@@ -29,8 +34,166 @@ import (
 	"github.com/trustbloc/edge-adapter/pkg/presentationex"
 )
 
+func TestNew(t *testing.T) {
+	t.Run("registers for didexchange events", func(t *testing.T) {
+		registeredActions := false
+		registeredMsgs := false
+		_, err := New(&Config{
+			DIDExchClient: &stubDIDClient{
+				actionEventFunc: func(chan<- service.DIDCommAction) error {
+					registeredActions = true
+					return nil
+				},
+				msgEventFunc: func(chan<- service.StateMsg) error {
+					registeredMsgs = true
+					return nil
+				},
+			},
+		})
+		require.NoError(t, err)
+		require.True(t, registeredActions)
+		require.True(t, registeredMsgs)
+	})
+
+	t.Run("wraps error when actions registration fails", func(t *testing.T) {
+		expected := errors.New("test")
+		_, err := New(&Config{
+			DIDExchClient: &stubDIDClient{
+				actionEventFunc: func(chan<- service.DIDCommAction) error {
+					return expected
+				},
+			},
+		})
+		require.Error(t, err)
+		require.True(t, errors.Is(err, expected))
+	})
+
+	t.Run("wraps error when state msg registration fails", func(t *testing.T) {
+		expected := errors.New("test")
+		_, err := New(&Config{
+			DIDExchClient: &stubDIDClient{
+				msgEventFunc: func(chan<- service.StateMsg) error {
+					return expected
+				},
+			},
+		})
+		require.Error(t, err)
+		require.True(t, errors.Is(err, expected))
+	})
+}
+
+func Test_HandleDIDExchangeRequests(t *testing.T) {
+	t.Run("continues didcomm action for valid didexchange request", func(t *testing.T) {
+		var incoming chan<- service.DIDCommAction
+		o, err := New(&Config{
+			DIDExchClient: &stubDIDClient{
+				actionEventFunc: func(c chan<- service.DIDCommAction) error {
+					incoming = c
+					return nil
+				},
+			},
+		})
+		require.NoError(t, err)
+		require.NotNil(t, incoming)
+		invitationID := uuid.New().String()
+		continued := make(chan struct{})
+		o.setInvitationData(&invitationData{
+			id: invitationID,
+		})
+		go func() {
+			incoming <- service.DIDCommAction{
+				ProtocolName: didexchangesvc.DIDExchange,
+				Message: service.NewDIDCommMsgMap(&didexchangesvc.Request{
+					Type:   didexchangesvc.RequestMsgType,
+					ID:     uuid.New().String(),
+					Label:  "test",
+					Thread: &decorator.Thread{PID: invitationID},
+				}),
+				Continue: func(args interface{}) {
+					continued <- struct{}{}
+				},
+			}
+		}()
+		select {
+		case <-continued:
+		case <-time.After(time.Second):
+			t.Errorf("timeout")
+		}
+	})
+
+	t.Run("stops didcomm action for invalid parentThreadID", func(t *testing.T) {
+		var incoming chan<- service.DIDCommAction
+		_, err := New(&Config{
+			DIDExchClient: &stubDIDClient{
+				actionEventFunc: func(c chan<- service.DIDCommAction) error {
+					incoming = c
+					return nil
+				},
+			},
+		})
+		require.NoError(t, err)
+		require.NotNil(t, incoming)
+		stopped := make(chan struct{})
+		go func() {
+			incoming <- service.DIDCommAction{
+				ProtocolName: didexchangesvc.DIDExchange,
+				Message: service.NewDIDCommMsgMap(&didexchangesvc.Request{
+					Type:   didexchangesvc.RequestMsgType,
+					ID:     uuid.New().String(),
+					Label:  "test",
+					Thread: &decorator.Thread{PID: "invalid"},
+				}),
+				Stop: func(err error) {
+					stopped <- struct{}{}
+				},
+			}
+		}()
+		select {
+		case <-stopped:
+		case <-time.After(time.Second):
+			t.Errorf("timeout")
+		}
+	})
+
+	t.Run("stops didcomm action for invalid didcomm message type", func(t *testing.T) {
+		var incoming chan<- service.DIDCommAction
+		_, err := New(&Config{
+			DIDExchClient: &stubDIDClient{
+				actionEventFunc: func(c chan<- service.DIDCommAction) error {
+					incoming = c
+					return nil
+				},
+			},
+		})
+		require.NoError(t, err)
+		require.NotNil(t, incoming)
+		stopped := make(chan struct{})
+		go func() {
+			incoming <- service.DIDCommAction{
+				ProtocolName: didexchangesvc.DIDExchange,
+				Message: service.NewDIDCommMsgMap(&didexchangesvc.Request{
+					Type:   "invalid",
+					ID:     uuid.New().String(),
+					Label:  "test",
+					Thread: &decorator.Thread{PID: "invalid"},
+				}),
+				Stop: func(err error) {
+					stopped <- struct{}{}
+				},
+			}
+		}()
+		select {
+		case <-stopped:
+		case <-time.After(time.Second):
+			t.Errorf("timeout")
+		}
+	})
+}
+
 func TestGetRESTHandlers(t *testing.T) {
-	c, err := New(&Config{})
+	c, err := New(&Config{
+		DIDExchClient: &stubDIDClient{},
+	})
 	require.NoError(t, err)
 
 	require.Equal(t, 6, len(c.GetRESTHandlers()))
@@ -56,6 +219,7 @@ func TestHydraLoginHandler(t *testing.T) {
 					}, nil
 				},
 			},
+			DIDExchClient: &stubDIDClient{},
 		})
 		require.NoError(t, err)
 
@@ -83,6 +247,7 @@ func TestHydraLoginHandler(t *testing.T) {
 					}, nil
 				},
 			},
+			DIDExchClient: &stubDIDClient{},
 		})
 		require.NoError(t, err)
 		w := &httptest.ResponseRecorder{}
@@ -91,7 +256,9 @@ func TestHydraLoginHandler(t *testing.T) {
 		require.Equal(t, w.Header().Get("Location"), redirectURL)
 	})
 	t.Run("fails on missing login_challenge", func(t *testing.T) {
-		o, err := New(&Config{})
+		o, err := New(&Config{
+			DIDExchClient: &stubDIDClient{},
+		})
 		require.NoError(t, err)
 		r := newHydraRequestNoChallenge(t)
 		r.URL.Query().Del("login_challenge")
@@ -106,6 +273,7 @@ func TestHydraLoginHandler(t *testing.T) {
 					return nil, errors.New("test")
 				},
 			},
+			DIDExchClient: &stubDIDClient{},
 		})
 		require.NoError(t, err)
 		w := &httptest.ResponseRecorder{}
@@ -126,6 +294,7 @@ func TestHydraLoginHandler(t *testing.T) {
 					return nil, errors.New("test")
 				},
 			},
+			DIDExchClient: &stubDIDClient{},
 		})
 		require.NoError(t, err)
 		w := &httptest.ResponseRecorder{}
@@ -167,6 +336,7 @@ func TestOidcCallbackHandler(t *testing.T) {
 					return &db.RelyingParty{ClientID: id}, nil
 				},
 			},
+			DIDExchClient: &stubDIDClient{},
 		})
 		require.NoError(t, err)
 
@@ -180,7 +350,9 @@ func TestOidcCallbackHandler(t *testing.T) {
 	})
 
 	t.Run("bad request on invalid state", func(t *testing.T) {
-		c, err := New(&Config{})
+		c, err := New(&Config{
+			DIDExchClient: &stubDIDClient{},
+		})
 		require.NoError(t, err)
 
 		r := &httptest.ResponseRecorder{}
@@ -195,6 +367,7 @@ func TestOidcCallbackHandler(t *testing.T) {
 			OIDC: func(string, context.Context) (*oidc.IDToken, error) {
 				return nil, errors.New("test")
 			},
+			DIDExchClient: &stubDIDClient{},
 		})
 		require.NoError(t, err)
 
@@ -217,6 +390,7 @@ func TestOidcCallbackHandler(t *testing.T) {
 			TrxProvider: func(context.Context, *sql.TxOptions) (Trx, error) {
 				return nil, errors.New("test")
 			},
+			DIDExchClient: &stubDIDClient{},
 		})
 		require.NoError(t, err)
 
@@ -249,6 +423,7 @@ func TestOidcCallbackHandler(t *testing.T) {
 					return &db.RelyingParty{}, nil
 				},
 			},
+			DIDExchClient: &stubDIDClient{},
 		})
 		require.NoError(t, err)
 
@@ -279,6 +454,7 @@ func TestSaveUserAndRequest(t *testing.T) {
 					return &db.RelyingParty{}, nil
 				},
 			},
+			DIDExchClient: &stubDIDClient{},
 		})
 		require.NoError(t, err)
 
@@ -306,6 +482,7 @@ func TestSaveUserAndRequest(t *testing.T) {
 					return &db.RelyingParty{}, nil
 				},
 			},
+			DIDExchClient: &stubDIDClient{},
 		})
 		require.NoError(t, err)
 
@@ -343,6 +520,7 @@ func TestHydraConsentHandler(t *testing.T) {
 						return &db.RelyingParty{ClientID: rpClientID}, nil
 					},
 				},
+				DIDExchClient: &stubDIDClient{},
 			})
 			require.NoError(t, err)
 
@@ -362,7 +540,9 @@ func TestHydraConsentHandler(t *testing.T) {
 		})
 
 		t.Run("bad request if consent challenge is missing", func(t *testing.T) {
-			c, err := New(&Config{})
+			c, err := New(&Config{
+				DIDExchClient: &stubDIDClient{},
+			})
 			require.NoError(t, err)
 			w := &httptest.ResponseRecorder{}
 			c.hydraConsentHandler(w, newHydraRequestNoChallenge(t))
@@ -374,6 +554,7 @@ func TestHydraConsentHandler(t *testing.T) {
 				Hydra: &stubHydra{getConsentRequestFunc: func(*admin.GetConsentRequestParams) (*admin.GetConsentRequestOK, error) {
 					return nil, errors.New("test")
 				}},
+				DIDExchClient: &stubDIDClient{},
 			})
 			require.NoError(t, err)
 			w := &httptest.ResponseRecorder{}
@@ -387,6 +568,7 @@ func TestHydraConsentHandler(t *testing.T) {
 					return &admin.GetConsentRequestOK{Payload: &models.ConsentRequest{Skip: false}}, nil
 				}},
 				PresentationExProvider: &mockPresentationExProvider{createErr: errors.New("test")},
+				DIDExchClient:          &stubDIDClient{},
 			})
 			require.NoError(t, err)
 			w := &httptest.ResponseRecorder{}
@@ -410,6 +592,7 @@ func TestHydraConsentHandler(t *testing.T) {
 						return nil, sql.ErrNoRows
 					},
 				},
+				DIDExchClient: &stubDIDClient{},
 			})
 			require.NoError(t, err)
 			w := &httptest.ResponseRecorder{}
@@ -440,6 +623,7 @@ func TestHydraConsentHandler(t *testing.T) {
 					},
 				},
 				PresentationExProvider: mockPresentationDefinitionsProvider(),
+				DIDExchClient:          &stubDIDClient{},
 			})
 			require.NoError(t, err)
 
@@ -462,6 +646,7 @@ func TestHydraConsentHandler(t *testing.T) {
 						return nil, errors.New("test")
 					},
 				},
+				DIDExchClient: &stubDIDClient{},
 			})
 			require.NoError(t, err)
 
@@ -479,6 +664,7 @@ func TestSaveConsentRequest(t *testing.T) {
 			TrxProvider: func(context.Context, *sql.TxOptions) (Trx, error) {
 				return nil, expected
 			},
+			DIDExchClient: &stubDIDClient{},
 		})
 		require.NoError(t, err)
 
@@ -498,6 +684,7 @@ func TestSaveConsentRequest(t *testing.T) {
 					return nil, expected
 				},
 			},
+			DIDExchClient: &stubDIDClient{},
 		})
 		require.NoError(t, err)
 
@@ -525,6 +712,7 @@ func TestSaveConsentRequest(t *testing.T) {
 						return nil, expected
 					},
 				},
+				DIDExchClient: &stubDIDClient{},
 			})
 			require.NoError(t, err)
 
@@ -556,6 +744,7 @@ func TestSaveConsentRequest(t *testing.T) {
 						return expected
 					},
 				},
+				DIDExchClient: &stubDIDClient{},
 			})
 			require.NoError(t, err)
 
@@ -580,6 +769,12 @@ func TestCreatePresentationDefinition(t *testing.T) {
 		presDefs := &presentationex.PresentationDefinitions{
 			InputDescriptors: []presentationex.InputDescriptors{{ID: uuid.New().String()}},
 		}
+		invitation := &didexchange.Invitation{Invitation: &didexchangesvc.Invitation{
+			ID:    uuid.New().String(),
+			Type:  didexchange.InvitationMsgType,
+			Label: "test-label",
+			DID:   rpDID.String(),
+		}}
 
 		c, err := New(&Config{
 			PresentationExProvider: &mockPresentationExProvider{createValue: presDefs},
@@ -618,6 +813,12 @@ func TestCreatePresentationDefinition(t *testing.T) {
 					}, nil
 				},
 			},
+			DIDExchClient: &stubDIDClient{
+				createInvWithDIDFunc: func(label, did string) (*didexchange.Invitation, error) {
+					require.Equal(t, rpDID.String(), did)
+					return invitation, nil
+				},
+			},
 		})
 		require.NoError(t, err)
 
@@ -640,11 +841,13 @@ func TestCreatePresentationDefinition(t *testing.T) {
 		require.NoError(t, json.Unmarshal(r.Body.Bytes(), &resp))
 
 		require.Equal(t, presDefs, resp.PD)
-		require.Equal(t, rpDID.String(), resp.DID)
+		require.Equal(t, rpDID.String(), resp.Inv.DID)
 	})
 
 	t.Run("bad request if handle is invalid", func(t *testing.T) {
-		c, err := New(&Config{})
+		c, err := New(&Config{
+			DIDExchClient: &stubDIDClient{},
+		})
 		require.NoError(t, err)
 
 		c.setConsentRequest(uuid.New().String(), &consentRequest{
@@ -663,7 +866,9 @@ func TestCreatePresentationDefinition(t *testing.T) {
 	})
 
 	t.Run("bad request if handle is missing", func(t *testing.T) {
-		c, err := New(&Config{})
+		c, err := New(&Config{
+			DIDExchClient: &stubDIDClient{},
+		})
 		require.NoError(t, err)
 
 		w := httptest.NewRecorder()
@@ -671,10 +876,78 @@ func TestCreatePresentationDefinition(t *testing.T) {
 			w, httptest.NewRequest(http.MethodGet, "http://adapter.example.com/createPresentation", nil))
 		require.Equal(t, http.StatusBadRequest, w.Code)
 	})
+
+	t.Run("internal server error if failed to create didexchange invitation", func(t *testing.T) {
+		userSubject := uuid.New().String()
+		rpClientID := uuid.New().String()
+		rpDID := newDID(t)
+		scopes := []string{uuid.New().String(), uuid.New().String()}
+		handle := uuid.New().String()
+		presDefs := &presentationex.PresentationDefinitions{
+			InputDescriptors: []presentationex.InputDescriptors{{ID: uuid.New().String()}},
+		}
+
+		c, err := New(&Config{
+			PresentationExProvider: &mockPresentationExProvider{createValue: presDefs},
+			TrxProvider: func(context.Context, *sql.TxOptions) (Trx, error) {
+				return &stubTrx{}, nil
+			},
+			UsersDAO: &stubUsersDAO{
+				findBySubFunc: func(sub string) (*db.EndUser, error) {
+					require.Equal(t, userSubject, sub)
+					return &db.EndUser{Sub: sub}, nil
+				},
+			},
+			OIDCRequestsDAO: &stubOidcRequestsDAO{
+				findBySubAndClientIDFunc: func(sub, clientID string, scopesIn []string) (*db.OIDCRequest, error) {
+					return &db.OIDCRequest{
+						ID:             rand.Int63(),
+						EndUserID:      rand.Int63(),
+						RelyingPartyID: rand.Int63(),
+						Scopes:         scopes,
+					}, nil
+				},
+				updateFunc: func(r *db.OIDCRequest) error {
+					return nil
+				},
+			},
+			RelyingPartiesDAO: &stubRelyingPartiesDAO{
+				findByClientIDFunc: func(id string) (*db.RelyingParty, error) {
+					return &db.RelyingParty{
+						ClientID: rpClientID,
+						DID:      rpDID,
+					}, nil
+				},
+			},
+			DIDExchClient: &stubDIDClient{
+				createInvWithDIDFunc: func(label, did string) (*didexchange.Invitation, error) {
+					return nil, errors.New("test")
+				},
+			},
+		})
+		require.NoError(t, err)
+
+		c.setConsentRequest(handle, &consentRequest{
+			pd: presDefs,
+			cr: &admin.GetConsentRequestOK{Payload: &models.ConsentRequest{
+				Subject:        userSubject,
+				Client:         &models.OAuth2Client{ClientID: rpClientID},
+				RequestedScope: scopes,
+			}},
+			rpDID: rpDID,
+		})
+
+		r := httptest.NewRecorder()
+		c.getPresentationsRequest(r, newCreatePresentationDefinitionRequest(t, handle))
+
+		require.Equal(t, http.StatusInternalServerError, r.Code)
+	})
 }
 
 func TestPresentationResponseHandler(t *testing.T) {
-	c, err := New(&Config{})
+	c, err := New(&Config{
+		DIDExchClient: &stubDIDClient{},
+	})
 	require.NoError(t, err)
 
 	r := &httptest.ResponseRecorder{}
@@ -684,7 +957,9 @@ func TestPresentationResponseHandler(t *testing.T) {
 }
 
 func TestUserInfoHandler(t *testing.T) {
-	c, err := New(&Config{})
+	c, err := New(&Config{
+		DIDExchClient: &stubDIDClient{},
+	})
 	require.NoError(t, err)
 
 	r := &httptest.ResponseRecorder{}
@@ -873,4 +1148,30 @@ func newDID(t *testing.T) *did.DID {
 	require.NoError(t, err)
 
 	return d
+}
+
+type stubDIDClient struct {
+	actionEventFunc      func(chan<- service.DIDCommAction) error
+	msgEventFunc         func(chan<- service.StateMsg) error
+	createInvWithDIDFunc func(string, string) (*didexchange.Invitation, error)
+}
+
+func (s *stubDIDClient) RegisterActionEvent(actions chan<- service.DIDCommAction) error {
+	if s.actionEventFunc != nil {
+		return s.actionEventFunc(actions)
+	}
+
+	return nil
+}
+
+func (s *stubDIDClient) RegisterMsgEvent(msgs chan<- service.StateMsg) error {
+	if s.msgEventFunc != nil {
+		return s.msgEventFunc(msgs)
+	}
+
+	return nil
+}
+
+func (s *stubDIDClient) CreateInvitationWithDID(label, didID string) (*didexchange.Invitation, error) {
+	return s.createInvWithDIDFunc(label, didID)
 }
