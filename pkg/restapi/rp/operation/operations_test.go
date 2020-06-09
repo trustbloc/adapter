@@ -7,11 +7,9 @@ package operation
 
 import (
 	"context"
-	"database/sql"
 	"encoding/json"
 	"errors"
 	"fmt"
-	"math/rand"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -29,8 +27,11 @@ import (
 	"github.com/ory/hydra-client-go/client/admin"
 	"github.com/ory/hydra-client-go/models"
 	"github.com/stretchr/testify/require"
+	"github.com/trustbloc/edge-core/pkg/storage"
+	"github.com/trustbloc/edge-core/pkg/storage/memstore"
+	mockstorage "github.com/trustbloc/edge-core/pkg/storage/mockstore"
 
-	"github.com/trustbloc/edge-adapter/pkg/db"
+	"github.com/trustbloc/edge-adapter/pkg/db/rp"
 	"github.com/trustbloc/edge-adapter/pkg/presentationex"
 )
 
@@ -49,6 +50,7 @@ func TestNew(t *testing.T) {
 					return nil
 				},
 			},
+			Store: memstore.NewProvider(),
 		})
 		require.NoError(t, err)
 		require.True(t, registeredActions)
@@ -63,6 +65,7 @@ func TestNew(t *testing.T) {
 					return expected
 				},
 			},
+			Store: memstore.NewProvider(),
 		})
 		require.Error(t, err)
 		require.True(t, errors.Is(err, expected))
@@ -76,6 +79,7 @@ func TestNew(t *testing.T) {
 					return expected
 				},
 			},
+			Store: memstore.NewProvider(),
 		})
 		require.Error(t, err)
 		require.True(t, errors.Is(err, expected))
@@ -92,6 +96,7 @@ func Test_HandleDIDExchangeRequests(t *testing.T) {
 					return nil
 				},
 			},
+			Store: memstore.NewProvider(),
 		})
 		require.NoError(t, err)
 		require.NotNil(t, incoming)
@@ -130,6 +135,7 @@ func Test_HandleDIDExchangeRequests(t *testing.T) {
 					return nil
 				},
 			},
+			Store: memstore.NewProvider(),
 		})
 		require.NoError(t, err)
 		require.NotNil(t, incoming)
@@ -164,6 +170,7 @@ func Test_HandleDIDExchangeRequests(t *testing.T) {
 					return nil
 				},
 			},
+			Store: memstore.NewProvider(),
 		})
 		require.NoError(t, err)
 		require.NotNil(t, incoming)
@@ -193,6 +200,7 @@ func Test_HandleDIDExchangeRequests(t *testing.T) {
 func TestGetRESTHandlers(t *testing.T) {
 	c, err := New(&Config{
 		DIDExchClient: &stubDIDClient{},
+		Store:         memstore.NewProvider(),
 	})
 	require.NoError(t, err)
 
@@ -220,6 +228,7 @@ func TestHydraLoginHandler(t *testing.T) {
 				},
 			},
 			DIDExchClient: &stubDIDClient{},
+			Store:         memstore.NewProvider(),
 		})
 		require.NoError(t, err)
 
@@ -248,6 +257,7 @@ func TestHydraLoginHandler(t *testing.T) {
 				},
 			},
 			DIDExchClient: &stubDIDClient{},
+			Store:         memstore.NewProvider(),
 		})
 		require.NoError(t, err)
 		w := &httptest.ResponseRecorder{}
@@ -258,6 +268,7 @@ func TestHydraLoginHandler(t *testing.T) {
 	t.Run("fails on missing login_challenge", func(t *testing.T) {
 		o, err := New(&Config{
 			DIDExchClient: &stubDIDClient{},
+			Store:         memstore.NewProvider(),
 		})
 		require.NoError(t, err)
 		r := newHydraRequestNoChallenge(t)
@@ -274,6 +285,7 @@ func TestHydraLoginHandler(t *testing.T) {
 				},
 			},
 			DIDExchClient: &stubDIDClient{},
+			Store:         memstore.NewProvider(),
 		})
 		require.NoError(t, err)
 		w := &httptest.ResponseRecorder{}
@@ -295,6 +307,7 @@ func TestHydraLoginHandler(t *testing.T) {
 				},
 			},
 			DIDExchClient: &stubDIDClient{},
+			Store:         memstore.NewProvider(),
 		})
 		require.NoError(t, err)
 		w := &httptest.ResponseRecorder{}
@@ -310,10 +323,11 @@ func TestOidcCallbackHandler(t *testing.T) {
 		const code = "test_code"
 		const clientID = "test_client_id"
 
+		store := mockStore()
+		saveRP(t, store, &rp.Tenant{ClientID: clientID})
+
 		c, err := New(&Config{
-			OAuth2Config: &stubOAuth2Config{
-				clientID: clientID,
-			},
+			OAuth2Config: &stubOAuth2Config{clientID: clientID},
 			OIDC: func(c string, _ context.Context) (*oidc.IDToken, error) {
 				require.Equal(t, code, c)
 				return &oidc.IDToken{Subject: "test"}, nil
@@ -325,18 +339,8 @@ func TestOidcCallbackHandler(t *testing.T) {
 					}, nil
 				},
 			},
-			TrxProvider: func(context.Context, *sql.TxOptions) (Trx, error) {
-				return &stubTrx{}, nil
-			},
-			UsersDAO:        &stubUsersDAO{},
-			OIDCRequestsDAO: &stubOidcRequestsDAO{},
-			RelyingPartiesDAO: &stubRelyingPartiesDAO{
-				findByClientIDFunc: func(id string) (*db.RelyingParty, error) {
-					require.Equal(t, clientID, id)
-					return &db.RelyingParty{ClientID: id}, nil
-				},
-			},
 			DIDExchClient: &stubDIDClient{},
+			Store:         store,
 		})
 		require.NoError(t, err)
 
@@ -352,6 +356,7 @@ func TestOidcCallbackHandler(t *testing.T) {
 	t.Run("bad request on invalid state", func(t *testing.T) {
 		c, err := New(&Config{
 			DIDExchClient: &stubDIDClient{},
+			Store:         memstore.NewProvider(),
 		})
 		require.NoError(t, err)
 
@@ -368,29 +373,7 @@ func TestOidcCallbackHandler(t *testing.T) {
 				return nil, errors.New("test")
 			},
 			DIDExchClient: &stubDIDClient{},
-		})
-		require.NoError(t, err)
-
-		const state = "123"
-
-		c.setLoginRequestForState(state, &models.LoginRequest{})
-
-		r := &httptest.ResponseRecorder{}
-		c.oidcCallbackHandler(r, newOidcCallbackRequest(t, state, "code"))
-
-		require.Equal(t, http.StatusInternalServerError, r.Code)
-	})
-
-	t.Run("internal error if cannot open DB transaction", func(t *testing.T) {
-		c, err := New(&Config{
-			OAuth2Config: &stubOAuth2Config{},
-			OIDC: func(string, context.Context) (*oidc.IDToken, error) {
-				return &oidc.IDToken{Subject: "test"}, nil
-			},
-			TrxProvider: func(context.Context, *sql.TxOptions) (Trx, error) {
-				return nil, errors.New("test")
-			},
-			DIDExchClient: &stubDIDClient{},
+			Store:         memstore.NewProvider(),
 		})
 		require.NoError(t, err)
 
@@ -415,15 +398,8 @@ func TestOidcCallbackHandler(t *testing.T) {
 					return nil, errors.New("test")
 				},
 			},
-			TrxProvider:     func(context.Context, *sql.TxOptions) (Trx, error) { return &stubTrx{}, nil },
-			UsersDAO:        &stubUsersDAO{},
-			OIDCRequestsDAO: &stubOidcRequestsDAO{},
-			RelyingPartiesDAO: &stubRelyingPartiesDAO{
-				findByClientIDFunc: func(id string) (*db.RelyingParty, error) {
-					return &db.RelyingParty{}, nil
-				},
-			},
 			DIDExchClient: &stubDIDClient{},
+			Store:         memstore.NewProvider(),
 		})
 		require.NoError(t, err)
 
@@ -439,56 +415,45 @@ func TestOidcCallbackHandler(t *testing.T) {
 }
 
 func TestSaveUserAndRequest(t *testing.T) {
-	t.Run("error when inserting user", func(t *testing.T) {
+	t.Run("error when fetching rp", func(t *testing.T) {
+		clientID := uuid.New().String()
+		store := mockStore()
+		store.Store.ErrGet = errors.New("test")
+		store.Store.ErrPut = errors.New("test")
 		c, err := New(&Config{
 			OAuth2Config: &stubOAuth2Config{},
 			OIDC: func(c string, _ context.Context) (*oidc.IDToken, error) {
 				return &oidc.IDToken{Subject: "test"}, nil
 			},
-			TrxProvider: func(context.Context, *sql.TxOptions) (Trx, error) { return &stubTrx{}, nil },
-			UsersDAO: &stubUsersDAO{
-				insertErr: errors.New("test"),
-			},
-			RelyingPartiesDAO: &stubRelyingPartiesDAO{
-				findByClientIDFunc: func(id string) (*db.RelyingParty, error) {
-					return &db.RelyingParty{}, nil
-				},
-			},
 			DIDExchClient: &stubDIDClient{},
+			Store:         store,
 		})
 		require.NoError(t, err)
 
 		err = c.saveUserAndRequest(
-			context.Background(),
-			&models.LoginRequest{Client: &models.OAuth2Client{}},
+			&models.LoginRequest{Client: &models.OAuth2Client{ClientID: clientID}},
 			"sub",
 		)
 		require.Error(t, err)
 	})
 
-	t.Run("error when inserting oidc request", func(t *testing.T) {
+	t.Run("error when saving user connection", func(t *testing.T) {
+		clientID := uuid.New().String()
+		store := mockStore()
+		saveRP(t, store, &rp.Tenant{ClientID: clientID})
+		store.Store.ErrPut = errors.New("test")
 		c, err := New(&Config{
 			OAuth2Config: &stubOAuth2Config{},
 			OIDC: func(c string, _ context.Context) (*oidc.IDToken, error) {
 				return &oidc.IDToken{Subject: "test"}, nil
 			},
-			TrxProvider: func(context.Context, *sql.TxOptions) (Trx, error) { return &stubTrx{}, nil },
-			UsersDAO:    &stubUsersDAO{},
-			OIDCRequestsDAO: &stubOidcRequestsDAO{
-				insertErr: errors.New("test"),
-			},
-			RelyingPartiesDAO: &stubRelyingPartiesDAO{
-				findByClientIDFunc: func(id string) (*db.RelyingParty, error) {
-					return &db.RelyingParty{}, nil
-				},
-			},
 			DIDExchClient: &stubDIDClient{},
+			Store:         store,
 		})
 		require.NoError(t, err)
 
 		err = c.saveUserAndRequest(
-			context.Background(),
-			&models.LoginRequest{Client: &models.OAuth2Client{}},
+			&models.LoginRequest{Client: &models.OAuth2Client{ClientID: clientID}},
 			"sub",
 		)
 		require.Error(t, err)
@@ -501,6 +466,13 @@ func TestHydraConsentHandler(t *testing.T) {
 			uiEndpoint := "http://ui.example.com"
 			challenge := uuid.New().String()
 			rpClientID := uuid.New().String()
+			userSub := uuid.New().String()
+
+			store := mockStore()
+			saveUserConn(t, store, &rp.UserConnection{
+				User: &rp.User{Subject: userSub},
+				RP:   &rp.Tenant{ClientID: rpClientID},
+			})
 
 			c, err := New(&Config{
 				UIEndpoint: uiEndpoint,
@@ -508,19 +480,15 @@ func TestHydraConsentHandler(t *testing.T) {
 					getConsentRequestFunc: func(r *admin.GetConsentRequestParams) (*admin.GetConsentRequestOK, error) {
 						require.Equal(t, challenge, r.ConsentChallenge)
 						return &admin.GetConsentRequestOK{Payload: &models.ConsentRequest{
-							Skip:   false,
-							Client: &models.OAuth2Client{ClientID: rpClientID},
+							Skip:    false,
+							Client:  &models.OAuth2Client{ClientID: rpClientID},
+							Subject: userSub,
 						}}, nil
 					},
 				},
 				PresentationExProvider: mockPresentationDefinitionsProvider(),
-				RelyingPartiesDAO: &stubRelyingPartiesDAO{
-					findByClientIDFunc: func(id string) (*db.RelyingParty, error) {
-						require.Equal(t, rpClientID, id)
-						return &db.RelyingParty{ClientID: rpClientID}, nil
-					},
-				},
-				DIDExchClient: &stubDIDClient{},
+				DIDExchClient:          &stubDIDClient{},
+				Store:                  store,
 			})
 			require.NoError(t, err)
 
@@ -542,6 +510,7 @@ func TestHydraConsentHandler(t *testing.T) {
 		t.Run("bad request if consent challenge is missing", func(t *testing.T) {
 			c, err := New(&Config{
 				DIDExchClient: &stubDIDClient{},
+				Store:         memstore.NewProvider(),
 			})
 			require.NoError(t, err)
 			w := &httptest.ResponseRecorder{}
@@ -555,6 +524,7 @@ func TestHydraConsentHandler(t *testing.T) {
 					return nil, errors.New("test")
 				}},
 				DIDExchClient: &stubDIDClient{},
+				Store:         memstore.NewProvider(),
 			})
 			require.NoError(t, err)
 			w := &httptest.ResponseRecorder{}
@@ -569,6 +539,7 @@ func TestHydraConsentHandler(t *testing.T) {
 				}},
 				PresentationExProvider: &mockPresentationExProvider{createErr: errors.New("test")},
 				DIDExchClient:          &stubDIDClient{},
+				Store:                  memstore.NewProvider(),
 			})
 			require.NoError(t, err)
 			w := &httptest.ResponseRecorder{}
@@ -576,7 +547,7 @@ func TestHydraConsentHandler(t *testing.T) {
 			require.Equal(t, http.StatusInternalServerError, w.Code)
 		})
 
-		t.Run("internal server error if cannot find relying party", func(t *testing.T) {
+		t.Run("internal server error if cannot find user connection", func(t *testing.T) {
 			c, err := New(&Config{
 				Hydra: &stubHydra{getConsentRequestFunc: func(*admin.GetConsentRequestParams) (*admin.GetConsentRequestOK, error) {
 					return &admin.GetConsentRequestOK{Payload: &models.ConsentRequest{
@@ -587,12 +558,8 @@ func TestHydraConsentHandler(t *testing.T) {
 				PresentationExProvider: &mockPresentationExProvider{
 					createValue: &presentationex.PresentationDefinitions{},
 				},
-				RelyingPartiesDAO: &stubRelyingPartiesDAO{
-					findByClientIDFunc: func(string) (*db.RelyingParty, error) {
-						return nil, sql.ErrNoRows
-					},
-				},
 				DIDExchClient: &stubDIDClient{},
+				Store:         memstore.NewProvider(),
 			})
 			require.NoError(t, err)
 			w := &httptest.ResponseRecorder{}
@@ -624,6 +591,7 @@ func TestHydraConsentHandler(t *testing.T) {
 				},
 				PresentationExProvider: mockPresentationDefinitionsProvider(),
 				DIDExchClient:          &stubDIDClient{},
+				Store:                  memstore.NewProvider(),
 			})
 			require.NoError(t, err)
 
@@ -647,6 +615,7 @@ func TestHydraConsentHandler(t *testing.T) {
 					},
 				},
 				DIDExchClient: &stubDIDClient{},
+				Store:         memstore.NewProvider(),
 			})
 			require.NoError(t, err)
 
@@ -658,104 +627,44 @@ func TestHydraConsentHandler(t *testing.T) {
 }
 
 func TestSaveConsentRequest(t *testing.T) {
-	t.Run("wraps error from trx provider", func(t *testing.T) {
-		expected := errors.New("test")
+	t.Run("error if user connection does not exist", func(t *testing.T) {
 		c, err := New(&Config{
-			TrxProvider: func(context.Context, *sql.TxOptions) (Trx, error) {
-				return nil, expected
-			},
 			DIDExchClient: &stubDIDClient{},
+			Store:         memstore.NewProvider(),
 		})
 		require.NoError(t, err)
 
-		err = c.saveConsentRequest(context.Background(), &consentRequest{})
+		err = c.saveConsentRequest(&consentRequest{
+			cr: &admin.GetConsentRequestOK{Payload: &models.ConsentRequest{
+				Client: &models.OAuth2Client{},
+			}},
+		})
 		require.Error(t, err)
-		require.True(t, errors.Is(err, expected))
 	})
 
-	t.Run("wraps error from user DAO", func(t *testing.T) {
-		expected := errors.New("test")
+	t.Run("error when saving user connection", func(t *testing.T) {
+		clientID := uuid.New().String()
+		userSub := uuid.New().String()
+		store := mockStore()
+		saveUserConn(t, store, &rp.UserConnection{
+			User:    &rp.User{Subject: userSub},
+			RP:      &rp.Tenant{ClientID: clientID},
+			Request: &rp.DataRequest{},
+		})
+		store.Store.ErrPut = errors.New("test")
 		c, err := New(&Config{
-			TrxProvider: func(context.Context, *sql.TxOptions) (Trx, error) {
-				return &stubTrx{}, nil
-			},
-			UsersDAO: &stubUsersDAO{
-				findBySubFunc: func(string) (*db.EndUser, error) {
-					return nil, expected
-				},
-			},
 			DIDExchClient: &stubDIDClient{},
+			Store:         store,
 		})
 		require.NoError(t, err)
 
-		err = c.saveConsentRequest(context.Background(), &consentRequest{
-			cr: &admin.GetConsentRequestOK{Payload: &models.ConsentRequest{}},
+		err = c.saveConsentRequest(&consentRequest{
+			cr: &admin.GetConsentRequestOK{Payload: &models.ConsentRequest{
+				Client:  &models.OAuth2Client{ClientID: clientID},
+				Subject: userSub,
+			}},
 		})
 		require.Error(t, err)
-		require.True(t, errors.Is(err, expected))
-	})
-
-	t.Run("wraps error from oidcrequests DAO", func(t *testing.T) {
-		t.Run("when searching", func(t *testing.T) {
-			expected := errors.New("test")
-			c, err := New(&Config{
-				TrxProvider: func(context.Context, *sql.TxOptions) (Trx, error) {
-					return &stubTrx{}, nil
-				},
-				UsersDAO: &stubUsersDAO{
-					findBySubFunc: func(string) (*db.EndUser, error) {
-						return &db.EndUser{}, nil
-					},
-				},
-				OIDCRequestsDAO: &stubOidcRequestsDAO{
-					findBySubAndClientIDFunc: func(string, string, []string) (*db.OIDCRequest, error) {
-						return nil, expected
-					},
-				},
-				DIDExchClient: &stubDIDClient{},
-			})
-			require.NoError(t, err)
-
-			err = c.saveConsentRequest(context.Background(), &consentRequest{
-				cr: &admin.GetConsentRequestOK{Payload: &models.ConsentRequest{
-					Client: &models.OAuth2Client{},
-				}},
-			})
-			require.Error(t, err)
-			require.True(t, errors.Is(err, expected))
-		})
-
-		t.Run("when updating", func(t *testing.T) {
-			expected := errors.New("test")
-			c, err := New(&Config{
-				TrxProvider: func(context.Context, *sql.TxOptions) (Trx, error) {
-					return &stubTrx{}, nil
-				},
-				UsersDAO: &stubUsersDAO{
-					findBySubFunc: func(string) (*db.EndUser, error) {
-						return &db.EndUser{}, nil
-					},
-				},
-				OIDCRequestsDAO: &stubOidcRequestsDAO{
-					findBySubAndClientIDFunc: func(string, string, []string) (*db.OIDCRequest, error) {
-						return &db.OIDCRequest{}, nil
-					},
-					updateFunc: func(*db.OIDCRequest) error {
-						return expected
-					},
-				},
-				DIDExchClient: &stubDIDClient{},
-			})
-			require.NoError(t, err)
-
-			err = c.saveConsentRequest(context.Background(), &consentRequest{
-				cr: &admin.GetConsentRequestOK{Payload: &models.ConsentRequest{
-					Client: &models.OAuth2Client{},
-				}},
-			})
-			require.Error(t, err)
-			require.True(t, errors.Is(err, expected))
-		})
 	})
 }
 
@@ -764,72 +673,41 @@ func TestCreatePresentationDefinition(t *testing.T) {
 		userSubject := uuid.New().String()
 		rpClientID := uuid.New().String()
 		rpDID := newDID(t)
-		scopes := []string{uuid.New().String(), uuid.New().String()}
 		handle := uuid.New().String()
 		presDefs := &presentationex.PresentationDefinitions{
 			InputDescriptors: []presentationex.InputDescriptors{{ID: uuid.New().String()}},
 		}
-		invitation := &didexchange.Invitation{Invitation: &didexchangesvc.Invitation{
-			ID:    uuid.New().String(),
-			Type:  didexchange.InvitationMsgType,
-			Label: "test-label",
-			DID:   rpDID.String(),
-		}}
+		store := mockStore()
+		saveUserConn(t, store, &rp.UserConnection{
+			User:    &rp.User{Subject: userSubject},
+			RP:      &rp.Tenant{ClientID: rpClientID},
+			Request: &rp.DataRequest{},
+		})
 
 		c, err := New(&Config{
 			PresentationExProvider: &mockPresentationExProvider{createValue: presDefs},
-			TrxProvider: func(context.Context, *sql.TxOptions) (Trx, error) {
-				return &stubTrx{}, nil
-			},
-			UsersDAO: &stubUsersDAO{
-				findBySubFunc: func(sub string) (*db.EndUser, error) {
-					require.Equal(t, userSubject, sub)
-					return &db.EndUser{Sub: sub}, nil
-				},
-			},
-			OIDCRequestsDAO: &stubOidcRequestsDAO{
-				findBySubAndClientIDFunc: func(sub, clientID string, scopesIn []string) (*db.OIDCRequest, error) {
-					require.Equal(t, userSubject, sub)
-					require.Equal(t, rpClientID, clientID)
-					require.Equal(t, scopes, scopesIn)
-					return &db.OIDCRequest{
-						ID:             rand.Int63(),
-						EndUserID:      rand.Int63(),
-						RelyingPartyID: rand.Int63(),
-						Scopes:         scopes,
-					}, nil
-				},
-				updateFunc: func(r *db.OIDCRequest) error {
-					require.Equal(t, presDefs, r.PresDef)
-					return nil
-				},
-			},
-			RelyingPartiesDAO: &stubRelyingPartiesDAO{
-				findByClientIDFunc: func(id string) (*db.RelyingParty, error) {
-					require.Equal(t, rpClientID, id)
-					return &db.RelyingParty{
-						ClientID: rpClientID,
-						DID:      rpDID,
-					}, nil
-				},
-			},
 			DIDExchClient: &stubDIDClient{
 				createInvWithDIDFunc: func(label, did string) (*didexchange.Invitation, error) {
 					require.Equal(t, rpDID.String(), did)
-					return invitation, nil
+					return &didexchange.Invitation{Invitation: &didexchangesvc.Invitation{
+						ID:    uuid.New().String(),
+						Type:  didexchange.InvitationMsgType,
+						Label: "test-label",
+						DID:   rpDID.String(),
+					}}, nil
 				},
 			},
+			Store: store,
 		})
 		require.NoError(t, err)
 
 		c.setConsentRequest(handle, &consentRequest{
 			pd: presDefs,
 			cr: &admin.GetConsentRequestOK{Payload: &models.ConsentRequest{
-				Subject:        userSubject,
-				Client:         &models.OAuth2Client{ClientID: rpClientID},
-				RequestedScope: scopes,
+				Subject: userSubject,
+				Client:  &models.OAuth2Client{ClientID: rpClientID},
 			}},
-			rpDID: rpDID,
+			rpDID: rpDID.String(),
 		})
 
 		r := httptest.NewRecorder()
@@ -847,6 +725,7 @@ func TestCreatePresentationDefinition(t *testing.T) {
 	t.Run("bad request if handle is invalid", func(t *testing.T) {
 		c, err := New(&Config{
 			DIDExchClient: &stubDIDClient{},
+			Store:         memstore.NewProvider(),
 		})
 		require.NoError(t, err)
 
@@ -868,6 +747,7 @@ func TestCreatePresentationDefinition(t *testing.T) {
 	t.Run("bad request if handle is missing", func(t *testing.T) {
 		c, err := New(&Config{
 			DIDExchClient: &stubDIDClient{},
+			Store:         memstore.NewProvider(),
 		})
 		require.NoError(t, err)
 
@@ -881,60 +761,35 @@ func TestCreatePresentationDefinition(t *testing.T) {
 		userSubject := uuid.New().String()
 		rpClientID := uuid.New().String()
 		rpDID := newDID(t)
-		scopes := []string{uuid.New().String(), uuid.New().String()}
 		handle := uuid.New().String()
 		presDefs := &presentationex.PresentationDefinitions{
 			InputDescriptors: []presentationex.InputDescriptors{{ID: uuid.New().String()}},
 		}
+		store := mockStore()
+		saveUserConn(t, store, &rp.UserConnection{
+			User:    &rp.User{Subject: userSubject},
+			RP:      &rp.Tenant{ClientID: rpClientID},
+			Request: &rp.DataRequest{},
+		})
 
 		c, err := New(&Config{
 			PresentationExProvider: &mockPresentationExProvider{createValue: presDefs},
-			TrxProvider: func(context.Context, *sql.TxOptions) (Trx, error) {
-				return &stubTrx{}, nil
-			},
-			UsersDAO: &stubUsersDAO{
-				findBySubFunc: func(sub string) (*db.EndUser, error) {
-					require.Equal(t, userSubject, sub)
-					return &db.EndUser{Sub: sub}, nil
-				},
-			},
-			OIDCRequestsDAO: &stubOidcRequestsDAO{
-				findBySubAndClientIDFunc: func(sub, clientID string, scopesIn []string) (*db.OIDCRequest, error) {
-					return &db.OIDCRequest{
-						ID:             rand.Int63(),
-						EndUserID:      rand.Int63(),
-						RelyingPartyID: rand.Int63(),
-						Scopes:         scopes,
-					}, nil
-				},
-				updateFunc: func(r *db.OIDCRequest) error {
-					return nil
-				},
-			},
-			RelyingPartiesDAO: &stubRelyingPartiesDAO{
-				findByClientIDFunc: func(id string) (*db.RelyingParty, error) {
-					return &db.RelyingParty{
-						ClientID: rpClientID,
-						DID:      rpDID,
-					}, nil
-				},
-			},
 			DIDExchClient: &stubDIDClient{
 				createInvWithDIDFunc: func(label, did string) (*didexchange.Invitation, error) {
 					return nil, errors.New("test")
 				},
 			},
+			Store: store,
 		})
 		require.NoError(t, err)
 
 		c.setConsentRequest(handle, &consentRequest{
 			pd: presDefs,
 			cr: &admin.GetConsentRequestOK{Payload: &models.ConsentRequest{
-				Subject:        userSubject,
-				Client:         &models.OAuth2Client{ClientID: rpClientID},
-				RequestedScope: scopes,
+				Subject: userSubject,
+				Client:  &models.OAuth2Client{ClientID: rpClientID},
 			}},
-			rpDID: rpDID,
+			rpDID: rpDID.String(),
 		})
 
 		r := httptest.NewRecorder()
@@ -947,6 +802,7 @@ func TestCreatePresentationDefinition(t *testing.T) {
 func TestPresentationResponseHandler(t *testing.T) {
 	c, err := New(&Config{
 		DIDExchClient: &stubDIDClient{},
+		Store:         memstore.NewProvider(),
 	})
 	require.NoError(t, err)
 
@@ -959,6 +815,7 @@ func TestPresentationResponseHandler(t *testing.T) {
 func TestUserInfoHandler(t *testing.T) {
 	c, err := New(&Config{
 		DIDExchClient: &stubDIDClient{},
+		Store:         memstore.NewProvider(),
 	})
 	require.NoError(t, err)
 
@@ -1064,77 +921,6 @@ func (s *stubOAuth2Config) AuthCodeURL(_ string) string {
 	return s.authCodeURL
 }
 
-type stubTrx struct {
-	commitErr   error
-	rollbackErr error
-}
-
-func (s *stubTrx) Commit() error {
-	return s.commitErr
-}
-
-func (s stubTrx) Rollback() error {
-	return s.rollbackErr
-}
-
-type stubUsersDAO struct {
-	insertErr     error
-	insertFunc    func(*db.EndUser) error
-	findBySubFunc func(string) (*db.EndUser, error)
-}
-
-func (s *stubUsersDAO) Insert(u *db.EndUser) error {
-	if s.insertErr != nil {
-		return s.insertErr
-	}
-
-	if s.insertFunc != nil {
-		return s.insertFunc(u)
-	}
-
-	return nil
-}
-
-func (s *stubUsersDAO) FindBySub(sub string) (*db.EndUser, error) {
-	return s.findBySubFunc(sub)
-}
-
-type stubOidcRequestsDAO struct {
-	insertErr                error
-	insertFunc               func(*db.OIDCRequest) error
-	findBySubAndClientIDFunc func(string, string, []string) (*db.OIDCRequest, error)
-	updateFunc               func(request *db.OIDCRequest) error
-}
-
-func (s *stubOidcRequestsDAO) Insert(r *db.OIDCRequest) error {
-	if s.insertErr != nil {
-		return s.insertErr
-	}
-
-	if s.insertFunc != nil {
-		return s.insertFunc(r)
-	}
-
-	return nil
-}
-
-func (s *stubOidcRequestsDAO) FindBySubRPClientIDAndScopes(
-	sub, clientID string, scopes []string) (*db.OIDCRequest, error) {
-	return s.findBySubAndClientIDFunc(sub, clientID, scopes)
-}
-
-func (s *stubOidcRequestsDAO) Update(req *db.OIDCRequest) error {
-	return s.updateFunc(req)
-}
-
-type stubRelyingPartiesDAO struct {
-	findByClientIDFunc func(string) (*db.RelyingParty, error)
-}
-
-func (s *stubRelyingPartiesDAO) FindByClientID(clientID string) (*db.RelyingParty, error) {
-	return s.findByClientIDFunc(clientID)
-}
-
 func mockPresentationDefinitionsProvider() presentationExProvider {
 	return &mockPresentationExProvider{
 		createValue: &presentationex.PresentationDefinitions{
@@ -1174,4 +960,28 @@ func (s *stubDIDClient) RegisterMsgEvent(msgs chan<- service.StateMsg) error {
 
 func (s *stubDIDClient) CreateInvitationWithDID(label, didID string) (*didexchange.Invitation, error) {
 	return s.createInvWithDIDFunc(label, didID)
+}
+
+func mockStore() *mockstorage.Provider {
+	return &mockstorage.Provider{
+		Store: &mockstorage.MockStore{
+			Store: make(map[string][]byte),
+		},
+	}
+}
+
+func saveRP(t *testing.T, p storage.Provider, r *rp.Tenant) {
+	s, err := rp.New(p)
+	require.NoError(t, err)
+
+	err = s.SaveRP(r)
+	require.NoError(t, err)
+}
+
+func saveUserConn(t *testing.T, p storage.Provider, u *rp.UserConnection) {
+	s, err := rp.New(p)
+	require.NoError(t, err)
+
+	err = s.SaveUserConnection(u)
+	require.NoError(t, err)
 }

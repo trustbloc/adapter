@@ -7,7 +7,6 @@ package operation
 
 import (
 	"context"
-	"database/sql"
 	"fmt"
 	"io"
 	"net/http"
@@ -19,13 +18,12 @@ import (
 	"github.com/hyperledger/aries-framework-go/pkg/client/didexchange"
 	"github.com/hyperledger/aries-framework-go/pkg/didcomm/common/service"
 	didexchangesvc "github.com/hyperledger/aries-framework-go/pkg/didcomm/protocol/didexchange"
-	"github.com/hyperledger/aries-framework-go/pkg/doc/did"
 	"github.com/ory/hydra-client-go/client/admin"
 	"github.com/ory/hydra-client-go/models"
-	"github.com/pkg/errors"
 	"github.com/trustbloc/edge-core/pkg/log"
+	"github.com/trustbloc/edge-core/pkg/storage"
 
-	"github.com/trustbloc/edge-adapter/pkg/db"
+	"github.com/trustbloc/edge-adapter/pkg/db/rp"
 	"github.com/trustbloc/edge-adapter/pkg/internal/common/support"
 	"github.com/trustbloc/edge-adapter/pkg/presentationex"
 	commhttp "github.com/trustbloc/edge-adapter/pkg/restapi/internal/common/http"
@@ -73,30 +71,6 @@ type OAuth2Config interface {
 	AuthCodeURL(string) string
 }
 
-// UsersDAO is the EndUser DAO.
-type UsersDAO interface {
-	Insert(*db.EndUser) error
-	FindBySub(string) (*db.EndUser, error)
-}
-
-// OidcRequestsDAO is the OIDCRequest DAO.
-type OidcRequestsDAO interface {
-	Insert(*db.OIDCRequest) error
-	FindBySubRPClientIDAndScopes(string, string, []string) (*db.OIDCRequest, error)
-	Update(*db.OIDCRequest) error
-}
-
-// RelyingPartiesDAO is the RelyingParty DAO.
-type RelyingPartiesDAO interface {
-	FindByClientID(string) (*db.RelyingParty, error)
-}
-
-// Trx is a DB transaction.
-type Trx interface {
-	Commit() error
-	Rollback() error
-}
-
 // DIDClient is the didexchange Client.
 type DIDClient interface {
 	RegisterActionEvent(chan<- service.DIDCommAction) error
@@ -105,15 +79,16 @@ type DIDClient interface {
 }
 
 type consentRequest struct {
-	pd    *presentationex.PresentationDefinitions
-	cr    *admin.GetConsentRequestOK
-	rpDID *did.DID
+	pd      *presentationex.PresentationDefinitions
+	cr      *admin.GetConsentRequestOK
+	rpDID   string
+	rpLabel string
 }
 
 type invitationData struct {
 	id          string
 	userSubject string
-	rpPublicDID *did.DID
+	rpPublicDID string
 }
 
 // New returns CreateCredential instance.
@@ -124,10 +99,6 @@ func New(config *Config) (*Operation, error) {
 		oidc:                    config.OIDC,
 		oauth2Config:            config.OAuth2Config,
 		oidcStates:              make(map[string]*models.LoginRequest),
-		trxProvider:             config.TrxProvider,
-		users:                   config.UsersDAO,
-		oidcRequests:            config.OIDCRequestsDAO,
-		relyingPartiesDAO:       config.RelyingPartiesDAO,
 		consentRequests:         make(map[string]*consentRequest),
 		uiEndpoint:              config.UIEndpoint,
 		didClient:               config.DIDExchClient,
@@ -146,6 +117,11 @@ func New(config *Config) (*Operation, error) {
 		return nil, fmt.Errorf("failed to register listener for state msgs on didexchange client : %w", err)
 	}
 
+	o.rpStore, err = rp.New(config.Store)
+	if err != nil {
+		return nil, fmt.Errorf("failed to open relying party store : %w", err)
+	}
+
 	go o.listenForIncomingConnections()
 
 	go o.listenForConnectionCompleteEvents()
@@ -159,12 +135,9 @@ type Config struct {
 	Hydra                  Hydra
 	OIDC                   func(string, context.Context) (*oidc.IDToken, error)
 	OAuth2Config           OAuth2Config
-	TrxProvider            func(context.Context, *sql.TxOptions) (Trx, error)
-	UsersDAO               UsersDAO
-	RelyingPartiesDAO      RelyingPartiesDAO
-	OIDCRequestsDAO        OidcRequestsDAO
 	UIEndpoint             string
 	DIDExchClient          DIDClient
+	Store                  storage.Provider
 }
 
 // TODO implement an eviction strategy for Operation.oidcStates and OIDC.consentRequests
@@ -178,10 +151,6 @@ type Operation struct {
 	oauth2Config            OAuth2Config
 	oidcStates              map[string]*models.LoginRequest
 	oidcStateLock           sync.Mutex
-	trxProvider             func(context.Context, *sql.TxOptions) (Trx, error)
-	users                   UsersDAO
-	oidcRequests            OidcRequestsDAO
-	relyingPartiesDAO       RelyingPartiesDAO
 	consentRequests         map[string]*consentRequest
 	presDefsLock            sync.Mutex
 	uiEndpoint              string
@@ -190,6 +159,7 @@ type Operation struct {
 	didStateMsgs            chan service.StateMsg
 	invLock                 sync.RWMutex
 	transientInvitationData map[string]*invitationData
+	rpStore                 *rp.Store
 }
 
 // GetRESTHandlers get all controller API handler available for this service.
@@ -346,7 +316,7 @@ func (o *Operation) oidcCallbackHandler(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	err = o.saveUserAndRequest(r.Context(), login, idToken.Subject)
+	err = o.saveUserAndRequest(login, idToken.Subject)
 	if err != nil {
 		msg := fmt.Sprintf("failed to save user and request : %s", err)
 		logger.Errorf(msg)
@@ -375,45 +345,25 @@ func (o *Operation) oidcCallbackHandler(w http.ResponseWriter, r *http.Request) 
 	logger.Debugf("redirected to: %s", resp.GetPayload().RedirectTo)
 }
 
-func (o *Operation) saveUserAndRequest(ctx context.Context, login *models.LoginRequest, sub string) (errResult error) {
-	tx, err := o.trxProvider(ctx, nil)
-	if err != nil {
-		return fmt.Errorf("failed to start a db transaction : %w", err)
-	}
-
-	defer func() {
-		switch errResult {
-		case nil:
-			errResult = tx.Commit()
-		default:
-			txErr := tx.Rollback()
-			if txErr != nil {
-				errResult = errors.Wrap(errResult, err.Error())
-			}
-		}
-	}()
-
-	rp, err := o.relyingPartiesDAO.FindByClientID(login.Client.ClientID)
+func (o *Operation) saveUserAndRequest(login *models.LoginRequest, sub string) error {
+	rpData, err := o.rpStore.GetRP(login.Client.ClientID)
 	if err != nil {
 		return fmt.Errorf("failed to find a relying party with client_id=%s : %w", login.Client.ClientID, err)
 	}
 
-	user := &db.EndUser{
-		Sub: sub,
+	conn := &rp.UserConnection{
+		User: &rp.User{
+			Subject: sub,
+		},
+		RP: rpData,
+		Request: &rp.DataRequest{
+			Scope: login.RequestedScope,
+		},
 	}
 
-	err = o.users.Insert(user)
+	err = o.rpStore.SaveUserConnection(conn)
 	if err != nil {
-		return fmt.Errorf("failed to insert user : %w", err)
-	}
-
-	err = o.oidcRequests.Insert(&db.OIDCRequest{
-		EndUserID:      user.ID,
-		RelyingPartyID: rp.ID,
-		Scopes:         login.RequestedScope,
-	})
-	if err != nil {
-		return fmt.Errorf("failed to insert oidc requests : %w", err)
+		return fmt.Errorf("failed to save new rp-user connection : %w", err)
 	}
 
 	return nil
@@ -458,10 +408,11 @@ func (o *Operation) hydraConsentHandler(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	rp, err := o.relyingPartiesDAO.FindByClientID(consent.GetPayload().Client.ClientID)
+	conn, err := o.rpStore.GetUserConnection(consent.GetPayload().Client.ClientID, consent.GetPayload().Subject)
 	if err != nil {
 		msg := fmt.Sprintf(
-			"failed to fetch rp with clientID=%s : %s", consent.GetPayload().Client.ClientID, err)
+			"failed to fetch rp-user connection for clientID=%s userSub=%s : %s",
+			consent.GetPayload().Client.ClientID, consent.GetPayload().Subject, err)
 		logger.Errorf(msg)
 		commhttp.WriteErrorResponse(w, http.StatusInternalServerError, msg)
 
@@ -470,9 +421,10 @@ func (o *Operation) hydraConsentHandler(w http.ResponseWriter, r *http.Request) 
 
 	handle := url.QueryEscape(uuid.New().String())
 	o.setConsentRequest(handle, &consentRequest{
-		cr:    consent,
-		pd:    presentationDefinition,
-		rpDID: rp.DID,
+		cr:      consent,
+		pd:      presentationDefinition,
+		rpDID:   conn.RP.PublicDID,
+		rpLabel: conn.RP.Label,
 	})
 
 	redirectURL := fmt.Sprintf("%s?pd=%s", o.uiEndpoint, handle)
@@ -522,7 +474,7 @@ func (o *Operation) getPresentationsRequest(rw http.ResponseWriter, req *http.Re
 		return
 	}
 
-	err := o.saveConsentRequest(req.Context(), cr)
+	err := o.saveConsentRequest(cr)
 	if err != nil {
 		logger.Errorf("failed to save consent request: %s", err)
 		commhttp.WriteErrorResponse(
@@ -531,8 +483,7 @@ func (o *Operation) getPresentationsRequest(rw http.ResponseWriter, req *http.Re
 		return
 	}
 
-	// TODO set label on RP's invitation
-	invitation, err := o.didClient.CreateInvitationWithDID("RP", cr.rpDID.String())
+	invitation, err := o.didClient.CreateInvitationWithDID(cr.rpLabel, cr.rpDID)
 	if err != nil {
 		msg := fmt.Sprintf("failed to create didexchange invitation with DID : %s", err)
 		logger.Errorf(msg)
@@ -558,42 +509,17 @@ func (o *Operation) getPresentationsRequest(rw http.ResponseWriter, req *http.Re
 	logger.Debugf("wrote response: %+v", response)
 }
 
-func (o *Operation) saveConsentRequest(ctx context.Context, r *consentRequest) (errResult error) {
-	trx, err := o.trxProvider(ctx, nil)
+func (o *Operation) saveConsentRequest(r *consentRequest) error {
+	conn, err := o.rpStore.GetUserConnection(r.cr.GetPayload().Client.ClientID, r.cr.GetPayload().Subject)
 	if err != nil {
-		return fmt.Errorf("failed to obtain a db transaction : %w", err)
+		return fmt.Errorf("failed to fetch rp-user connection : %w", err)
 	}
 
-	defer func() {
-		switch errResult {
-		case nil:
-			errResult = trx.Commit()
-		default:
-			errRollback := trx.Rollback()
-			if errRollback != nil {
-				errResult = errors.Wrap(errResult, errRollback.Error())
-			}
-		}
-	}()
+	conn.Request.PD = r.pd
 
-	user, err := o.users.FindBySub(r.cr.GetPayload().Subject)
+	err = o.rpStore.SaveUserConnection(conn)
 	if err != nil {
-		return fmt.Errorf("failed to find user with sub=%s : %w", r.cr.GetPayload().Subject, err)
-	}
-
-	oidcReq, err := o.oidcRequests.FindBySubRPClientIDAndScopes(
-		user.Sub, r.cr.GetPayload().Client.ClientID, r.cr.GetPayload().RequestedScope)
-	if err != nil {
-		return fmt.Errorf(
-			"failed to find oidc request for sub=%s clientID=%s : %w",
-			user.Sub, r.cr.GetPayload().Client.ClientID, err)
-	}
-
-	oidcReq.PresDef = r.pd
-
-	err = o.oidcRequests.Update(oidcReq)
-	if err != nil {
-		return fmt.Errorf("failed to update oidc request with id=%d: %w", oidcReq.ID, err)
+		return fmt.Errorf("failed to update user-rp connection data : %w", err)
 	}
 
 	return nil
@@ -632,9 +558,8 @@ func (o *Operation) listenForIncomingConnections() {
 	}
 }
 
-// We accept incoming did-exchange requests on the following conditions:
-// - the request has a parent invitation ID found in our transient store
-// - the parent invitation has not been used (the invitationID is evicted once used).
+// We accept incoming did-exchange requests on the following conditions if the request
+// has a parent invitation ID found in our transient store.
 func (o *Operation) handleIncomingDIDExchangeRequestAction(action service.DIDCommAction) {
 	invitation := o.getAndUnsetInvitationData(action.Message.ParentThreadID())
 	if invitation == nil {
