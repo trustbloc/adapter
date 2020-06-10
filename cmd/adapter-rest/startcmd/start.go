@@ -7,7 +7,6 @@ SPDX-License-Identifier: Apache-2.0
 package startcmd
 
 import (
-	"context"
 	"crypto/tls"
 	"database/sql"
 	"errors"
@@ -38,7 +37,6 @@ import (
 	_ "github.com/go-sql-driver/mysql"
 
 	ariespai "github.com/trustbloc/edge-adapter/pkg/aries"
-	"github.com/trustbloc/edge-adapter/pkg/db"
 	"github.com/trustbloc/edge-adapter/pkg/presentationex"
 	"github.com/trustbloc/edge-adapter/pkg/restapi/healthcheck"
 	"github.com/trustbloc/edge-adapter/pkg/restapi/issuer"
@@ -365,7 +363,7 @@ func addRPHandlers(parameters *adapterRestParameters, ctx ariespai.CtxProvider, 
 		return err
 	}
 
-	datasource, err := initDB(parameters.dsn)
+	_, err = initDB(parameters.dsn)
 	if err != nil {
 		return err
 	}
@@ -381,11 +379,9 @@ func addRPHandlers(parameters *adapterRestParameters, ctx ariespai.CtxProvider, 
 	rpService, err := rp.New(&rpops.Config{
 		PresentationExProvider: presentationExProvider,
 		Hydra:                  newHydraClient(hydraURL).Admin,
-		TrxProvider:            newTrxProvider(datasource),
-		UsersDAO:               db.NewEndUsers(datasource),
-		OIDCRequestsDAO:        db.NewOIDCRequests(datasource),
 		UIEndpoint:             uiEndpoint,
 		DIDExchClient:          didClient,
+		Store:                  memstore.NewProvider(),
 	})
 	if err != nil {
 		return err
@@ -491,17 +487,6 @@ func initDB(dsn string) (*sql.DB, error) {
 	}
 
 	return dbms, nil
-}
-
-func newTrxProvider(dbms *sql.DB) func(ctx context.Context, opts *sql.TxOptions) (rpops.Trx, error) {
-	return func(ctx context.Context, opts *sql.TxOptions) (rpops.Trx, error) {
-		trx, err := dbms.BeginTx(ctx, opts)
-		if err != nil {
-			return nil, fmt.Errorf("failed to open db transaction : %w", err)
-		}
-
-		return trx, nil
-	}
 }
 
 func createAriesAgent(parameters *adapterRestParameters, tlsConfig *tls.Config) (*ariesctx.Provider, error) {

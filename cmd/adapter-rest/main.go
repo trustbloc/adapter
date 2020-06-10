@@ -11,7 +11,6 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/trustbloc/edge-adapter/cmd/adapter-rest/migratecmd"
 	"github.com/trustbloc/edge-adapter/cmd/adapter-rest/startcmd"
 )
 
@@ -24,7 +23,6 @@ func main() {
 	}
 
 	rootCmd.AddCommand(startcmd.GetStartCmd(&startcmd.HTTPServer{}))
-	rootCmd.AddCommand(migratecmd.GetMigrateCmd())
 
 	if err := rootCmd.Execute(); err != nil {
 		log.Fatalf("failed to run adapter-rest: %s", err.Error())
