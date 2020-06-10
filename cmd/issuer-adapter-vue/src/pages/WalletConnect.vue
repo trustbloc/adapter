@@ -51,7 +51,7 @@ SPDX-License-Identifier: Apache-2.0
                 const connectionRequest = {
                     web: {
                         VerifiablePresentation: {
-                            query: {type: "DIDCommConnectionRequest"},
+                            query: {type: "DIDConnect"},
                             invitation: invitation
                         }
                     }
