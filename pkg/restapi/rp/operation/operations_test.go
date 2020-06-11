@@ -6,6 +6,7 @@ SPDX-License-Identifier: Apache-2.0
 package operation
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -204,7 +205,7 @@ func TestGetRESTHandlers(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	require.Equal(t, 6, len(c.GetRESTHandlers()))
+	require.Equal(t, 7, len(c.GetRESTHandlers()))
 }
 
 func TestHydraLoginHandler(t *testing.T) {
@@ -831,6 +832,137 @@ func TestTestResponse(t *testing.T) {
 	})
 }
 
+func TestCreateRPTenant(t *testing.T) {
+	t.Run("creates valid tenant", func(t *testing.T) {
+		expected := &rp.Tenant{
+			ClientID:  uuid.New().String(),
+			PublicDID: newDID(t).String(),
+			Label:     "test label",
+		}
+		store := mockStore()
+		o, err := New(&Config{
+			DIDExchClient: &stubDIDClient{},
+			Store:         store,
+		})
+		require.NoError(t, err)
+
+		w := httptest.NewRecorder()
+		o.createRPTenant(w, newCreateRPRequest(t, &CreateRPTenantRequest{
+			ClientID:  expected.ClientID,
+			PublicDID: expected.PublicDID,
+			Label:     expected.Label,
+		}))
+		require.Equal(t, http.StatusCreated, w.Code)
+
+		rpStore, err := rp.New(store)
+		require.NoError(t, err)
+		result, err := rpStore.GetRP(expected.ClientID)
+		require.NoError(t, err)
+		require.Equal(t, expected, result)
+	})
+
+	t.Run("bad request", func(t *testing.T) {
+		tests := []struct {
+			desc    string
+			request *http.Request
+		}{
+			{desc: "malformed json in body", request: newCreateRPRequestMalformed()},
+			{desc: "missing client ID", request: newCreateRPRequest(t, &CreateRPTenantRequest{
+				ClientID:  "",
+				PublicDID: newDID(t).String(),
+				Label:     "test label",
+			})},
+			{desc: "missing label", request: newCreateRPRequest(t, &CreateRPTenantRequest{
+				ClientID:  uuid.New().String(),
+				PublicDID: newDID(t).String(),
+				Label:     "",
+			})},
+			{desc: "missing public DID", request: newCreateRPRequest(t, &CreateRPTenantRequest{
+				ClientID:  uuid.New().String(),
+				PublicDID: "",
+				Label:     "test label",
+			})},
+			{desc: "malformed public DID", request: newCreateRPRequest(t, &CreateRPTenantRequest{
+				ClientID:  uuid.New().String(),
+				PublicDID: "malformed",
+				Label:     "test label",
+			})},
+		}
+
+		for _, test := range tests {
+			o, err := New(&Config{
+				DIDExchClient: &stubDIDClient{},
+				Store:         memstore.NewProvider(),
+			})
+			require.NoError(t, err)
+
+			w := httptest.NewRecorder()
+			o.createRPTenant(w, test.request)
+			require.Equal(t, http.StatusBadRequest, w.Code, test.desc)
+		}
+	})
+
+	t.Run("conflict if rp already exists", func(t *testing.T) {
+		existing := &rp.Tenant{
+			ClientID:  uuid.New().String(),
+			PublicDID: newDID(t).String(),
+			Label:     uuid.New().String(),
+		}
+		store := mockStore()
+		rpStore, err := rp.New(store)
+		require.NoError(t, err)
+		err = rpStore.SaveRP(existing)
+		require.NoError(t, err)
+		o, err := New(&Config{
+			DIDExchClient: &stubDIDClient{},
+			Store:         store,
+		})
+		require.NoError(t, err)
+		w := httptest.NewRecorder()
+		o.createRPTenant(w, newCreateRPRequest(t, &CreateRPTenantRequest{
+			ClientID:  existing.ClientID,
+			PublicDID: existing.PublicDID,
+			Label:     existing.Label,
+		}))
+		require.Equal(t, http.StatusConflict, w.Code)
+	})
+
+	t.Run("internal server error on generic store GET error", func(t *testing.T) {
+		o, err := New(&Config{
+			DIDExchClient: &stubDIDClient{},
+			Store: &stubStorageProvider{
+				storeGetErr: errors.New("generic"),
+			},
+		})
+		require.NoError(t, err)
+		w := httptest.NewRecorder()
+		o.createRPTenant(w, newCreateRPRequest(t, &CreateRPTenantRequest{
+			ClientID:  uuid.New().String(),
+			PublicDID: newDID(t).String(),
+			Label:     "test",
+		}))
+		require.Equal(t, http.StatusInternalServerError, w.Code)
+	})
+
+	t.Run("internal server error on generic store PUT error", func(t *testing.T) {
+		o, err := New(&Config{
+			DIDExchClient: &stubDIDClient{},
+			Store: &stubStorageProvider{
+				storeGetErr: storage.ErrValueNotFound,
+				storePutErr: errors.New("generic"),
+			},
+		})
+		require.NoError(t, err)
+		w := httptest.NewRecorder()
+		o.createRPTenant(w, newCreateRPRequest(t, &CreateRPTenantRequest{
+			ClientID:  uuid.New().String(),
+			PublicDID: newDID(t).String(),
+			Label:     "test",
+		}))
+		require.Equal(t, http.StatusInternalServerError, w.Code)
+	})
+}
+
 type stubWriter struct {
 }
 
@@ -984,4 +1116,60 @@ func saveUserConn(t *testing.T, p storage.Provider, u *rp.UserConnection) {
 
 	err = s.SaveUserConnection(u)
 	require.NoError(t, err)
+}
+
+func newCreateRPRequest(t *testing.T, request *CreateRPTenantRequest) *http.Request {
+	bits, err := json.Marshal(request)
+	require.NoError(t, err)
+
+	return httptest.NewRequest(http.MethodPost, "/dummy", bytes.NewReader(bits))
+}
+
+func newCreateRPRequestMalformed() *http.Request {
+	return httptest.NewRequest(http.MethodPost, "/dummy", nil)
+}
+
+type stubStorageProvider struct {
+	storeGetErr error
+	storePutErr error
+}
+
+func (s *stubStorageProvider) CreateStore(name string) error {
+	return nil
+}
+
+func (s *stubStorageProvider) OpenStore(name string) (storage.Store, error) {
+	return &stubStore{
+		errPut: s.storePutErr,
+		errGet: s.storeGetErr,
+	}, nil
+}
+
+func (s *stubStorageProvider) CloseStore(name string) error {
+	panic("implement me")
+}
+
+func (s *stubStorageProvider) Close() error {
+	panic("implement me")
+}
+
+type stubStore struct {
+	errPut error
+	errGet error
+}
+
+func (s *stubStore) Put(k string, v []byte) error {
+	return s.errPut
+}
+
+func (s *stubStore) Get(k string) ([]byte, error) {
+	return nil, s.errGet
+}
+
+func (s *stubStore) CreateIndex(createIndexRequest storage.CreateIndexRequest) error {
+	panic("implement me")
+}
+
+func (s *stubStore) Query(query string) (storage.ResultsIterator, error) {
+	panic("implement me")
 }
