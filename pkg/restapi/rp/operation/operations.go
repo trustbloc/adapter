@@ -170,7 +170,7 @@ type Operation struct {
 // GetRESTHandlers get all controller API handler available for this service.
 func (o *Operation) GetRESTHandlers() []Handler {
 	return []Handler{
-		support.NewHTTPHandler(hydraLoginEndpoint, http.MethodGet, o.hydraLoginHandler),
+		support.NewHTTPHandler(hydraLoginEndpoint, http.MethodGet, o.hydraLoginHandlerIterOne),
 		support.NewHTTPHandler(hydraConsentEndpoint, http.MethodGet, o.hydraConsentHandler),
 		support.NewHTTPHandler(OIDCCallbackEndpoint, http.MethodGet, o.oidcCallbackHandler),
 		support.NewHTTPHandler(getPresentationsRequestEndpoint, http.MethodGet, o.getPresentationsRequest),
@@ -178,6 +178,92 @@ func (o *Operation) GetRESTHandlers() []Handler {
 		support.NewHTTPHandler(userInfoEndpoint, http.MethodGet, o.userInfoHandler),
 		support.NewHTTPHandler(createRPTenantEndpoint, http.MethodPost, o.createRPTenant),
 	}
+}
+
+//nolint:funlen
+func (o *Operation) hydraLoginHandlerIterOne(w http.ResponseWriter, r *http.Request) {
+	logger.Debugf("hydra login request: %s", r.URL.String())
+
+	challenge := r.URL.Query().Get("login_challenge")
+	if challenge == "" {
+		logger.Warnf("missing challenge on login request")
+		commhttp.WriteErrorResponse(w, http.StatusBadRequest, invalidRequestErrMsg)
+
+		return
+	}
+
+	req := admin.NewGetLoginRequestParams()
+
+	req.SetLoginChallenge(challenge)
+
+	login, err := o.hydra.GetLoginRequest(req)
+	if err != nil {
+		msg := fmt.Sprintf("failed to contact hydra : %s", err.Error())
+		logger.Errorf(msg)
+		commhttp.WriteErrorResponse(w, http.StatusInternalServerError, msg)
+
+		return
+	}
+
+	tenant, err := o.rpStore.GetRP(login.GetPayload().Client.ClientID)
+	if err != nil {
+		msg := fmt.Sprintf("failed to fetch the rp tenant from the database : %s", err)
+		logger.Errorf(msg)
+		commhttp.WriteErrorResponse(w, http.StatusInternalServerError, msg)
+
+		return
+	}
+
+	_, err = o.rpStore.GetUserConnection(login.GetPayload().Client.ClientID, login.GetPayload().Subject)
+	if err != nil && !errors.Is(err, storage.ErrValueNotFound) {
+		msg := fmt.Sprintf("failed to query rp user connections : %s", err)
+		logger.Errorf(msg)
+		commhttp.WriteErrorResponse(w, http.StatusInternalServerError, msg)
+
+		return
+	}
+
+	if errors.Is(err, storage.ErrValueNotFound) {
+		err = o.rpStore.SaveUserConnection(&rp.UserConnection{
+			User: &rp.User{
+				Subject: login.GetPayload().Subject,
+			},
+			RP: &rp.Tenant{
+				ClientID:  tenant.ClientID,
+				PublicDID: tenant.PublicDID,
+				Label:     tenant.Label,
+			},
+			Request: &rp.DataRequest{
+				Scope: login.GetPayload().RequestedScope,
+			},
+		})
+		if err != nil {
+			msg := fmt.Sprintf("failed to save rp user connection to the databse : %s", err)
+			logger.Errorf(msg)
+			commhttp.WriteErrorResponse(w, http.StatusInternalServerError, msg)
+
+			return
+		}
+	}
+
+	accept := admin.NewAcceptLoginRequestParams()
+
+	accept.SetLoginChallenge(login.GetPayload().Challenge)
+	accept.SetBody(&models.AcceptLoginRequest{
+		Subject: &login.GetPayload().Subject,
+	})
+
+	loginResponse, err := o.hydra.AcceptLoginRequest(accept)
+	if err != nil {
+		msg := fmt.Sprintf("failed to accept login request : %s", err)
+		logger.Errorf(msg)
+		commhttp.WriteErrorResponse(w, http.StatusInternalServerError, msg)
+
+		return
+	}
+
+	http.Redirect(w, r, loginResponse.GetPayload().RedirectTo, http.StatusFound)
+	logger.Debugf("redirected to: %s", loginResponse.GetPayload().RedirectTo)
 }
 
 // Hydra redirects the user here in the authentication phase.

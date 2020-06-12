@@ -208,6 +208,221 @@ func TestGetRESTHandlers(t *testing.T) {
 	require.Equal(t, 7, len(c.GetRESTHandlers()))
 }
 
+func TestHydraLoginHandlerIterOne(t *testing.T) {
+	t.Run("redirects back to hydra", func(t *testing.T) {
+		t.Run("with new user connection", func(t *testing.T) {
+			tenant := &rp.Tenant{
+				ClientID:  uuid.New().String(),
+				PublicDID: newDID(t).String(),
+				Label:     "test",
+			}
+			store := mockStore()
+			rpStore, err := rp.New(store)
+			require.NoError(t, err)
+			err = rpStore.SaveRP(tenant)
+			require.NoError(t, err)
+			const redirectURL = "http://redirect.com"
+			o, err := New(&Config{
+				Hydra: &stubHydra{
+					loginRequestFunc: func(*admin.GetLoginRequestParams) (*admin.GetLoginRequestOK, error) {
+						return &admin.GetLoginRequestOK{
+							Payload: &models.LoginRequest{
+								Skip:   true,
+								Client: &models.OAuth2Client{ClientID: tenant.ClientID},
+							},
+						}, nil
+					},
+					acceptLoginFunc: func(*admin.AcceptLoginRequestParams) (*admin.AcceptLoginRequestOK, error) {
+						return &admin.AcceptLoginRequestOK{
+							Payload: &models.CompletedRequest{
+								RedirectTo: redirectURL,
+							},
+						}, nil
+					},
+				},
+				DIDExchClient: &stubDIDClient{},
+				Store:         store,
+			})
+			require.NoError(t, err)
+			w := &httptest.ResponseRecorder{}
+			o.hydraLoginHandlerIterOne(w, newHydraLoginRequest(t))
+			require.Equal(t, http.StatusFound, w.Code)
+			require.Equal(t, w.Header().Get("Location"), redirectURL)
+		})
+		t.Run("with existing user connection", func(t *testing.T) {
+			tenant := &rp.Tenant{
+				ClientID:  uuid.New().String(),
+				PublicDID: newDID(t).String(),
+				Label:     "test",
+			}
+			conn := &rp.UserConnection{
+				User: &rp.User{
+					Subject: uuid.New().String(),
+				},
+				RP:      tenant,
+				Request: &rp.DataRequest{},
+			}
+			store := mockStore()
+			rpStore, err := rp.New(store)
+			require.NoError(t, err)
+			err = rpStore.SaveRP(tenant)
+			require.NoError(t, err)
+			err = rpStore.SaveUserConnection(conn)
+			require.NoError(t, err)
+			const redirectURL = "http://redirect.com"
+			o, err := New(&Config{
+				Hydra: &stubHydra{
+					loginRequestFunc: func(*admin.GetLoginRequestParams) (*admin.GetLoginRequestOK, error) {
+						return &admin.GetLoginRequestOK{
+							Payload: &models.LoginRequest{
+								Skip:    true,
+								Client:  &models.OAuth2Client{ClientID: tenant.ClientID},
+								Subject: conn.User.Subject,
+							},
+						}, nil
+					},
+					acceptLoginFunc: func(*admin.AcceptLoginRequestParams) (*admin.AcceptLoginRequestOK, error) {
+						return &admin.AcceptLoginRequestOK{
+							Payload: &models.CompletedRequest{
+								RedirectTo: redirectURL,
+							},
+						}, nil
+					},
+				},
+				DIDExchClient: &stubDIDClient{},
+				Store:         store,
+			})
+			require.NoError(t, err)
+			w := &httptest.ResponseRecorder{}
+			o.hydraLoginHandlerIterOne(w, newHydraLoginRequest(t))
+			require.Equal(t, http.StatusFound, w.Code)
+			require.Equal(t, w.Header().Get("Location"), redirectURL)
+		})
+	})
+	t.Run("fails on missing login_challenge", func(t *testing.T) {
+		o, err := New(&Config{
+			DIDExchClient: &stubDIDClient{},
+			Store:         memstore.NewProvider(),
+		})
+		require.NoError(t, err)
+		r := newHydraRequestNoChallenge(t)
+		r.URL.Query().Del("login_challenge")
+		w := &httptest.ResponseRecorder{}
+		o.hydraLoginHandlerIterOne(w, r)
+		require.Equal(t, http.StatusBadRequest, w.Code)
+	})
+	t.Run("error while fetching hydra login request", func(t *testing.T) {
+		o, err := New(&Config{
+			Hydra: &stubHydra{
+				loginRequestFunc: func(*admin.GetLoginRequestParams) (*admin.GetLoginRequestOK, error) {
+					return nil, errors.New("test")
+				},
+			},
+			DIDExchClient: &stubDIDClient{},
+			Store:         memstore.NewProvider(),
+		})
+		require.NoError(t, err)
+		w := &httptest.ResponseRecorder{}
+		o.hydraLoginHandlerIterOne(w, newHydraLoginRequest(t))
+		require.Equal(t, http.StatusInternalServerError, w.Code)
+	})
+	t.Run("error while accepting login request at hydra", func(t *testing.T) {
+		o, err := New(&Config{
+			Hydra: &stubHydra{
+				loginRequestFunc: func(*admin.GetLoginRequestParams) (*admin.GetLoginRequestOK, error) {
+					return &admin.GetLoginRequestOK{
+						Payload: &models.LoginRequest{
+							Skip:   true,
+							Client: &models.OAuth2Client{},
+						},
+					}, nil
+				},
+				acceptLoginFunc: func(*admin.AcceptLoginRequestParams) (*admin.AcceptLoginRequestOK, error) {
+					return nil, errors.New("test")
+				},
+			},
+			DIDExchClient: &stubDIDClient{},
+			Store:         memstore.NewProvider(),
+		})
+		require.NoError(t, err)
+		w := &httptest.ResponseRecorder{}
+		o.hydraLoginHandlerIterOne(w, newHydraLoginRequest(t))
+		require.Equal(t, http.StatusInternalServerError, w.Code)
+	})
+	t.Run("internal server error on error saving user connection", func(t *testing.T) {
+		tenant := &rp.Tenant{
+			ClientID:  uuid.New().String(),
+			PublicDID: newDID(t).String(),
+			Label:     "test",
+		}
+		store := mockStore()
+		rpStore, err := rp.New(store)
+		require.NoError(t, err)
+		err = rpStore.SaveRP(tenant)
+		require.NoError(t, err)
+		store.Store.ErrPut = errors.New("test")
+		const redirectURL = "http://redirect.com"
+		o, err := New(&Config{
+			Hydra: &stubHydra{
+				loginRequestFunc: func(*admin.GetLoginRequestParams) (*admin.GetLoginRequestOK, error) {
+					return &admin.GetLoginRequestOK{
+						Payload: &models.LoginRequest{
+							Skip:   true,
+							Client: &models.OAuth2Client{ClientID: tenant.ClientID},
+						},
+					}, nil
+				},
+				acceptLoginFunc: func(*admin.AcceptLoginRequestParams) (*admin.AcceptLoginRequestOK, error) {
+					return &admin.AcceptLoginRequestOK{
+						Payload: &models.CompletedRequest{
+							RedirectTo: redirectURL,
+						},
+					}, nil
+				},
+			},
+			DIDExchClient: &stubDIDClient{},
+			Store:         store,
+		})
+		require.NoError(t, err)
+		w := &httptest.ResponseRecorder{}
+		o.hydraLoginHandlerIterOne(w, newHydraLoginRequest(t))
+		require.Equal(t, http.StatusInternalServerError, w.Code)
+	})
+	t.Run("internal server error if hydra fails to accept login", func(t *testing.T) {
+		tenant := &rp.Tenant{
+			ClientID:  uuid.New().String(),
+			PublicDID: newDID(t).String(),
+			Label:     "test",
+		}
+		store := mockStore()
+		rpStore, err := rp.New(store)
+		require.NoError(t, err)
+		err = rpStore.SaveRP(tenant)
+		require.NoError(t, err)
+		o, err := New(&Config{
+			Hydra: &stubHydra{
+				loginRequestFunc: func(*admin.GetLoginRequestParams) (*admin.GetLoginRequestOK, error) {
+					return &admin.GetLoginRequestOK{
+						Payload: &models.LoginRequest{
+							Skip:   true,
+							Client: &models.OAuth2Client{ClientID: tenant.ClientID},
+						},
+					}, nil
+				},
+				acceptLoginFunc: func(*admin.AcceptLoginRequestParams) (*admin.AcceptLoginRequestOK, error) {
+					return nil, errors.New("test")
+				},
+			},
+			DIDExchClient: &stubDIDClient{},
+			Store:         store,
+		})
+		require.NoError(t, err)
+		w := &httptest.ResponseRecorder{}
+		o.hydraLoginHandlerIterOne(w, newHydraLoginRequest(t))
+		require.Equal(t, http.StatusInternalServerError, w.Code)
+	})
+}
+
 func TestHydraLoginHandler(t *testing.T) {
 	t.Run("TODO - implement redirect to OIDC provider", func(t *testing.T) {
 		o, err := New(&Config{
