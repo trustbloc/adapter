@@ -31,11 +31,11 @@ const (
 
 	profileEndpoint            = "/profile"
 	getProfileEndpoint         = profileEndpoint + "/{id}"
-	walletConnectEndpoint      = didCommBasePath + "/connect/wallet"
+	walletConnectEndpoint      = "/{id}/connect/wallet"
 	generateInvitationEndpoint = didCommBasePath + "/invitation"
 
 	// http params
-	profileIDPathParam = "id"
+	idPathParam = "id"
 )
 
 var logger = log.New("edge-adapter/issuer-operations")
@@ -133,7 +133,7 @@ func (o *Operation) createIssuerProfileHandler(rw http.ResponseWriter, req *http
 }
 
 func (o *Operation) getIssuerProfileHandler(rw http.ResponseWriter, req *http.Request) {
-	profileID := mux.Vars(req)[profileIDPathParam]
+	profileID := mux.Vars(req)[idPathParam]
 
 	profile, err := o.profileStore.GetProfile(profileID)
 	if err != nil {
@@ -145,8 +145,17 @@ func (o *Operation) getIssuerProfileHandler(rw http.ResponseWriter, req *http.Re
 	commhttp.WriteResponse(rw, profile)
 }
 
-func (o *Operation) walletConnect(w http.ResponseWriter, r *http.Request) {
-	http.Redirect(w, r, o.uiEndpoint, http.StatusFound)
+func (o *Operation) walletConnect(rw http.ResponseWriter, req *http.Request) {
+	profileID := mux.Vars(req)[idPathParam]
+
+	_, err := o.profileStore.GetProfile(profileID)
+	if err != nil {
+		commhttp.WriteErrorResponse(rw, http.StatusBadRequest, err.Error())
+
+		return
+	}
+
+	http.Redirect(rw, req, o.uiEndpoint, http.StatusFound)
 }
 
 func (o *Operation) generateInvitation(rw http.ResponseWriter, _ *http.Request) {

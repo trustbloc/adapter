@@ -179,7 +179,7 @@ func TestGetProfile(t *testing.T) {
 		err := op.profileStore.SaveProfile(vReq)
 		require.NoError(t, err)
 
-		urlVars[profileIDPathParam] = vReq.ID
+		urlVars[idPathParam] = vReq.ID
 
 		rr := serveHTTPMux(t, handler, endpoint, nil, urlVars)
 
@@ -192,7 +192,7 @@ func TestGetProfile(t *testing.T) {
 	})
 
 	t.Run("get profile - no data found", func(t *testing.T) {
-		urlVars[profileIDPathParam] = "invalid-name"
+		urlVars[idPathParam] = "invalid-name"
 
 		rr := serveHTTPMux(t, handler, endpoint, nil, urlVars)
 
@@ -203,8 +203,12 @@ func TestGetProfile(t *testing.T) {
 }
 
 func TestConnectWallet(t *testing.T) {
+	uiEndpoint := "/ui"
+	profileID := "test-1"
+	endpoint := walletConnectEndpoint
+	urlVars := make(map[string]string)
+
 	t.Run("test connect wallet - success", func(t *testing.T) {
-		uiEndpoint := "/ui"
 		c, err := New(&Config{
 			AriesCtx:      getAriesCtx(),
 			StoreProvider: memstore.NewProvider(),
@@ -212,12 +216,39 @@ func TestConnectWallet(t *testing.T) {
 		})
 		require.NoError(t, err)
 
-		walletConnectHandler := getHandler(t, c, walletConnectEndpoint)
+		data := &issuer.ProfileData{
+			ID: profileID,
+		}
+		err = c.profileStore.SaveProfile(data)
+		require.NoError(t, err)
 
-		rr := serveHTTP(t, walletConnectHandler.Handle(), http.MethodGet, generateInvitationEndpoint, nil)
+		walletConnectHandler := getHandler(t, c, endpoint)
+
+		urlVars[idPathParam] = profileID
+
+		rr := serveHTTPMux(t, walletConnectHandler, walletConnectEndpoint, nil, urlVars)
 
 		require.Equal(t, http.StatusFound, rr.Code)
 		require.Equal(t, uiEndpoint, rr.Header().Get("Location"))
+	})
+
+	t.Run("test connect wallet - profile doesn't exists", func(t *testing.T) {
+		c, err := New(&Config{
+			AriesCtx:      getAriesCtx(),
+			StoreProvider: memstore.NewProvider(),
+			UIEndpoint:    uiEndpoint,
+		})
+		require.NoError(t, err)
+
+		walletConnectHandler := getHandler(t, c, endpoint)
+
+		urlVars[idPathParam] = profileID
+
+		rr := serveHTTPMux(t, walletConnectHandler, walletConnectEndpoint, nil, urlVars)
+
+		fmt.Println(rr.Body.String())
+		require.Equal(t, http.StatusBadRequest, rr.Code)
+		require.Contains(t, rr.Body.String(), "store does not have a value associated with this key")
 	})
 }
 
@@ -314,7 +345,7 @@ func serveHTTP(t *testing.T, handler http.HandlerFunc, method, path string, req 
 	return rr
 }
 
-func serveHTTPMux(t *testing.T, handler Handler, endpoint string, reqBytes []byte,
+func serveHTTPMux(t *testing.T, handler Handler, endpoint string, reqBytes []byte, // nolint: unparam
 	urlVars map[string]string) *httptest.ResponseRecorder {
 	r, err := http.NewRequest(handler.Method(), endpoint, bytes.NewBuffer(reqBytes))
 	require.NoError(t, err)
