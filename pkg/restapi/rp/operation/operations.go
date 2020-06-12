@@ -7,11 +7,15 @@ package operation
 
 import (
 	"context"
+	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
 	"net/url"
 	"sync"
+
+	"github.com/hyperledger/aries-framework-go/pkg/doc/did"
 
 	"github.com/coreos/go-oidc"
 	"github.com/google/uuid"
@@ -37,6 +41,7 @@ const (
 	getPresentationsRequestEndpoint    = "/presentations/create"
 	handlePresentationResponseEndpoint = "/presentations/handleResponse"
 	userInfoEndpoint                   = "/userinfo"
+	createRPTenantEndpoint             = "/relyingparties"
 )
 
 // errors.
@@ -171,6 +176,7 @@ func (o *Operation) GetRESTHandlers() []Handler {
 		support.NewHTTPHandler(getPresentationsRequestEndpoint, http.MethodGet, o.getPresentationsRequest),
 		support.NewHTTPHandler(handlePresentationResponseEndpoint, http.MethodPost, o.presentationResponseHandler),
 		support.NewHTTPHandler(userInfoEndpoint, http.MethodGet, o.userInfoHandler),
+		support.NewHTTPHandler(createRPTenantEndpoint, http.MethodPost, o.createRPTenant),
 	}
 }
 
@@ -585,4 +591,62 @@ func testResponse(w io.Writer) {
 	if err != nil {
 		fmt.Printf("error writing test response: %s", err.Error())
 	}
+}
+
+func (o *Operation) createRPTenant(w http.ResponseWriter, r *http.Request) {
+	request := &CreateRPTenantRequest{}
+
+	err := json.NewDecoder(r.Body).Decode(request)
+	if err != nil {
+		msg := fmt.Sprintf("failed to decode request: %s", err)
+		logger.Errorf(msg)
+		commhttp.WriteErrorResponse(w, http.StatusBadRequest, msg)
+
+		return
+	}
+
+	if request.ClientID == "" || request.Label == "" || request.PublicDID == "" {
+		commhttp.WriteErrorResponse(w, http.StatusBadRequest, "missing required parameters")
+
+		return
+	}
+
+	_, err = did.Parse(request.PublicDID)
+	if err != nil {
+		commhttp.WriteErrorResponse(w, http.StatusBadRequest, "malformed DID")
+
+		return
+	}
+
+	_, err = o.rpStore.GetRP(request.ClientID)
+	if err == nil {
+		commhttp.WriteErrorResponse(
+			w, http.StatusConflict, fmt.Sprintf("a relying party with clientID=%s already exists", request.ClientID))
+
+		return
+	}
+
+	if !errors.Is(err, storage.ErrValueNotFound) {
+		msg := fmt.Sprintf("failed to query the database for clientID=%s : %s", request.ClientID, err)
+		logger.Errorf(msg)
+		commhttp.WriteErrorResponse(w, http.StatusInternalServerError, msg)
+
+		return
+	}
+
+	// RP not found - we're good to go
+	err = o.rpStore.SaveRP(&rp.Tenant{
+		ClientID:  request.ClientID,
+		PublicDID: request.PublicDID,
+		Label:     request.Label,
+	})
+	if err != nil {
+		msg := fmt.Sprintf("failed to save relying party with clientID=%s : %s", request.ClientID, err)
+		logger.Errorf(msg)
+		commhttp.WriteErrorResponse(w, http.StatusInternalServerError, msg)
+
+		return
+	}
+
+	w.WriteHeader(http.StatusCreated)
 }
