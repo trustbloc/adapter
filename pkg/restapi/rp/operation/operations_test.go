@@ -1054,20 +1054,36 @@ func TestCreateRPTenant(t *testing.T) {
 			PublicDID: newDID(t).String(),
 			Label:     "test label",
 		}
+		clientSecret := uuid.New().String()
+
 		store := mockStore()
 		o, err := New(&Config{
 			DIDExchClient: &stubDIDClient{},
 			Store:         store,
+			Hydra: &stubHydra{
+				createOauth2ClientFunc: func(*admin.CreateOAuth2ClientParams) (*admin.CreateOAuth2ClientCreated, error) {
+					return &admin.CreateOAuth2ClientCreated{
+						Payload: &models.OAuth2Client{
+							ClientID:     expected.ClientID,
+							ClientSecret: clientSecret,
+						},
+					}, nil
+				},
+			},
 		})
 		require.NoError(t, err)
 
 		w := httptest.NewRecorder()
 		o.createRPTenant(w, newCreateRPRequest(t, &CreateRPTenantRequest{
-			ClientID:  expected.ClientID,
 			PublicDID: expected.PublicDID,
 			Label:     expected.Label,
 		}))
 		require.Equal(t, http.StatusCreated, w.Code)
+		response := &CreateRPTenantResponse{}
+		err = json.NewDecoder(w.Body).Decode(response)
+		require.NoError(t, err)
+		require.Equal(t, expected.ClientID, response.ClientID)
+		require.Equal(t, clientSecret, response.ClientSecret)
 
 		rpStore, err := rp.New(store)
 		require.NoError(t, err)
@@ -1082,23 +1098,15 @@ func TestCreateRPTenant(t *testing.T) {
 			request *http.Request
 		}{
 			{desc: "malformed json in body", request: newCreateRPRequestMalformed()},
-			{desc: "missing client ID", request: newCreateRPRequest(t, &CreateRPTenantRequest{
-				ClientID:  "",
-				PublicDID: newDID(t).String(),
-				Label:     "test label",
-			})},
 			{desc: "missing label", request: newCreateRPRequest(t, &CreateRPTenantRequest{
-				ClientID:  uuid.New().String(),
 				PublicDID: newDID(t).String(),
 				Label:     "",
 			})},
 			{desc: "missing public DID", request: newCreateRPRequest(t, &CreateRPTenantRequest{
-				ClientID:  uuid.New().String(),
 				PublicDID: "",
 				Label:     "test label",
 			})},
 			{desc: "malformed public DID", request: newCreateRPRequest(t, &CreateRPTenantRequest{
-				ClientID:  uuid.New().String(),
 				PublicDID: "malformed",
 				Label:     "test label",
 			})},
@@ -1117,7 +1125,7 @@ func TestCreateRPTenant(t *testing.T) {
 		}
 	})
 
-	t.Run("conflict if rp already exists", func(t *testing.T) {
+	t.Run("internal server error rp already exists", func(t *testing.T) {
 		existing := &rp.Tenant{
 			ClientID:  uuid.New().String(),
 			PublicDID: newDID(t).String(),
@@ -1131,15 +1139,21 @@ func TestCreateRPTenant(t *testing.T) {
 		o, err := New(&Config{
 			DIDExchClient: &stubDIDClient{},
 			Store:         store,
+			Hydra: &stubHydra{
+				createOauth2ClientFunc: func(*admin.CreateOAuth2ClientParams) (*admin.CreateOAuth2ClientCreated, error) {
+					return &admin.CreateOAuth2ClientCreated{
+						Payload: &models.OAuth2Client{ClientID: existing.ClientID},
+					}, nil
+				},
+			},
 		})
 		require.NoError(t, err)
 		w := httptest.NewRecorder()
 		o.createRPTenant(w, newCreateRPRequest(t, &CreateRPTenantRequest{
-			ClientID:  existing.ClientID,
 			PublicDID: existing.PublicDID,
 			Label:     existing.Label,
 		}))
-		require.Equal(t, http.StatusConflict, w.Code)
+		require.Equal(t, http.StatusInternalServerError, w.Code)
 	})
 
 	t.Run("internal server error on generic store GET error", func(t *testing.T) {
@@ -1148,11 +1162,17 @@ func TestCreateRPTenant(t *testing.T) {
 			Store: &stubStorageProvider{
 				storeGetErr: errors.New("generic"),
 			},
+			Hydra: &stubHydra{
+				createOauth2ClientFunc: func(*admin.CreateOAuth2ClientParams) (*admin.CreateOAuth2ClientCreated, error) {
+					return &admin.CreateOAuth2ClientCreated{
+						Payload: &models.OAuth2Client{},
+					}, nil
+				},
+			},
 		})
 		require.NoError(t, err)
 		w := httptest.NewRecorder()
 		o.createRPTenant(w, newCreateRPRequest(t, &CreateRPTenantRequest{
-			ClientID:  uuid.New().String(),
 			PublicDID: newDID(t).String(),
 			Label:     "test",
 		}))
@@ -1166,11 +1186,38 @@ func TestCreateRPTenant(t *testing.T) {
 				storeGetErr: storage.ErrValueNotFound,
 				storePutErr: errors.New("generic"),
 			},
+			Hydra: &stubHydra{
+				createOauth2ClientFunc: func(*admin.CreateOAuth2ClientParams) (*admin.CreateOAuth2ClientCreated, error) {
+					return &admin.CreateOAuth2ClientCreated{
+						Payload: &models.OAuth2Client{},
+					}, nil
+				},
+			},
 		})
 		require.NoError(t, err)
 		w := httptest.NewRecorder()
 		o.createRPTenant(w, newCreateRPRequest(t, &CreateRPTenantRequest{
-			ClientID:  uuid.New().String(),
+			PublicDID: newDID(t).String(),
+			Label:     "test",
+		}))
+		require.Equal(t, http.StatusInternalServerError, w.Code)
+	})
+
+	t.Run("internal server error if hydra fails to create oauth2 client", func(t *testing.T) {
+		o, err := New(&Config{
+			DIDExchClient: &stubDIDClient{},
+			Store: &stubStorageProvider{
+				storeGetErr: storage.ErrValueNotFound,
+			},
+			Hydra: &stubHydra{
+				createOauth2ClientFunc: func(*admin.CreateOAuth2ClientParams) (*admin.CreateOAuth2ClientCreated, error) {
+					return nil, errors.New("test")
+				},
+			},
+		})
+		require.NoError(t, err)
+		w := httptest.NewRecorder()
+		o.createRPTenant(w, newCreateRPRequest(t, &CreateRPTenantRequest{
 			PublicDID: newDID(t).String(),
 			Label:     "test",
 		}))
@@ -1236,6 +1283,7 @@ type stubHydra struct {
 	acceptLoginFunc          func(*admin.AcceptLoginRequestParams) (*admin.AcceptLoginRequestOK, error)
 	getConsentRequestFunc    func(*admin.GetConsentRequestParams) (*admin.GetConsentRequestOK, error)
 	acceptConsentRequestFunc func(*admin.AcceptConsentRequestParams) (*admin.AcceptConsentRequestOK, error)
+	createOauth2ClientFunc   func(*admin.CreateOAuth2ClientParams) (*admin.CreateOAuth2ClientCreated, error)
 }
 
 func (s *stubHydra) GetLoginRequest(params *admin.GetLoginRequestParams) (*admin.GetLoginRequestOK, error) {
@@ -1253,6 +1301,11 @@ func (s *stubHydra) GetConsentRequest(params *admin.GetConsentRequestParams) (*a
 func (s *stubHydra) AcceptConsentRequest(
 	params *admin.AcceptConsentRequestParams) (*admin.AcceptConsentRequestOK, error) {
 	return s.acceptConsentRequestFunc(params)
+}
+
+func (s *stubHydra) CreateOAuth2Client(
+	params *admin.CreateOAuth2ClientParams) (*admin.CreateOAuth2ClientCreated, error) {
+	return s.createOauth2ClientFunc(params)
 }
 
 type stubOAuth2Config struct {
