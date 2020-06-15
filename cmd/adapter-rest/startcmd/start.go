@@ -17,6 +17,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/trustbloc/edge-adapter/pkg/did"
+
 	"github.com/cenkalti/backoff"
 	"github.com/gorilla/mux"
 	"github.com/hyperledger/aries-framework-go/pkg/client/didexchange"
@@ -113,6 +115,11 @@ const (
 	didCommDBPathEnvKey    = "ADAPTER_REST_DIDCOMM_DB_PATH"
 	didCommDBPathFlagUsage = "Path to database." +
 		" Alternatively, this can be set with the following environment variable: " + didCommDBPathEnvKey
+
+	trustblocDomainFlagName  = "dids-trustbloc-domain"
+	trustblocDomainEnvKey    = "ADAPTER_REST_TRUSTBLOC_DOMAIN"
+	trustblocDomainFlagUsage = "URL to the did:trustbloc consortium's domain." +
+		" Alternatively, this can be set with the following environment variable: " + trustblocDomainEnvKey
 )
 
 // API endpoints.
@@ -142,6 +149,7 @@ type adapterRestParameters struct {
 	hydraURL          string
 	mode              string
 	didCommParameters *didCommParameters // didcomm
+	trustblocDomain   string
 }
 
 type server interface {
@@ -181,6 +189,7 @@ func createStartCmd(srv server) *cobra.Command {
 	}
 }
 
+//nolint:funlen,gocyclo
 func getAdapterRestParameters(cmd *cobra.Command) (*adapterRestParameters, error) {
 	hostURL, err := cmdutils.GetUserSetVarFromString(cmd, hostURLFlagName, hostURLEnvKey, false)
 	if err != nil {
@@ -229,6 +238,11 @@ func getAdapterRestParameters(cmd *cobra.Command) (*adapterRestParameters, error
 		return nil, err
 	}
 
+	trustblocDomain, err := cmdutils.GetUserSetVarFromString(cmd, trustblocDomainFlagName, trustblocDomainEnvKey, true)
+	if err != nil {
+		return nil, err
+	}
+
 	return &adapterRestParameters{
 		hostURL:                     hostURL,
 		tlsSystemCertPool:           tlsSystemCertPool,
@@ -240,6 +254,7 @@ func getAdapterRestParameters(cmd *cobra.Command) (*adapterRestParameters, error
 		hydraURL:                    hydraURL,
 		mode:                        mode,
 		didCommParameters:           didCommParameters,
+		trustblocDomain:             trustblocDomain,
 	}, nil
 }
 
@@ -306,6 +321,8 @@ func createFlags(startCmd *cobra.Command) {
 	startCmd.Flags().StringP(didCommInboundHostFlagName, "", "", didCommInboundHostFlagUsage)
 	startCmd.Flags().StringP(didCommInboundHostExternalFlagName, "", "", didCommInboundHostExternalFlagUsage)
 	startCmd.Flags().StringP(didCommDBPathFlagName, "", "", didCommDBPathFlagUsage)
+
+	startCmd.Flags().StringP(trustblocDomainFlagName, "", "", trustblocDomainFlagUsage)
 }
 
 func startAdapterService(parameters *adapterRestParameters, srv server) error {
@@ -377,6 +394,10 @@ func addRPHandlers(parameters *adapterRestParameters, ctx ariespai.CtxProvider, 
 		UIEndpoint:             uiEndpoint,
 		DIDExchClient:          didClient,
 		Store:                  memstore.NewProvider(),
+		PublicDIDCreator: did.NewTrustblocDIDCreator(
+			"",
+			parameters.didCommParameters.inboundHostExternal,
+			ctx.KMS()),
 	})
 	if err != nil {
 		return err

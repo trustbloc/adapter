@@ -249,6 +249,7 @@ func TestStartCmdValidArgs(t *testing.T) {
 		"--" + datasourceNameFlagName, fmt.Sprintf("mysql://root:secret@localhost:%d/edgeadapter", containerPort),
 		"--" + didCommInboundHostFlagName, randomURL(),
 		"--" + didCommDBPathFlagName, generateTempDir(t),
+		"--" + trustblocDomainFlagName, "http://example.trustbloc.com",
 	}
 	startCmd.SetArgs(args)
 
