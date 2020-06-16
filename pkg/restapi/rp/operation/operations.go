@@ -84,6 +84,11 @@ type DIDClient interface {
 	CreateInvitationWithDID(string, string) (*didexchange.Invitation, error)
 }
 
+// PublicDIDCreator creates public DIDs.
+type PublicDIDCreator interface {
+	Create() (*did.Doc, error)
+}
+
 type consentRequest struct {
 	pd      *presentationex.PresentationDefinitions
 	cr      *admin.GetConsentRequestOK
@@ -111,6 +116,7 @@ func New(config *Config) (*Operation, error) {
 		didActions:              make(chan service.DIDCommAction),
 		didStateMsgs:            make(chan service.StateMsg),
 		transientInvitationData: make(map[string]*invitationData),
+		publicDIDCreator:        config.PublicDIDCreator,
 	}
 
 	err := o.didClient.RegisterActionEvent(o.didActions)
@@ -144,6 +150,7 @@ type Config struct {
 	UIEndpoint             string
 	DIDExchClient          DIDClient
 	Store                  storage.Provider
+	PublicDIDCreator       PublicDIDCreator
 }
 
 // TODO implement an eviction strategy for Operation.oidcStates and OIDC.consentRequests
@@ -166,6 +173,7 @@ type Operation struct {
 	invLock                 sync.RWMutex
 	transientInvitationData map[string]*invitationData
 	rpStore                 *rp.Store
+	publicDIDCreator        PublicDIDCreator
 }
 
 // GetRESTHandlers get all controller API handler available for this service.
@@ -693,15 +701,8 @@ func (o *Operation) createRPTenant(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if request.Label == "" || request.PublicDID == "" {
+	if request.Label == "" {
 		commhttp.WriteErrorResponse(w, http.StatusBadRequest, "missing required parameters")
-
-		return
-	}
-
-	_, err = did.Parse(request.PublicDID)
-	if err != nil {
-		commhttp.WriteErrorResponse(w, http.StatusBadRequest, "malformed DID")
 
 		return
 	}
@@ -732,10 +733,19 @@ func (o *Operation) createRPTenant(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	publicDID, err := o.publicDIDCreator.Create()
+	if err != nil {
+		msg := fmt.Sprintf("failed to create public did : %s", err)
+		logger.Errorf(msg)
+		commhttp.WriteErrorResponse(w, http.StatusInternalServerError, msg)
+
+		return
+	}
+
 	// RP not found - we're good to go
 	err = o.rpStore.SaveRP(&rp.Tenant{
 		ClientID:  created.Payload.ClientID,
-		PublicDID: request.PublicDID,
+		PublicDID: publicDID.ID,
 		Label:     request.Label,
 	})
 	if err != nil {

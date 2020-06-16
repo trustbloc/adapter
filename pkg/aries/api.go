@@ -7,6 +7,7 @@ SPDX-License-Identifier: Apache-2.0
 package aries
 
 import (
+	"github.com/hyperledger/aries-framework-go/pkg/kms"
 	"github.com/hyperledger/aries-framework-go/pkg/kms/legacykms"
 	"github.com/hyperledger/aries-framework-go/pkg/storage"
 )
@@ -18,4 +19,5 @@ type CtxProvider interface {
 	ServiceEndpoint() string
 	StorageProvider() storage.Provider
 	TransientStorageProvider() storage.Provider
+	KMS() kms.KeyManager
 }

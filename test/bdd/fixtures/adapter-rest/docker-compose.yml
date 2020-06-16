@@ -15,6 +15,7 @@ services:
       - ADAPTER_REST_TLS_CACERTS=/etc/tls/ec-cacert.pem
       - ADAPTER_REST_TLS_SYSTEMCERTPOOL=true
       - ADAPTER_REST_DIDCOMM_INBOUND_HOST=0.0.0.0:8061
+      - ADAPTER_REST_TRUSTBLOC_DOMAIN=http://PUT-SOMETHING-HERE.com
     ports:
       - 8060:8060
       - 8061:8061
@@ -36,6 +37,7 @@ services:
       - ADAPTER_REST_OP_URL=http://PUT-SOMETHING-HERE.com
       - ADAPTER_REST_PRESENTATION_DEFINITIONS_FILE=/etc/testdata/presentationdefinitions.json
       - ADAPTER_REST_DIDCOMM_INBOUND_HOST=0.0.0.0:8071
+      - ADAPTER_REST_TRUSTBLOC_DOMAIN=http://PUT-SOMETHING-HERE.com
     ports:
       - 8070:8070
     entrypoint: ""

@@ -1070,13 +1070,13 @@ func TestCreateRPTenant(t *testing.T) {
 					}, nil
 				},
 			},
+			PublicDIDCreator: &stubPublicDIDCreator{createValue: &did.Doc{ID: expected.PublicDID}},
 		})
 		require.NoError(t, err)
 
 		w := httptest.NewRecorder()
 		o.createRPTenant(w, newCreateRPRequest(t, &CreateRPTenantRequest{
-			PublicDID: expected.PublicDID,
-			Label:     expected.Label,
+			Label: expected.Label,
 		}))
 		require.Equal(t, http.StatusCreated, w.Code)
 		response := &CreateRPTenantResponse{}
@@ -1099,16 +1099,7 @@ func TestCreateRPTenant(t *testing.T) {
 		}{
 			{desc: "malformed json in body", request: newCreateRPRequestMalformed()},
 			{desc: "missing label", request: newCreateRPRequest(t, &CreateRPTenantRequest{
-				PublicDID: newDID(t).String(),
-				Label:     "",
-			})},
-			{desc: "missing public DID", request: newCreateRPRequest(t, &CreateRPTenantRequest{
-				PublicDID: "",
-				Label:     "test label",
-			})},
-			{desc: "malformed public DID", request: newCreateRPRequest(t, &CreateRPTenantRequest{
-				PublicDID: "malformed",
-				Label:     "test label",
+				Label: "",
 			})},
 		}
 
@@ -1116,6 +1107,12 @@ func TestCreateRPTenant(t *testing.T) {
 			o, err := New(&Config{
 				DIDExchClient: &stubDIDClient{},
 				Store:         memstore.NewProvider(),
+				Hydra: &stubHydra{
+					createOauth2ClientFunc: func(*admin.CreateOAuth2ClientParams) (*admin.CreateOAuth2ClientCreated, error) {
+						return &admin.CreateOAuth2ClientCreated{Payload: &models.OAuth2Client{}}, nil
+					},
+				},
+				PublicDIDCreator: &stubPublicDIDCreator{createValue: &did.Doc{}},
 			})
 			require.NoError(t, err)
 
@@ -1150,8 +1147,7 @@ func TestCreateRPTenant(t *testing.T) {
 		require.NoError(t, err)
 		w := httptest.NewRecorder()
 		o.createRPTenant(w, newCreateRPRequest(t, &CreateRPTenantRequest{
-			PublicDID: existing.PublicDID,
-			Label:     existing.Label,
+			Label: existing.Label,
 		}))
 		require.Equal(t, http.StatusInternalServerError, w.Code)
 	})
@@ -1173,8 +1169,7 @@ func TestCreateRPTenant(t *testing.T) {
 		require.NoError(t, err)
 		w := httptest.NewRecorder()
 		o.createRPTenant(w, newCreateRPRequest(t, &CreateRPTenantRequest{
-			PublicDID: newDID(t).String(),
-			Label:     "test",
+			Label: "test",
 		}))
 		require.Equal(t, http.StatusInternalServerError, w.Code)
 	})
@@ -1193,12 +1188,12 @@ func TestCreateRPTenant(t *testing.T) {
 					}, nil
 				},
 			},
+			PublicDIDCreator: &stubPublicDIDCreator{createValue: &did.Doc{}},
 		})
 		require.NoError(t, err)
 		w := httptest.NewRecorder()
 		o.createRPTenant(w, newCreateRPRequest(t, &CreateRPTenantRequest{
-			PublicDID: newDID(t).String(),
-			Label:     "test",
+			Label: "test",
 		}))
 		require.Equal(t, http.StatusInternalServerError, w.Code)
 	})
@@ -1218,8 +1213,31 @@ func TestCreateRPTenant(t *testing.T) {
 		require.NoError(t, err)
 		w := httptest.NewRecorder()
 		o.createRPTenant(w, newCreateRPRequest(t, &CreateRPTenantRequest{
-			PublicDID: newDID(t).String(),
-			Label:     "test",
+			Label: "test",
+		}))
+		require.Equal(t, http.StatusInternalServerError, w.Code)
+	})
+
+	t.Run("internal server error if public did creation fails", func(t *testing.T) {
+		o, err := New(&Config{
+			DIDExchClient: &stubDIDClient{},
+			Store: &stubStorageProvider{
+				storeGetErr: storage.ErrValueNotFound,
+				storePutErr: errors.New("generic"),
+			},
+			Hydra: &stubHydra{
+				createOauth2ClientFunc: func(*admin.CreateOAuth2ClientParams) (*admin.CreateOAuth2ClientCreated, error) {
+					return &admin.CreateOAuth2ClientCreated{
+						Payload: &models.OAuth2Client{},
+					}, nil
+				},
+			},
+			PublicDIDCreator: &stubPublicDIDCreator{createErr: errors.New("test")},
+		})
+		require.NoError(t, err)
+		w := httptest.NewRecorder()
+		o.createRPTenant(w, newCreateRPRequest(t, &CreateRPTenantRequest{
+			Label: "test",
 		}))
 		require.Equal(t, http.StatusInternalServerError, w.Code)
 	})
@@ -1440,4 +1458,13 @@ func (s *stubStore) CreateIndex(createIndexRequest storage.CreateIndexRequest) e
 
 func (s *stubStore) Query(query string) (storage.ResultsIterator, error) {
 	panic("implement me")
+}
+
+type stubPublicDIDCreator struct {
+	createValue *did.Doc
+	createErr   error
+}
+
+func (s *stubPublicDIDCreator) Create() (*did.Doc, error) {
+	return s.createValue, s.createErr
 }
