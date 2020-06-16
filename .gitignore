@@ -22,7 +22,7 @@ vendor
 *.out
 .idea
 .DS_Store
-
+test/bdd/.db
 coverage.txt
 
 # Exclude build directory

@@ -15,7 +15,7 @@ services:
       - ADAPTER_REST_TLS_CACERTS=/etc/tls/ec-cacert.pem
       - ADAPTER_REST_TLS_SYSTEMCERTPOOL=true
       - ADAPTER_REST_DIDCOMM_INBOUND_HOST=0.0.0.0:8061
-      - ADAPTER_REST_TRUSTBLOC_DOMAIN=https://testnet.trustbloc.local
+      - ADAPTER_REST_DIDCOMM_INBOUND_HOST_EXTERNAL=http://0.0.0.0:8061
     ports:
       - 8060:8060
       - 8061:8061
@@ -25,6 +25,7 @@ services:
       - ../keys/tls:/etc/tls
     networks:
       - bdd_net
+    depends_on: [ docker-host ]
 
   rp.adapter.rest.example.com:
     container_name: rp.adapter.rest.example.com
@@ -89,6 +90,15 @@ services:
       MYSQL_ROOT_PASSWORD: secret
     logging:
       driver: "none"
+    networks:
+      - bdd_net
+
+  # connects to hosts from the container
+  docker-host:
+    container_name: docker-host
+    image: qoomon/docker-host
+    cap_add: [ 'NET_ADMIN', 'NET_RAW' ]
+    restart: on-failure
     networks:
       - bdd_net
 

@@ -40,6 +40,8 @@ func (e *Steps) RegisterSteps(s *godog.Suite) {
 	s.Step(`^Retrieved profile with id "([^"]*)" contains name "([^"]*)" and callbackURL "([^"]*)"$`, e.retrieveProfile)
 	s.Step(`^Issuer adapter shows the wallet connect UI when the issuer "([^"]*)" wants to connect to the wallet$`,
 		e.walletConnect)
+	s.Step(`^Issuer adapter \("([^"]*)"\) creates DIDExchange request for "([^"]*)"$`, e.didExchangeRequest)
+	s.Step(`^Issuer adapter \("([^"]*)"\) validates response from "([^"]*)"$`, e.validateConnectResp)
 }
 
 func (e *Steps) createProfile(id, name, callbackURL string) error {
@@ -126,5 +128,34 @@ func (e *Steps) walletConnect(id string) error {
 		return bddutil.ExpectedStatusCodeError(http.StatusOK, resp.StatusCode, nil)
 	}
 
+	return nil
+}
+
+func (e *Steps) didExchangeRequest(issuerID, agentID string) error {
+	resp, err := bddutil.HTTPDo(http.MethodGet, //nolint: bodyclose
+		issuerAdapterURL+"/issuer/didcomm/invitation", "", "", nil)
+	if err != nil {
+		return err
+	}
+
+	defer bddutil.CloseResponseBody(resp.Body)
+
+	respBytes, err := ioutil.ReadAll(resp.Body)
+	if err != nil {
+		return err
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		return bddutil.ExpectedStatusCodeError(http.StatusOK, resp.StatusCode, nil)
+	}
+
+	// Mocking CHAPI request call
+	e.bddContext.Store[bddutil.GetDIDConectRequestKey(issuerID, agentID)] = string(respBytes)
+
+	return nil
+}
+
+func (e *Steps) validateConnectResp(id string) error {
+	// TODO https://github.com/trustbloc/edge-adapter/issues/47 Process/validate wallet response
 	return nil
 }

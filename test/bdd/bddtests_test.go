@@ -17,6 +17,7 @@ import (
 	"github.com/cucumber/godog"
 
 	"github.com/trustbloc/edge-adapter/test/bdd/dockerutil"
+	"github.com/trustbloc/edge-adapter/test/bdd/pkg/agent"
 	"github.com/trustbloc/edge-adapter/test/bdd/pkg/common"
 	bddctx "github.com/trustbloc/edge-adapter/test/bdd/pkg/context"
 	"github.com/trustbloc/edge-adapter/test/bdd/pkg/issuer"
@@ -129,4 +130,5 @@ func FeatureContext(s *godog.Suite) {
 	common.NewSteps(bddContext).RegisterSteps(s)
 	issuer.NewSteps(bddContext).RegisterSteps(s)
 	rp.NewSteps(bddContext).RegisterSteps(s)
+	agent.NewSteps(bddContext).RegisterSteps(s)
 }
