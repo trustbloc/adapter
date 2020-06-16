@@ -760,5 +760,6 @@ func (o *Operation) createRPTenant(w http.ResponseWriter, r *http.Request) {
 	commhttp.WriteResponse(w, &CreateRPTenantResponse{
 		ClientID:     created.Payload.ClientID,
 		ClientSecret: created.Payload.ClientSecret,
+		PublicDID:    publicDID.ID,
 	})
 }

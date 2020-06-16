@@ -25,7 +25,7 @@ type CreateRPTenantRequest struct {
 
 // CreateRPTenantResponse API response body to register an RP tenant.
 type CreateRPTenantResponse struct {
-	ClientID     string
-	ClientSecret string
-	PublicDID    string
+	ClientID     string `json:"clientID"`
+	ClientSecret string `json:"clientSecret"`
+	PublicDID    string `json:"publicDID"`
 }

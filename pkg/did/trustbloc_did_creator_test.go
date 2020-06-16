@@ -18,7 +18,7 @@ import (
 
 func TestNewTrustblocDIDCreator(t *testing.T) {
 	t.Run("returns did creator", func(t *testing.T) {
-		c := NewTrustblocDIDCreator("", "", &stubKeyManager{})
+		c := NewTrustblocDIDCreator("", "", &stubKeyManager{}, nil)
 		require.NotNil(t, c)
 	})
 }
@@ -28,7 +28,7 @@ func TestTrustblocDIDCreator_Create(t *testing.T) {
 		domain := "http://example.trustbloc.com"
 		expected := newDIDDoc()
 		didcommURL := "http://example.didcomm.com"
-		c := NewTrustblocDIDCreator(domain, didcommURL, &stubKeyManager{})
+		c := NewTrustblocDIDCreator(domain, didcommURL, &stubKeyManager{}, nil)
 		c.tblocDIDs = &stubTrustblocClient{
 			createFunc: func(d string, options ...trustblocdid.CreateDIDOption) (*did.Doc, error) {
 				require.Equal(t, domain, d)
@@ -42,7 +42,7 @@ func TestTrustblocDIDCreator_Create(t *testing.T) {
 
 	t.Run("error creating keys", func(t *testing.T) {
 		expected := errors.New("test")
-		c := NewTrustblocDIDCreator("", "", &stubKeyManager{createErr: expected})
+		c := NewTrustblocDIDCreator("", "", &stubKeyManager{createErr: expected}, nil)
 		_, err := c.Create()
 		require.Error(t, err)
 		require.True(t, errors.Is(err, expected))
@@ -50,7 +50,7 @@ func TestTrustblocDIDCreator_Create(t *testing.T) {
 
 	t.Run("error exporting public key bytes", func(t *testing.T) {
 		expected := errors.New("test")
-		c := NewTrustblocDIDCreator("", "", &stubKeyManager{exportErr: expected})
+		c := NewTrustblocDIDCreator("", "", &stubKeyManager{exportErr: expected}, nil)
 		_, err := c.Create()
 		require.Error(t, err)
 		require.True(t, errors.Is(err, expected))
@@ -58,7 +58,7 @@ func TestTrustblocDIDCreator_Create(t *testing.T) {
 
 	t.Run("error creating trustbloc DID", func(t *testing.T) {
 		expected := errors.New("test")
-		c := NewTrustblocDIDCreator("", "", &stubKeyManager{})
+		c := NewTrustblocDIDCreator("", "", &stubKeyManager{}, nil)
 		c.tblocDIDs = &stubTrustblocClient{
 			createFunc: func(string, ...trustblocdid.CreateDIDOption) (*did.Doc, error) {
 				return nil, expected

@@ -6,6 +6,8 @@ SPDX-License-Identifier: Apache-2.0
 package did
 
 import (
+	"crypto/tls"
+	"crypto/x509"
 	"fmt"
 
 	"github.com/hyperledger/aries-framework-go/pkg/doc/did"
@@ -33,31 +35,32 @@ type TrustblocDIDCreator struct {
 }
 
 // NewTrustblocDIDCreator returns a new TrustblocDIDCreator.
-func NewTrustblocDIDCreator(blocDomain, didcommInboundURL string, km KeyManager) *TrustblocDIDCreator {
+func NewTrustblocDIDCreator(
+	blocDomain, didcommInboundURL string, km KeyManager, rootCAs *x509.CertPool) *TrustblocDIDCreator {
 	return &TrustblocDIDCreator{
 		blocDomain:        blocDomain,
 		didcommInboundURL: didcommInboundURL,
 		km:                km,
-		tblocDIDs:         trustblocdid.New(),
+		tblocDIDs:         trustblocdid.New(trustblocdid.WithTLSConfig(&tls.Config{RootCAs: rootCAs})),
 	}
 }
 
 // Create a new did:trustbloc DID.
 func (p *TrustblocDIDCreator) Create() (*did.Doc, error) {
-	var keys = [2]struct {
+	var keys = [3]struct {
 		keyID string
 		bits  []byte
 	}{}
 
-	for _, kid := range keys {
+	for i := range keys {
 		var err error
 
-		kid.keyID, _, err = p.km.Create(kms.ED25519Type)
+		keys[i].keyID, _, err = p.km.Create(kms.ED25519Type)
 		if err != nil {
 			return nil, fmt.Errorf("failed to create key : %w", err)
 		}
 
-		kid.bits, err = p.km.ExportPubKeyBytes(kid.keyID)
+		keys[i].bits, err = p.km.ExportPubKeyBytes(keys[i].keyID)
 		if err != nil {
 			return nil, fmt.Errorf("failed to export public key bytes : %w", err)
 		}
@@ -73,11 +76,18 @@ func (p *TrustblocDIDCreator) Create() (*did.Doc, error) {
 			Usage:    []string{trustblocdid.KeyUsageAuth},
 			Value:    keys[0].bits,
 		}),
+		trustblocdid.WithPublicKey(&trustblocdid.PublicKey{
+			ID:       keys[1].keyID,
+			Encoding: trustblocdid.PublicKeyEncodingJwk,
+			KeyType:  trustblocdid.Ed25519KeyType,
+			Value:    keys[1].bits,
+			Recovery: true,
+		}),
 		trustblocdid.WithService(&did.Service{
-			ID:              "didcomm",
+			ID:              keys[2].keyID,
 			Type:            "did-communication",
 			Priority:        0,
-			RecipientKeys:   []string{base58.Encode(keys[1].bits)},
+			RecipientKeys:   []string{base58.Encode(keys[2].bits)},
 			ServiceEndpoint: p.didcommInboundURL,
 		}),
 	)

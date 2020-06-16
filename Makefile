@@ -70,9 +70,12 @@ unit-test:
 	@scripts/check_unit.sh
 
 .PHONY: bdd-test
-bdd-test: clean rp-adapter-rest-docker issuer-adapter-rest-docker generate-test-keys
+bdd-test: clean rp-adapter-rest-docker issuer-adapter-rest-docker generate-test-config generate-test-keys
 	@scripts/check_integration.sh
 
+.PHONY: generate-test-config
+generate-test-config:
+	@scripts/generate_test_config.sh
 
 .PHONY: generate-test-keys
 generate-test-keys: clean
