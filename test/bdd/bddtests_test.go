@@ -17,6 +17,7 @@ import (
 	"github.com/cucumber/godog"
 
 	"github.com/trustbloc/edge-adapter/test/bdd/dockerutil"
+	"github.com/trustbloc/edge-adapter/test/bdd/pkg/agent"
 	"github.com/trustbloc/edge-adapter/test/bdd/pkg/common"
 	bddctx "github.com/trustbloc/edge-adapter/test/bdd/pkg/context"
 	"github.com/trustbloc/edge-adapter/test/bdd/pkg/issuer"
@@ -54,7 +55,7 @@ func TestMain(m *testing.M) {
 func runBDDTests(tags, format string) int { //nolint: gocognit
 	return godog.RunWithOptions("godogs", func(s *godog.Suite) {
 		var composition []*dockerutil.Composition
-		var composeFiles = []string{"./fixtures/adapter-rest", "./fixtures/did-trustbloc"}
+		var composeFiles = []string{"./fixtures/adapter-rest", "./fixtures/didcomm", "./fixtures/did-trustbloc"}
 		s.BeforeSuite(func() {
 			if os.Getenv("DISABLE_COMPOSITION") != "true" {
 				// Need a unique name, but docker does not allow '-' in names
@@ -129,4 +130,5 @@ func FeatureContext(s *godog.Suite) {
 	common.NewSteps(bddContext).RegisterSteps(s)
 	issuer.NewSteps(bddContext).RegisterSteps(s)
 	rp.NewSteps(bddContext).RegisterSteps(s)
+	agent.NewSteps(bddContext).RegisterSteps(s)
 }

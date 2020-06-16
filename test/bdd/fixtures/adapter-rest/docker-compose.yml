@@ -15,7 +15,7 @@ services:
       - ADAPTER_REST_TLS_CACERTS=/etc/tls/ec-cacert.pem
       - ADAPTER_REST_TLS_SYSTEMCERTPOOL=true
       - ADAPTER_REST_DIDCOMM_INBOUND_HOST=0.0.0.0:8061
-      - ADAPTER_REST_TRUSTBLOC_DOMAIN=https://testnet.trustbloc.local
+      - ADAPTER_REST_DIDCOMM_INBOUND_HOST_EXTERNAL=http://issuer.adapter.rest.example.com:8061
     ports:
       - 8060:8060
       - 8061:8061
