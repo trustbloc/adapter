@@ -45,3 +45,8 @@ func CloseResponseBody(respBody io.Closer) {
 		log.Errorf("Failed to close response body: %s", err.Error())
 	}
 }
+
+// GetDIDConectRequestKey key for storing DID Connect request.
+func GetDIDConectRequestKey(issuerID, agentID string) string {
+	return issuerID + agentID + "-didconnect-request"
+}

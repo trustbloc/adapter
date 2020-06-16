@@ -1,0 +1,31 @@
+#
+# Copyright SecureKey Technologies Inc. All Rights Reserved.
+#
+# SPDX-License-Identifier: Apache-2.0
+#
+version: '2'
+
+services:
+
+  agent.example.com:
+    container_name: agent.example.com
+    image: ${ARIES_AGENT_REST_IMAGE}:${ARIES_AGENT_REST_IMAGE_TAG}
+    environment:
+      - ARIESD_API_HOST=${AGENT_HOST}:${AGENT_API_PORT}
+      - ARIESD_INBOUND_HOST=http@${AGENT_HOST}:${AGENT_INBOUND_PORT}
+      - ARIESD_INBOUND_HOST_EXTERNAL=http@http://agent.example.com:${AGENT_INBOUND_PORT}
+      - ARIESD_WEBHOOK_URL=http://agent.example.com
+      - ARIESD_DB_PATH=${AGENT_DB_PATH}
+      - ARIESD_DEFAULT_LABEL=aries-agent
+    ports:
+      - ${AGENT_INBOUND_PORT}:${AGENT_INBOUND_PORT}
+      - ${AGENT_API_PORT}:${AGENT_API_PORT}
+    command: start
+    networks:
+      adapter-rest_bdd_net:
+        aliases:
+          - agent.example.com
+
+networks:
+  adapter-rest_bdd_net:
+    external: true

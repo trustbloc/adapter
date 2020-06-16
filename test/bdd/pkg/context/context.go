@@ -14,6 +14,7 @@ import (
 
 // BDDContext is a global context shared between different test suites in bddtests.
 type BDDContext struct {
+	Store     map[string]string
 	tlsConfig *tls.Config
 }
 
@@ -24,7 +25,10 @@ func NewBDDContext(caCertPath string) (*BDDContext, error) {
 		return nil, err
 	}
 
-	return &BDDContext{tlsConfig: &tls.Config{RootCAs: rootCAs}}, nil
+	return &BDDContext{
+		Store:     make(map[string]string),
+		tlsConfig: &tls.Config{RootCAs: rootCAs},
+	}, nil
 }
 
 // TLSConfig return tls config.
