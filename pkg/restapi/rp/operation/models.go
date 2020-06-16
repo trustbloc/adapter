@@ -20,7 +20,12 @@ type GetPresentationRequestResponse struct {
 
 // CreateRPTenantRequest API request body to register an RP tenant.
 type CreateRPTenantRequest struct {
-	ClientID  string `json:"clientID"`
 	PublicDID string `json:"publicDID"`
 	Label     string `json:"label"`
+}
+
+// CreateRPTenantResponse API response body to register an RP tenant.
+type CreateRPTenantResponse struct {
+	ClientID     string
+	ClientSecret string
 }

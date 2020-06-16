@@ -363,11 +363,6 @@ func addRPHandlers(parameters *adapterRestParameters, ctx ariespai.CtxProvider, 
 		return err
 	}
 
-	_, err = initDB(parameters.dsn)
-	if err != nil {
-		return err
-	}
-
 	didClient, err := didexchange.New(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to initialized didexchange client : %w", err)
@@ -461,6 +456,7 @@ func newHydraClient(hydraURL *url.URL) *client.OryHydra {
 	)
 }
 
+//nolint:deadcode,unused
 func initDB(dsn string) (*sql.DB, error) {
 	const (
 		sleep      = 1 * time.Second

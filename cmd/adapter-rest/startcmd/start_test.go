@@ -72,12 +72,13 @@ var inputDescriptors = `{
 ]
 }`
 
-//nolint:gochecknoglobals
+//nolint:gochecknoglobals,unused
 var containerName = "edgeadapter_start_tests_" + strings.ReplaceAll(uuid.New().String(), "-", "")
 
 //nolint:gochecknoglobals
 var containerPort int
 
+//nolint:unused
 func startMySQL() error {
 	var err error
 
@@ -114,6 +115,7 @@ func startMySQL() error {
 	return nil
 }
 
+//nolint:unused
 func stopMySQL() error {
 	//nolint:gosec
 	err := exec.Command("docker", "stop", containerName).Run()
@@ -124,7 +126,8 @@ func stopMySQL() error {
 	return nil
 }
 
-func TestMain(m *testing.M) {
+//nolint:deadcode,unused
+func testMain(m *testing.M) {
 	err := startMySQL()
 	if err != nil {
 		panic(err)

@@ -68,6 +68,7 @@ type Hydra interface {
 	AcceptLoginRequest(*admin.AcceptLoginRequestParams) (*admin.AcceptLoginRequestOK, error)
 	GetConsentRequest(*admin.GetConsentRequestParams) (*admin.GetConsentRequestOK, error)
 	AcceptConsentRequest(*admin.AcceptConsentRequestParams) (*admin.AcceptConsentRequestOK, error)
+	CreateOAuth2Client(*admin.CreateOAuth2ClientParams) (*admin.CreateOAuth2ClientCreated, error)
 }
 
 // OAuth2Config is an OAuth2 client.
@@ -679,6 +680,7 @@ func testResponse(w io.Writer) {
 	}
 }
 
+//nolint:funlen
 func (o *Operation) createRPTenant(w http.ResponseWriter, r *http.Request) {
 	request := &CreateRPTenantRequest{}
 
@@ -691,7 +693,7 @@ func (o *Operation) createRPTenant(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if request.ClientID == "" || request.Label == "" || request.PublicDID == "" {
+	if request.Label == "" || request.PublicDID == "" {
 		commhttp.WriteErrorResponse(w, http.StatusBadRequest, "missing required parameters")
 
 		return
@@ -704,16 +706,26 @@ func (o *Operation) createRPTenant(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	_, err = o.rpStore.GetRP(request.ClientID)
-	if err == nil {
-		commhttp.WriteErrorResponse(
-			w, http.StatusConflict, fmt.Sprintf("a relying party with clientID=%s already exists", request.ClientID))
+	req := admin.NewCreateOAuth2ClientParams()
+	req.SetBody(&models.OAuth2Client{
+		GrantTypes:    []string{"authorization_code", "refresh_token"},
+		ResponseTypes: []string{"code", "id_token"},
+		Scope:         "CreditCardStatement",
+	})
+
+	created, err := o.hydra.CreateOAuth2Client(req)
+	if err != nil {
+		msg := fmt.Sprintf("failed to create oauth2 client at hydra : %s", err)
+		logger.Errorf(msg)
+		commhttp.WriteErrorResponse(w, http.StatusInternalServerError, msg)
 
 		return
 	}
 
+	_, err = o.rpStore.GetRP(created.Payload.ClientID)
 	if !errors.Is(err, storage.ErrValueNotFound) {
-		msg := fmt.Sprintf("failed to query the database for clientID=%s : %s", request.ClientID, err)
+		msg := fmt.Sprintf(
+			"either failed to query rp store or rp tenant with clientID=%s already exists", created.Payload.ClientID)
 		logger.Errorf(msg)
 		commhttp.WriteErrorResponse(w, http.StatusInternalServerError, msg)
 
@@ -722,12 +734,12 @@ func (o *Operation) createRPTenant(w http.ResponseWriter, r *http.Request) {
 
 	// RP not found - we're good to go
 	err = o.rpStore.SaveRP(&rp.Tenant{
-		ClientID:  request.ClientID,
+		ClientID:  created.Payload.ClientID,
 		PublicDID: request.PublicDID,
 		Label:     request.Label,
 	})
 	if err != nil {
-		msg := fmt.Sprintf("failed to save relying party with clientID=%s : %s", request.ClientID, err)
+		msg := fmt.Sprintf("failed to save relying party : %s", err)
 		logger.Errorf(msg)
 		commhttp.WriteErrorResponse(w, http.StatusInternalServerError, msg)
 
@@ -735,4 +747,8 @@ func (o *Operation) createRPTenant(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.WriteHeader(http.StatusCreated)
+	commhttp.WriteResponse(w, &CreateRPTenantResponse{
+		ClientID:     created.Payload.ClientID,
+		ClientSecret: created.Payload.ClientSecret,
+	})
 }
