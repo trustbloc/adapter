@@ -20,6 +20,7 @@ import (
 	"github.com/trustbloc/edge-adapter/test/bdd/pkg/common"
 	bddctx "github.com/trustbloc/edge-adapter/test/bdd/pkg/context"
 	"github.com/trustbloc/edge-adapter/test/bdd/pkg/issuer"
+	"github.com/trustbloc/edge-adapter/test/bdd/pkg/rp"
 )
 
 func TestMain(m *testing.M) {
@@ -53,7 +54,7 @@ func TestMain(m *testing.M) {
 func runBDDTests(tags, format string) int { //nolint: gocognit
 	return godog.RunWithOptions("godogs", func(s *godog.Suite) {
 		var composition []*dockerutil.Composition
-		var composeFiles = []string{"./fixtures/adapter-rest"}
+		var composeFiles = []string{"./fixtures/adapter-rest", "./fixtures/did-trustbloc"}
 		s.BeforeSuite(func() {
 			if os.Getenv("DISABLE_COMPOSITION") != "true" {
 				// Need a unique name, but docker does not allow '-' in names
@@ -67,7 +68,7 @@ func runBDDTests(tags, format string) int { //nolint: gocognit
 					composition = append(composition, newComposition)
 				}
 				fmt.Println("docker-compose up ... waiting for containers to start ...")
-				testSleep := 15
+				testSleep := 30
 				if os.Getenv("TEST_SLEEP") != "" {
 					var e error
 
@@ -127,4 +128,5 @@ func FeatureContext(s *godog.Suite) {
 
 	common.NewSteps(bddContext).RegisterSteps(s)
 	issuer.NewSteps(bddContext).RegisterSteps(s)
+	rp.NewSteps(bddContext).RegisterSteps(s)
 }

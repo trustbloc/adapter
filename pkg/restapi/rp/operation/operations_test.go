@@ -1083,6 +1083,7 @@ func TestCreateRPTenant(t *testing.T) {
 		err = json.NewDecoder(w.Body).Decode(response)
 		require.NoError(t, err)
 		require.Equal(t, expected.ClientID, response.ClientID)
+		require.Equal(t, expected.PublicDID, response.PublicDID)
 		require.Equal(t, clientSecret, response.ClientSecret)
 
 		rpStore, err := rp.New(store)

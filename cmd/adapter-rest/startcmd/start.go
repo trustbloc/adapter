@@ -8,6 +8,7 @@ package startcmd
 
 import (
 	"crypto/tls"
+	"crypto/x509"
 	"database/sql"
 	"errors"
 	"fmt"
@@ -17,8 +18,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/trustbloc/edge-adapter/pkg/did"
-
 	"github.com/cenkalti/backoff"
 	"github.com/gorilla/mux"
 	"github.com/hyperledger/aries-framework-go/pkg/client/didexchange"
@@ -26,7 +25,6 @@ import (
 	"github.com/hyperledger/aries-framework-go/pkg/framework/aries"
 	"github.com/hyperledger/aries-framework-go/pkg/framework/aries/defaults"
 	ariesctx "github.com/hyperledger/aries-framework-go/pkg/framework/context"
-	"github.com/ory/hydra-client-go/client"
 	"github.com/rs/cors"
 	"github.com/spf13/cobra"
 	"github.com/trustbloc/edge-core/pkg/log"
@@ -35,10 +33,9 @@ import (
 	tlsutils "github.com/trustbloc/edge-core/pkg/utils/tls"
 	"github.com/xo/dburl"
 
-	// mysql db driver
-	_ "github.com/go-sql-driver/mysql"
-
 	ariespai "github.com/trustbloc/edge-adapter/pkg/aries"
+	"github.com/trustbloc/edge-adapter/pkg/did"
+	"github.com/trustbloc/edge-adapter/pkg/hydra"
 	"github.com/trustbloc/edge-adapter/pkg/presentationex"
 	"github.com/trustbloc/edge-adapter/pkg/restapi/healthcheck"
 	"github.com/trustbloc/edge-adapter/pkg/restapi/issuer"
@@ -351,7 +348,7 @@ func startAdapterService(parameters *adapterRestParameters, srv server) error {
 	// add endpoints
 	switch parameters.mode {
 	case rpMode:
-		err = addRPHandlers(parameters, ariesCtx, router)
+		err = addRPHandlers(parameters, ariesCtx, router, rootCAs)
 		if err != nil {
 			return nil
 		}
@@ -369,7 +366,8 @@ func startAdapterService(parameters *adapterRestParameters, srv server) error {
 	return srv.ListenAndServe(parameters.hostURL, constructCORSHandler(router))
 }
 
-func addRPHandlers(parameters *adapterRestParameters, ctx ariespai.CtxProvider, router *mux.Router) error {
+func addRPHandlers(
+	parameters *adapterRestParameters, ctx ariespai.CtxProvider, router *mux.Router, rootCAs *x509.CertPool) error {
 	presentationExProvider, err := presentationex.New(parameters.presentationDefinitionsFile)
 	if err != nil {
 		return err
@@ -390,14 +388,15 @@ func addRPHandlers(parameters *adapterRestParameters, ctx ariespai.CtxProvider, 
 	// add rp endpoints
 	rpService, err := rp.New(&rpops.Config{
 		PresentationExProvider: presentationExProvider,
-		Hydra:                  newHydraClient(hydraURL).Admin,
+		Hydra:                  hydra.NewClient(hydraURL, rootCAs),
 		UIEndpoint:             uiEndpoint,
 		DIDExchClient:          didClient,
 		Store:                  memstore.NewProvider(),
 		PublicDIDCreator: did.NewTrustblocDIDCreator(
-			"",
+			parameters.trustblocDomain,
 			parameters.didCommParameters.inboundHostExternal,
-			ctx.KMS()),
+			ctx.KMS(),
+			rootCAs),
 	})
 	if err != nil {
 		return err
@@ -464,17 +463,6 @@ func constructCORSHandler(handler http.Handler) http.Handler {
 			AllowedHeaders: []string{"Origin", "Accept", "Content-Type", "X-Requested-With", "Authorization"},
 		},
 	).Handler(handler)
-}
-
-func newHydraClient(hydraURL *url.URL) *client.OryHydra {
-	return client.NewHTTPClientWithConfig(
-		nil,
-		&client.TransportConfig{
-			Schemes:  []string{hydraURL.Scheme},
-			Host:     hydraURL.Host,
-			BasePath: hydraURL.Path,
-		},
-	)
 }
 
 //nolint:deadcode,unused
