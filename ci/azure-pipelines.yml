@@ -42,9 +42,12 @@ jobs:
     pool:
       vmImage: ubuntu-18.04
     strategy:
-      parallel: 1
+      parallel: 3
     timeoutInMinutes: 30
     steps:
+      - script: sudo ufw enable
+#      - script: sudo ufw allow from any to any port 8030 proto tcp
+#      - script: sudo ufw status
       - template: azp-dependencies.yml
       - checkout: self
       - bash: |
@@ -58,6 +61,9 @@ jobs:
           DOCKER_USER: $(DOCKER_USER)
           DOCKER_PASSWORD: $(DOCKER_PASSWORD)
         displayName: Run BDD tests
+      - publish: test/bdd/docker-compose-$(System.JobPositionInPhase).log
+        artifact: docker-compose-$(System.JobPositionInPhase).log
+        condition: always()
 
   - job: Publish
     dependsOn:

@@ -14,8 +14,8 @@ import (
 
 	"github.com/gorilla/mux"
 	"github.com/hyperledger/aries-framework-go/pkg/client/didexchange"
+	"github.com/hyperledger/aries-framework-go/pkg/common/log"
 	"github.com/hyperledger/aries-framework-go/pkg/didcomm/common/service"
-	"github.com/trustbloc/edge-core/pkg/log"
 	"github.com/trustbloc/edge-core/pkg/storage"
 
 	"github.com/trustbloc/edge-adapter/pkg/aries"
@@ -56,6 +56,8 @@ type Config struct {
 
 // New returns issuer rest instance.
 func New(config *Config) (*Operation, error) {
+	log.SetLevel("", log.DEBUG)
+
 	didExClient, err := didExchangeClient(config.AriesCtx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create aries did exchange client : %s", err)
@@ -181,7 +183,7 @@ func didExchangeClient(ariesCtx aries.CtxProvider) (*didexchange.Client, error) 
 		return nil, err
 	}
 
-	actionCh := make(chan service.DIDCommAction, 1)
+	actionCh := make(chan service.DIDCommAction, 10)
 
 	err = didExClient.RegisterActionEvent(actionCh)
 	if err != nil {

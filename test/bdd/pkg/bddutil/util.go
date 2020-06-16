@@ -7,9 +7,12 @@ SPDX-License-Identifier: Apache-2.0
 package bddutil
 
 import (
+	"errors"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
+	"time"
 
 	log "github.com/sirupsen/logrus"
 )
@@ -44,4 +47,62 @@ func CloseResponseBody(respBody io.Closer) {
 	if err != nil {
 		log.Errorf("Failed to close response body: %s", err.Error())
 	}
+}
+
+// GetRandomPort gets a local port.
+func GetRandomPort(n int) int {
+	for ; n > 0; n-- {
+		port, err := getRandomPort()
+		if err != nil {
+			continue
+		}
+
+		return port
+	}
+
+	panic("cannot acquire the random port")
+}
+
+func getRandomPort() (int, error) {
+	const network = "tcp"
+
+	addr, err := net.ResolveTCPAddr(network, "localhost:0")
+	if err != nil {
+		return 0, err
+	}
+
+	listener, err := net.ListenTCP(network, addr)
+	if err != nil {
+		return 0, err
+	}
+
+	if err := listener.Close(); err != nil {
+		return 0, err
+	}
+
+	return listener.Addr().(*net.TCPAddr).Port, nil
+}
+
+// ValidatePort validates whether the port is listening.
+func ValidatePort(host string, d time.Duration) error {
+	timeout := time.After(d)
+
+	for {
+		select {
+		case <-timeout:
+			return errors.New("timeout: server is not available")
+		default:
+			conn, err := net.Dial("tcp", host)
+			if err != nil {
+				continue
+			}
+
+			return conn.Close()
+		}
+	}
+}
+
+// GetDIDConectRequestKey key for storing DID Connect request.
+func GetDIDConectRequestKey(issuerID, agentID string) string {
+	return issuerID + agentID + "-didconnect-request"
 }
