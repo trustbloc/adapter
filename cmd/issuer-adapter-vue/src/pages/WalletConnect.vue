@@ -69,7 +69,23 @@ SPDX-License-Identifier: Apache-2.0
                     return;
                 }
 
-                console.log("response from the wallet:", result.data)
+                const validateUrl = "/connect/validate?txnID=" + this.$route.query.txnID
+                await this.$http.post(validateUrl, {walletResp: result.data}).then(
+                    resp => {
+                        if (resp.status !== 200) {
+                            console.error(`failed to validate wallet response: url=${validateUrl} status=${resp.status} err=${resp.data}`)
+
+                            this.connectWalletErr = "Failed to Connect Wallet. " + resp.data.errMessage
+                            return
+                        }
+
+                        console.log("wallet connected successfully")
+                    },
+                    err => {
+                        console.error(`failed to validate wallet response: url=${validateUrl} err=${err}`)
+                        this.connectWalletErr = "Failed to Connect Wallet."
+                    }
+                )
             }
         }
     }

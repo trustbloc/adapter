@@ -11,6 +11,8 @@ import (
 	"fmt"
 	"net/http"
 
+	"github.com/google/uuid"
+
 	"github.com/gorilla/mux"
 	"github.com/hyperledger/aries-framework-go/pkg/client/didexchange"
 	"github.com/hyperledger/aries-framework-go/pkg/didcomm/common/service"
@@ -28,13 +30,17 @@ const (
 	issuerBasePath  = "/issuer"
 	didCommBasePath = issuerBasePath + "/didcomm"
 
-	profileEndpoint            = "/profile"
-	getProfileEndpoint         = profileEndpoint + "/{id}"
-	walletConnectEndpoint      = "/{id}/connect/wallet"
-	generateInvitationEndpoint = didCommBasePath + "/invitation"
+	profileEndpoint                 = "/profile"
+	getProfileEndpoint              = profileEndpoint + "/{id}"
+	walletConnectEndpoint           = "/{id}/connect/wallet"
+	generateInvitationEndpoint      = didCommBasePath + "/invitation"
+	validateConnectResponseEndpoint = "/connect/validate"
 
 	// http params
-	idPathParam = "id"
+	idPathParam     = "id"
+	txnIDQueryParam = "txnID"
+
+	storeName = "issuer_txn"
 )
 
 var logger = log.New("edge-adapter/issuer-operations")
@@ -65,10 +71,16 @@ func New(config *Config) (*Operation, error) {
 		return nil, err
 	}
 
+	txnStore, err := getTxnStore(config.StoreProvider)
+	if err != nil {
+		return nil, err
+	}
+
 	return &Operation{
 		didExClient:  didExClient,
 		uiEndpoint:   config.UIEndpoint,
 		profileStore: p,
+		txnStore:     txnStore,
 	}, nil
 }
 
@@ -77,6 +89,7 @@ type Operation struct {
 	didExClient  *didexchange.Client
 	uiEndpoint   string
 	profileStore *issuer.Profile
+	txnStore     storage.Store
 }
 
 // GetRESTHandlers get all controller API handler available for this service.
@@ -88,6 +101,7 @@ func (o *Operation) GetRESTHandlers() []Handler {
 
 		// didcomm
 		support.NewHTTPHandler(walletConnectEndpoint, http.MethodGet, o.walletConnect),
+		support.NewHTTPHandler(validateConnectResponseEndpoint, http.MethodPost, o.validateWalletResponse),
 		support.NewHTTPHandler(generateInvitationEndpoint, http.MethodGet, o.generateInvitation),
 	}
 }
@@ -103,7 +117,8 @@ func (o *Operation) createIssuerProfileHandler(rw http.ResponseWriter, req *http
 
 	err := o.profileStore.SaveProfile(data)
 	if err != nil {
-		commhttp.WriteErrorResponse(rw, http.StatusBadRequest, err.Error())
+		commhttp.WriteErrorResponse(rw, http.StatusBadRequest,
+			fmt.Sprintf("failed to create profile: %s", err.Error()))
 
 		return
 	}
@@ -135,7 +150,39 @@ func (o *Operation) walletConnect(rw http.ResponseWriter, req *http.Request) {
 		return
 	}
 
-	http.Redirect(rw, req, o.uiEndpoint, http.StatusFound)
+	// store the txn data
+	txnID, err := o.createTxn(profileID)
+	if err != nil {
+		commhttp.WriteErrorResponse(rw, http.StatusInternalServerError,
+			fmt.Sprintf("failed to create txn : %s", err.Error()))
+
+		return
+	}
+
+	http.Redirect(rw, req, o.uiEndpoint+"?"+txnIDQueryParam+"="+txnID, http.StatusFound)
+}
+
+func (o *Operation) validateWalletResponse(rw http.ResponseWriter, req *http.Request) {
+	// get the txnID
+	txnID := req.URL.Query().Get(txnIDQueryParam)
+
+	if txnID == "" {
+		commhttp.WriteErrorResponse(rw, http.StatusBadRequest, "failed to get txnID from the url")
+
+		return
+	}
+
+	// get txnID data from the storage
+	data, err := o.txnStore.Get(txnID)
+	if err != nil || data == nil {
+		commhttp.WriteErrorResponse(rw, http.StatusBadRequest, fmt.Sprintf("txn data not found: %s", err.Error()))
+
+		return
+	}
+
+	// TODO https://github.com/trustbloc/edge-adapter/issues/82 Validate the vc/vp and connection details
+
+	rw.WriteHeader(http.StatusOK)
 }
 
 func (o *Operation) generateInvitation(rw http.ResponseWriter, _ *http.Request) {
@@ -155,6 +202,25 @@ func (o *Operation) generateInvitation(rw http.ResponseWriter, _ *http.Request) 
 	logger.Debugf("response: %+v", invitation)
 }
 
+func (o *Operation) createTxn(profileID string) (string, error) {
+	txnID := uuid.New().String()
+
+	// store the data on txn (issuerID, callbackURL, etc)
+	data := &txnData{IssuerID: profileID}
+
+	dataBytes, err := json.Marshal(data)
+	if err != nil {
+		return "", err
+	}
+
+	err = o.txnStore.Put(txnID, dataBytes)
+	if err != nil {
+		return "", err
+	}
+
+	return txnID, nil
+}
+
 func didExchangeClient(ariesCtx aries.CtxProvider) (*didexchange.Client, error) {
 	didExClient, err := didexchange.New(ariesCtx)
 	if err != nil {
@@ -171,4 +237,18 @@ func didExchangeClient(ariesCtx aries.CtxProvider) (*didexchange.Client, error) 
 	go service.AutoExecuteActionEvent(actionCh)
 
 	return didExClient, nil
+}
+
+func getTxnStore(prov storage.Provider) (storage.Store, error) {
+	err := prov.CreateStore(storeName)
+	if err != nil && err != storage.ErrDuplicateStore {
+		return nil, err
+	}
+
+	txnStore, err := prov.OpenStore(storeName)
+	if err != nil {
+		return nil, err
+	}
+
+	return txnStore, nil
 }
