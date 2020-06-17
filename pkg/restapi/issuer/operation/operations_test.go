@@ -39,7 +39,7 @@ func TestNew(t *testing.T) {
 		})
 		require.NoError(t, err)
 
-		require.Equal(t, 4, len(c.GetRESTHandlers()))
+		require.Equal(t, 5, len(c.GetRESTHandlers()))
 	})
 
 	t.Run("test new - aries provider fail", func(t *testing.T) {
@@ -58,12 +58,26 @@ func TestNew(t *testing.T) {
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "error creating the store")
 	})
+
+	t.Run("test get txn store - create store error", func(t *testing.T) {
+		s, err := getTxnStore(&mockstorage.Provider{ErrCreateStore: errors.New("error creating the store")})
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "error creating the store")
+		require.Nil(t, s)
+	})
+
+	t.Run("test get txn store - open store error", func(t *testing.T) {
+		s, err := getTxnStore(&mockstorage.Provider{ErrOpenStoreHandle: errors.New("error opening the store")})
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "error opening the store")
+		require.Nil(t, s)
+	})
 }
 
 func TestCreateProfile(t *testing.T) {
 	op, err := New(&Config{
-		StoreProvider: memstore.NewProvider(),
 		AriesCtx:      getAriesCtx(),
+		StoreProvider: memstore.NewProvider(),
 	})
 	require.NoError(t, err)
 
@@ -106,14 +120,14 @@ func TestCreateProfile(t *testing.T) {
 		rr := serveHTTP(t, handler.Handle(), http.MethodPost, endpoint, vReqBytes)
 
 		require.Equal(t, http.StatusBadRequest, rr.Code)
-		require.Contains(t, rr.Body.String(), "missing profile id")
+		require.Contains(t, rr.Body.String(), "failed to create profile: missing profile id")
 	})
 }
 
 func TestGetProfile(t *testing.T) {
 	op, err := New(&Config{
-		StoreProvider: memstore.NewProvider(),
 		AriesCtx:      getAriesCtx(),
+		StoreProvider: memstore.NewProvider(),
 	})
 	require.NoError(t, err)
 
@@ -184,7 +198,7 @@ func TestConnectWallet(t *testing.T) {
 		rr := serveHTTPMux(t, walletConnectHandler, walletConnectEndpoint, nil, urlVars)
 
 		require.Equal(t, http.StatusFound, rr.Code)
-		require.Equal(t, uiEndpoint, rr.Header().Get("Location"))
+		require.Contains(t, rr.Header().Get("Location"), uiEndpoint)
 	})
 
 	t.Run("test connect wallet - profile doesn't exists", func(t *testing.T) {
@@ -205,13 +219,89 @@ func TestConnectWallet(t *testing.T) {
 		require.Equal(t, http.StatusBadRequest, rr.Code)
 		require.Contains(t, rr.Body.String(), "store does not have a value associated with this key")
 	})
+
+	t.Run("test connect wallet - txn data store error", func(t *testing.T) {
+		c, err := New(&Config{
+			AriesCtx:      getAriesCtx(),
+			StoreProvider: memstore.NewProvider(),
+			UIEndpoint:    uiEndpoint,
+		})
+		require.NoError(t, err)
+
+		data := &issuer.ProfileData{
+			ID:          profileID,
+			Name:        "Issuer Profile 1",
+			CallbackURL: "http://issuer.example.com/cb",
+		}
+		err = c.profileStore.SaveProfile(data)
+		require.NoError(t, err)
+
+		walletConnectHandler := getHandler(t, c, endpoint)
+
+		urlVars[idPathParam] = profileID
+
+		c.txnStore = &mockstorage.MockStore{
+			Store:  make(map[string][]byte),
+			ErrPut: errors.New("error inserting data"),
+		}
+
+		rr := serveHTTPMux(t, walletConnectHandler, walletConnectEndpoint, nil, urlVars)
+
+		fmt.Println(rr.Body.String())
+		require.Equal(t, http.StatusInternalServerError, rr.Code)
+		require.Contains(t, rr.Body.String(), "failed to create txn")
+	})
+}
+
+func TestValidateWalletResponse(t *testing.T) {
+	c, err := New(&Config{
+		AriesCtx:      getAriesCtx(),
+		StoreProvider: memstore.NewProvider(),
+	})
+	require.NoError(t, err)
+
+	handler := getHandler(t, c, validateConnectResponseEndpoint)
+
+	vReq := &WalletConnect{
+		Resp: []byte(""),
+	}
+
+	vReqBytes, err := json.Marshal(vReq)
+	require.NoError(t, err)
+
+	t.Run("test validate response - success", func(t *testing.T) {
+		txnID, err := c.createTxn("profile1")
+		require.NoError(t, err)
+
+		rr := serveHTTP(t, handler.Handle(), http.MethodPost,
+			validateConnectResponseEndpoint+"?"+txnIDQueryParam+"="+txnID, vReqBytes)
+
+		require.Equal(t, http.StatusOK, rr.Code)
+	})
+
+	t.Run("test validate response - missing cookie", func(t *testing.T) {
+		rr := serveHTTP(t, handler.Handle(), http.MethodPost, validateConnectResponseEndpoint, vReqBytes)
+
+		require.Equal(t, http.StatusBadRequest, rr.Code)
+		require.Contains(t, rr.Body.String(), "failed to get txnID from the url")
+	})
+
+	t.Run("test validate response - invalid txn id", func(t *testing.T) {
+		txnID := "invalid-txn-id"
+
+		rr := serveHTTP(t, handler.Handle(), http.MethodPost,
+			validateConnectResponseEndpoint+"?"+txnIDQueryParam+"="+txnID, vReqBytes)
+
+		require.Equal(t, http.StatusBadRequest, rr.Code)
+		require.Contains(t, rr.Body.String(), "txn data not found")
+	})
 }
 
 func TestGenerateInvitation(t *testing.T) {
 	t.Run("test new - success", func(t *testing.T) {
 		c, err := New(&Config{
-			StoreProvider: memstore.NewProvider(),
 			AriesCtx:      getAriesCtx(),
+			StoreProvider: memstore.NewProvider(),
 		})
 		require.NoError(t, err)
 
@@ -235,8 +325,8 @@ func TestGenerateInvitation(t *testing.T) {
 		}
 
 		c, err := New(&Config{
-			StoreProvider: memstore.NewProvider(),
 			AriesCtx:      ariesCtx,
+			StoreProvider: memstore.NewProvider(),
 		})
 		require.NoError(t, err)
 

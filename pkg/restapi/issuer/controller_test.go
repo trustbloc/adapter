@@ -40,7 +40,7 @@ func TestNew(t *testing.T) {
 
 		ops := controller.GetOperations()
 
-		require.Equal(t, 4, len(ops))
+		require.Equal(t, 5, len(ops))
 	})
 
 	t.Run("test new - fail", func(t *testing.T) {

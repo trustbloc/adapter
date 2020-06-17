@@ -27,11 +27,15 @@ const (
 // Steps is steps for VC BDD tests.
 type Steps struct {
 	bddContext *context.BDDContext
+	txnIDs     map[string]string
 }
 
 // NewSteps returns new agent from client SDK.
 func NewSteps(ctx *context.BDDContext) *Steps {
-	return &Steps{bddContext: ctx}
+	return &Steps{
+		bddContext: ctx,
+		txnIDs:     make(map[string]string),
+	}
 }
 
 // RegisterSteps registers agent steps.
@@ -114,9 +118,9 @@ func (e *Steps) retrieveProfile(id, name, callbackURL string) error {
 	return nil
 }
 
-func (e *Steps) walletConnect(id string) error {
+func (e *Steps) walletConnect(issuerID string) error {
 	resp, err := bddutil.HTTPDo(http.MethodGet, //nolint: bodyclose
-		fmt.Sprintf(issuerAdapterURL+"/%s/connect/wallet", id), "", "", nil)
+		fmt.Sprintf(issuerAdapterURL+"/%s/connect/wallet", issuerID), "", "", nil)
 	if err != nil {
 		return err
 	}
@@ -127,6 +131,8 @@ func (e *Steps) walletConnect(id string) error {
 	if resp.StatusCode != http.StatusOK {
 		return bddutil.ExpectedStatusCodeError(http.StatusOK, resp.StatusCode, nil)
 	}
+
+	e.txnIDs[issuerID] = resp.Request.URL.Query().Get("txnID")
 
 	return nil
 }
@@ -155,7 +161,25 @@ func (e *Steps) didExchangeRequest(issuerID, agentID string) error {
 	return nil
 }
 
-func (e *Steps) validateConnectResp(id string) error {
-	// TODO https://github.com/trustbloc/edge-adapter/issues/47 Process/validate wallet response
+func (e *Steps) validateConnectResp(issuerID string) error {
+	url := issuerAdapterURL + "/connect/validate?txnID=" + e.txnIDs[issuerID]
+
+	resp, err := bddutil.HTTPDo(http.MethodPost, //nolint: bodyclose
+		url, "", "", nil)
+	if err != nil {
+		return err
+	}
+
+	defer bddutil.CloseResponseBody(resp.Body)
+
+	respBytes, err := ioutil.ReadAll(resp.Body)
+	if err != nil {
+		return err
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		return bddutil.ExpectedStatusCodeError(http.StatusOK, resp.StatusCode, respBytes)
+	}
+
 	return nil
 }
