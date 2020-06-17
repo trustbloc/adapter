@@ -51,7 +51,9 @@ func TestCredentialRecord_SaveProfile(t *testing.T) {
 		require.NotNil(t, record)
 
 		value := &ProfileData{
-			ID: "profile1",
+			ID:          "profile1",
+			Name:        "Issuer Profile 1",
+			CallbackURL: "http://issuer.example.com/cb",
 		}
 
 		err = record.SaveProfile(value)
@@ -61,6 +63,48 @@ func TestCredentialRecord_SaveProfile(t *testing.T) {
 		v, err := record.store.Get(k)
 		require.NoError(t, err)
 		require.NotEmpty(t, v)
+	})
+
+	t.Run("test save profile - validation failure", func(t *testing.T) {
+		record, err := New(mockstorage.NewMockStoreProvider())
+		require.NoError(t, err)
+		require.NotNil(t, record)
+
+		value := &ProfileData{}
+
+		err = record.SaveProfile(value)
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "missing profile id")
+
+		value.ID = "profile1"
+		err = record.SaveProfile(value)
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "missing profile name")
+
+		value.Name = "Issuer Profile 1"
+		err = record.SaveProfile(value)
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "missing callback url")
+	})
+
+	t.Run("test save profile - profile already exists", func(t *testing.T) {
+		record, err := New(mockstorage.NewMockStoreProvider())
+		require.NoError(t, err)
+		require.NotNil(t, record)
+
+		value := &ProfileData{
+			ID:          "profile1",
+			Name:        "Issuer Profile 1",
+			CallbackURL: "http://issuer.example.com/cb",
+		}
+
+		err = record.SaveProfile(value)
+		require.NoError(t, err)
+
+		// try to save again
+		err = record.SaveProfile(value)
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "profile profile1 already exists")
 	})
 }
 

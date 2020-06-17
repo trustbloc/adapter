@@ -8,6 +8,7 @@ package issuer
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 
 	"github.com/trustbloc/edge-core/pkg/storage"
@@ -49,6 +50,22 @@ func New(provider storage.Provider) (*Profile, error) {
 
 // SaveProfile saves the profile data.
 func (c *Profile) SaveProfile(data *ProfileData) error {
+	// validate the profile
+	if err := validateProfileRequest(data); err != nil {
+		return err
+	}
+
+	// verify profile exists
+	profile, err := c.GetProfile(data.ID)
+	if err != nil && !errors.Is(err, storage.ErrValueNotFound) {
+		return err
+	}
+
+	if profile != nil {
+		return fmt.Errorf("profile %s already exists", profile.ID)
+	}
+
+	// save the profile
 	bytes, err := json.Marshal(data)
 	if err != nil {
 		return fmt.Errorf("issuer profile save - marshalling error: %s", err.Error())
@@ -72,6 +89,22 @@ func (c *Profile) GetProfile(id string) (*ProfileData, error) {
 	}
 
 	return response, nil
+}
+
+func validateProfileRequest(pr *ProfileData) error {
+	if pr.ID == "" {
+		return fmt.Errorf("missing profile id")
+	}
+
+	if pr.Name == "" {
+		return fmt.Errorf("missing profile name")
+	}
+
+	if pr.CallbackURL == "" {
+		return fmt.Errorf("missing callback url")
+	}
+
+	return nil
 }
 
 func getDBKey(id string) string {
