@@ -8,7 +8,6 @@ package operation
 
 import (
 	"encoding/json"
-	"errors"
 	"fmt"
 	"net/http"
 
@@ -102,26 +101,7 @@ func (o *Operation) createIssuerProfileHandler(rw http.ResponseWriter, req *http
 		return
 	}
 
-	profile, err := o.profileStore.GetProfile(data.ID)
-	if err != nil && !errors.Is(err, storage.ErrValueNotFound) {
-		commhttp.WriteErrorResponse(rw, http.StatusBadRequest, err.Error())
-
-		return
-	}
-
-	if profile != nil {
-		commhttp.WriteErrorResponse(rw, http.StatusBadRequest, fmt.Sprintf("profile %s already exists", profile.ID))
-
-		return
-	}
-
-	if err = validateProfileRequest(data); err != nil {
-		commhttp.WriteErrorResponse(rw, http.StatusBadRequest, err.Error())
-
-		return
-	}
-
-	err = o.profileStore.SaveProfile(data)
+	err := o.profileStore.SaveProfile(data)
 	if err != nil {
 		commhttp.WriteErrorResponse(rw, http.StatusBadRequest, err.Error())
 
@@ -191,20 +171,4 @@ func didExchangeClient(ariesCtx aries.CtxProvider) (*didexchange.Client, error) 
 	go service.AutoExecuteActionEvent(actionCh)
 
 	return didExClient, nil
-}
-
-func validateProfileRequest(pr *issuer.ProfileData) error {
-	if pr.ID == "" {
-		return fmt.Errorf("missing profile id")
-	}
-
-	if pr.Name == "" {
-		return fmt.Errorf("missing profile name")
-	}
-
-	if pr.CallbackURL == "" {
-		return fmt.Errorf("missing callback url")
-	}
-
-	return nil
 }

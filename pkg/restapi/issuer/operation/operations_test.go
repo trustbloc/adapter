@@ -97,7 +97,7 @@ func TestCreateProfile(t *testing.T) {
 		require.Contains(t, rr.Body.String(), "invalid request")
 	})
 
-	t.Run("create profile - missing profile id", func(t *testing.T) {
+	t.Run("create profile - error", func(t *testing.T) {
 		vReq := &issuer.ProfileData{}
 
 		vReqBytes, err := json.Marshal(vReq)
@@ -107,55 +107,6 @@ func TestCreateProfile(t *testing.T) {
 
 		require.Equal(t, http.StatusBadRequest, rr.Code)
 		require.Contains(t, rr.Body.String(), "missing profile id")
-	})
-
-	t.Run("create profile - missing profile name", func(t *testing.T) {
-		vReq := &issuer.ProfileData{
-			ID: "test1",
-		}
-
-		vReqBytes, err := json.Marshal(vReq)
-		require.NoError(t, err)
-
-		rr := serveHTTP(t, handler.Handle(), http.MethodPost, endpoint, vReqBytes)
-
-		require.Equal(t, http.StatusBadRequest, rr.Code)
-		require.Contains(t, rr.Body.String(), "missing profile name")
-	})
-
-	t.Run("create profile - missing call back url", func(t *testing.T) {
-		vReq := &issuer.ProfileData{
-			ID:   "test1",
-			Name: "test 1",
-		}
-
-		vReqBytes, err := json.Marshal(vReq)
-		require.NoError(t, err)
-
-		rr := serveHTTP(t, handler.Handle(), http.MethodPost, endpoint, vReqBytes)
-
-		require.Equal(t, http.StatusBadRequest, rr.Code)
-		require.Contains(t, rr.Body.String(), "missing callback url")
-	})
-
-	t.Run("create profile - profile already exists", func(t *testing.T) {
-		vReq := &issuer.ProfileData{
-			ID:          "test1",
-			Name:        "test 1",
-			CallbackURL: "http://issuer.example.com/callback",
-		}
-
-		vReqBytes, err := json.Marshal(vReq)
-		require.NoError(t, err)
-
-		rr := serveHTTP(t, handler.Handle(), http.MethodPost, endpoint, vReqBytes)
-
-		require.Equal(t, http.StatusCreated, rr.Code)
-
-		rr = serveHTTP(t, handler.Handle(), http.MethodPost, endpoint, vReqBytes)
-
-		require.Equal(t, http.StatusBadRequest, rr.Code)
-		require.Contains(t, rr.Body.String(), "profile test1 already exists")
 	})
 }
 
@@ -173,7 +124,9 @@ func TestGetProfile(t *testing.T) {
 
 	t.Run("get profile - success", func(t *testing.T) {
 		vReq := &issuer.ProfileData{
-			ID: "test",
+			ID:          "test",
+			Name:        "Issuer Profile",
+			CallbackURL: "http://issuer.example.com/cb",
 		}
 
 		err := op.profileStore.SaveProfile(vReq)
@@ -217,7 +170,9 @@ func TestConnectWallet(t *testing.T) {
 		require.NoError(t, err)
 
 		data := &issuer.ProfileData{
-			ID: profileID,
+			ID:          profileID,
+			Name:        "Issuer Profile 1",
+			CallbackURL: "http://issuer.example.com/cb",
 		}
 		err = c.profileStore.SaveProfile(data)
 		require.NoError(t, err)
