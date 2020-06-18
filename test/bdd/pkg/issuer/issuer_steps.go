@@ -16,6 +16,7 @@ import (
 	"github.com/cucumber/godog"
 
 	issuerprofile "github.com/trustbloc/edge-adapter/pkg/profile/issuer"
+	"github.com/trustbloc/edge-adapter/pkg/restapi/issuer/operation"
 	"github.com/trustbloc/edge-adapter/test/bdd/pkg/bddutil"
 	"github.com/trustbloc/edge-adapter/test/bdd/pkg/context"
 )
@@ -156,16 +157,26 @@ func (e *Steps) didExchangeRequest(issuerID, agentID string) error {
 	}
 
 	// Mocking CHAPI request call
-	e.bddContext.Store[bddutil.GetDIDConectRequestKey(issuerID, agentID)] = string(respBytes)
+	e.bddContext.Store[bddutil.GetDIDConnectRequestKey(issuerID, agentID)] = string(respBytes)
 
 	return nil
 }
 
-func (e *Steps) validateConnectResp(issuerID string) error {
+func (e *Steps) validateConnectResp(issuerID, agentID string) error {
 	url := issuerAdapterURL + "/connect/validate?txnID=" + e.txnIDs[issuerID]
+	vp := e.bddContext.Store[bddutil.GetDIDConnectResponseKey(issuerID, agentID)]
+
+	profileReq := operation.WalletConnect{
+		Resp: []byte(vp),
+	}
+
+	requestBytes, err := json.Marshal(profileReq)
+	if err != nil {
+		return nil
+	}
 
 	resp, err := bddutil.HTTPDo(http.MethodPost, //nolint: bodyclose
-		url, "", "", nil)
+		url, "", "", bytes.NewBuffer(requestBytes))
 	if err != nil {
 		return err
 	}

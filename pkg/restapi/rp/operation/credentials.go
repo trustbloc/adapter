@@ -7,13 +7,12 @@ SPDX-License-Identifier: Apache-2.0
 package operation
 
 import (
-	"bytes"
-	"encoding/json"
 	"fmt"
 
 	"github.com/hyperledger/aries-framework-go/pkg/doc/verifiable"
 	"github.com/pkg/errors"
 
+	"github.com/trustbloc/edge-adapter/pkg/internal/common/adapterutil"
 	"github.com/trustbloc/edge-adapter/pkg/vc"
 	"github.com/trustbloc/edge-adapter/pkg/vc/rp"
 )
@@ -76,14 +75,14 @@ func parseCustomCredentials(
 	)
 
 	for _, cred := range creds {
-		if stringsContains(rp.DIDDocumentCredentialType, cred.Types) {
+		if adapterutil.StringsContains(rp.DIDDocumentCredentialType, cred.Types) {
 			if issuerDIDVC != nil {
 				return nil, nil, errors.Wrapf(errMalformedCredential, "duplicate did doc credential")
 			}
 
 			issuerDIDVC = &rp.DIDDocumentCredential{}
 
-			err := decodeIntoCustomCredential(cred, issuerDIDVC)
+			err := adapterutil.DecodeIntoCustomCredential(cred, issuerDIDVC)
 			if err != nil {
 				return nil, nil, fmt.Errorf("failed to decode did doc vc : %w", err)
 			}
@@ -91,14 +90,14 @@ func parseCustomCredentials(
 			continue
 		}
 
-		if stringsContains(vc.UserConsentCredentialType, cred.Types) {
+		if adapterutil.StringsContains(vc.UserConsentCredentialType, cred.Types) {
 			if consentVC != nil {
 				return nil, nil, errors.Wrapf(errMalformedCredential, "duplicate user consent credential")
 			}
 
 			consentVC = &vc.UserConsentCredential{}
 
-			err := decodeIntoCustomCredential(cred, consentVC)
+			err := adapterutil.DecodeIntoCustomCredential(cred, consentVC)
 			if err != nil {
 				return nil, nil, fmt.Errorf("failed to decode user consent credential : %w", err)
 			}
@@ -110,28 +109,4 @@ func parseCustomCredentials(
 	}
 
 	return issuerDIDVC, consentVC, nil
-}
-
-func decodeIntoCustomCredential(credential *verifiable.Credential, custom interface{}) error {
-	bits, err := credential.MarshalJSON()
-	if err != nil {
-		return fmt.Errorf("failed to marshal credential as json : %w", err)
-	}
-
-	err = json.NewDecoder(bytes.NewReader(bits)).Decode(custom)
-	if err != nil {
-		return fmt.Errorf("failed to decode custom credential : %w", err)
-	}
-
-	return nil
-}
-
-func stringsContains(val string, slice []string) bool {
-	for _, s := range slice {
-		if val == s {
-			return true
-		}
-	}
-
-	return false
 }

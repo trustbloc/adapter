@@ -46,7 +46,12 @@ func CloseResponseBody(respBody io.Closer) {
 	}
 }
 
-// GetDIDConectRequestKey key for storing DID Connect request.
-func GetDIDConectRequestKey(issuerID, agentID string) string {
+// GetDIDConnectRequestKey key for storing DID Connect request.
+func GetDIDConnectRequestKey(issuerID, agentID string) string {
 	return issuerID + agentID + "-didconnect-request"
+}
+
+// GetDIDConnectResponseKey key for storing DID Connect response.
+func GetDIDConnectResponseKey(issuerID, agentID string) string {
+	return issuerID + agentID + "-didconnect-response"
 }
