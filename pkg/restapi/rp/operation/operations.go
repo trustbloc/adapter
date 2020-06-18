@@ -7,6 +7,7 @@ package operation
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -15,13 +16,14 @@ import (
 	"net/url"
 	"sync"
 
-	"github.com/hyperledger/aries-framework-go/pkg/doc/did"
-
 	"github.com/coreos/go-oidc"
 	"github.com/google/uuid"
 	"github.com/hyperledger/aries-framework-go/pkg/client/didexchange"
 	"github.com/hyperledger/aries-framework-go/pkg/didcomm/common/service"
 	didexchangesvc "github.com/hyperledger/aries-framework-go/pkg/didcomm/protocol/didexchange"
+	"github.com/hyperledger/aries-framework-go/pkg/doc/did"
+	ariesstorage "github.com/hyperledger/aries-framework-go/pkg/storage"
+	"github.com/hyperledger/aries-framework-go/pkg/store/connection"
 	"github.com/ory/hydra-client-go/client/admin"
 	"github.com/ory/hydra-client-go/models"
 	"github.com/trustbloc/edge-core/pkg/log"
@@ -47,6 +49,11 @@ const (
 // errors.
 const (
 	invalidRequestErrMsg = "invalid request"
+)
+
+const (
+	// didexhange protocol service is setting the connection record's namespace to "my" on inbound invitations
+	connectionRecordNamespace = "my"
 )
 
 var logger = log.New("edge-adapter/rp-operations")
@@ -89,6 +96,12 @@ type PublicDIDCreator interface {
 	Create() (*did.Doc, error)
 }
 
+// AriesStorageProvider is the dependency interface for the connection.Recorder.
+type AriesStorageProvider interface {
+	StorageProvider() ariesstorage.Provider
+	TransientStorageProvider() ariesstorage.Provider
+}
+
 type consentRequest struct {
 	pd      *presentationex.PresentationDefinitions
 	cr      *admin.GetConsentRequestOK
@@ -100,6 +113,7 @@ type invitationData struct {
 	id          string
 	userSubject string
 	rpPublicDID string
+	rpPeerDID   string
 }
 
 // New returns CreateCredential instance.
@@ -134,6 +148,11 @@ func New(config *Config) (*Operation, error) {
 		return nil, fmt.Errorf("failed to open relying party store : %w", err)
 	}
 
+	o.connections, err = connection.NewRecorder(config.AriesStorageProvider)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create a connection recorder : %w", err)
+	}
+
 	go o.listenForIncomingConnections()
 
 	go o.listenForConnectionCompleteEvents()
@@ -151,6 +170,7 @@ type Config struct {
 	DIDExchClient          DIDClient
 	Store                  storage.Provider
 	PublicDIDCreator       PublicDIDCreator
+	AriesStorageProvider   AriesStorageProvider
 }
 
 // TODO implement an eviction strategy for Operation.oidcStates and OIDC.consentRequests
@@ -174,6 +194,7 @@ type Operation struct {
 	transientInvitationData map[string]*invitationData
 	rpStore                 *rp.Store
 	publicDIDCreator        PublicDIDCreator
+	connections             *connection.Recorder
 }
 
 // GetRESTHandlers get all controller API handler available for this service.
@@ -183,7 +204,7 @@ func (o *Operation) GetRESTHandlers() []Handler {
 		support.NewHTTPHandler(hydraConsentEndpoint, http.MethodGet, o.hydraConsentHandler),
 		support.NewHTTPHandler(OIDCCallbackEndpoint, http.MethodGet, o.oidcCallbackHandler),
 		support.NewHTTPHandler(getPresentationsRequestEndpoint, http.MethodGet, o.getPresentationsRequest),
-		support.NewHTTPHandler(handlePresentationResponseEndpoint, http.MethodPost, o.presentationResponseHandler),
+		support.NewHTTPHandler(handlePresentationResponseEndpoint, http.MethodPost, o.chapiResponseHandler),
 		support.NewHTTPHandler(userInfoEndpoint, http.MethodGet, o.userInfoHandler),
 		support.NewHTTPHandler(createRPTenantEndpoint, http.MethodPost, o.createRPTenant),
 	}
@@ -374,6 +395,13 @@ func (o *Operation) getAndUnsetInvitationData(id string) *invitationData {
 	delete(o.transientInvitationData, id)
 
 	return i
+}
+
+func (o *Operation) peekInvitationData(id string) *invitationData {
+	o.invLock.Lock()
+	defer o.invLock.Unlock()
+
+	return o.transientInvitationData[id]
 }
 
 func acceptLoginAndRedirectToHydra(
@@ -632,10 +660,96 @@ func (o *Operation) saveConsentRequest(r *consentRequest) error {
 // - all required credentials in a single response, or
 // - consent credential + didcomm endpoint where the requested presentations can be obtained, or
 // - nothing (an error response?), indicating they cannot satisfy the request.
-func (o *Operation) presentationResponseHandler(w http.ResponseWriter, _ *http.Request) {
-	// TODO validate response, do DIDComm with the issuer if required, gather all credentials,
-	//  make sure they're all valid and all present, load the consent_challenge and accept the user's
-	//  consent at hydra's /consent/accept endpoint and respond with hydra's redirect URL.
+func (o *Operation) chapiResponseHandler(w http.ResponseWriter, r *http.Request) { //nolint:funlen
+	request := &HandleCHAPIResponse{}
+
+	err := json.NewDecoder(r.Body).Decode(request)
+	if err != nil {
+		commhttp.WriteErrorResponse(w, http.StatusBadRequest, "malformed request")
+
+		return
+	}
+
+	invData := o.getAndUnsetInvitationData(request.InvitationID)
+	if invData == nil {
+		commhttp.WriteErrorResponse(w, http.StatusBadRequest, "stale or invalid invitation ID")
+
+		return
+	}
+
+	// TODO save issuer DID VC and user Consent VC https://github.com/trustbloc/edge-adapter/issues/92
+
+	issuerDIDVC, _, err := getCustomCredentials(request.VerifiablePresentation)
+	if errors.Is(err, errMalformedCredential) {
+		logger.Warnf("malformed credentials : %s", err)
+		commhttp.WriteErrorResponse(w, http.StatusBadRequest, "malformed credentials")
+
+		return
+	}
+
+	if err != nil {
+		msg := fmt.Sprintf("failed to parse custom credentials : %s", err)
+		logger.Errorf(msg)
+		commhttp.WriteErrorResponse(w, http.StatusInternalServerError, msg)
+
+		return
+	}
+
+	diddocBytes, err := base64.URLEncoding.DecodeString(issuerDIDVC.Subject.DIDDoc)
+	if err != nil {
+		msg := fmt.Sprintf("failed to decode did document : %s", err)
+		logger.Errorf(msg)
+		commhttp.WriteErrorResponse(w, http.StatusBadRequest, msg)
+
+		return
+	}
+
+	doc, err := did.ParseDocument(diddocBytes)
+	if err != nil {
+		msg := fmt.Sprintf("failed to parse did document : %s", err)
+		logger.Errorf(msg)
+		commhttp.WriteErrorResponse(w, http.StatusBadRequest, msg)
+
+		return
+	}
+
+	dest, err := service.CreateDestination(doc)
+	if err != nil {
+		msg := fmt.Sprintf("failed to create didcomm destination : %s", err)
+		logger.Errorf(msg)
+		commhttp.WriteErrorResponse(w, http.StatusBadRequest, msg)
+
+		return
+	}
+
+	// TODO Issuer's label on the connection record https://github.com/trustbloc/edge-adapter/issues/93
+	err = o.connections.SaveConnectionRecord(&connection.Record{
+		ConnectionID:    uuid.New().String(),
+		State:           didexchangesvc.StateIDCompleted,
+		ThreadID:        uuid.New().String(),
+		ParentThreadID:  invData.id,
+		TheirLabel:      "",
+		TheirDID:        doc.ID,
+		MyDID:           invData.rpPeerDID,
+		ServiceEndPoint: dest.ServiceEndpoint,
+		RecipientKeys:   dest.RecipientKeys,
+		RoutingKeys:     dest.RoutingKeys,
+		InvitationID:    invData.id,
+		InvitationDID:   invData.rpPublicDID,
+		Implicit:        false,
+		Namespace:       connectionRecordNamespace,
+	})
+	if err != nil {
+		msg := fmt.Sprintf("failed to save connection record : %s", err)
+		logger.Errorf(msg)
+		commhttp.WriteErrorResponse(w, http.StatusInternalServerError, msg)
+
+		return
+	}
+
+	// TODO send request-presentation to issuer, validate response against presentation-definitions,
+	//  build response object for RP, accept the consent request at hydra (include response object),
+	//  respond with a redirect URL to hydra
 	testResponse(w)
 }
 
@@ -662,7 +776,7 @@ func (o *Operation) listenForIncomingConnections() {
 // We accept incoming did-exchange requests on the following conditions if the request
 // has a parent invitation ID found in our transient store.
 func (o *Operation) handleIncomingDIDExchangeRequestAction(action service.DIDCommAction) {
-	invitation := o.getAndUnsetInvitationData(action.Message.ParentThreadID())
+	invitation := o.peekInvitationData(action.Message.ParentThreadID())
 	if invitation == nil {
 		action.Stop(fmt.Errorf("no such invitation with id %s", action.Message.ParentThreadID()))
 
@@ -672,8 +786,9 @@ func (o *Operation) handleIncomingDIDExchangeRequestAction(action service.DIDCom
 	action.Continue(nil)
 }
 
+// TODO Capture the RP's peer DID when the connection with the user is established
+//  https://github.com/trustbloc/edge-adapter/issues/94
 func (o *Operation) listenForConnectionCompleteEvents() {
-	// TODO record the user's and RP's pairwise DIDs for later use
 	for msg := range o.didStateMsgs {
 		if msg.Type != service.PostState || msg.StateID != didexchangesvc.StateIDCompleted {
 			continue

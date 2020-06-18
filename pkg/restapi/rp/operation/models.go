@@ -7,6 +7,8 @@ SPDX-License-Identifier: Apache-2.0
 package operation
 
 import (
+	"encoding/json"
+
 	"github.com/hyperledger/aries-framework-go/pkg/client/didexchange"
 
 	"github.com/trustbloc/edge-adapter/pkg/presentationex"
@@ -28,4 +30,10 @@ type CreateRPTenantResponse struct {
 	ClientID     string `json:"clientID"`
 	ClientSecret string `json:"clientSecret"`
 	PublicDID    string `json:"publicDID"`
+}
+
+// HandleCHAPIResponse is the input message to the chapiResponseHandler handler.
+type HandleCHAPIResponse struct {
+	InvitationID           string          `json:"invID"`
+	VerifiablePresentation json.RawMessage `json:"vp"`
 }

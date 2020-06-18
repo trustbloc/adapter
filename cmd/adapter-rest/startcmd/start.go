@@ -397,6 +397,7 @@ func addRPHandlers(
 			parameters.didCommParameters.inboundHostExternal,
 			ctx.KMS(),
 			rootCAs),
+		AriesStorageProvider: ctx,
 	})
 	if err != nil {
 		return err

@@ -8,6 +8,8 @@ package operation
 import (
 	"bytes"
 	"context"
+	"crypto/ed25519"
+	"crypto/rand"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -18,13 +20,15 @@ import (
 	"time"
 
 	"github.com/coreos/go-oidc"
-	_ "github.com/go-sql-driver/mysql"
 	"github.com/google/uuid"
 	"github.com/hyperledger/aries-framework-go/pkg/client/didexchange"
 	"github.com/hyperledger/aries-framework-go/pkg/didcomm/common/service"
 	"github.com/hyperledger/aries-framework-go/pkg/didcomm/protocol/decorator"
 	didexchangesvc "github.com/hyperledger/aries-framework-go/pkg/didcomm/protocol/didexchange"
 	"github.com/hyperledger/aries-framework-go/pkg/doc/did"
+	"github.com/hyperledger/aries-framework-go/pkg/doc/verifiable"
+	ariesmockstorage "github.com/hyperledger/aries-framework-go/pkg/mock/storage"
+	ariesstorage "github.com/hyperledger/aries-framework-go/pkg/storage"
 	"github.com/ory/hydra-client-go/client/admin"
 	"github.com/ory/hydra-client-go/models"
 	"github.com/stretchr/testify/require"
@@ -51,7 +55,8 @@ func TestNew(t *testing.T) {
 					return nil
 				},
 			},
-			Store: memstore.NewProvider(),
+			Store:                memstore.NewProvider(),
+			AriesStorageProvider: &mockAriesStorageProvider{},
 		})
 		require.NoError(t, err)
 		require.True(t, registeredActions)
@@ -85,6 +90,29 @@ func TestNew(t *testing.T) {
 		require.Error(t, err)
 		require.True(t, errors.Is(err, expected))
 	})
+
+	t.Run("wraps error if cannot open store", func(t *testing.T) {
+		expected := errors.New("test")
+		_, err := New(&Config{
+			DIDExchClient: &stubDIDClient{},
+			Store:         &stubStorageProvider{storeCreateErr: expected},
+		})
+		require.Error(t, err)
+		require.True(t, errors.Is(err, expected))
+	})
+
+	t.Run("wraps error if cannot open transient store", func(t *testing.T) {
+		expected := errors.New("test")
+		_, err := New(&Config{
+			DIDExchClient: &stubDIDClient{},
+			Store:         memstore.NewProvider(),
+			AriesStorageProvider: &mockAriesStorageProvider{
+				tstore: &ariesmockstorage.MockStoreProvider{ErrOpenStoreHandle: expected},
+			},
+		})
+		require.Error(t, err)
+		require.True(t, errors.Is(err, expected))
+	})
 }
 
 func Test_HandleDIDExchangeRequests(t *testing.T) {
@@ -97,7 +125,8 @@ func Test_HandleDIDExchangeRequests(t *testing.T) {
 					return nil
 				},
 			},
-			Store: memstore.NewProvider(),
+			Store:                memstore.NewProvider(),
+			AriesStorageProvider: &mockAriesStorageProvider{},
 		})
 		require.NoError(t, err)
 		require.NotNil(t, incoming)
@@ -136,7 +165,8 @@ func Test_HandleDIDExchangeRequests(t *testing.T) {
 					return nil
 				},
 			},
-			Store: memstore.NewProvider(),
+			Store:                memstore.NewProvider(),
+			AriesStorageProvider: &mockAriesStorageProvider{},
 		})
 		require.NoError(t, err)
 		require.NotNil(t, incoming)
@@ -171,7 +201,8 @@ func Test_HandleDIDExchangeRequests(t *testing.T) {
 					return nil
 				},
 			},
-			Store: memstore.NewProvider(),
+			Store:                memstore.NewProvider(),
+			AriesStorageProvider: &mockAriesStorageProvider{},
 		})
 		require.NoError(t, err)
 		require.NotNil(t, incoming)
@@ -200,8 +231,9 @@ func Test_HandleDIDExchangeRequests(t *testing.T) {
 
 func TestGetRESTHandlers(t *testing.T) {
 	c, err := New(&Config{
-		DIDExchClient: &stubDIDClient{},
-		Store:         memstore.NewProvider(),
+		DIDExchClient:        &stubDIDClient{},
+		Store:                memstore.NewProvider(),
+		AriesStorageProvider: &mockAriesStorageProvider{},
 	})
 	require.NoError(t, err)
 
@@ -240,8 +272,9 @@ func TestHydraLoginHandlerIterOne(t *testing.T) {
 						}, nil
 					},
 				},
-				DIDExchClient: &stubDIDClient{},
-				Store:         store,
+				DIDExchClient:        &stubDIDClient{},
+				Store:                store,
+				AriesStorageProvider: &mockAriesStorageProvider{},
 			})
 			require.NoError(t, err)
 			w := &httptest.ResponseRecorder{}
@@ -289,8 +322,9 @@ func TestHydraLoginHandlerIterOne(t *testing.T) {
 						}, nil
 					},
 				},
-				DIDExchClient: &stubDIDClient{},
-				Store:         store,
+				DIDExchClient:        &stubDIDClient{},
+				Store:                store,
+				AriesStorageProvider: &mockAriesStorageProvider{},
 			})
 			require.NoError(t, err)
 			w := &httptest.ResponseRecorder{}
@@ -301,8 +335,9 @@ func TestHydraLoginHandlerIterOne(t *testing.T) {
 	})
 	t.Run("fails on missing login_challenge", func(t *testing.T) {
 		o, err := New(&Config{
-			DIDExchClient: &stubDIDClient{},
-			Store:         memstore.NewProvider(),
+			DIDExchClient:        &stubDIDClient{},
+			Store:                memstore.NewProvider(),
+			AriesStorageProvider: &mockAriesStorageProvider{},
 		})
 		require.NoError(t, err)
 		r := newHydraRequestNoChallenge(t)
@@ -318,8 +353,9 @@ func TestHydraLoginHandlerIterOne(t *testing.T) {
 					return nil, errors.New("test")
 				},
 			},
-			DIDExchClient: &stubDIDClient{},
-			Store:         memstore.NewProvider(),
+			DIDExchClient:        &stubDIDClient{},
+			Store:                memstore.NewProvider(),
+			AriesStorageProvider: &mockAriesStorageProvider{},
 		})
 		require.NoError(t, err)
 		w := &httptest.ResponseRecorder{}
@@ -341,8 +377,9 @@ func TestHydraLoginHandlerIterOne(t *testing.T) {
 					return nil, errors.New("test")
 				},
 			},
-			DIDExchClient: &stubDIDClient{},
-			Store:         memstore.NewProvider(),
+			DIDExchClient:        &stubDIDClient{},
+			Store:                memstore.NewProvider(),
+			AriesStorageProvider: &mockAriesStorageProvider{},
 		})
 		require.NoError(t, err)
 		w := &httptest.ResponseRecorder{}
@@ -380,8 +417,9 @@ func TestHydraLoginHandlerIterOne(t *testing.T) {
 					}, nil
 				},
 			},
-			DIDExchClient: &stubDIDClient{},
-			Store:         store,
+			DIDExchClient:        &stubDIDClient{},
+			Store:                store,
+			AriesStorageProvider: &mockAriesStorageProvider{},
 		})
 		require.NoError(t, err)
 		w := &httptest.ResponseRecorder{}
@@ -413,8 +451,9 @@ func TestHydraLoginHandlerIterOne(t *testing.T) {
 					return nil, errors.New("test")
 				},
 			},
-			DIDExchClient: &stubDIDClient{},
-			Store:         store,
+			DIDExchClient:        &stubDIDClient{},
+			Store:                store,
+			AriesStorageProvider: &mockAriesStorageProvider{},
 		})
 		require.NoError(t, err)
 		w := &httptest.ResponseRecorder{}
@@ -443,8 +482,9 @@ func TestHydraLoginHandler(t *testing.T) {
 					}, nil
 				},
 			},
-			DIDExchClient: &stubDIDClient{},
-			Store:         memstore.NewProvider(),
+			DIDExchClient:        &stubDIDClient{},
+			Store:                memstore.NewProvider(),
+			AriesStorageProvider: &mockAriesStorageProvider{},
 		})
 		require.NoError(t, err)
 
@@ -472,8 +512,9 @@ func TestHydraLoginHandler(t *testing.T) {
 					}, nil
 				},
 			},
-			DIDExchClient: &stubDIDClient{},
-			Store:         memstore.NewProvider(),
+			DIDExchClient:        &stubDIDClient{},
+			Store:                memstore.NewProvider(),
+			AriesStorageProvider: &mockAriesStorageProvider{},
 		})
 		require.NoError(t, err)
 		w := &httptest.ResponseRecorder{}
@@ -483,8 +524,9 @@ func TestHydraLoginHandler(t *testing.T) {
 	})
 	t.Run("fails on missing login_challenge", func(t *testing.T) {
 		o, err := New(&Config{
-			DIDExchClient: &stubDIDClient{},
-			Store:         memstore.NewProvider(),
+			DIDExchClient:        &stubDIDClient{},
+			Store:                memstore.NewProvider(),
+			AriesStorageProvider: &mockAriesStorageProvider{},
 		})
 		require.NoError(t, err)
 		r := newHydraRequestNoChallenge(t)
@@ -500,8 +542,9 @@ func TestHydraLoginHandler(t *testing.T) {
 					return nil, errors.New("test")
 				},
 			},
-			DIDExchClient: &stubDIDClient{},
-			Store:         memstore.NewProvider(),
+			DIDExchClient:        &stubDIDClient{},
+			Store:                memstore.NewProvider(),
+			AriesStorageProvider: &mockAriesStorageProvider{},
 		})
 		require.NoError(t, err)
 		w := &httptest.ResponseRecorder{}
@@ -522,8 +565,9 @@ func TestHydraLoginHandler(t *testing.T) {
 					return nil, errors.New("test")
 				},
 			},
-			DIDExchClient: &stubDIDClient{},
-			Store:         memstore.NewProvider(),
+			DIDExchClient:        &stubDIDClient{},
+			Store:                memstore.NewProvider(),
+			AriesStorageProvider: &mockAriesStorageProvider{},
 		})
 		require.NoError(t, err)
 		w := &httptest.ResponseRecorder{}
@@ -555,8 +599,9 @@ func TestOidcCallbackHandler(t *testing.T) {
 					}, nil
 				},
 			},
-			DIDExchClient: &stubDIDClient{},
-			Store:         store,
+			DIDExchClient:        &stubDIDClient{},
+			Store:                store,
+			AriesStorageProvider: &mockAriesStorageProvider{},
 		})
 		require.NoError(t, err)
 
@@ -571,8 +616,9 @@ func TestOidcCallbackHandler(t *testing.T) {
 
 	t.Run("bad request on invalid state", func(t *testing.T) {
 		c, err := New(&Config{
-			DIDExchClient: &stubDIDClient{},
-			Store:         memstore.NewProvider(),
+			DIDExchClient:        &stubDIDClient{},
+			Store:                memstore.NewProvider(),
+			AriesStorageProvider: &mockAriesStorageProvider{},
 		})
 		require.NoError(t, err)
 
@@ -588,8 +634,9 @@ func TestOidcCallbackHandler(t *testing.T) {
 			OIDC: func(string, context.Context) (*oidc.IDToken, error) {
 				return nil, errors.New("test")
 			},
-			DIDExchClient: &stubDIDClient{},
-			Store:         memstore.NewProvider(),
+			DIDExchClient:        &stubDIDClient{},
+			Store:                memstore.NewProvider(),
+			AriesStorageProvider: &mockAriesStorageProvider{},
 		})
 		require.NoError(t, err)
 
@@ -614,8 +661,9 @@ func TestOidcCallbackHandler(t *testing.T) {
 					return nil, errors.New("test")
 				},
 			},
-			DIDExchClient: &stubDIDClient{},
-			Store:         memstore.NewProvider(),
+			DIDExchClient:        &stubDIDClient{},
+			Store:                memstore.NewProvider(),
+			AriesStorageProvider: &mockAriesStorageProvider{},
 		})
 		require.NoError(t, err)
 
@@ -641,8 +689,9 @@ func TestSaveUserAndRequest(t *testing.T) {
 			OIDC: func(c string, _ context.Context) (*oidc.IDToken, error) {
 				return &oidc.IDToken{Subject: "test"}, nil
 			},
-			DIDExchClient: &stubDIDClient{},
-			Store:         store,
+			DIDExchClient:        &stubDIDClient{},
+			Store:                store,
+			AriesStorageProvider: &mockAriesStorageProvider{},
 		})
 		require.NoError(t, err)
 
@@ -663,8 +712,9 @@ func TestSaveUserAndRequest(t *testing.T) {
 			OIDC: func(c string, _ context.Context) (*oidc.IDToken, error) {
 				return &oidc.IDToken{Subject: "test"}, nil
 			},
-			DIDExchClient: &stubDIDClient{},
-			Store:         store,
+			DIDExchClient:        &stubDIDClient{},
+			Store:                store,
+			AriesStorageProvider: &mockAriesStorageProvider{},
 		})
 		require.NoError(t, err)
 
@@ -705,6 +755,7 @@ func TestHydraConsentHandler(t *testing.T) {
 				PresentationExProvider: mockPresentationDefinitionsProvider(),
 				DIDExchClient:          &stubDIDClient{},
 				Store:                  store,
+				AriesStorageProvider:   &mockAriesStorageProvider{},
 			})
 			require.NoError(t, err)
 
@@ -725,8 +776,9 @@ func TestHydraConsentHandler(t *testing.T) {
 
 		t.Run("bad request if consent challenge is missing", func(t *testing.T) {
 			c, err := New(&Config{
-				DIDExchClient: &stubDIDClient{},
-				Store:         memstore.NewProvider(),
+				DIDExchClient:        &stubDIDClient{},
+				Store:                memstore.NewProvider(),
+				AriesStorageProvider: &mockAriesStorageProvider{},
 			})
 			require.NoError(t, err)
 			w := &httptest.ResponseRecorder{}
@@ -739,8 +791,9 @@ func TestHydraConsentHandler(t *testing.T) {
 				Hydra: &stubHydra{getConsentRequestFunc: func(*admin.GetConsentRequestParams) (*admin.GetConsentRequestOK, error) {
 					return nil, errors.New("test")
 				}},
-				DIDExchClient: &stubDIDClient{},
-				Store:         memstore.NewProvider(),
+				DIDExchClient:        &stubDIDClient{},
+				Store:                memstore.NewProvider(),
+				AriesStorageProvider: &mockAriesStorageProvider{},
 			})
 			require.NoError(t, err)
 			w := &httptest.ResponseRecorder{}
@@ -756,6 +809,7 @@ func TestHydraConsentHandler(t *testing.T) {
 				PresentationExProvider: &mockPresentationExProvider{createErr: errors.New("test")},
 				DIDExchClient:          &stubDIDClient{},
 				Store:                  memstore.NewProvider(),
+				AriesStorageProvider:   &mockAriesStorageProvider{},
 			})
 			require.NoError(t, err)
 			w := &httptest.ResponseRecorder{}
@@ -774,8 +828,9 @@ func TestHydraConsentHandler(t *testing.T) {
 				PresentationExProvider: &mockPresentationExProvider{
 					createValue: &presentationex.PresentationDefinitions{},
 				},
-				DIDExchClient: &stubDIDClient{},
-				Store:         memstore.NewProvider(),
+				DIDExchClient:        &stubDIDClient{},
+				Store:                memstore.NewProvider(),
+				AriesStorageProvider: &mockAriesStorageProvider{},
 			})
 			require.NoError(t, err)
 			w := &httptest.ResponseRecorder{}
@@ -808,6 +863,7 @@ func TestHydraConsentHandler(t *testing.T) {
 				PresentationExProvider: mockPresentationDefinitionsProvider(),
 				DIDExchClient:          &stubDIDClient{},
 				Store:                  memstore.NewProvider(),
+				AriesStorageProvider:   &mockAriesStorageProvider{},
 			})
 			require.NoError(t, err)
 
@@ -830,8 +886,9 @@ func TestHydraConsentHandler(t *testing.T) {
 						return nil, errors.New("test")
 					},
 				},
-				DIDExchClient: &stubDIDClient{},
-				Store:         memstore.NewProvider(),
+				DIDExchClient:        &stubDIDClient{},
+				Store:                memstore.NewProvider(),
+				AriesStorageProvider: &mockAriesStorageProvider{},
 			})
 			require.NoError(t, err)
 
@@ -845,8 +902,9 @@ func TestHydraConsentHandler(t *testing.T) {
 func TestSaveConsentRequest(t *testing.T) {
 	t.Run("error if user connection does not exist", func(t *testing.T) {
 		c, err := New(&Config{
-			DIDExchClient: &stubDIDClient{},
-			Store:         memstore.NewProvider(),
+			DIDExchClient:        &stubDIDClient{},
+			Store:                memstore.NewProvider(),
+			AriesStorageProvider: &mockAriesStorageProvider{},
 		})
 		require.NoError(t, err)
 
@@ -869,8 +927,9 @@ func TestSaveConsentRequest(t *testing.T) {
 		})
 		store.Store.ErrPut = errors.New("test")
 		c, err := New(&Config{
-			DIDExchClient: &stubDIDClient{},
-			Store:         store,
+			DIDExchClient:        &stubDIDClient{},
+			Store:                store,
+			AriesStorageProvider: &mockAriesStorageProvider{},
 		})
 		require.NoError(t, err)
 
@@ -913,7 +972,8 @@ func TestCreatePresentationDefinition(t *testing.T) {
 					}}, nil
 				},
 			},
-			Store: store,
+			Store:                store,
+			AriesStorageProvider: &mockAriesStorageProvider{},
 		})
 		require.NoError(t, err)
 
@@ -940,8 +1000,9 @@ func TestCreatePresentationDefinition(t *testing.T) {
 
 	t.Run("bad request if handle is invalid", func(t *testing.T) {
 		c, err := New(&Config{
-			DIDExchClient: &stubDIDClient{},
-			Store:         memstore.NewProvider(),
+			DIDExchClient:        &stubDIDClient{},
+			Store:                memstore.NewProvider(),
+			AriesStorageProvider: &mockAriesStorageProvider{},
 		})
 		require.NoError(t, err)
 
@@ -962,8 +1023,9 @@ func TestCreatePresentationDefinition(t *testing.T) {
 
 	t.Run("bad request if handle is missing", func(t *testing.T) {
 		c, err := New(&Config{
-			DIDExchClient: &stubDIDClient{},
-			Store:         memstore.NewProvider(),
+			DIDExchClient:        &stubDIDClient{},
+			Store:                memstore.NewProvider(),
+			AriesStorageProvider: &mockAriesStorageProvider{},
 		})
 		require.NoError(t, err)
 
@@ -995,7 +1057,8 @@ func TestCreatePresentationDefinition(t *testing.T) {
 					return nil, errors.New("test")
 				},
 			},
-			Store: store,
+			Store:                store,
+			AriesStorageProvider: &mockAriesStorageProvider{},
 		})
 		require.NoError(t, err)
 
@@ -1015,23 +1078,179 @@ func TestCreatePresentationDefinition(t *testing.T) {
 	})
 }
 
-func TestPresentationResponseHandler(t *testing.T) {
-	c, err := New(&Config{
-		DIDExchClient: &stubDIDClient{},
-		Store:         memstore.NewProvider(),
+func TestCHAPIResponseHandler(t *testing.T) {
+	t.Run("valid presentation", func(t *testing.T) {
+		invitationID := uuid.New().String()
+		rpPublicDID := newDID(t).String()
+		rpPeerDID := newDID(t).String()
+		vp, _ := newVP(t)
+
+		c, err := New(&Config{
+			DIDExchClient:        &stubDIDClient{},
+			Store:                memstore.NewProvider(),
+			AriesStorageProvider: &mockAriesStorageProvider{},
+		})
+		require.NoError(t, err)
+
+		c.setInvitationData(&invitationData{
+			id:          invitationID,
+			userSubject: uuid.New().String(),
+			rpPublicDID: rpPublicDID,
+			rpPeerDID:   rpPeerDID,
+		})
+
+		w := &httptest.ResponseRecorder{}
+		c.chapiResponseHandler(w, newHandlePresentationRequest(t, invitationID, vp))
+
+		require.Equal(t, http.StatusOK, w.Code)
 	})
-	require.NoError(t, err)
 
-	r := &httptest.ResponseRecorder{}
-	c.presentationResponseHandler(r, nil)
+	t.Run("bad request if body is malformed", func(t *testing.T) {
+		c, err := New(&Config{
+			DIDExchClient:        &stubDIDClient{},
+			Store:                memstore.NewProvider(),
+			AriesStorageProvider: &mockAriesStorageProvider{},
+		})
+		require.NoError(t, err)
 
-	require.Equal(t, http.StatusOK, r.Code)
+		w := httptest.NewRecorder()
+		c.chapiResponseHandler(w,
+			httptest.NewRequest(http.MethodPost, "/dummy", bytes.NewReader([]byte("invalid"))))
+		require.Equal(t, http.StatusBadRequest, w.Code)
+	})
+
+	t.Run("bad request if invitationID is invalid", func(t *testing.T) {
+		c, err := New(&Config{
+			DIDExchClient:        &stubDIDClient{},
+			Store:                memstore.NewProvider(),
+			AriesStorageProvider: &mockAriesStorageProvider{},
+		})
+		require.NoError(t, err)
+
+		w := httptest.NewRecorder()
+		c.chapiResponseHandler(w, newHandlePresentationRequest(t, "test", &verifiable.Presentation{}))
+		require.Equal(t, http.StatusBadRequest, w.Code)
+	})
+
+	t.Run("bad request if verifiable presentation is invalid", func(t *testing.T) {
+		invitationID := uuid.New().String()
+		c, err := New(&Config{
+			DIDExchClient:        &stubDIDClient{},
+			Store:                memstore.NewProvider(),
+			AriesStorageProvider: &mockAriesStorageProvider{},
+		})
+		require.NoError(t, err)
+
+		c.setInvitationData(&invitationData{
+			id: invitationID,
+		})
+
+		w := httptest.NewRecorder()
+		c.chapiResponseHandler(w, newHandlePresentationRequest(t, invitationID, &verifiable.Presentation{}))
+		require.Equal(t, http.StatusBadRequest, w.Code)
+	})
+
+	t.Run("bad request if issuer did doc is malformed", func(t *testing.T) {
+		publicKey, secretKey, err := ed25519.GenerateKey(rand.Reader)
+		require.NoError(t, err)
+		invalid := newPeerDID(t, publicKey)
+		invalid.Context = nil
+		invalid.Service = nil
+		invalid.PublicKey = nil
+
+		invalidDidDocVC, _ := newDIDDocVCWithDID(t, invalid)
+		vp := newVPWithDIDVC(t, secretKey, invalidDidDocVC)
+
+		invitationID := uuid.New().String()
+		rpPublicDID := newDID(t).String()
+		rpPeerDID := newDID(t).String()
+
+		c, err := New(&Config{
+			DIDExchClient:        &stubDIDClient{},
+			Store:                memstore.NewProvider(),
+			AriesStorageProvider: &mockAriesStorageProvider{},
+		})
+		require.NoError(t, err)
+
+		c.setInvitationData(&invitationData{
+			id:          invitationID,
+			userSubject: uuid.New().String(),
+			rpPublicDID: rpPublicDID,
+			rpPeerDID:   rpPeerDID,
+		})
+
+		w := &httptest.ResponseRecorder{}
+		c.chapiResponseHandler(w, newHandlePresentationRequest(t, invitationID, vp))
+		require.Equal(t, http.StatusBadRequest, w.Code)
+	})
+
+	t.Run("bad request if did doc does not have a didcomm service endpoint", func(t *testing.T) {
+		publicKey, secretKey, err := ed25519.GenerateKey(rand.Reader)
+		require.NoError(t, err)
+		invalid := newPeerDID(t, publicKey)
+		invalid.Service[0].Type = "invalid"
+
+		invalidDidDocVC, _ := newDIDDocVCWithDID(t, invalid)
+		vp := newVPWithDIDVC(t, secretKey, invalidDidDocVC)
+
+		invitationID := uuid.New().String()
+		rpPublicDID := newDID(t).String()
+		rpPeerDID := newDID(t).String()
+
+		c, err := New(&Config{
+			DIDExchClient:        &stubDIDClient{},
+			Store:                memstore.NewProvider(),
+			AriesStorageProvider: &mockAriesStorageProvider{},
+		})
+		require.NoError(t, err)
+
+		c.setInvitationData(&invitationData{
+			id:          invitationID,
+			userSubject: uuid.New().String(),
+			rpPublicDID: rpPublicDID,
+			rpPeerDID:   rpPeerDID,
+		})
+
+		w := &httptest.ResponseRecorder{}
+		c.chapiResponseHandler(w, newHandlePresentationRequest(t, invitationID, vp))
+		require.Equal(t, http.StatusBadRequest, w.Code)
+	})
+
+	t.Run("internal server error if error saving connection record", func(t *testing.T) {
+		vp, _ := newVP(t)
+		invitationID := uuid.New().String()
+		rpPublicDID := newDID(t).String()
+		rpPeerDID := newDID(t).String()
+
+		c, err := New(&Config{
+			DIDExchClient: &stubDIDClient{},
+			Store:         &stubStorageProvider{storePutErr: errors.New("test")},
+			AriesStorageProvider: &mockAriesStorageProvider{
+				store: &ariesmockstorage.MockStoreProvider{
+					Store: &ariesmockstorage.MockStore{ErrPut: errors.New("test")},
+				},
+			},
+		})
+		require.NoError(t, err)
+
+		c.setInvitationData(&invitationData{
+			id:          invitationID,
+			userSubject: uuid.New().String(),
+			rpPublicDID: rpPublicDID,
+			rpPeerDID:   rpPeerDID,
+		})
+
+		w := &httptest.ResponseRecorder{}
+		c.chapiResponseHandler(w, newHandlePresentationRequest(t, invitationID, vp))
+		require.Equal(t, http.StatusInternalServerError, w.Code)
+	})
 }
 
 func TestUserInfoHandler(t *testing.T) {
 	c, err := New(&Config{
-		DIDExchClient: &stubDIDClient{},
-		Store:         memstore.NewProvider(),
+		DIDExchClient:        &stubDIDClient{},
+		Store:                memstore.NewProvider(),
+		AriesStorageProvider: &mockAriesStorageProvider{},
 	})
 	require.NoError(t, err)
 
@@ -1058,8 +1277,9 @@ func TestCreateRPTenant(t *testing.T) {
 
 		store := mockStore()
 		o, err := New(&Config{
-			DIDExchClient: &stubDIDClient{},
-			Store:         store,
+			DIDExchClient:        &stubDIDClient{},
+			Store:                store,
+			AriesStorageProvider: &mockAriesStorageProvider{},
 			Hydra: &stubHydra{
 				createOauth2ClientFunc: func(*admin.CreateOAuth2ClientParams) (*admin.CreateOAuth2ClientCreated, error) {
 					return &admin.CreateOAuth2ClientCreated{
@@ -1106,8 +1326,9 @@ func TestCreateRPTenant(t *testing.T) {
 
 		for _, test := range tests {
 			o, err := New(&Config{
-				DIDExchClient: &stubDIDClient{},
-				Store:         memstore.NewProvider(),
+				DIDExchClient:        &stubDIDClient{},
+				Store:                memstore.NewProvider(),
+				AriesStorageProvider: &mockAriesStorageProvider{},
 				Hydra: &stubHydra{
 					createOauth2ClientFunc: func(*admin.CreateOAuth2ClientParams) (*admin.CreateOAuth2ClientCreated, error) {
 						return &admin.CreateOAuth2ClientCreated{Payload: &models.OAuth2Client{}}, nil
@@ -1135,8 +1356,9 @@ func TestCreateRPTenant(t *testing.T) {
 		err = rpStore.SaveRP(existing)
 		require.NoError(t, err)
 		o, err := New(&Config{
-			DIDExchClient: &stubDIDClient{},
-			Store:         store,
+			DIDExchClient:        &stubDIDClient{},
+			Store:                store,
+			AriesStorageProvider: &mockAriesStorageProvider{},
 			Hydra: &stubHydra{
 				createOauth2ClientFunc: func(*admin.CreateOAuth2ClientParams) (*admin.CreateOAuth2ClientCreated, error) {
 					return &admin.CreateOAuth2ClientCreated{
@@ -1159,6 +1381,7 @@ func TestCreateRPTenant(t *testing.T) {
 			Store: &stubStorageProvider{
 				storeGetErr: errors.New("generic"),
 			},
+			AriesStorageProvider: &mockAriesStorageProvider{},
 			Hydra: &stubHydra{
 				createOauth2ClientFunc: func(*admin.CreateOAuth2ClientParams) (*admin.CreateOAuth2ClientCreated, error) {
 					return &admin.CreateOAuth2ClientCreated{
@@ -1182,6 +1405,7 @@ func TestCreateRPTenant(t *testing.T) {
 				storeGetErr: storage.ErrValueNotFound,
 				storePutErr: errors.New("generic"),
 			},
+			AriesStorageProvider: &mockAriesStorageProvider{},
 			Hydra: &stubHydra{
 				createOauth2ClientFunc: func(*admin.CreateOAuth2ClientParams) (*admin.CreateOAuth2ClientCreated, error) {
 					return &admin.CreateOAuth2ClientCreated{
@@ -1205,6 +1429,7 @@ func TestCreateRPTenant(t *testing.T) {
 			Store: &stubStorageProvider{
 				storeGetErr: storage.ErrValueNotFound,
 			},
+			AriesStorageProvider: &mockAriesStorageProvider{},
 			Hydra: &stubHydra{
 				createOauth2ClientFunc: func(*admin.CreateOAuth2ClientParams) (*admin.CreateOAuth2ClientCreated, error) {
 					return nil, errors.New("test")
@@ -1226,6 +1451,7 @@ func TestCreateRPTenant(t *testing.T) {
 				storeGetErr: storage.ErrValueNotFound,
 				storePutErr: errors.New("generic"),
 			},
+			AriesStorageProvider: &mockAriesStorageProvider{},
 			Hydra: &stubHydra{
 				createOauth2ClientFunc: func(*admin.CreateOAuth2ClientParams) (*admin.CreateOAuth2ClientCreated, error) {
 					return &admin.CreateOAuth2ClientCreated{
@@ -1416,16 +1642,36 @@ func newCreateRPRequestMalformed() *http.Request {
 	return httptest.NewRequest(http.MethodPost, "/dummy", nil)
 }
 
+func newHandlePresentationRequest(t *testing.T, invID string, vp *verifiable.Presentation) *http.Request {
+	vpBytes, err := json.Marshal(vp)
+	require.NoError(t, err)
+
+	body := &HandleCHAPIResponse{
+		InvitationID:           invID,
+		VerifiablePresentation: vpBytes,
+	}
+	bits, err := json.Marshal(body)
+	require.NoError(t, err)
+
+	return httptest.NewRequest(http.MethodPost, "/dummy", bytes.NewReader(bits))
+}
+
 type stubStorageProvider struct {
-	storeGetErr error
-	storePutErr error
+	storeCreateErr error
+	storeOpenErr   error
+	storeGetErr    error
+	storePutErr    error
 }
 
 func (s *stubStorageProvider) CreateStore(name string) error {
-	return nil
+	return s.storeCreateErr
 }
 
 func (s *stubStorageProvider) OpenStore(name string) (storage.Store, error) {
+	if s.storeOpenErr != nil {
+		return nil, s.storeOpenErr
+	}
+
 	return &stubStore{
 		errPut: s.storePutErr,
 		errGet: s.storeGetErr,
@@ -1468,4 +1714,25 @@ type stubPublicDIDCreator struct {
 
 func (s *stubPublicDIDCreator) Create() (*did.Doc, error) {
 	return s.createValue, s.createErr
+}
+
+type mockAriesStorageProvider struct {
+	store  ariesstorage.Provider
+	tstore ariesstorage.Provider
+}
+
+func (m *mockAriesStorageProvider) StorageProvider() ariesstorage.Provider {
+	if m.store != nil {
+		return m.store
+	}
+
+	return ariesmockstorage.NewMockStoreProvider()
+}
+
+func (m *mockAriesStorageProvider) TransientStorageProvider() ariesstorage.Provider {
+	if m.tstore != nil {
+		return m.tstore
+	}
+
+	return ariesmockstorage.NewMockStoreProvider()
 }

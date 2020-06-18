@@ -188,10 +188,17 @@ func newVP(t *testing.T) (*verifiable.Presentation, *did.Doc) {
 	publicKey, secretKey, err := ed25519.GenerateKey(rand.Reader)
 	require.NoError(t, err)
 
+	didDocVC, peerDID := newDIDDocVC(t, publicKey)
+	vp := newVPWithDIDVC(t, secretKey, didDocVC)
+
+	return vp, peerDID
+}
+
+func newVPWithDIDVC(t *testing.T, secretKey []byte, didDocVC *verifiable.Credential) *verifiable.Presentation {
 	userConsentVC := newUserConsentVC(t)
 	vp, err := userConsentVC.Presentation()
 	require.NoError(t, err)
-	didDocVC, peerDID := newDIDDocVC(t, publicKey)
+
 	err = vp.SetCredentials(didDocVC, userConsentVC)
 	require.NoError(t, err)
 
@@ -208,7 +215,7 @@ func newVP(t *testing.T) (*verifiable.Presentation, *did.Doc) {
 	}, jsonld.WithDocumentLoader(testDocumentLoader))
 	require.NoError(t, err)
 
-	return vp, peerDID
+	return vp
 }
 
 func newUserConsentVC(t *testing.T) *verifiable.Credential {
@@ -221,6 +228,10 @@ func newUserConsentVC(t *testing.T) *verifiable.Credential {
 
 func newDIDDocVC(t *testing.T, pubKey []byte) (*verifiable.Credential, *did.Doc) {
 	doc := newPeerDID(t, pubKey)
+	return newDIDDocVCWithDID(t, doc)
+}
+
+func newDIDDocVCWithDID(t *testing.T, doc *did.Doc) (*verifiable.Credential, *did.Doc) {
 	docBytes, err := doc.JSONBytes()
 	require.NoError(t, err)
 
