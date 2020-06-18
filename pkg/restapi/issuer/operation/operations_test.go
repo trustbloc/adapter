@@ -18,6 +18,7 @@ import (
 	"github.com/gorilla/mux"
 	"github.com/hyperledger/aries-framework-go/pkg/didcomm/protocol/didexchange"
 	"github.com/hyperledger/aries-framework-go/pkg/didcomm/protocol/mediator"
+	"github.com/hyperledger/aries-framework-go/pkg/doc/verifiable"
 	mocksvc "github.com/hyperledger/aries-framework-go/pkg/mock/didcomm/protocol/didexchange"
 	mockroute "github.com/hyperledger/aries-framework-go/pkg/mock/didcomm/protocol/mediator"
 	mockkms "github.com/hyperledger/aries-framework-go/pkg/mock/kms/legacykms"
@@ -273,8 +274,15 @@ func TestValidateWalletResponse(t *testing.T) {
 		txnID, err := c.createTxn("profile1")
 		require.NoError(t, err)
 
+		req := &WalletConnect{
+			Resp: getTestVP(t),
+		}
+
+		reqBytes, err := json.Marshal(req)
+		require.NoError(t, err)
+
 		rr := serveHTTP(t, handler.Handle(), http.MethodPost,
-			validateConnectResponseEndpoint+"?"+txnIDQueryParam+"="+txnID, vReqBytes)
+			validateConnectResponseEndpoint+"?"+txnIDQueryParam+"="+txnID, reqBytes)
 
 		require.Equal(t, http.StatusOK, rr.Code)
 	})
@@ -286,6 +294,16 @@ func TestValidateWalletResponse(t *testing.T) {
 		require.Contains(t, rr.Body.String(), "failed to get txnID from the url")
 	})
 
+	t.Run("test validate response - invalid req", func(t *testing.T) {
+		txnID := "invalid-txn-id"
+
+		rr := serveHTTP(t, handler.Handle(), http.MethodPost,
+			validateConnectResponseEndpoint+"?"+txnIDQueryParam+"="+txnID, []byte("invalid-request"))
+
+		require.Equal(t, http.StatusBadRequest, rr.Code)
+		require.Contains(t, rr.Body.String(), "invalid request")
+	})
+
 	t.Run("test validate response - invalid txn id", func(t *testing.T) {
 		txnID := "invalid-txn-id"
 
@@ -294,6 +312,17 @@ func TestValidateWalletResponse(t *testing.T) {
 
 		require.Equal(t, http.StatusBadRequest, rr.Code)
 		require.Contains(t, rr.Body.String(), "txn data not found")
+	})
+
+	t.Run("test validate response - invalid vp", func(t *testing.T) {
+		txnID, err := c.createTxn("profile1")
+		require.NoError(t, err)
+
+		rr := serveHTTP(t, handler.Handle(), http.MethodPost,
+			validateConnectResponseEndpoint+"?"+txnIDQueryParam+"="+txnID, vReqBytes)
+
+		require.Equal(t, http.StatusBadRequest, rr.Code)
+		require.Contains(t, rr.Body.String(), "failed to validate presentation")
 	})
 }
 
@@ -402,4 +431,37 @@ func serveHTTPMux(t *testing.T, handler Handler, endpoint string, reqBytes []byt
 	handler.Handle().ServeHTTP(rr, req1)
 
 	return rr
+}
+
+const vc = `{
+	   "@context":[
+		  "https://www.w3.org/2018/credentials/v1",
+		  "https://www.w3.org/2018/credentials/examples/v1"
+	   ],
+	   "id":"http://example.edu/credentials/1872",
+	   "type":[
+		  "VerifiableCredential",
+		  "DIDConnectCredential"
+	   ],
+	   "credentialSubject":{
+		  "id": "e9e0f944-7b74-4298-9f3e-00ca609d6266",
+		  "inviteeDID": "did:example:7b744298e9e0f",
+		  "inviterDID": "agc",
+		  "inviterLabel": "user-agent"
+	   },
+	   "issuer":"did:example:76e12ec712ebc6f1c221ebfeb1f",
+	   "issuanceDate":"2010-01-01T19:23:24Z"
+	}`
+
+func getTestVP(t *testing.T) []byte {
+	vc, err := verifiable.ParseCredential([]byte(vc))
+	require.NoError(t, err)
+
+	vp, err := vc.Presentation()
+	require.NoError(t, err)
+
+	vpJSON, err := vp.MarshalJSON()
+	require.NoError(t, err)
+
+	return vpJSON
 }

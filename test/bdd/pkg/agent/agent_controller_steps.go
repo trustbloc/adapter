@@ -19,11 +19,15 @@ import (
 	"time"
 
 	"github.com/cucumber/godog"
+	"github.com/hyperledger/aries-framework-go/pkg/client/didexchange"
 	didexcmd "github.com/hyperledger/aries-framework-go/pkg/controller/command/didexchange"
+	"github.com/hyperledger/aries-framework-go/pkg/doc/util"
+	"github.com/hyperledger/aries-framework-go/pkg/doc/verifiable"
 	"github.com/trustbloc/edge-core/pkg/log"
 	"nhooyr.io/websocket"
 	"nhooyr.io/websocket/wsjson"
 
+	"github.com/trustbloc/edge-adapter/pkg/vc/issuer"
 	"github.com/trustbloc/edge-adapter/test/bdd/pkg/bddutil"
 	"github.com/trustbloc/edge-adapter/test/bdd/pkg/context"
 )
@@ -138,7 +142,7 @@ func (a *Steps) healthCheck(endpoint string) error {
 
 func (a *Steps) handleDIDConnectRequest(agentID, issuerID string, timeout int) error {
 	// Mock CHAPI request from Issuer
-	invitationJSON := a.bddContext.Store[bddutil.GetDIDConectRequestKey(issuerID, agentID)]
+	invitationJSON := a.bddContext.Store[bddutil.GetDIDConnectRequestKey(issuerID, agentID)]
 
 	connectionID, err := a.receiveInvitation(agentID, invitationJSON)
 	if err != nil {
@@ -153,10 +157,44 @@ func (a *Steps) handleDIDConnectRequest(agentID, issuerID string, timeout int) e
 	// Added to mock CHAPI timeout (ie, DIDExchange should happen with this duration)
 	time.Sleep(time.Duration(timeout) * time.Second)
 
-	err = a.validateConnection(agentID, connectionID, completedState)
+	conn, err := a.getConnection(agentID, connectionID)
 	if err != nil {
 		return err
 	}
+
+	// Verify state
+	if conn.State != completedState {
+		return fmt.Errorf("expected state[%s] for agent[%s], but got[%s]", completedState, agentID, conn.State)
+	}
+
+	subject := issuer.DIDConnectCredentialSubject{
+		ID:              connectionID,
+		InviteeDID:      conn.MyDID,
+		InviterDID:      conn.TheirDID,
+		InviterLabel:    "my-label",
+		ThreadID:        conn.ThreadID,
+		ConnectionState: "completed",
+	}
+
+	vc := verifiable.Credential{
+		Context: []string{"https://www.w3.org/2018/credentials/v1"},
+		Types:   []string{"VerifiableCredential", issuer.DIDConnectCredentialType},
+		Issuer:  verifiable.Issuer{ID: "did:example:123"},
+		Issued:  util.NewTime(time.Now().UTC()),
+		Subject: subject,
+	}
+
+	vp, err := vc.Presentation()
+	if err != nil {
+		return err
+	}
+
+	vpJSON, err := vp.MarshalJSON()
+	if err != nil {
+		return err
+	}
+
+	a.bddContext.Store[bddutil.GetDIDConnectResponseKey(issuerID, agentID)] = string(vpJSON)
 
 	return nil
 }
@@ -220,10 +258,10 @@ func (a *Steps) performApprove(agentID, connectionID, operationPath string, resp
 	return nil
 }
 
-func (a *Steps) validateConnection(agentID, connectionID, stateValue string) error {
+func (a *Steps) getConnection(agentID, connectionID string) (*didexchange.Connection, error) {
 	destination, ok := a.ControllerURLs[agentID]
 	if !ok {
-		return fmt.Errorf(" unable to find controller URL registered for agent [%s]", agentID)
+		return nil, fmt.Errorf(" unable to find controller URL registered for agent [%s]", agentID)
 	}
 
 	// call controller
@@ -232,15 +270,10 @@ func (a *Steps) validateConnection(agentID, connectionID, stateValue string) err
 	err := sendHTTP(http.MethodGet, destination+strings.Replace(connectionsByID, "{id}", connectionID, 1), nil, &response)
 	if err != nil {
 		logger.Errorf("Failed to perform receive invitation, cause : %s", err)
-		return err
+		return nil, err
 	}
 
-	// Verify state
-	if response.Result.State != stateValue {
-		return fmt.Errorf("expected state[%s] for agent[%s], but got[%s]", stateValue, agentID, response.Result.State)
-	}
-
-	return nil
+	return response.Result, nil
 }
 
 func (a *Steps) pullEventsFromWebSocket(agentID, state string) (string, error) {

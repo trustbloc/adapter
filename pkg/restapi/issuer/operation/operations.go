@@ -23,6 +23,7 @@ import (
 	"github.com/trustbloc/edge-adapter/pkg/internal/common/support"
 	"github.com/trustbloc/edge-adapter/pkg/profile/issuer"
 	commhttp "github.com/trustbloc/edge-adapter/pkg/restapi/internal/common/http"
+	issuervc "github.com/trustbloc/edge-adapter/pkg/vc/issuer"
 )
 
 const (
@@ -172,15 +173,33 @@ func (o *Operation) validateWalletResponse(rw http.ResponseWriter, req *http.Req
 		return
 	}
 
+	// validate the response
+	connectResp := &WalletConnect{}
+
+	if err := json.NewDecoder(req.Body).Decode(&connectResp); err != nil {
+		commhttp.WriteErrorResponse(rw, http.StatusBadRequest, fmt.Sprintf("invalid request: %s", err.Error()))
+
+		return
+	}
+
 	// get txnID data from the storage
-	data, err := o.txnStore.Get(txnID)
-	if err != nil || data == nil {
+	txnData, err := o.txnStore.Get(txnID)
+	if err != nil || txnData == nil {
 		commhttp.WriteErrorResponse(rw, http.StatusBadRequest, fmt.Sprintf("txn data not found: %s", err.Error()))
 
 		return
 	}
 
-	// TODO https://github.com/trustbloc/edge-adapter/issues/82 Validate the vc/vp and connection details
+	connectData, err := issuervc.ParseWalletResponse(connectResp.Resp)
+	if err != nil {
+		commhttp.WriteErrorResponse(rw, http.StatusBadRequest,
+			fmt.Sprintf("failed to validate presentation: %s", err.Error()))
+
+		return
+	}
+
+	// TODO https://github.com/trustbloc/edge-adapter/issues/88 validate connection details
+	logger.Debugf("connect data: %+v", connectData)
 
 	rw.WriteHeader(http.StatusOK)
 }
