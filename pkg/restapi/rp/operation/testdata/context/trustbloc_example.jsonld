@@ -1,0 +1,54 @@
+{
+    "@context": {
+      "@version": 1.1,
+
+      "id": "@id",
+      "type": "@type",
+
+      "ex": "https://example.org/examples#",
+
+      "image": {"@id": "http://schema.org/image", "@type": "@id"},
+
+      "CredentialStatusList2017": "ex:CredentialStatusList2017",
+      "DocumentVerification": "ex:DocumentVerification",
+      "SupportingActivity": "ex:SupportingActivity",
+      "DIDDocumentCredential": {
+        "@id": "ex:DIDDocumentCredential",
+        "@context": {
+          "@version": 1.1,
+          "id": "@id",
+          "type": "@type",
+          "ex": "https://example.org/examples#",
+          "credentialSubject": {
+            "@id": "ex:credentialSubject",
+            "@context": {
+              "@version": 1.1,
+              "@protected": true,
+              "ex": "https://example.org.examples#",
+              "didDoc": "xsd:string"
+            }
+          }
+        }
+      },
+      "UserConsentCredential": {
+        "@id": "ex:UserConsentCredential",
+        "@context": {
+          "@version": 1.1,
+          "id": "@id",
+          "type": "@type",
+          "ex": "https://example.org/examples#",
+          "credentialSubject": {
+            "@id": "ex:credentialSubject",
+            "@context": {
+              "@version": 1.1,
+              "@protected": true,
+              "ex": "https://example.org.examples#",
+              "rpDID": "xsd:string",
+              "issuerDID": "xsd:string",
+              "presDef": "xsd:string"
+            }
+          }
+        }
+      }
+    }
+}
