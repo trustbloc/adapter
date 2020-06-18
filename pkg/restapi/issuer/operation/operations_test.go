@@ -261,6 +261,17 @@ func TestValidateWalletResponse(t *testing.T) {
 	})
 	require.NoError(t, err)
 
+	profileID := "profile1"
+	callbackURL := "http://issuer.example.com/cb"
+
+	data := &issuer.ProfileData{
+		ID:          profileID,
+		Name:        "Issuer Profile 1",
+		CallbackURL: callbackURL,
+	}
+	err = c.profileStore.SaveProfile(data)
+	require.NoError(t, err)
+
 	handler := getHandler(t, c, validateConnectResponseEndpoint)
 
 	vReq := &WalletConnect{
@@ -271,7 +282,7 @@ func TestValidateWalletResponse(t *testing.T) {
 	require.NoError(t, err)
 
 	t.Run("test validate response - success", func(t *testing.T) {
-		txnID, err := c.createTxn("profile1")
+		txnID, err := c.createTxn(profileID)
 		require.NoError(t, err)
 
 		req := &WalletConnect{
@@ -285,6 +296,11 @@ func TestValidateWalletResponse(t *testing.T) {
 			validateConnectResponseEndpoint+"?"+txnIDQueryParam+"="+txnID, reqBytes)
 
 		require.Equal(t, http.StatusOK, rr.Code)
+
+		resp := &ValidateConnectResp{}
+		err = json.Unmarshal(rr.Body.Bytes(), &resp)
+		require.NoError(t, err)
+		require.Equal(t, callbackURL, resp.RedirectURL)
 	})
 
 	t.Run("test validate response - missing cookie", func(t *testing.T) {
@@ -323,6 +339,24 @@ func TestValidateWalletResponse(t *testing.T) {
 
 		require.Equal(t, http.StatusBadRequest, rr.Code)
 		require.Contains(t, rr.Body.String(), "failed to validate presentation")
+	})
+
+	t.Run("test validate response - profile not found", func(t *testing.T) {
+		txnID, err := c.createTxn("invalid-profile")
+		require.NoError(t, err)
+
+		req := &WalletConnect{
+			Resp: getTestVP(t),
+		}
+
+		reqBytes, err := json.Marshal(req)
+		require.NoError(t, err)
+
+		rr := serveHTTP(t, handler.Handle(), http.MethodPost,
+			validateConnectResponseEndpoint+"?"+txnIDQueryParam+"="+txnID, reqBytes)
+
+		require.Equal(t, http.StatusBadRequest, rr.Code)
+		require.Contains(t, rr.Body.String(), "profile not found")
 	})
 }
 

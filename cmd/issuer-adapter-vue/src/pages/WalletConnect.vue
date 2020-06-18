@@ -79,7 +79,7 @@ SPDX-License-Identifier: Apache-2.0
                             return
                         }
 
-                        console.log("wallet connected successfully")
+                        console.log(`wallet connected successfully; redirectURL=${resp.data.redirectURL}`)
                     },
                     err => {
                         console.error(`failed to validate wallet response: url=${validateUrl} err=${err}`)

@@ -12,6 +12,8 @@ import (
 	"fmt"
 
 	"github.com/trustbloc/edge-core/pkg/storage"
+
+	"github.com/trustbloc/edge-adapter/pkg/internal/common/adapterutil"
 )
 
 const (
@@ -100,8 +102,8 @@ func validateProfileRequest(pr *ProfileData) error {
 		return fmt.Errorf("missing profile name")
 	}
 
-	if pr.CallbackURL == "" {
-		return fmt.Errorf("missing callback url")
+	if !adapterutil.ValidHTTPURL(pr.CallbackURL) {
+		return fmt.Errorf("callback url is invalid")
 	}
 
 	return nil

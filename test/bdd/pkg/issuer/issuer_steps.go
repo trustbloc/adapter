@@ -46,7 +46,8 @@ func (e *Steps) RegisterSteps(s *godog.Suite) {
 	s.Step(`^Issuer adapter shows the wallet connect UI when the issuer "([^"]*)" wants to connect to the wallet$`,
 		e.walletConnect)
 	s.Step(`^Issuer adapter \("([^"]*)"\) creates DIDExchange request for "([^"]*)"$`, e.didExchangeRequest)
-	s.Step(`^Issuer adapter \("([^"]*)"\) validates response from "([^"]*)"$`, e.validateConnectResp)
+	s.Step(`^Issuer adapter \("([^"]*)"\) validates response from "([^"]*)" and redirects to "([^"]*)"$`,
+		e.validateConnectResp)
 }
 
 func (e *Steps) createProfile(id, name, callbackURL string) error {
@@ -162,7 +163,7 @@ func (e *Steps) didExchangeRequest(issuerID, agentID string) error {
 	return nil
 }
 
-func (e *Steps) validateConnectResp(issuerID, agentID string) error {
+func (e *Steps) validateConnectResp(issuerID, agentID, callbackURL string) error {
 	url := issuerAdapterURL + "/connect/validate?txnID=" + e.txnIDs[issuerID]
 	vp := e.bddContext.Store[bddutil.GetDIDConnectResponseKey(issuerID, agentID)]
 
@@ -190,6 +191,18 @@ func (e *Steps) validateConnectResp(issuerID, agentID string) error {
 
 	if resp.StatusCode != http.StatusOK {
 		return bddutil.ExpectedStatusCodeError(http.StatusOK, resp.StatusCode, respBytes)
+	}
+
+	validateResp := &operation.ValidateConnectResp{}
+
+	err = json.Unmarshal(respBytes, validateResp)
+	if err != nil {
+		return err
+	}
+
+	if validateResp.RedirectURL != callbackURL {
+		return fmt.Errorf("expected redirectURL[%s] for issuer[%s], but got[%s]", callbackURL, issuerID,
+			validateResp.RedirectURL)
 	}
 
 	return nil
