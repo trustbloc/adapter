@@ -16,7 +16,7 @@ Feature: Issuer Adapter e2e
     And   Issuer adapter ("<profileID>") creates DIDExchange request for "Wallet"
     ## Mocking CHAPI flow here
     Then  "Wallet" responds to connect request from Issuer adapter ("<profileID>") within "5" seconds
-    And   Issuer adapter ("<profileID>") validates response from "Wallet"
+    And   Issuer adapter ("<profileID>") validates response from "Wallet" and redirects to "<profileCallBackURL>"
     Examples:
       | profileID             | profileName           | profileCallBackURL                |
       | abc123                | Example Issuer        | http://example.com/cb             |

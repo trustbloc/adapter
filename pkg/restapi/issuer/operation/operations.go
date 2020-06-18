@@ -183,8 +183,8 @@ func (o *Operation) validateWalletResponse(rw http.ResponseWriter, req *http.Req
 	}
 
 	// get txnID data from the storage
-	txnData, err := o.txnStore.Get(txnID)
-	if err != nil || txnData == nil {
+	txnData, err := o.getTxn(txnID)
+	if err != nil {
 		commhttp.WriteErrorResponse(rw, http.StatusBadRequest, fmt.Sprintf("txn data not found: %s", err.Error()))
 
 		return
@@ -201,7 +201,15 @@ func (o *Operation) validateWalletResponse(rw http.ResponseWriter, req *http.Req
 	// TODO https://github.com/trustbloc/edge-adapter/issues/88 validate connection details
 	logger.Debugf("connect data: %+v", connectData)
 
+	profile, err := o.profileStore.GetProfile(txnData.IssuerID)
+	if err != nil {
+		commhttp.WriteErrorResponse(rw, http.StatusBadRequest, fmt.Sprintf("profile not found: %s", err.Error()))
+
+		return
+	}
+
 	rw.WriteHeader(http.StatusOK)
+	commhttp.WriteResponse(rw, &ValidateConnectResp{RedirectURL: profile.CallbackURL})
 }
 
 func (o *Operation) generateInvitation(rw http.ResponseWriter, _ *http.Request) {
@@ -238,6 +246,22 @@ func (o *Operation) createTxn(profileID string) (string, error) {
 	}
 
 	return txnID, nil
+}
+
+func (o *Operation) getTxn(id string) (*txnData, error) {
+	bytes, err := o.txnStore.Get(id)
+	if err != nil || bytes == nil {
+		return nil, err
+	}
+
+	data := &txnData{}
+
+	err = json.Unmarshal(bytes, data)
+	if err != nil {
+		return nil, err
+	}
+
+	return data, nil
 }
 
 func didExchangeClient(ariesCtx aries.CtxProvider) (*didexchange.Client, error) {

@@ -84,7 +84,7 @@ func TestCredentialRecord_SaveProfile(t *testing.T) {
 		value.Name = "Issuer Profile 1"
 		err = record.SaveProfile(value)
 		require.Error(t, err)
-		require.Contains(t, err.Error(), "missing callback url")
+		require.Contains(t, err.Error(), "callback url is invalid")
 	})
 
 	t.Run("test save profile - profile already exists", func(t *testing.T) {

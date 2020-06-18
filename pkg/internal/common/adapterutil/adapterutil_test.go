@@ -39,3 +39,12 @@ func TestDecodeIntoCustomCredential(t *testing.T) {
 		require.Contains(t, err.Error(), "failed to decode custom credential")
 	})
 }
+
+func TestValidHTTPURL(t *testing.T) {
+	require.True(t, ValidHTTPURL("http://example.com"))
+	require.True(t, ValidHTTPURL("https://example.com"))
+	require.True(t, ValidHTTPURL("https://example.com/test"))
+
+	require.False(t, ValidHTTPURL("http:/example.com"))
+	require.False(t, ValidHTTPURL("ws://example.com"))
+}

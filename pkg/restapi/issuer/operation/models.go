@@ -17,3 +17,8 @@ type WalletConnect struct {
 type txnData struct {
 	IssuerID string `json:"issuerID,omitempty"`
 }
+
+// ValidateConnectResp response from validate connect api.
+type ValidateConnectResp struct {
+	RedirectURL string `json:"redirectURL,omitempty"`
+}

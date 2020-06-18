@@ -10,6 +10,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"net/url"
 
 	"github.com/hyperledger/aries-framework-go/pkg/doc/verifiable"
 )
@@ -38,4 +39,10 @@ func StringsContains(val string, slice []string) bool {
 	}
 
 	return false
+}
+
+// ValidHTTPURL checks if the string is a valid http url.
+func ValidHTTPURL(str string) bool {
+	u, err := url.Parse(str)
+	return err == nil && (u.Scheme == "http" || u.Scheme == "https") && u.Host != ""
 }
