@@ -17,7 +17,7 @@ import (
 
 const (
 	// DIDConnectCredentialType vc type.
-	DIDConnectCredentialType = "DIDConnectCredential"
+	DIDConnectCredentialType = "DIDConnection"
 )
 
 // ParseWalletResponse parses VP received from the wallet and returns the DIDConnect response.
@@ -37,7 +37,8 @@ func ParseWalletResponse(vpBytes []byte) (*DIDConnectCredentialSubject, error) {
 		return nil, errors.New("there should be only one credential")
 	}
 
-	cred, err := verifiable.ParseCredential(rawCredentials[0])
+	// TODO https://github.com/trustbloc/edge-adapter/issues/87 validate the signature
+	cred, err := verifiable.ParseCredential(rawCredentials[0], verifiable.WithDisabledProofCheck())
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse credential : %s", err.Error())
 	}

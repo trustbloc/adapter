@@ -30,7 +30,7 @@ const (
 	   "id":"http://example.edu/credentials/1872",
 	   "type":[
 		  "VerifiableCredential",
-		  "DIDConnectCredential"
+		  "DIDConnection"
 	   ],
 	   "credentialSubject":{
 		  "id":"` + id + `",
@@ -112,7 +112,7 @@ func TestParseWalletResponse(t *testing.T) {
 
 		conn, err := ParseWalletResponse(vpJSON)
 		require.Error(t, err)
-		require.Contains(t, err.Error(), "vc doesn't contain DIDConnectCredential type")
+		require.Contains(t, err.Error(), "vc doesn't contain DIDConnection type")
 		require.Nil(t, conn)
 	})
 }

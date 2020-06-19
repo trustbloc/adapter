@@ -11,14 +11,14 @@ services:
     container_name: issuer.adapter.rest.example.com
     image: ${ISSUER_ADAPTER_REST_IMAGE}:latest
     environment:
-      - ADAPTER_REST_HOST_URL=0.0.0.0:8060
+      - ADAPTER_REST_HOST_URL=0.0.0.0:9070
       - ADAPTER_REST_TLS_CACERTS=/etc/tls/ec-cacert.pem
       - ADAPTER_REST_TLS_SYSTEMCERTPOOL=true
-      - ADAPTER_REST_DIDCOMM_INBOUND_HOST=0.0.0.0:8061
-      - ADAPTER_REST_DIDCOMM_INBOUND_HOST_EXTERNAL=http://issuer.adapter.rest.example.com:8061
+      - ADAPTER_REST_DIDCOMM_INBOUND_HOST=0.0.0.0:9071
+      - ADAPTER_REST_DIDCOMM_INBOUND_HOST_EXTERNAL=http://issuer.adapter.rest.example.com:9071
     ports:
-      - 8060:8060
-      - 8061:8061
+      - 9070:9070
+      - 9071:9071
     entrypoint: ""
     command:  /bin/sh -c "adapter-rest start"
     volumes:
