@@ -475,7 +475,7 @@ const vc = `{
 	   "id":"http://example.edu/credentials/1872",
 	   "type":[
 		  "VerifiableCredential",
-		  "DIDConnectCredential"
+		  "DIDConnection"
 	   ],
 	   "credentialSubject":{
 		  "id": "e9e0f944-7b74-4298-9f3e-00ca609d6266",

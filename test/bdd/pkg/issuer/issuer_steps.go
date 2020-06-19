@@ -22,7 +22,7 @@ import (
 )
 
 const (
-	issuerAdapterURL = "http://localhost:8060"
+	issuerAdapterURL = "http://localhost:9070"
 )
 
 // Steps is steps for VC BDD tests.
