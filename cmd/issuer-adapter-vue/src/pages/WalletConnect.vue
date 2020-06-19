@@ -8,8 +8,9 @@ SPDX-License-Identifier: Apache-2.0
     <div class="vertical-center">
         <h1>Connect Wallet to the Issuer (DIDComm)</h1>
 
-        <button v-on:click="connectWallet">Connect Wallet</button>
+        <button v-on:click="connectWallet" v-if="!connectWalletSuccess">Connect Wallet</button>
 
+        <p v-if="connectWalletSuccess" style="color:green;">Wallet Connected Successfully. <a :href="redirectURL">Click Here</a> to return to Issuer Page.</p>
         <p style="color:red;">{{ connectWalletErr }}</p>
 
         <br/>
@@ -23,7 +24,9 @@ SPDX-License-Identifier: Apache-2.0
         name: 'WalletConnect',
         data() {
             return {
-                connectWalletErr: null
+                connectWalletSuccess: false,
+                connectWalletErr: null,
+                redirectURL : null,
             }
         },
         methods: {
@@ -78,6 +81,9 @@ SPDX-License-Identifier: Apache-2.0
                             this.connectWalletErr = "Failed to Connect Wallet. " + resp.data.errMessage
                             return
                         }
+
+                        this.connectWalletSuccess = true
+                        this.redirectURL = resp.data.redirectURL
 
                         console.log(`wallet connected successfully; redirectURL=${resp.data.redirectURL}`)
                     },
