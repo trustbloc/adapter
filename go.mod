@@ -8,10 +8,9 @@ go 1.14
 
 require (
 	github.com/coreos/go-oidc v2.2.1+incompatible
-	github.com/go-sql-driver/mysql v1.5.0
 	github.com/google/uuid v1.1.1
 	github.com/gorilla/mux v1.7.4
-	github.com/hyperledger/aries-framework-go v0.1.4-0.20200529175104-77739a47bafa
+	github.com/hyperledger/aries-framework-go v0.1.4-0.20200618204920-afa883b058ee
 	github.com/kr/text v0.2.0 // indirect
 	github.com/mr-tron/base58 v1.1.3
 	github.com/niemeyer/pretty v0.0.0-20200227124842-a10e7caefd8e // indirect

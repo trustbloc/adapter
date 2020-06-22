@@ -31,7 +31,7 @@ SPDX-License-Identifier: Apache-2.0
         },
         methods: {
             connectWallet: async function () {
-                const invitationUrl = "/issuer/didcomm/invitation"
+                const invitationUrl = "/issuer/didcomm/invitation?txnID=" + this.$route.query.txnID
 
                 let invitation
                 await this.$http.get(invitationUrl).then(

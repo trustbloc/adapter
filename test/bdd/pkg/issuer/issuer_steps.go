@@ -141,7 +141,7 @@ func (e *Steps) walletConnect(issuerID string) error {
 
 func (e *Steps) didExchangeRequest(issuerID, agentID string) error {
 	resp, err := bddutil.HTTPDo(http.MethodGet, //nolint: bodyclose
-		issuerAdapterURL+"/issuer/didcomm/invitation", "", "", nil)
+		issuerAdapterURL+"/issuer/didcomm/invitation?txnID="+e.txnIDs[issuerID], "", "", nil)
 	if err != nil {
 		return err
 	}
