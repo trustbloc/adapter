@@ -94,7 +94,7 @@ func TestCreateProfile(t *testing.T) {
 	handler := getHandler(t, op, endpoint)
 
 	t.Run("create profile - success", func(t *testing.T) {
-		vReq := &issuer.ProfileData{
+		vReq := &ProfileDataRequest{
 			ID:          uuid.New().String(),
 			Name:        "test",
 			CallbackURL: "http://issuer.example.com/callback",
@@ -110,7 +110,9 @@ func TestCreateProfile(t *testing.T) {
 		profileRes := &issuer.ProfileData{}
 		err = json.Unmarshal(rr.Body.Bytes(), &profileRes)
 		require.NoError(t, err)
-		require.Equal(t, vReq, profileRes)
+		require.Equal(t, vReq.ID, profileRes.ID)
+		require.Equal(t, vReq.Name, profileRes.Name)
+		require.Equal(t, vReq.CallbackURL, profileRes.CallbackURL)
 	})
 
 	t.Run("create profile - invalid request", func(t *testing.T) {
@@ -121,7 +123,7 @@ func TestCreateProfile(t *testing.T) {
 	})
 
 	t.Run("create profile - error", func(t *testing.T) {
-		vReq := &issuer.ProfileData{}
+		vReq := &ProfileDataRequest{}
 
 		vReqBytes, err := json.Marshal(vReq)
 		require.NoError(t, err)
@@ -172,7 +174,6 @@ func TestGetProfile(t *testing.T) {
 
 		rr := serveHTTPMux(t, handler, endpoint, nil, urlVars)
 
-		fmt.Println(rr.Body.String())
 		require.Equal(t, http.StatusBadRequest, rr.Code)
 		require.Contains(t, rr.Body.String(), "store does not have a value associated with this key")
 	})
@@ -181,6 +182,7 @@ func TestGetProfile(t *testing.T) {
 func TestConnectWallet(t *testing.T) {
 	uiEndpoint := "/ui"
 	profileID := "test-1"
+	state := uuid.New().String()
 	endpoint := walletConnectEndpoint
 	urlVars := make(map[string]string)
 
@@ -204,7 +206,7 @@ func TestConnectWallet(t *testing.T) {
 
 		urlVars[idPathParam] = profileID
 
-		rr := serveHTTPMux(t, walletConnectHandler, walletConnectEndpoint, nil, urlVars)
+		rr := serveHTTPMux(t, walletConnectHandler, walletConnectEndpoint+"?"+stateQueryParam+"="+state, nil, urlVars)
 
 		require.Equal(t, http.StatusFound, rr.Code)
 		require.Contains(t, rr.Header().Get("Location"), uiEndpoint)
@@ -224,12 +226,37 @@ func TestConnectWallet(t *testing.T) {
 
 		rr := serveHTTPMux(t, walletConnectHandler, walletConnectEndpoint, nil, urlVars)
 
-		fmt.Println(rr.Body.String())
 		require.Equal(t, http.StatusBadRequest, rr.Code)
 		require.Contains(t, rr.Body.String(), "store does not have a value associated with this key")
 	})
 
-	t.Run("test connect wallet - success", func(t *testing.T) {
+	t.Run("test connect wallet - no state in the url", func(t *testing.T) {
+		c, err := New(&Config{
+			AriesCtx:      getAriesCtx(),
+			StoreProvider: memstore.NewProvider(),
+			UIEndpoint:    uiEndpoint,
+		})
+		require.NoError(t, err)
+
+		data := &issuer.ProfileData{
+			ID:          profileID,
+			Name:        "Issuer Profile 1",
+			CallbackURL: "http://issuer.example.com/cb",
+		}
+		err = c.profileStore.SaveProfile(data)
+		require.NoError(t, err)
+
+		walletConnectHandler := getHandler(t, c, endpoint)
+
+		urlVars[idPathParam] = profileID
+
+		rr := serveHTTPMux(t, walletConnectHandler, walletConnectEndpoint, nil, urlVars)
+
+		require.Equal(t, http.StatusBadRequest, rr.Code)
+		require.Contains(t, rr.Body.String(), "failed to get state from the url")
+	})
+
+	t.Run("test connect wallet - failed to create invitation", func(t *testing.T) {
 		ariesCtx := &mockprovider.Provider{
 			TransientStorageProviderValue: mockstore.NewMockStoreProvider(),
 			StorageProviderValue:          mockstore.NewMockStoreProvider(),
@@ -260,7 +287,7 @@ func TestConnectWallet(t *testing.T) {
 
 		urlVars[idPathParam] = profileID
 
-		rr := serveHTTPMux(t, walletConnectHandler, walletConnectEndpoint, nil, urlVars)
+		rr := serveHTTPMux(t, walletConnectHandler, walletConnectEndpoint+"?"+stateQueryParam+"="+state, nil, urlVars)
 
 		require.Equal(t, http.StatusInternalServerError, rr.Code)
 		require.Contains(t, rr.Body.String(), "failed to create invitation")
@@ -291,9 +318,8 @@ func TestConnectWallet(t *testing.T) {
 			ErrPut: errors.New("error inserting data"),
 		}
 
-		rr := serveHTTPMux(t, walletConnectHandler, walletConnectEndpoint, nil, urlVars)
+		rr := serveHTTPMux(t, walletConnectHandler, walletConnectEndpoint+"?"+stateQueryParam+"="+state, nil, urlVars)
 
-		fmt.Println(rr.Body.String())
 		require.Equal(t, http.StatusInternalServerError, rr.Code)
 		require.Contains(t, rr.Body.String(), "failed to create txn")
 	})
@@ -328,8 +354,9 @@ func TestValidateWalletResponse(t *testing.T) {
 
 	connID := uuid.New().String()
 	threadID := uuid.New().String()
+	state := uuid.New().String()
 
-	txnID, err := c.createTxn(profileID)
+	txnID, err := c.createTxn(profileID, state)
 	require.NoError(t, err)
 
 	txn, err := c.getTxn(txnID)
@@ -363,7 +390,6 @@ func TestValidateWalletResponse(t *testing.T) {
 		resp := &ValidateConnectResp{}
 		err = json.Unmarshal(rr.Body.Bytes(), &resp)
 		require.NoError(t, err)
-		require.Equal(t, callbackURL, resp.RedirectURL)
 	})
 
 	t.Run("test validate response - missing cookie", func(t *testing.T) {
@@ -394,7 +420,7 @@ func TestValidateWalletResponse(t *testing.T) {
 	})
 
 	t.Run("test validate response - invalid vp", func(t *testing.T) {
-		txnID, err = c.createTxn("profile1")
+		txnID, err = c.createTxn("profile1", uuid.New().String())
 		require.NoError(t, err)
 
 		rr := serveHTTP(t, handler.Handle(), http.MethodPost,
@@ -405,7 +431,7 @@ func TestValidateWalletResponse(t *testing.T) {
 	})
 
 	t.Run("test validate response - profile not found", func(t *testing.T) {
-		txnID, err = c.createTxn("invalid-profile")
+		txnID, err = c.createTxn("invalid-profile", uuid.New().String())
 		require.NoError(t, err)
 
 		txn, err = c.getTxn(txnID)
@@ -504,7 +530,7 @@ func TestGenerateInvitation(t *testing.T) {
 		})
 		require.NoError(t, err)
 
-		txnID, err := c.createTxn("profile1")
+		txnID, err := c.createTxn("profile1", uuid.New().String())
 		require.NoError(t, err)
 
 		generateInvitationHandler := getHandler(t, c, generateInvitationEndpoint)

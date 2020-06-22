@@ -11,6 +11,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/gorilla/mux"
@@ -40,6 +41,8 @@ const (
 	// http params
 	idPathParam     = "id"
 	txnIDQueryParam = "txnID"
+	stateQueryParam = "state"
+	redirectURLFmt  = "%s?state=%s&code=%s"
 
 	storeName = "issuer_txn"
 
@@ -121,7 +124,7 @@ func (o *Operation) GetRESTHandlers() []Handler {
 }
 
 func (o *Operation) createIssuerProfileHandler(rw http.ResponseWriter, req *http.Request) {
-	data := &issuer.ProfileData{}
+	data := &ProfileDataRequest{}
 
 	if err := json.NewDecoder(req.Body).Decode(&data); err != nil {
 		commhttp.WriteErrorResponse(rw, http.StatusBadRequest, fmt.Sprintf("invalid request: %s", err.Error()))
@@ -129,7 +132,15 @@ func (o *Operation) createIssuerProfileHandler(rw http.ResponseWriter, req *http
 		return
 	}
 
-	err := o.profileStore.SaveProfile(data)
+	created := time.Now().UTC()
+	profileData := &issuer.ProfileData{
+		ID:          data.ID,
+		Name:        data.Name,
+		CallbackURL: data.CallbackURL,
+		CreatedAt:   &created,
+	}
+
+	err := o.profileStore.SaveProfile(profileData)
 	if err != nil {
 		commhttp.WriteErrorResponse(rw, http.StatusBadRequest,
 			fmt.Sprintf("failed to create profile: %s", err.Error()))
@@ -138,7 +149,7 @@ func (o *Operation) createIssuerProfileHandler(rw http.ResponseWriter, req *http
 	}
 
 	rw.WriteHeader(http.StatusCreated)
-	commhttp.WriteResponse(rw, data)
+	commhttp.WriteResponse(rw, profileData)
 }
 
 func (o *Operation) getIssuerProfileHandler(rw http.ResponseWriter, req *http.Request) {
@@ -164,8 +175,15 @@ func (o *Operation) walletConnect(rw http.ResponseWriter, req *http.Request) {
 		return
 	}
 
+	state := req.URL.Query().Get(stateQueryParam)
+	if state == "" {
+		commhttp.WriteErrorResponse(rw, http.StatusBadRequest, "failed to get state from the url")
+
+		return
+	}
+
 	// store the txn data
-	txnID, err := o.createTxn(profileID)
+	txnID, err := o.createTxn(profileID, state)
 	if err != nil {
 		commhttp.WriteErrorResponse(rw, http.StatusInternalServerError,
 			fmt.Sprintf("failed to create txn : %s", err.Error()))
@@ -211,7 +229,7 @@ func (o *Operation) validateWalletResponse(rw http.ResponseWriter, req *http.Req
 		return
 	}
 
-	err = o.validateConnection(connectData)
+	_, err = o.validateAndGetConnection(connectData)
 	if err != nil {
 		commhttp.WriteErrorResponse(rw, http.StatusBadRequest,
 			fmt.Sprintf("failed to validate DIDComm connection: %s", err.Error()))
@@ -226,8 +244,11 @@ func (o *Operation) validateWalletResponse(rw http.ResponseWriter, req *http.Req
 		return
 	}
 
+	// TODO https://github.com/trustbloc/edge-adapter/issues/107 Add mapping to connectionID and populate code
+	redirectURL := fmt.Sprintf(redirectURLFmt, profile.CallbackURL, txnData.State, uuid.New().String())
+
 	rw.WriteHeader(http.StatusOK)
-	commhttp.WriteResponse(rw, &ValidateConnectResp{RedirectURL: profile.CallbackURL})
+	commhttp.WriteResponse(rw, &ValidateConnectResp{RedirectURL: redirectURL})
 }
 
 func (o *Operation) generateInvitation(rw http.ResponseWriter, req *http.Request) {
@@ -251,31 +272,31 @@ func (o *Operation) generateInvitation(rw http.ResponseWriter, req *http.Request
 	commhttp.WriteResponse(rw, txnData.DIDCommInvitation)
 }
 
-func (o *Operation) validateConnection(connectData *issuervc.DIDConnectCredentialSubject) error {
+func (o *Operation) validateAndGetConnection(connectData *issuervc.DIDConnectCredentialSubject) (*connection.Record, error) { // nolint: lll
 	connID, err := o.connectionLookup.GetConnectionIDByDIDs(connectData.InviterDID, connectData.InviteeDID)
 	if err != nil {
-		return fmt.Errorf("connection using DIDs not found: %w", err)
+		return nil, fmt.Errorf("connection using DIDs not found: %w", err)
 	}
 
 	conn, err := o.connectionLookup.GetConnectionRecord(connID)
 	if err != nil {
-		return fmt.Errorf("connection using id not found: %w", err)
+		return nil, fmt.Errorf("connection using id not found: %w", err)
 	}
 
 	// TODO https://github.com/trustbloc/edge-adapter/issues/101 validate the parent thread id with the invitation id
 
 	if conn.State != didExCompletedState {
-		return errors.New("connection state is not complete")
+		return nil, errors.New("connection state is not complete")
 	}
 
 	if conn.ThreadID != connectData.ThreadID {
-		return errors.New("thread id not found")
+		return nil, errors.New("thread id not found")
 	}
 
-	return nil
+	return conn, nil
 }
 
-func (o *Operation) createTxn(profileID string) (string, error) {
+func (o *Operation) createTxn(profileID, state string) (string, error) {
 	invitation, err := o.didExClient.CreateInvitation("issuer")
 	if err != nil {
 		return "", fmt.Errorf("failed to create invitation : %w", err)
@@ -286,6 +307,7 @@ func (o *Operation) createTxn(profileID string) (string, error) {
 	// store the txn data
 	data := &txnData{
 		IssuerID:          profileID,
+		State:             state,
 		DIDCommInvitation: invitation,
 	}
 
