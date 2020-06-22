@@ -10,7 +10,7 @@ require (
 	github.com/cenkalti/backoff v2.2.1+incompatible
 	github.com/cucumber/godog v0.9.0
 	github.com/fsouza/go-dockerclient v1.6.5
-	github.com/hyperledger/aries-framework-go v0.1.4-0.20200529175104-77739a47bafa
+	github.com/hyperledger/aries-framework-go v0.1.4-0.20200618204920-afa883b058ee
 	github.com/ory/hydra-client-go v1.4.10
 	github.com/pkg/errors v0.9.1
 	github.com/sirupsen/logrus v1.6.0

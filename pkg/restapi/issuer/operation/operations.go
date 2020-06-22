@@ -8,15 +8,15 @@ package operation
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 
 	"github.com/google/uuid"
-
 	"github.com/gorilla/mux"
 	"github.com/hyperledger/aries-framework-go/pkg/client/didexchange"
 	"github.com/hyperledger/aries-framework-go/pkg/didcomm/common/service"
-	"github.com/trustbloc/edge-core/pkg/log"
+	"github.com/hyperledger/aries-framework-go/pkg/store/connection"
 	"github.com/trustbloc/edge-core/pkg/storage"
 
 	"github.com/trustbloc/edge-adapter/pkg/aries"
@@ -42,15 +42,21 @@ const (
 	txnIDQueryParam = "txnID"
 
 	storeName = "issuer_txn"
-)
 
-var logger = log.New("edge-adapter/issuer-operations")
+	// protocol
+	didExCompletedState = "completed"
+)
 
 // Handler http handler for each controller API endpoint.
 type Handler interface {
 	Path() string
 	Method() string
 	Handle() http.HandlerFunc
+}
+
+type connections interface {
+	GetConnectionIDByDIDs(string, string) (string, error)
+	GetConnectionRecord(string) (*connection.Record, error)
 }
 
 // Config defines configuration for issuer operations.
@@ -77,20 +83,27 @@ func New(config *Config) (*Operation, error) {
 		return nil, err
 	}
 
+	connectionLookup, err := connection.NewLookup(config.AriesCtx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to initialize connection lookup : %w", err)
+	}
+
 	return &Operation{
-		didExClient:  didExClient,
-		uiEndpoint:   config.UIEndpoint,
-		profileStore: p,
-		txnStore:     txnStore,
+		didExClient:      didExClient,
+		uiEndpoint:       config.UIEndpoint,
+		profileStore:     p,
+		txnStore:         txnStore,
+		connectionLookup: connectionLookup,
 	}, nil
 }
 
 // Operation defines handlers for rp operations.
 type Operation struct {
-	didExClient  *didexchange.Client
-	uiEndpoint   string
-	profileStore *issuer.Profile
-	txnStore     storage.Store
+	didExClient      *didexchange.Client
+	uiEndpoint       string
+	profileStore     *issuer.Profile
+	txnStore         storage.Store
+	connectionLookup connections
 }
 
 // GetRESTHandlers get all controller API handler available for this service.
@@ -198,8 +211,13 @@ func (o *Operation) validateWalletResponse(rw http.ResponseWriter, req *http.Req
 		return
 	}
 
-	// TODO https://github.com/trustbloc/edge-adapter/issues/88 validate connection details
-	logger.Debugf("connect data: %+v", connectData)
+	err = o.validateConnection(connectData)
+	if err != nil {
+		commhttp.WriteErrorResponse(rw, http.StatusBadRequest,
+			fmt.Sprintf("failed to validate DIDComm connection: %s", err.Error()))
+
+		return
+	}
 
 	profile, err := o.profileStore.GetProfile(txnData.IssuerID)
 	if err != nil {
@@ -212,28 +230,64 @@ func (o *Operation) validateWalletResponse(rw http.ResponseWriter, req *http.Req
 	commhttp.WriteResponse(rw, &ValidateConnectResp{RedirectURL: profile.CallbackURL})
 }
 
-func (o *Operation) generateInvitation(rw http.ResponseWriter, _ *http.Request) {
-	logger.Debugf("handling request to generate did-exchange invitation")
+func (o *Operation) generateInvitation(rw http.ResponseWriter, req *http.Request) {
+	// get the txnID
+	txnID := req.URL.Query().Get(txnIDQueryParam)
 
-	invitation, err := o.didExClient.CreateInvitation("issuer")
-	if err != nil {
-		msg := fmt.Sprintf("failed to create invitation : %s", err.Error())
-		logger.Errorf(msg)
-
-		commhttp.WriteErrorResponse(rw, http.StatusInternalServerError, msg)
+	if txnID == "" {
+		commhttp.WriteErrorResponse(rw, http.StatusBadRequest, "failed to get txnID from the url")
 
 		return
 	}
 
-	commhttp.WriteResponse(rw, invitation)
-	logger.Debugf("response: %+v", invitation)
+	// get txnID data from the storage
+	txnData, err := o.getTxn(txnID)
+	if err != nil {
+		commhttp.WriteErrorResponse(rw, http.StatusBadRequest, fmt.Sprintf("txn data not found: %s", err.Error()))
+
+		return
+	}
+
+	commhttp.WriteResponse(rw, txnData.DIDCommInvitation)
+}
+
+func (o *Operation) validateConnection(connectData *issuervc.DIDConnectCredentialSubject) error {
+	connID, err := o.connectionLookup.GetConnectionIDByDIDs(connectData.InviterDID, connectData.InviteeDID)
+	if err != nil {
+		return fmt.Errorf("connection using DIDs not found: %w", err)
+	}
+
+	conn, err := o.connectionLookup.GetConnectionRecord(connID)
+	if err != nil {
+		return fmt.Errorf("connection using id not found: %w", err)
+	}
+
+	// TODO https://github.com/trustbloc/edge-adapter/issues/101 validate the parent thread id with the invitation id
+
+	if conn.State != didExCompletedState {
+		return errors.New("connection state is not complete")
+	}
+
+	if conn.ThreadID != connectData.ThreadID {
+		return errors.New("thread id not found")
+	}
+
+	return nil
 }
 
 func (o *Operation) createTxn(profileID string) (string, error) {
+	invitation, err := o.didExClient.CreateInvitation("issuer")
+	if err != nil {
+		return "", fmt.Errorf("failed to create invitation : %w", err)
+	}
+
 	txnID := uuid.New().String()
 
-	// store the data on txn (issuerID, callbackURL, etc)
-	data := &txnData{IssuerID: profileID}
+	// store the txn data
+	data := &txnData{
+		IssuerID:          profileID,
+		DIDCommInvitation: invitation,
+	}
 
 	dataBytes, err := json.Marshal(data)
 	if err != nil {
@@ -277,6 +331,7 @@ func didExchangeClient(ariesCtx aries.CtxProvider) (*didexchange.Client, error) 
 		return nil, err
 	}
 
+	// TODO https://github.com/trustbloc/edge-adapter/issues/102 verify connection request before approving
 	go service.AutoExecuteActionEvent(actionCh)
 
 	return didExClient, nil

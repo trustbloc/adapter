@@ -1,5 +1,6 @@
 /*
 Copyright SecureKey Technologies Inc. All Rights Reserved.
+
 SPDX-License-Identifier: Apache-2.0
 */
 
@@ -24,12 +25,19 @@ import (
 	mockkms "github.com/hyperledger/aries-framework-go/pkg/mock/kms/legacykms"
 	mockprovider "github.com/hyperledger/aries-framework-go/pkg/mock/provider"
 	mockstore "github.com/hyperledger/aries-framework-go/pkg/mock/storage"
+	"github.com/hyperledger/aries-framework-go/pkg/store/connection"
 	"github.com/stretchr/testify/require"
 	"github.com/trustbloc/edge-core/pkg/storage/memstore"
 	mockstorage "github.com/trustbloc/edge-core/pkg/storage/mockstore"
 
 	"github.com/trustbloc/edge-adapter/pkg/aries"
+	mockconn "github.com/trustbloc/edge-adapter/pkg/internal/mock/connection"
 	"github.com/trustbloc/edge-adapter/pkg/profile/issuer"
+)
+
+const (
+	inviteeDID = "did:example:0d76fa4e1386"
+	inviterDID = "did:example:e6025bfdbb8f"
 )
 
 func TestNew(t *testing.T) {
@@ -221,6 +229,43 @@ func TestConnectWallet(t *testing.T) {
 		require.Contains(t, rr.Body.String(), "store does not have a value associated with this key")
 	})
 
+	t.Run("test connect wallet - success", func(t *testing.T) {
+		ariesCtx := &mockprovider.Provider{
+			TransientStorageProviderValue: mockstore.NewMockStoreProvider(),
+			StorageProviderValue:          mockstore.NewMockStoreProvider(),
+			ServiceMap: map[string]interface{}{
+				didexchange.DIDExchange: &mocksvc.MockDIDExchangeSvc{},
+				mediator.Coordination:   &mockroute.MockMediatorSvc{},
+			},
+			LegacyKMSValue:       &mockkms.CloseableKMS{CreateKeyErr: errors.New("key generation error")},
+			ServiceEndpointValue: "endpoint",
+		}
+
+		c, err := New(&Config{
+			AriesCtx:      ariesCtx,
+			StoreProvider: memstore.NewProvider(),
+			UIEndpoint:    uiEndpoint,
+		})
+		require.NoError(t, err)
+
+		data := &issuer.ProfileData{
+			ID:          profileID,
+			Name:        "Issuer Profile 1",
+			CallbackURL: "http://issuer.example.com/cb",
+		}
+		err = c.profileStore.SaveProfile(data)
+		require.NoError(t, err)
+
+		walletConnectHandler := getHandler(t, c, endpoint)
+
+		urlVars[idPathParam] = profileID
+
+		rr := serveHTTPMux(t, walletConnectHandler, walletConnectEndpoint, nil, urlVars)
+
+		require.Equal(t, http.StatusInternalServerError, rr.Code)
+		require.Contains(t, rr.Body.String(), "failed to create invitation")
+	})
+
 	t.Run("test connect wallet - txn data store error", func(t *testing.T) {
 		c, err := New(&Config{
 			AriesCtx:      getAriesCtx(),
@@ -281,16 +326,34 @@ func TestValidateWalletResponse(t *testing.T) {
 	vReqBytes, err := json.Marshal(vReq)
 	require.NoError(t, err)
 
-	t.Run("test validate response - success", func(t *testing.T) {
-		txnID, err := c.createTxn(profileID)
-		require.NoError(t, err)
+	connID := uuid.New().String()
+	threadID := uuid.New().String()
 
+	txnID, err := c.createTxn(profileID)
+	require.NoError(t, err)
+
+	txn, err := c.getTxn(txnID)
+	require.NoError(t, err)
+
+	c.connectionLookup = &mockconn.ConnectionsLookup{
+		ConnIDByDIDs: connID,
+		ConnRecord: &connection.Record{
+			ConnectionID:   connID,
+			State:          didExCompletedState,
+			ThreadID:       threadID,
+			TheirDID:       inviteeDID,
+			MyDID:          inviterDID,
+			ParentThreadID: txn.DIDCommInvitation.ID,
+		},
+	}
+
+	t.Run("test validate response - success", func(t *testing.T) {
 		req := &WalletConnect{
-			Resp: getTestVP(t),
+			Resp: getTestVP(t, inviteeDID, inviterDID, threadID),
 		}
 
-		reqBytes, err := json.Marshal(req)
-		require.NoError(t, err)
+		reqBytes, jsonErr := json.Marshal(req)
+		require.NoError(t, jsonErr)
 
 		rr := serveHTTP(t, handler.Handle(), http.MethodPost,
 			validateConnectResponseEndpoint+"?"+txnIDQueryParam+"="+txnID, reqBytes)
@@ -311,7 +374,7 @@ func TestValidateWalletResponse(t *testing.T) {
 	})
 
 	t.Run("test validate response - invalid req", func(t *testing.T) {
-		txnID := "invalid-txn-id"
+		txnID = "invalid-txn-id"
 
 		rr := serveHTTP(t, handler.Handle(), http.MethodPost,
 			validateConnectResponseEndpoint+"?"+txnIDQueryParam+"="+txnID, []byte("invalid-request"))
@@ -321,7 +384,7 @@ func TestValidateWalletResponse(t *testing.T) {
 	})
 
 	t.Run("test validate response - invalid txn id", func(t *testing.T) {
-		txnID := "invalid-txn-id"
+		txnID = "invalid-txn-id"
 
 		rr := serveHTTP(t, handler.Handle(), http.MethodPost,
 			validateConnectResponseEndpoint+"?"+txnIDQueryParam+"="+txnID, vReqBytes)
@@ -331,7 +394,7 @@ func TestValidateWalletResponse(t *testing.T) {
 	})
 
 	t.Run("test validate response - invalid vp", func(t *testing.T) {
-		txnID, err := c.createTxn("profile1")
+		txnID, err = c.createTxn("profile1")
 		require.NoError(t, err)
 
 		rr := serveHTTP(t, handler.Handle(), http.MethodPost,
@@ -342,11 +405,23 @@ func TestValidateWalletResponse(t *testing.T) {
 	})
 
 	t.Run("test validate response - profile not found", func(t *testing.T) {
-		txnID, err := c.createTxn("invalid-profile")
+		txnID, err = c.createTxn("invalid-profile")
 		require.NoError(t, err)
 
+		txn, err = c.getTxn(txnID)
+		require.NoError(t, err)
+
+		c.connectionLookup = &mockconn.ConnectionsLookup{
+			ConnIDByDIDs: connID,
+			ConnRecord: &connection.Record{
+				State:          didExCompletedState,
+				ThreadID:       threadID,
+				ParentThreadID: txn.DIDCommInvitation.ID,
+			},
+		}
+
 		req := &WalletConnect{
-			Resp: getTestVP(t),
+			Resp: getTestVP(t, inviteeDID, inviterDID, threadID),
 		}
 
 		reqBytes, err := json.Marshal(req)
@@ -358,10 +433,94 @@ func TestValidateWalletResponse(t *testing.T) {
 		require.Equal(t, http.StatusBadRequest, rr.Code)
 		require.Contains(t, rr.Body.String(), "profile not found")
 	})
+
+	t.Run("test validate response - validate connection errors", func(t *testing.T) {
+		// inviterDID and inviteeDID combo not found
+		c.connectionLookup = &mockconn.ConnectionsLookup{
+			ConnIDByDIDsErr: errors.New("connID not found"),
+		}
+
+		req := &WalletConnect{
+			Resp: getDefaultTestVP(t),
+		}
+
+		reqBytes, err := json.Marshal(req)
+		require.NoError(t, err)
+
+		rr := serveHTTP(t, handler.Handle(), http.MethodPost,
+			validateConnectResponseEndpoint+"?"+txnIDQueryParam+"="+txnID, reqBytes)
+
+		require.Equal(t, http.StatusBadRequest, rr.Code)
+		require.Contains(t, rr.Body.String(), "connection using DIDs not found")
+
+		// connection not found
+		c.connectionLookup = &mockconn.ConnectionsLookup{
+			ConnIDByDIDs:  connID,
+			ConnRecordErr: errors.New("connection not found"),
+		}
+
+		rr = serveHTTP(t, handler.Handle(), http.MethodPost,
+			validateConnectResponseEndpoint+"?"+txnIDQueryParam+"="+txnID, reqBytes)
+
+		require.Equal(t, http.StatusBadRequest, rr.Code)
+		require.Contains(t, rr.Body.String(), "connection using id not found")
+
+		// connection state not completed
+		c.connectionLookup = &mockconn.ConnectionsLookup{
+			ConnIDByDIDs: connID,
+			ConnRecord: &connection.Record{
+				ParentThreadID: txn.DIDCommInvitation.ID,
+			},
+		}
+
+		rr = serveHTTP(t, handler.Handle(), http.MethodPost,
+			validateConnectResponseEndpoint+"?"+txnIDQueryParam+"="+txnID, reqBytes)
+
+		require.Equal(t, http.StatusBadRequest, rr.Code)
+		require.Contains(t, rr.Body.String(), "connection state is not complete")
+
+		// threadID not found
+		c.connectionLookup = &mockconn.ConnectionsLookup{
+			ConnIDByDIDs: connID,
+			ConnRecord: &connection.Record{
+				ParentThreadID: txn.DIDCommInvitation.ID,
+				State:          didExCompletedState,
+			},
+		}
+
+		rr = serveHTTP(t, handler.Handle(), http.MethodPost,
+			validateConnectResponseEndpoint+"?"+txnIDQueryParam+"="+txnID, reqBytes)
+
+		require.Equal(t, http.StatusBadRequest, rr.Code)
+		require.Contains(t, rr.Body.String(), "thread id not found")
+	})
 }
 
 func TestGenerateInvitation(t *testing.T) {
-	t.Run("test new - success", func(t *testing.T) {
+	t.Run("test fetch invitation - success", func(t *testing.T) {
+		c, err := New(&Config{
+			AriesCtx:      getAriesCtx(),
+			StoreProvider: memstore.NewProvider(),
+		})
+		require.NoError(t, err)
+
+		txnID, err := c.createTxn("profile1")
+		require.NoError(t, err)
+
+		generateInvitationHandler := getHandler(t, c, generateInvitationEndpoint)
+
+		rr := serveHTTP(t, generateInvitationHandler.Handle(), http.MethodGet,
+			generateInvitationEndpoint+"?"+txnIDQueryParam+"="+txnID, nil)
+
+		require.Equal(t, http.StatusOK, rr.Code)
+
+		invitation := &didexchange.Invitation{}
+		err = json.Unmarshal(rr.Body.Bytes(), &invitation)
+		require.NoError(t, err)
+		require.Equal(t, "https://didcomm.org/didexchange/1.0/invitation", invitation.Type)
+	})
+
+	t.Run("test fetch invitation - no txnID in the url query", func(t *testing.T) {
 		c, err := New(&Config{
 			AriesCtx:      getAriesCtx(),
 			StoreProvider: memstore.NewProvider(),
@@ -372,33 +531,24 @@ func TestGenerateInvitation(t *testing.T) {
 
 		rr := serveHTTP(t, generateInvitationHandler.Handle(), http.MethodGet, generateInvitationEndpoint, nil)
 
-		require.Equal(t, http.StatusOK, rr.Code)
+		require.Equal(t, http.StatusBadRequest, rr.Code)
+		require.Contains(t, rr.Body.String(), "failed to get txnID from the url")
 	})
 
-	t.Run("test new - error", func(t *testing.T) {
-		ariesCtx := &mockprovider.Provider{
-			TransientStorageProviderValue: mockstore.NewMockStoreProvider(),
-			StorageProviderValue:          mockstore.NewMockStoreProvider(),
-			ServiceMap: map[string]interface{}{
-				didexchange.DIDExchange: &mocksvc.MockDIDExchangeSvc{},
-				mediator.Coordination:   &mockroute.MockMediatorSvc{},
-			},
-			LegacyKMSValue:       &mockkms.CloseableKMS{CreateKeyErr: errors.New("key generation error")},
-			ServiceEndpointValue: "endpoint",
-		}
-
+	t.Run("test fetch invitation - invalid txnID", func(t *testing.T) {
 		c, err := New(&Config{
-			AriesCtx:      ariesCtx,
+			AriesCtx:      getAriesCtx(),
 			StoreProvider: memstore.NewProvider(),
 		})
 		require.NoError(t, err)
 
 		generateInvitationHandler := getHandler(t, c, generateInvitationEndpoint)
 
-		rr := serveHTTP(t, generateInvitationHandler.Handle(), http.MethodGet, generateInvitationEndpoint, nil)
+		rr := serveHTTP(t, generateInvitationHandler.Handle(), http.MethodGet,
+			generateInvitationEndpoint+"?"+txnIDQueryParam+"=invalid-txnID", nil)
 
-		require.Equal(t, http.StatusInternalServerError, rr.Code)
-		require.Contains(t, rr.Body.String(), "failed to create invitation")
+		require.Equal(t, http.StatusBadRequest, rr.Code)
+		require.Contains(t, rr.Body.String(), "txn data not found")
 	})
 }
 
@@ -467,7 +617,7 @@ func serveHTTPMux(t *testing.T, handler Handler, endpoint string, reqBytes []byt
 	return rr
 }
 
-const vc = `{
+const vcFmt = `{
 	   "@context":[
 		  "https://www.w3.org/2018/credentials/v1",
 		  "https://www.w3.org/2018/credentials/examples/v1"
@@ -479,16 +629,21 @@ const vc = `{
 	   ],
 	   "credentialSubject":{
 		  "id": "e9e0f944-7b74-4298-9f3e-00ca609d6266",
-		  "inviteeDID": "did:example:7b744298e9e0f",
-		  "inviterDID": "agc",
-		  "inviterLabel": "user-agent"
+		  "inviteeDID":` + `"%s"` + `,
+		  "inviteeDID":` + `"%s"` + `,
+		  "threadID":` + `"%s"` + `,
+		  "inviterLabel": "issuer-agent"
 	   },
 	   "issuer":"did:example:76e12ec712ebc6f1c221ebfeb1f",
 	   "issuanceDate":"2010-01-01T19:23:24Z"
 	}`
 
-func getTestVP(t *testing.T) []byte {
-	vc, err := verifiable.ParseCredential([]byte(vc))
+func getDefaultTestVP(t *testing.T) []byte {
+	return getTestVP(t, inviteeDID, inviterDID, uuid.New().String())
+}
+
+func getTestVP(t *testing.T, inviteeDID, inviterDID, threadID string) []byte {
+	vc, err := verifiable.ParseCredential([]byte(fmt.Sprintf(vcFmt, inviteeDID, inviterDID, threadID)))
 	require.NoError(t, err)
 
 	vp, err := vc.Presentation()
