@@ -12,6 +12,10 @@ import (
 	"fmt"
 	"io/ioutil"
 	"net/http"
+	"net/url"
+	"strings"
+
+	"github.com/google/uuid"
 
 	"github.com/cucumber/godog"
 
@@ -29,6 +33,7 @@ const (
 type Steps struct {
 	bddContext *context.BDDContext
 	txnIDs     map[string]string
+	states     map[string]string
 }
 
 // NewSteps returns new agent from client SDK.
@@ -36,6 +41,7 @@ func NewSteps(ctx *context.BDDContext) *Steps {
 	return &Steps{
 		bddContext: ctx,
 		txnIDs:     make(map[string]string),
+		states:     make(map[string]string),
 	}
 }
 
@@ -51,7 +57,7 @@ func (e *Steps) RegisterSteps(s *godog.Suite) {
 }
 
 func (e *Steps) createProfile(id, name, callbackURL string) error {
-	profileReq := issuerprofile.ProfileData{
+	profileReq := operation.ProfileDataRequest{
 		ID:          id,
 		Name:        name,
 		CallbackURL: callbackURL,
@@ -121,8 +127,11 @@ func (e *Steps) retrieveProfile(id, name, callbackURL string) error {
 }
 
 func (e *Steps) walletConnect(issuerID string) error {
+	state := uuid.New().String()
+	e.states[issuerID] = state
+
 	resp, err := bddutil.HTTPDo(http.MethodGet, //nolint: bodyclose
-		fmt.Sprintf(issuerAdapterURL+"/%s/connect/wallet", issuerID), "", "", nil)
+		fmt.Sprintf(issuerAdapterURL+"/%s/connect/wallet?state=%s", issuerID, state), "", "", nil)
 	if err != nil {
 		return err
 	}
@@ -164,7 +173,7 @@ func (e *Steps) didExchangeRequest(issuerID, agentID string) error {
 }
 
 func (e *Steps) validateConnectResp(issuerID, agentID, callbackURL string) error {
-	url := issuerAdapterURL + "/connect/validate?txnID=" + e.txnIDs[issuerID]
+	validateURL := issuerAdapterURL + "/connect/validate?txnID=" + e.txnIDs[issuerID]
 	vp := e.bddContext.Store[bddutil.GetDIDConnectResponseKey(issuerID, agentID)]
 
 	profileReq := operation.WalletConnect{
@@ -177,7 +186,7 @@ func (e *Steps) validateConnectResp(issuerID, agentID, callbackURL string) error
 	}
 
 	resp, err := bddutil.HTTPDo(http.MethodPost, //nolint: bodyclose
-		url, "", "", bytes.NewBuffer(requestBytes))
+		validateURL, "", "", bytes.NewBuffer(requestBytes))
 	if err != nil {
 		return err
 	}
@@ -200,9 +209,19 @@ func (e *Steps) validateConnectResp(issuerID, agentID, callbackURL string) error
 		return err
 	}
 
-	if validateResp.RedirectURL != callbackURL {
-		return fmt.Errorf("expected redirectURL[%s] for issuer[%s], but got[%s]", callbackURL, issuerID,
+	if !strings.Contains(validateResp.RedirectURL, callbackURL) {
+		return fmt.Errorf("expected redirectURL contains [%s] for issuer[%s], but got[%s]", callbackURL, issuerID,
 			validateResp.RedirectURL)
+	}
+
+	u, err := url.Parse(validateResp.RedirectURL)
+	if err != nil {
+		return err
+	}
+
+	if u.Query().Get("state") != e.states[issuerID] {
+		return fmt.Errorf("expected state [%s] for issuer[%s], but got[%s]", e.states[issuerID], issuerID,
+			u.Query().Get("state"))
 	}
 
 	return nil

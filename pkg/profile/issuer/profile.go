@@ -10,6 +10,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"time"
 
 	"github.com/trustbloc/edge-core/pkg/storage"
 
@@ -30,9 +31,10 @@ type Profile struct {
 
 // ProfileData struct for profile.
 type ProfileData struct {
-	ID          string `json:"id,omitempty"`
-	Name        string `json:"name"`
-	CallbackURL string `json:"callbackURL"`
+	ID          string     `json:"id,omitempty"`
+	Name        string     `json:"name"`
+	CallbackURL string     `json:"callbackURL"`
+	CreatedAt   *time.Time `json:"createdAt"`
 }
 
 // New returns new issuer profile instance.

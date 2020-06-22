@@ -12,6 +12,13 @@ import (
 	"github.com/hyperledger/aries-framework-go/pkg/client/didexchange"
 )
 
+// ProfileDataRequest req for profile creation.
+type ProfileDataRequest struct {
+	ID          string `json:"id,omitempty"`
+	Name        string `json:"name"`
+	CallbackURL string `json:"callbackURL"`
+}
+
 // WalletConnect response from wallet.
 type WalletConnect struct {
 	Resp json.RawMessage `json:"walletResp,omitempty"`
@@ -20,6 +27,7 @@ type WalletConnect struct {
 // txnData contains session data.
 type txnData struct {
 	IssuerID          string                  `json:"issuerID,omitempty"`
+	State             string                  `json:"state,omitempty"`
 	DIDCommInvitation *didexchange.Invitation `json:"didCommInvitation,omitempty"`
 }
 
