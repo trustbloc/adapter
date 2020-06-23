@@ -15,6 +15,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"github.com/trustbloc/edge-core/pkg/storage/memstore"
 
+	"github.com/trustbloc/edge-adapter/pkg/internal/mock/mockpresentproof"
 	"github.com/trustbloc/edge-adapter/pkg/restapi/rp/operation"
 )
 
@@ -24,6 +25,7 @@ func TestController_New(t *testing.T) {
 			DIDExchClient:        &stubDIDClient{},
 			Store:                memstore.NewProvider(),
 			AriesStorageProvider: &mockAriesStorageProvider{},
+			PresentProofClient:   &mockpresentproof.Client{},
 		})
 		require.NoError(t, err)
 		require.NotNil(t, controller)
