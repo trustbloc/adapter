@@ -786,13 +786,44 @@ func (o *Operation) handleIncomingDIDExchangeRequestAction(action service.DIDCom
 	action.Continue(nil)
 }
 
-// TODO Capture the RP's peer DID when the connection with the user is established
-//  https://github.com/trustbloc/edge-adapter/issues/94
 func (o *Operation) listenForConnectionCompleteEvents() {
 	for msg := range o.didStateMsgs {
 		if msg.Type != service.PostState || msg.StateID != didexchangesvc.StateIDCompleted {
 			continue
 		}
+
+		var event didexchange.Event
+
+		switch p := msg.Properties.(type) {
+		case didexchange.Event:
+			event = p
+		default:
+			logger.Warnf("failed to cast didexchange event properties")
+
+			continue
+		}
+
+		logger.Debugf(
+			"received connection complete event for invitationID=%s connectionID=%s",
+			event.InvitationID(), event.ConnectionID())
+
+		invData := o.peekInvitationData(event.InvitationID())
+		if invData == nil {
+			logger.Warnf("invalid or stale invitation ID: %s", event.InvitationID())
+
+			continue
+		}
+
+		record, err := o.connections.GetConnectionRecord(event.ConnectionID())
+		if err != nil {
+			logger.Errorf("failed to fetch connection record for id=%s : %s", event.ConnectionID(), err)
+
+			continue
+		}
+
+		invData.rpPeerDID = record.MyDID
+
+		o.setInvitationData(invData)
 	}
 }
 

@@ -29,6 +29,7 @@ import (
 	"github.com/hyperledger/aries-framework-go/pkg/doc/verifiable"
 	ariesmockstorage "github.com/hyperledger/aries-framework-go/pkg/mock/storage"
 	ariesstorage "github.com/hyperledger/aries-framework-go/pkg/storage"
+	"github.com/hyperledger/aries-framework-go/pkg/store/connection"
 	"github.com/ory/hydra-client-go/client/admin"
 	"github.com/ory/hydra-client-go/models"
 	"github.com/stretchr/testify/require"
@@ -226,6 +227,172 @@ func Test_HandleDIDExchangeRequests(t *testing.T) {
 		case <-time.After(time.Second):
 			t.Errorf("timeout")
 		}
+	})
+}
+
+func TestListenForConnectionCompleteEvents(t *testing.T) {
+	t.Run("captures RP's peer DID when connection is complete", func(t *testing.T) {
+		t.Parallel()
+		record := &connection.Record{
+			ConnectionID: uuid.New().String(),
+			State:        didexchangesvc.StateIDCompleted,
+			MyDID:        newDID(t).String(),
+		}
+		var msgs chan<- service.StateMsg
+		o, err := New(&Config{
+			DIDExchClient: &stubDIDClient{
+				msgEventFunc: func(c chan<- service.StateMsg) error {
+					msgs = c
+					return nil
+				},
+			},
+			Store: memstore.NewProvider(),
+			AriesStorageProvider: &mockAriesStorageProvider{
+				store: &ariesmockstorage.MockStoreProvider{
+					Store: &ariesmockstorage.MockStore{
+						Store: map[string][]byte{
+							fmt.Sprintf("conn_%s", record.ConnectionID): toBytes(t, record),
+						},
+					},
+				},
+			},
+		})
+		require.NoError(t, err)
+		invData := &invitationData{
+			id: uuid.New().String(),
+		}
+		o.setInvitationData(invData)
+
+		msgs <- service.StateMsg{
+			Type:    service.PostState,
+			StateID: didexchangesvc.StateIDCompleted,
+			Properties: &didexchangeEvent{
+				connID: record.ConnectionID,
+				invID:  invData.id,
+			},
+		}
+	})
+
+	t.Run("skips prestate msgs", func(t *testing.T) {
+		t.Parallel()
+		skipped := true
+		var msgs chan<- service.StateMsg
+		_, err := New(&Config{
+			DIDExchClient: &stubDIDClient{
+				msgEventFunc: func(c chan<- service.StateMsg) error {
+					msgs = c
+					return nil
+				},
+			},
+			Store:                memstore.NewProvider(),
+			AriesStorageProvider: &mockAriesStorageProvider{},
+		})
+		require.NoError(t, err)
+
+		msgs <- service.StateMsg{
+			Type:    service.PreState,
+			StateID: didexchangesvc.StateIDCompleted,
+			Properties: &didexchangeEvent{
+				invIDFunc: func() string {
+					skipped = false
+					return ""
+				},
+			},
+		}
+
+		time.Sleep(100 * time.Millisecond)
+		require.True(t, skipped)
+	})
+
+	t.Run("skips non-completion msgs", func(t *testing.T) {
+		t.Parallel()
+		skipped := true
+		var msgs chan<- service.StateMsg
+		_, err := New(&Config{
+			DIDExchClient: &stubDIDClient{
+				msgEventFunc: func(c chan<- service.StateMsg) error {
+					msgs = c
+					return nil
+				},
+			},
+			Store:                memstore.NewProvider(),
+			AriesStorageProvider: &mockAriesStorageProvider{},
+		})
+		require.NoError(t, err)
+
+		msgs <- service.StateMsg{
+			Type:    service.PostState,
+			StateID: didexchangesvc.StateIDRequested,
+			Properties: &didexchangeEvent{
+				invIDFunc: func() string {
+					skipped = false
+					return ""
+				},
+			},
+		}
+
+		time.Sleep(100 * time.Millisecond)
+		require.True(t, skipped)
+	})
+
+	t.Run("skips msgs with unrecognized invitation IDs", func(t *testing.T) {
+		t.Parallel()
+		var msgs chan<- service.StateMsg
+		_, err := New(&Config{
+			DIDExchClient: &stubDIDClient{
+				msgEventFunc: func(c chan<- service.StateMsg) error {
+					msgs = c
+					return nil
+				},
+			},
+			Store:                memstore.NewProvider(),
+			AriesStorageProvider: &mockAriesStorageProvider{},
+		})
+		require.NoError(t, err)
+
+		msgs <- service.StateMsg{
+			Type:       service.PostState,
+			StateID:    didexchangesvc.StateIDCompleted,
+			Properties: &didexchangeEvent{},
+		}
+	})
+
+	t.Run("skips if cannot fetch connection record", func(t *testing.T) {
+		t.Parallel()
+		var msgs chan<- service.StateMsg
+		o, err := New(&Config{
+			DIDExchClient: &stubDIDClient{
+				msgEventFunc: func(c chan<- service.StateMsg) error {
+					msgs = c
+					return nil
+				},
+			},
+			Store: memstore.NewProvider(),
+			AriesStorageProvider: &mockAriesStorageProvider{
+				store: &ariesmockstorage.MockStoreProvider{
+					Store: &ariesmockstorage.MockStore{
+						ErrGet: errors.New("test"),
+					},
+				},
+			},
+		})
+		require.NoError(t, err)
+		invData := &invitationData{
+			id: uuid.New().String(),
+		}
+		o.setInvitationData(invData)
+
+		msgs <- service.StateMsg{
+			Type:    service.PostState,
+			StateID: didexchangesvc.StateIDCompleted,
+			Properties: &didexchangeEvent{
+				connID: "test",
+				invID:  invData.id,
+			},
+		}
+
+		time.Sleep(100 * time.Millisecond)
+		require.Empty(t, invData.rpPeerDID)
 	})
 }
 
@@ -1735,4 +1902,29 @@ func (m *mockAriesStorageProvider) TransientStorageProvider() ariesstorage.Provi
 	}
 
 	return ariesmockstorage.NewMockStoreProvider()
+}
+
+func toBytes(t *testing.T, v interface{}) []byte {
+	bits, err := json.Marshal(v)
+	require.NoError(t, err)
+
+	return bits
+}
+
+type didexchangeEvent struct {
+	connID    string
+	invID     string
+	invIDFunc func() string
+}
+
+func (d *didexchangeEvent) ConnectionID() string {
+	return d.connID
+}
+
+func (d *didexchangeEvent) InvitationID() string {
+	if d.invIDFunc != nil {
+		return d.invIDFunc()
+	}
+
+	return d.invID
 }
