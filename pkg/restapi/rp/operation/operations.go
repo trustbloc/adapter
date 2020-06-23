@@ -19,9 +19,13 @@ import (
 	"github.com/coreos/go-oidc"
 	"github.com/google/uuid"
 	"github.com/hyperledger/aries-framework-go/pkg/client/didexchange"
+	"github.com/hyperledger/aries-framework-go/pkg/client/presentproof"
 	"github.com/hyperledger/aries-framework-go/pkg/didcomm/common/service"
+	"github.com/hyperledger/aries-framework-go/pkg/didcomm/protocol/decorator"
 	didexchangesvc "github.com/hyperledger/aries-framework-go/pkg/didcomm/protocol/didexchange"
+	presentproofsvc "github.com/hyperledger/aries-framework-go/pkg/didcomm/protocol/presentproof"
 	"github.com/hyperledger/aries-framework-go/pkg/doc/did"
+	"github.com/hyperledger/aries-framework-go/pkg/doc/verifiable"
 	ariesstorage "github.com/hyperledger/aries-framework-go/pkg/storage"
 	"github.com/hyperledger/aries-framework-go/pkg/store/connection"
 	"github.com/ory/hydra-client-go/client/admin"
@@ -54,6 +58,12 @@ const (
 const (
 	// didexhange protocol service is setting the connection record's namespace to "my" on inbound invitations
 	connectionRecordNamespace = "my"
+
+	// TODO define present-proof V2 formats for did uris, presentation_definition, presentation_submission
+	//  https://github.com/trustbloc/edge-adapter/issues/106
+	didURIAttachmentFormat       = "w3c/did-core@v1.0-draft"
+	presentationDefinitionFormat = "dif/presentation_definition@0.0.1"
+	presentationSubmissionFormat = "dif/presentation_submission@0.0.1"
 )
 
 var logger = log.New("edge-adapter/rp-operations")
@@ -91,6 +101,12 @@ type DIDClient interface {
 	CreateInvitationWithDID(string, string) (*didexchange.Invitation, error)
 }
 
+// PresentProofClient is the aries framework's presentproof.Client.
+type PresentProofClient interface {
+	service.Event
+	SendRequestPresentation(*presentproof.RequestPresentation, string, string) (string, error)
+}
+
 // PublicDIDCreator creates public DIDs.
 type PublicDIDCreator interface {
 	Create() (*did.Doc, error)
@@ -112,8 +128,16 @@ type consentRequest struct {
 type invitationData struct {
 	id          string
 	userSubject string
+	userDID     string
 	rpPublicDID string
 	rpPeerDID   string
+	pd          *presentationex.PresentationDefinitions
+}
+
+// used to map present-proof theadID to invitationData.id.
+type thidInvitationData struct {
+	threadID         string
+	invitationDataID string
 }
 
 // New returns CreateCredential instance.
@@ -131,6 +155,9 @@ func New(config *Config) (*Operation, error) {
 		didStateMsgs:            make(chan service.StateMsg),
 		transientInvitationData: make(map[string]*invitationData),
 		publicDIDCreator:        config.PublicDIDCreator,
+		ppClient:                config.PresentProofClient,
+		ppActions:               make(chan service.DIDCommAction),
+		thidInvitationDataMap:   make(map[string]*thidInvitationData),
 	}
 
 	err := o.didClient.RegisterActionEvent(o.didActions)
@@ -153,9 +180,16 @@ func New(config *Config) (*Operation, error) {
 		return nil, fmt.Errorf("failed to create a connection recorder : %w", err)
 	}
 
+	err = o.ppClient.RegisterActionEvent(o.ppActions)
+	if err != nil {
+		return nil, fmt.Errorf("failed to register listener for action events on present proof client : %w", err)
+	}
+
 	go o.listenForIncomingConnections()
 
 	go o.listenForConnectionCompleteEvents()
+
+	go o.listenForIssuerResponses()
 
 	return o, nil
 }
@@ -171,6 +205,7 @@ type Config struct {
 	Store                  storage.Provider
 	PublicDIDCreator       PublicDIDCreator
 	AriesStorageProvider   AriesStorageProvider
+	PresentProofClient     PresentProofClient
 }
 
 // TODO implement an eviction strategy for Operation.oidcStates and OIDC.consentRequests
@@ -195,6 +230,10 @@ type Operation struct {
 	rpStore                 *rp.Store
 	publicDIDCreator        PublicDIDCreator
 	connections             *connection.Recorder
+	ppClient                PresentProofClient
+	ppActions               chan service.DIDCommAction
+	thidInvitationDataMap   map[string]*thidInvitationData
+	thidInvDataLock         sync.Mutex
 }
 
 // GetRESTHandlers get all controller API handler available for this service.
@@ -402,6 +441,20 @@ func (o *Operation) peekInvitationData(id string) *invitationData {
 	defer o.invLock.Unlock()
 
 	return o.transientInvitationData[id]
+}
+
+func (o *Operation) setThidInvitationData(d *thidInvitationData) {
+	o.thidInvDataLock.Lock()
+	defer o.thidInvDataLock.Unlock()
+
+	o.thidInvitationDataMap[d.threadID] = d
+}
+
+func (o *Operation) getAndUnsetThidInvitationData(thid string) *thidInvitationData {
+	o.thidInvDataLock.Lock()
+	defer o.thidInvDataLock.Unlock()
+
+	return o.thidInvitationDataMap[thid]
 }
 
 func acceptLoginAndRedirectToHydra(
@@ -625,6 +678,7 @@ func (o *Operation) getPresentationsRequest(rw http.ResponseWriter, req *http.Re
 		id:          invitation.ID,
 		userSubject: cr.cr.GetPayload().Subject,
 		rpPublicDID: cr.rpDID,
+		pd:          cr.pd,
 	})
 
 	response := &GetPresentationRequestResponse{
@@ -670,7 +724,7 @@ func (o *Operation) chapiResponseHandler(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	invData := o.getAndUnsetInvitationData(request.InvitationID)
+	invData := o.peekInvitationData(request.InvitationID)
 	if invData == nil {
 		commhttp.WriteErrorResponse(w, http.StatusBadRequest, "stale or invalid invitation ID")
 
@@ -704,7 +758,7 @@ func (o *Operation) chapiResponseHandler(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	doc, err := did.ParseDocument(diddocBytes)
+	issuerDID, err := did.ParseDocument(diddocBytes)
 	if err != nil {
 		msg := fmt.Sprintf("failed to parse did document : %s", err)
 		logger.Errorf(msg)
@@ -713,7 +767,7 @@ func (o *Operation) chapiResponseHandler(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	dest, err := service.CreateDestination(doc)
+	dest, err := service.CreateDestination(issuerDID)
 	if err != nil {
 		msg := fmt.Sprintf("failed to create didcomm destination : %s", err)
 		logger.Errorf(msg)
@@ -729,7 +783,7 @@ func (o *Operation) chapiResponseHandler(w http.ResponseWriter, r *http.Request)
 		ThreadID:        uuid.New().String(),
 		ParentThreadID:  invData.id,
 		TheirLabel:      "",
-		TheirDID:        doc.ID,
+		TheirDID:        issuerDID.ID,
 		MyDID:           invData.rpPeerDID,
 		ServiceEndPoint: dest.ServiceEndpoint,
 		RecipientKeys:   dest.RecipientKeys,
@@ -747,7 +801,51 @@ func (o *Operation) chapiResponseHandler(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	// TODO send request-presentation to issuer, validate response against presentation-definitions,
+	attachments := [2]decorator.Attachment{
+		{
+			ID:       uuid.New().String(),
+			MimeType: "text/plain",
+			Data: decorator.AttachmentData{
+				Base64: base64.StdEncoding.EncodeToString([]byte(invData.userDID)),
+			},
+		},
+		{
+			ID:       uuid.New().String(),
+			MimeType: "application/json",
+			Data: decorator.AttachmentData{
+				JSON: invData.pd,
+			},
+		},
+	}
+
+	// TODO set timeout on request-presentation: https://github.com/trustbloc/edge-adapter/issues/110
+	thid, err := o.ppClient.SendRequestPresentation(&presentproof.RequestPresentation{
+		Formats: []presentproofsvc.Format{
+			{
+				AttachID: attachments[0].ID,
+				Format:   didURIAttachmentFormat,
+			},
+			{
+				AttachID: attachments[1].ID,
+				Format:   presentationDefinitionFormat,
+			},
+		},
+		RequestPresentationsAttach: attachments[:],
+	}, invData.rpPeerDID, issuerDID.ID)
+	if err != nil {
+		msg := fmt.Sprintf("failed to send request-presentation : %s", err)
+		logger.Errorf(msg)
+		commhttp.WriteErrorResponse(w, http.StatusInternalServerError, msg)
+
+		return
+	}
+
+	o.setThidInvitationData(&thidInvitationData{
+		threadID:         thid,
+		invitationDataID: invData.id,
+	})
+
+	// TODO parse presentation_submission from issuer, validate against presentation-definitions,
 	//  build response object for RP, accept the consent request at hydra (include response object),
 	//  respond with a redirect URL to hydra
 	testResponse(w)
@@ -822,9 +920,101 @@ func (o *Operation) listenForConnectionCompleteEvents() {
 		}
 
 		invData.rpPeerDID = record.MyDID
+		invData.userDID = record.TheirDID
 
 		o.setInvitationData(invData)
 	}
+}
+
+// TODO support for notifying the UI about any validation errors
+//  https://github.com/trustbloc/edge-adapter/issues/109
+func (o *Operation) listenForIssuerResponses() {
+	for action := range o.ppActions {
+		if action.Message.Type() != presentproofsvc.PresentationMsgType {
+			logger.Debugf("ignoring present-proof message of type: %s", action.Message.Type())
+
+			continue
+		}
+
+		err := o.handlePresentationMsg(action.Message)
+		if err != nil {
+			logger.Warnf("failed to handle present-proof response : %s", err)
+		}
+	}
+}
+
+func (o *Operation) handlePresentationMsg(msg service.DIDCommMsg) error {
+	thid, err := msg.ThreadID()
+	if err != nil {
+		return fmt.Errorf("failed to extract threadID from didcomm msg : %w", err)
+	}
+
+	data := o.getAndUnsetThidInvitationData(thid)
+	if data == nil {
+		return fmt.Errorf("ignoring present-proof response for invalid threadID=%s", thid)
+	}
+
+	invData := o.getAndUnsetInvitationData(data.invitationDataID)
+	if invData == nil {
+		return fmt.Errorf("expecting invitationData for thid %s but none was found", thid)
+	}
+
+	presentation := &presentproof.Presentation{}
+
+	err = msg.Decode(presentation)
+	if err != nil {
+		return fmt.Errorf("failed to decode present-proof message : %w", err)
+	}
+
+	logger.Debugf("handling present-proof message: %+v", presentation)
+
+	vp, err := parsePresentationSubmission(presentationSubmissionFormat, presentation)
+	if err != nil {
+		return fmt.Errorf("failed to parse verifiable presentation : %w", err)
+	}
+
+	// TODO parse and validate presentation_submission returned by the issuer
+	logger.Debugf("received presentation_submission : %+v", vp)
+
+	return nil
+}
+
+// TODO json-ld context for issuer response: https://github.com/trustbloc/edge-adapter/issues/111
+func parsePresentationSubmission(
+	attachmentFormatID string, presentation *presentproof.Presentation) (*verifiable.Presentation, error) {
+	var attachmentID string
+
+	for _, f := range presentation.Formats {
+		if f.Format == attachmentFormatID {
+			attachmentID = f.AttachID
+		}
+	}
+
+	if attachmentID == "" {
+		return nil, fmt.Errorf("no attachment found for given format %s", attachmentFormatID)
+	}
+
+	a := getAttachmentByID(attachmentID, presentation.PresentationsAttach)
+	if a == nil {
+		return nil, fmt.Errorf("attachment referenced by ID %s from a format was not found", attachmentID)
+	}
+
+	vpBytes, err := a.Data.Fetch()
+	if err != nil {
+		return nil, fmt.Errorf("failed to fetch contents of attachment with id %s : %w", attachmentID, err)
+	}
+
+	return verifiable.ParsePresentation(vpBytes)
+}
+
+func getAttachmentByID(id string, attachments []decorator.Attachment) *decorator.Attachment {
+	for i := range attachments {
+		if attachments[i].ID == id {
+			return &attachments[i]
+		}
+	}
+
+	return nil
 }
 
 func testResponse(w io.Writer) {

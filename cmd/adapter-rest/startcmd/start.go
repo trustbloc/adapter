@@ -21,6 +21,7 @@ import (
 	"github.com/cenkalti/backoff"
 	"github.com/gorilla/mux"
 	"github.com/hyperledger/aries-framework-go/pkg/client/didexchange"
+	"github.com/hyperledger/aries-framework-go/pkg/client/presentproof"
 	arieshttp "github.com/hyperledger/aries-framework-go/pkg/didcomm/transport/http"
 	"github.com/hyperledger/aries-framework-go/pkg/framework/aries"
 	"github.com/hyperledger/aries-framework-go/pkg/framework/aries/defaults"
@@ -383,6 +384,11 @@ func addRPHandlers(
 		return fmt.Errorf("failed to initialized didexchange client : %w", err)
 	}
 
+	presentProofClient, err := presentproof.New(ctx)
+	if err != nil {
+		return err
+	}
+
 	// TODO init OIDC stuff in iteration 2 - https://github.com/trustbloc/edge-adapter/issues/24
 
 	// add rp endpoints
@@ -398,6 +404,7 @@ func addRPHandlers(
 			ctx.KMS(),
 			rootCAs),
 		AriesStorageProvider: ctx,
+		PresentProofClient:   presentProofClient,
 	})
 	if err != nil {
 		return err

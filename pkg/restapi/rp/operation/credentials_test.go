@@ -81,7 +81,7 @@ var testDocumentLoader = createTestJSONLDDocumentLoader()
 
 func TestGetCustomCredentials(t *testing.T) {
 	t.Run("valid vp", func(t *testing.T) {
-		vp, _ := newVP(t)
+		vp, _ := newCHAPIResponseVP(t)
 		vpBytes, err := vp.MarshalJSON()
 		require.NoError(t, err)
 		_, _, err = getCustomCredentials(vpBytes)
@@ -101,7 +101,7 @@ func TestGetCustomCredentials(t *testing.T) {
 
 func TestParseCredentials(t *testing.T) {
 	t.Run("valid vp", func(t *testing.T) {
-		vp, _ := newVP(t)
+		vp, _ := newCHAPIResponseVP(t)
 		vpBytes, err := vp.MarshalJSON()
 		require.NoError(t, err)
 		result, err := parseCredentials(vpBytes)
@@ -144,7 +144,7 @@ func TestParseCredentials(t *testing.T) {
 
 func TestParseCustomCredentials(t *testing.T) {
 	t.Run("valid credentials", func(t *testing.T) {
-		vp, peerDID := newVP(t)
+		vp, peerDID := newCHAPIResponseVP(t)
 		peerDIDBytes, err := peerDID.JSONBytes()
 		require.NoError(t, err)
 		vpBytes, err := vp.MarshalJSON()
@@ -184,17 +184,18 @@ func TestParseCustomCredentials(t *testing.T) {
 	})
 }
 
-func newVP(t *testing.T) (*verifiable.Presentation, *did.Doc) {
+func newCHAPIResponseVP(t *testing.T) (*verifiable.Presentation, *did.Doc) {
 	publicKey, secretKey, err := ed25519.GenerateKey(rand.Reader)
 	require.NoError(t, err)
 
 	didDocVC, peerDID := newDIDDocVC(t, publicKey)
-	vp := newVPWithDIDVC(t, secretKey, didDocVC)
+	vp := newCHAPIResponseVPWithDIDVC(t, secretKey, didDocVC)
 
 	return vp, peerDID
 }
 
-func newVPWithDIDVC(t *testing.T, secretKey []byte, didDocVC *verifiable.Credential) *verifiable.Presentation {
+func newCHAPIResponseVPWithDIDVC(
+	t *testing.T, secretKey []byte, didDocVC *verifiable.Credential) *verifiable.Presentation {
 	userConsentVC := newUserConsentVC(t)
 	vp, err := userConsentVC.Presentation()
 	require.NoError(t, err)
