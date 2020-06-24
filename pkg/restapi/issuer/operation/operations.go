@@ -42,9 +42,10 @@ const (
 	idPathParam     = "id"
 	txnIDQueryParam = "txnID"
 	stateQueryParam = "state"
-	redirectURLFmt  = "%s?state=%s&code=%s"
+	redirectURLFmt  = "%s?state=%s&token=%s"
 
-	storeName = "issuer_txn"
+	txnStoreName   = "issuer_txn"
+	tokenStoreName = "issuer_token"
 
 	// protocol
 	didExCompletedState = "completed"
@@ -86,6 +87,11 @@ func New(config *Config) (*Operation, error) {
 		return nil, err
 	}
 
+	tokenStore, err := getTokenStore(config.StoreProvider)
+	if err != nil {
+		return nil, err
+	}
+
 	connectionLookup, err := connection.NewLookup(config.AriesCtx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to initialize connection lookup : %w", err)
@@ -96,6 +102,7 @@ func New(config *Config) (*Operation, error) {
 		uiEndpoint:       config.UIEndpoint,
 		profileStore:     p,
 		txnStore:         txnStore,
+		tokenStore:       tokenStore,
 		connectionLookup: connectionLookup,
 	}, nil
 }
@@ -106,6 +113,7 @@ type Operation struct {
 	uiEndpoint       string
 	profileStore     *issuer.Profile
 	txnStore         storage.Store
+	tokenStore       storage.Store
 	connectionLookup connections
 }
 
@@ -117,9 +125,9 @@ func (o *Operation) GetRESTHandlers() []Handler {
 		support.NewHTTPHandler(getProfileEndpoint, http.MethodGet, o.getIssuerProfileHandler),
 
 		// didcomm
-		support.NewHTTPHandler(walletConnectEndpoint, http.MethodGet, o.walletConnect),
-		support.NewHTTPHandler(validateConnectResponseEndpoint, http.MethodPost, o.validateWalletResponse),
-		support.NewHTTPHandler(generateInvitationEndpoint, http.MethodGet, o.generateInvitation),
+		support.NewHTTPHandler(walletConnectEndpoint, http.MethodGet, o.walletConnectHandler),
+		support.NewHTTPHandler(validateConnectResponseEndpoint, http.MethodPost, o.validateWalletResponseHandler),
+		support.NewHTTPHandler(generateInvitationEndpoint, http.MethodGet, o.generateInvitationHandler),
 	}
 }
 
@@ -165,7 +173,7 @@ func (o *Operation) getIssuerProfileHandler(rw http.ResponseWriter, req *http.Re
 	commhttp.WriteResponse(rw, profile)
 }
 
-func (o *Operation) walletConnect(rw http.ResponseWriter, req *http.Request) {
+func (o *Operation) walletConnectHandler(rw http.ResponseWriter, req *http.Request) {
 	profileID := mux.Vars(req)[idPathParam]
 
 	_, err := o.profileStore.GetProfile(profileID)
@@ -194,7 +202,7 @@ func (o *Operation) walletConnect(rw http.ResponseWriter, req *http.Request) {
 	http.Redirect(rw, req, o.uiEndpoint+"?"+txnIDQueryParam+"="+txnID, http.StatusFound)
 }
 
-func (o *Operation) validateWalletResponse(rw http.ResponseWriter, req *http.Request) {
+func (o *Operation) validateWalletResponseHandler(rw http.ResponseWriter, req *http.Request) { //nolint: funlen
 	// get the txnID
 	txnID := req.URL.Query().Get(txnIDQueryParam)
 
@@ -229,7 +237,7 @@ func (o *Operation) validateWalletResponse(rw http.ResponseWriter, req *http.Req
 		return
 	}
 
-	_, err = o.validateAndGetConnection(connectData)
+	conn, err := o.validateAndGetConnection(connectData)
 	if err != nil {
 		commhttp.WriteErrorResponse(rw, http.StatusBadRequest,
 			fmt.Sprintf("failed to validate DIDComm connection: %s", err.Error()))
@@ -244,14 +252,23 @@ func (o *Operation) validateWalletResponse(rw http.ResponseWriter, req *http.Req
 		return
 	}
 
-	// TODO https://github.com/trustbloc/edge-adapter/issues/107 Add mapping to connectionID and populate code
-	redirectURL := fmt.Sprintf(redirectURLFmt, profile.CallbackURL, txnData.State, uuid.New().String())
+	token := uuid.New().String()
+
+	err = o.tokenStore.Put(conn.ConnectionID, []byte(token))
+	if err != nil {
+		commhttp.WriteErrorResponse(rw, http.StatusInternalServerError,
+			fmt.Sprintf("failed to store token mapping: %s", err.Error()))
+
+		return
+	}
+
+	redirectURL := fmt.Sprintf(redirectURLFmt, profile.CallbackURL, txnData.State, token)
 
 	rw.WriteHeader(http.StatusOK)
 	commhttp.WriteResponse(rw, &ValidateConnectResp{RedirectURL: redirectURL})
 }
 
-func (o *Operation) generateInvitation(rw http.ResponseWriter, req *http.Request) {
+func (o *Operation) generateInvitationHandler(rw http.ResponseWriter, req *http.Request) {
 	// get the txnID
 	txnID := req.URL.Query().Get(txnIDQueryParam)
 
@@ -360,12 +377,26 @@ func didExchangeClient(ariesCtx aries.CtxProvider) (*didexchange.Client, error) 
 }
 
 func getTxnStore(prov storage.Provider) (storage.Store, error) {
-	err := prov.CreateStore(storeName)
+	err := prov.CreateStore(txnStoreName)
 	if err != nil && err != storage.ErrDuplicateStore {
 		return nil, err
 	}
 
-	txnStore, err := prov.OpenStore(storeName)
+	txnStore, err := prov.OpenStore(txnStoreName)
+	if err != nil {
+		return nil, err
+	}
+
+	return txnStore, nil
+}
+
+func getTokenStore(prov storage.Provider) (storage.Store, error) {
+	err := prov.CreateStore(tokenStoreName)
+	if err != nil && err != storage.ErrDuplicateStore {
+		return nil, err
+	}
+
+	txnStore, err := prov.OpenStore(tokenStoreName)
 	if err != nil {
 		return nil, err
 	}
