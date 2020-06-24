@@ -13,6 +13,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"testing"
 
 	"github.com/google/uuid"
@@ -77,6 +78,20 @@ func TestNew(t *testing.T) {
 
 	t.Run("test get txn store - open store error", func(t *testing.T) {
 		s, err := getTxnStore(&mockstorage.Provider{ErrOpenStoreHandle: errors.New("error opening the store")})
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "error opening the store")
+		require.Nil(t, s)
+	})
+
+	t.Run("test get token store - create store error", func(t *testing.T) {
+		s, err := getTokenStore(&mockstorage.Provider{ErrCreateStore: errors.New("error creating the store")})
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "error creating the store")
+		require.Nil(t, s)
+	})
+
+	t.Run("test get token store - open store error", func(t *testing.T) {
+		s, err := getTokenStore(&mockstorage.Provider{ErrOpenStoreHandle: errors.New("error opening the store")})
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "error opening the store")
 		require.Nil(t, s)
@@ -390,6 +405,12 @@ func TestValidateWalletResponse(t *testing.T) {
 		resp := &ValidateConnectResp{}
 		err = json.Unmarshal(rr.Body.Bytes(), &resp)
 		require.NoError(t, err)
+
+		u, parseErr := url.Parse(resp.RedirectURL)
+		require.NoError(t, parseErr)
+
+		require.Equal(t, state, u.Query().Get(stateQueryParam))
+		require.True(t, u.Query().Get("token") != "")
 	})
 
 	t.Run("test validate response - missing cookie", func(t *testing.T) {
@@ -519,6 +540,50 @@ func TestValidateWalletResponse(t *testing.T) {
 
 		require.Equal(t, http.StatusBadRequest, rr.Code)
 		require.Contains(t, rr.Body.String(), "thread id not found")
+	})
+
+	t.Run("test validate response - success", func(t *testing.T) {
+		ops, err := New(&Config{
+			AriesCtx:      getAriesCtx(),
+			StoreProvider: memstore.NewProvider(),
+			//StoreProvider: &mockstorage.Provider{ErrCreateStore: errors.New("error creating the store")},
+		})
+		require.NoError(t, err)
+
+		ops.connectionLookup = &mockconn.ConnectionsLookup{
+			ConnIDByDIDs: connID,
+			ConnRecord: &connection.Record{
+				ConnectionID:   connID,
+				State:          didExCompletedState,
+				ThreadID:       threadID,
+				TheirDID:       inviteeDID,
+				MyDID:          inviterDID,
+				ParentThreadID: txn.DIDCommInvitation.ID,
+			},
+		}
+
+		err = ops.profileStore.SaveProfile(data)
+		require.NoError(t, err)
+
+		id, err := ops.createTxn(profileID, state)
+		require.NoError(t, err)
+
+		ops.tokenStore = &mockstorage.MockStore{Store: make(map[string][]byte), ErrPut: errors.New("error put")}
+
+		handler := getHandler(t, ops, validateConnectResponseEndpoint)
+
+		req := &WalletConnect{
+			Resp: getTestVP(t, inviteeDID, inviterDID, threadID),
+		}
+
+		reqBytes, jsonErr := json.Marshal(req)
+		require.NoError(t, jsonErr)
+
+		rr := serveHTTP(t, handler.Handle(), http.MethodPost,
+			validateConnectResponseEndpoint+"?"+txnIDQueryParam+"="+id, reqBytes)
+
+		require.Equal(t, http.StatusInternalServerError, rr.Code)
+		require.Contains(t, rr.Body.String(), "failed to store token mapping")
 	})
 }
 
@@ -668,7 +733,7 @@ func getDefaultTestVP(t *testing.T) []byte {
 	return getTestVP(t, inviteeDID, inviterDID, uuid.New().String())
 }
 
-func getTestVP(t *testing.T, inviteeDID, inviterDID, threadID string) []byte {
+func getTestVP(t *testing.T, inviteeDID, inviterDID, threadID string) []byte { //nolint: unparam
 	vc, err := verifiable.ParseCredential([]byte(fmt.Sprintf(vcFmt, inviteeDID, inviterDID, threadID)))
 	require.NoError(t, err)
 

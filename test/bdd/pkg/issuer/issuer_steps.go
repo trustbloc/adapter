@@ -9,6 +9,7 @@ package issuer
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io/ioutil"
 	"net/http"
@@ -222,6 +223,10 @@ func (e *Steps) validateConnectResp(issuerID, agentID, callbackURL string) error
 	if u.Query().Get("state") != e.states[issuerID] {
 		return fmt.Errorf("expected state [%s] for issuer[%s], but got[%s]", e.states[issuerID], issuerID,
 			u.Query().Get("state"))
+	}
+
+	if u.Query().Get("token") == "" {
+		return errors.New("token is mandatory in redirect url")
 	}
 
 	return nil
