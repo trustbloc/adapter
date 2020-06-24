@@ -37,6 +37,7 @@ import (
 	"github.com/trustbloc/edge-adapter/pkg/internal/common/support"
 	"github.com/trustbloc/edge-adapter/pkg/presentationex"
 	commhttp "github.com/trustbloc/edge-adapter/pkg/restapi/internal/common/http"
+	rpvc "github.com/trustbloc/edge-adapter/pkg/vc/rp"
 )
 
 // API endpoints.
@@ -733,7 +734,7 @@ func (o *Operation) chapiResponseHandler(w http.ResponseWriter, r *http.Request)
 
 	// TODO save issuer DID VC and user Consent VC https://github.com/trustbloc/edge-adapter/issues/92
 
-	issuerDIDVC, _, err := getCustomCredentials(request.VerifiablePresentation)
+	issuerDIDVC, _, err := getDIDDocAndUserConsentCredentials(request.VerifiablePresentation)
 	if errors.Is(err, errMalformedCredential) {
 		logger.Warnf("malformed credentials : %s", err)
 		commhttp.WriteErrorResponse(w, http.StatusBadRequest, "malformed credentials")
@@ -968,52 +969,38 @@ func (o *Operation) handlePresentationMsg(msg service.DIDCommMsg) error {
 
 	logger.Debugf("handling present-proof message: %+v", presentation)
 
-	vp, err := parsePresentationSubmission(presentationSubmissionFormat, presentation)
+	presentationSubmissionVP, err := getPresentationSubmissionVP(presentationSubmissionFormat, presentation)
 	if err != nil {
 		return fmt.Errorf("failed to parse verifiable presentation : %w", err)
 	}
 
-	// TODO parse and validate presentation_submission returned by the issuer
-	logger.Debugf("received presentation_submission : %+v", vp)
+	logger.Debugf("received presentation_submission : %+v", presentationSubmissionVP)
+
+	err = evaluatePresentationSubmission(presentationSubmissionVP)
+	if err != nil {
+		return fmt.Errorf("failed to evaluate presentation submission : %w", err)
+	}
 
 	return nil
 }
 
-// TODO json-ld context for issuer response: https://github.com/trustbloc/edge-adapter/issues/111
-func parsePresentationSubmission(
-	attachmentFormatID string, presentation *presentproof.Presentation) (*verifiable.Presentation, error) {
-	var attachmentID string
-
-	for _, f := range presentation.Formats {
-		if f.Format == attachmentFormatID {
-			attachmentID = f.AttachID
-		}
-	}
-
-	if attachmentID == "" {
-		return nil, fmt.Errorf("no attachment found for given format %s", attachmentFormatID)
-	}
-
-	a := getAttachmentByID(attachmentID, presentation.PresentationsAttach)
-	if a == nil {
-		return nil, fmt.Errorf("attachment referenced by ID %s from a format was not found", attachmentID)
-	}
-
-	vpBytes, err := a.Data.Fetch()
+func evaluatePresentationSubmission(p *rpvc.PresentationSubmissionPresentation) error {
+	rawCreds, err := p.Base.MarshalledCredentials()
 	if err != nil {
-		return nil, fmt.Errorf("failed to fetch contents of attachment with id %s : %w", attachmentID, err)
+		return fmt.Errorf("failed to marshal raw credentials from presentation : %w", err)
 	}
 
-	return verifiable.ParsePresentation(vpBytes)
-}
-
-func getAttachmentByID(id string, attachments []decorator.Attachment) *decorator.Attachment {
-	for i := range attachments {
-		if attachments[i].ID == id {
-			return &attachments[i]
-		}
+	if len(rawCreds) != 1 {
+		return fmt.Errorf("expected 1 VC in presentation but got %d", len(rawCreds))
 	}
 
+	_, err = verifiable.ParseCredential(rawCreds[0])
+	if err != nil {
+		return fmt.Errorf("%w : failed to parse raw credential : %s", errMalformedCredential, err)
+	}
+
+	// TODO validate presentation_submission returned by the issuer
+	//  https://github.com/trustbloc/edge-adapter/issues/108
 	return nil
 }
 

@@ -30,8 +30,8 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-const didDocVC = `
-{
+const (
+	didDocVC = `{
   "@context": [
     "https://www.w3.org/2018/credentials/v1",
     "https://trustbloc.github.io/context/vc/examples-v1.jsonld"
@@ -49,10 +49,8 @@ const didDocVC = `
     "id": "did:peer:76e12ec712ebc6f1c221ebfeb1f"
   },
   "issuanceDate": "2010-01-01T19:23:24Z"
-}
-`
-const userConsentVC = `
-{
+}`
+	userConsentVC = `{
 	"@context": [
 		"https://www.w3.org/2018/credentials/v1",
 		"https://trustbloc.github.io/context/vc/examples-v1.jsonld"
@@ -73,8 +71,123 @@ const userConsentVC = `
 		"issuerDID": "did:peer:issuer",
 		"presDef": "base64URLEncode(presDef)"
 	}
-}
-`
+}`
+	validPresentationSubmissionVP = `{
+  	"@context": [
+    	"https://www.w3.org/2018/credentials/v1",
+    	"https://trustbloc.github.io/context/vp/presentation-exchange-submission-v1.jsonld"
+  	],
+  	"type": [
+    	"VerifiablePresentation",
+    	"PresentationSubmission"
+  	],
+  	"presentation_submission": {
+    	"descriptor_map": [{
+    		"id": "banking_input_1",
+    		"path": "$.verifiableCredential.[0]"
+    	}]
+  	},
+  	"verifiableCredential": [{
+		"@context": [
+			"https://www.w3.org/2018/credentials/v1",
+			"https://trustbloc.github.io/context/vc/examples-v1.jsonld"
+		],
+		"type": [
+			"VerifiableCredential",
+			"CreditCardStatementCredential"
+		],
+		"id": "http://example.gov/credentials/ff98f978-588f-4eb0-b17b-60c18e1dac2c",
+		"issuanceDate": "2020-03-16T22:37:26.544Z",
+		"issuer": {
+			"id": "did:peer:issuer"
+		},
+		"credentialSubject": {
+			"id": "did:peer:user",
+			"stmt": {
+				"description": "June 2020 Credit Card Statement",
+				"url": "http://acmebank.com/invoice.pdf",
+				"accountId": "xxxx-xxxx-xxxx-1234",
+				"customer": {
+					"@type": "Person",
+					"name": "Jane Doe"
+				},
+				"paymentDueDate": "2020-06-30T12:00:00",
+				"minimumPaymentDue": {
+					"@type": "PriceSpecification",
+					"price": 15.00,
+					"priceCurrency": "CAD"
+				},
+				"totalPaymentDue": {
+					"@type": "PriceSpecification",
+					"price": 200.00,
+					"priceCurrency": "CAD"
+				},
+				"billingPeriod": "P30D",
+				"paymentStatus": "http://schema.org/PaymentDue"			
+			}
+		}
+    }]
+}`
+	invalidPresentationSubmissionVPNoCreds = `{
+  	"@context": [
+    	"https://www.w3.org/2018/credentials/v1",
+    	"https://trustbloc.github.io/context/vp/presentation-exchange-submission-v1.jsonld"
+  	],
+  	"type": [
+    	"VerifiablePresentation",
+    	"PresentationSubmission"
+  	],
+  	"presentation_submission": {
+    	"descriptor_map": [{
+    		"id": "banking_input_1",
+    		"path": "$.verifiableCredential.[0]"
+    	}]
+  	},
+  	"verifiableCredential": []
+}`
+	presentationSubmissionVPCredsPlaceholder = `{
+  	"@context": [
+    	"https://www.w3.org/2018/credentials/v1",
+    	"https://trustbloc.github.io/context/vp/presentation-exchange-submission-v1.jsonld"
+  	],
+  	"type": [
+    	"VerifiablePresentation",
+    	"PresentationSubmission"
+  	],
+  	"presentation_submission": {
+    	"descriptor_map": [{
+    		"id": "banking_input_1",
+    		"path": "$.verifiableCredential.[0]"
+    	}]
+  	},
+  	"verifiableCredential": [%s]
+}`
+	universityDegreeVC = `{
+	"@context": [
+		"https://www.w3.org/2018/credentials/v1",
+		"https://www.w3.org/2018/credentials/examples/v1"
+	],
+	"type": [
+		"VerifiableCredential",
+		"UniversityDegreeCredential"
+	],
+	"id": "http://example.gov/credentials/ff98f978-588f-4eb0-b17b-60c18e1dac2c",
+	"issuanceDate": "2020-03-16T22:37:26.544Z",
+	"issuer": {
+		"id": "did:web:vc.transmute.world",
+		"name": "University"
+	},
+	"credentialSubject": {
+		"id": "did:example:ebfeb1f712ebc6f1c276e12ec21",
+		"degree": {
+			"type": "BachelorDegree",
+			"degree": "MIT"
+		},
+		"name": "Jayden Doe",
+		"spouse": "did:example:c276e12ec21ebfeb1f712ebc6f1"
+	}
+}`
+)
 
 //nolint:gochecknoglobals
 var testDocumentLoader = createTestJSONLDDocumentLoader()
@@ -84,7 +197,7 @@ func TestGetCustomCredentials(t *testing.T) {
 		vp, _ := newCHAPIResponseVP(t)
 		vpBytes, err := vp.MarshalJSON()
 		require.NoError(t, err)
-		_, _, err = getCustomCredentials(vpBytes)
+		_, _, err = getDIDDocAndUserConsentCredentials(vpBytes)
 		require.NoError(t, err)
 	})
 
@@ -94,7 +207,7 @@ func TestGetCustomCredentials(t *testing.T) {
 		require.NoError(t, err)
 		vpBytes, err := vp.MarshalJSON()
 		require.NoError(t, err)
-		_, _, err = getCustomCredentials(vpBytes)
+		_, _, err = getDIDDocAndUserConsentCredentials(vpBytes)
 		require.True(t, errors.Is(err, errMalformedCredential))
 	})
 }
@@ -151,7 +264,7 @@ func TestParseCustomCredentials(t *testing.T) {
 		require.NoError(t, err)
 		creds, err := parseCredentials(vpBytes)
 		require.NoError(t, err)
-		didVC, consentVC, err := parseCustomCredentials(creds)
+		didVC, consentVC, err := parseDIDDocAndUserConsentCredentials(creds)
 		require.NoError(t, err)
 		require.NotEmpty(t, didVC.Subject.DIDDoc)
 		require.Equal(t, peerDID.ID, didVC.Subject.ID)
@@ -166,20 +279,20 @@ func TestParseCustomCredentials(t *testing.T) {
 		publicKey, _, err := ed25519.GenerateKey(rand.Reader)
 		require.NoError(t, err)
 		didDocVC, _ := newDIDDocVC(t, publicKey)
-		_, _, err = parseCustomCredentials([2]*verifiable.Credential{didDocVC, didDocVC})
+		_, _, err = parseDIDDocAndUserConsentCredentials([2]*verifiable.Credential{didDocVC, didDocVC})
 		require.True(t, errors.Is(err, errMalformedCredential))
 	})
 
 	t.Run("errMalformedCredential on duplicate consent VC", func(t *testing.T) {
 		consentVC := newUserConsentVC(t)
-		_, _, err := parseCustomCredentials([2]*verifiable.Credential{consentVC, consentVC})
+		_, _, err := parseDIDDocAndUserConsentCredentials([2]*verifiable.Credential{consentVC, consentVC})
 		require.True(t, errors.Is(err, errMalformedCredential))
 	})
 
 	t.Run("errMalformedCredential on unrecognized cred types", func(t *testing.T) {
 		consentVC := newUserConsentVC(t)
 		universityVC := newUniversityDegreeVC(t) // unrecognized
-		_, _, err := parseCustomCredentials([2]*verifiable.Credential{consentVC, universityVC})
+		_, _, err := parseDIDDocAndUserConsentCredentials([2]*verifiable.Credential{consentVC, universityVC})
 		require.True(t, errors.Is(err, errMalformedCredential))
 	})
 }
@@ -244,38 +357,33 @@ func newDIDDocVCWithDID(t *testing.T, doc *did.Doc) (*verifiable.Credential, *di
 }
 
 func newUniversityDegreeVC(t *testing.T) *verifiable.Credential {
-	const contents = `
-{
-	"@context": [
-		"https://www.w3.org/2018/credentials/v1",
-		"https://www.w3.org/2018/credentials/examples/v1"
-	],
-	"type": [
-		"VerifiableCredential",
-		"UniversityDegreeCredential"
-	],
-	"id": "http://example.gov/credentials/ff98f978-588f-4eb0-b17b-60c18e1dac2c",
-	"issuanceDate": "2020-03-16T22:37:26.544Z",
-	"issuer": {
-		"id": "did:web:vc.transmute.world",
-		"name": "University"
-	},
-	"credentialSubject": {
-		"id": "did:example:ebfeb1f712ebc6f1c276e12ec21",
-		"degree": {
-			"type": "BachelorDegree",
-			"degree": "MIT"
-		},
-		"name": "Jayden Doe",
-		"spouse": "did:example:c276e12ec21ebfeb1f712ebc6f1"
-	}
-}
-`
-
-	vc, err := verifiable.ParseCredential([]byte(contents))
+	vc, err := verifiable.ParseCredential([]byte(universityDegreeVC))
 	require.NoError(t, err)
 
 	return vc
+}
+
+func newIssuerResponseVP(t *testing.T, template string) *verifiable.Presentation {
+	vp, err := verifiable.ParseUnverifiedPresentation([]byte(template))
+	require.NoError(t, err)
+
+	_, secretKey, err := ed25519.GenerateKey(rand.Reader)
+	require.NoError(t, err)
+
+	now := time.Now()
+	err = vp.AddLinkedDataProof(&verifiable.LinkedDataProofContext{
+		VerificationMethod:      "did:example:123",
+		SignatureRepresentation: verifiable.SignatureJWS,
+		SignatureType:           "Ed25519Signature2018",
+		Suite:                   ed25519signature2018.New(suite.WithSigner(&testSigner{privKey: secretKey})),
+		Created:                 &now,
+		Domain:                  "user.example.com",
+		Challenge:               uuid.New().String(),
+		Purpose:                 "authentication",
+	}, jsonld.WithDocumentLoader(testDocumentLoader))
+	require.NoError(t, err)
+
+	return vp
 }
 
 func newPeerDID(t *testing.T, pubKey []byte) *did.Doc {
@@ -317,8 +425,31 @@ func (t *testSigner) Sign(plaintext []byte) ([]byte, error) {
 func createTestJSONLDDocumentLoader() *ld.CachingDocumentLoader {
 	loader := verifiable.CachingJSONLDLoader()
 
-	addJSONLDCachedContextFromFile(loader,
-		"https://trustbloc.github.io/context/vc/examples-v1.jsonld", "trustbloc_example.jsonld")
+	contexts := []struct {
+		vocab    string
+		filename string
+	}{
+		{
+			vocab:    "https://www.w3.org/2018/credentials/v1",
+			filename: "verifiable_credentials_v1.0.jsonld",
+		},
+		{
+			vocab:    "http://schema.org/",
+			filename: "schema.org.jsonld",
+		},
+		{
+			vocab:    "https://trustbloc.github.io/context/vc/examples-v1.jsonld",
+			filename: "trustbloc_example.jsonld",
+		},
+		{
+			vocab:    "https://trustbloc.github.io/context/vp/presentation-exchange-submission-v1.jsonld",
+			filename: "presentation_exchange.jsonld",
+		},
+	}
+
+	for i := range contexts {
+		addJSONLDCachedContextFromFile(loader, contexts[i].vocab, contexts[i].filename)
+	}
 
 	return loader
 }
