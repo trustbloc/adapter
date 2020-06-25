@@ -28,9 +28,6 @@ import (
 	didexchangesvc "github.com/hyperledger/aries-framework-go/pkg/didcomm/protocol/didexchange"
 	presentproofsvc "github.com/hyperledger/aries-framework-go/pkg/didcomm/protocol/presentproof"
 	"github.com/hyperledger/aries-framework-go/pkg/doc/did"
-	"github.com/hyperledger/aries-framework-go/pkg/doc/signature/jsonld"
-	"github.com/hyperledger/aries-framework-go/pkg/doc/signature/suite"
-	"github.com/hyperledger/aries-framework-go/pkg/doc/signature/suite/ed25519signature2018"
 	"github.com/hyperledger/aries-framework-go/pkg/doc/verifiable"
 	ariesmockstorage "github.com/hyperledger/aries-framework-go/pkg/mock/storage"
 	ariesstorage "github.com/hyperledger/aries-framework-go/pkg/storage"
@@ -1559,7 +1556,7 @@ func TestHandlePresentationMsg(t *testing.T) {
 			}},
 			PresentationsAttach: []decorator.Attachment{{
 				ID:   attachID,
-				Data: decorator.AttachmentData{JSON: newIssuerResponseVP(t)},
+				Data: decorator.AttachmentData{JSON: newIssuerResponseVP(t, validPresentationSubmissionVP)},
 			}},
 		})
 		err = expected.SetID(uuid.New().String())
@@ -1711,6 +1708,124 @@ func TestHandlePresentationMsg(t *testing.T) {
 		})
 		err = o.handlePresentationMsg(msg)
 		require.Error(t, err)
+	})
+
+	t.Run("error if VP does not contain expected number of credentials", func(t *testing.T) {
+		o, err := New(&Config{
+			DIDExchClient:        &stubDIDClient{},
+			Store:                memstore.NewProvider(),
+			AriesStorageProvider: &mockAriesStorageProvider{},
+			PresentProofClient:   &mockpresentproof.Client{},
+		})
+		require.NoError(t, err)
+
+		invitationID := uuid.New().String()
+		attachID := uuid.New().String()
+		expected := service.NewDIDCommMsgMap(&presentproof.Presentation{
+			Formats: []presentproofsvc.Format{{
+				AttachID: attachID,
+				Format:   "dif/presentation_submission@0.0.1",
+			}},
+			PresentationsAttach: []decorator.Attachment{{
+				ID:   attachID,
+				Data: decorator.AttachmentData{JSON: newIssuerResponseVP(t, invalidPresentationSubmissionVPNoCreds)},
+			}},
+		})
+		err = expected.SetID(uuid.New().String())
+		require.NoError(t, err)
+
+		o.setThidInvitationData(&thidInvitationData{
+			threadID:         expected.ID(),
+			invitationDataID: invitationID,
+		})
+
+		o.setInvitationData(&invitationData{
+			id: invitationID,
+		})
+
+		err = o.handlePresentationMsg(expected)
+		require.Error(t, err)
+	})
+
+	t.Run("error if VP contains a malformed credential", func(t *testing.T) {
+		o, err := New(&Config{
+			DIDExchClient:        &stubDIDClient{},
+			Store:                memstore.NewProvider(),
+			AriesStorageProvider: &mockAriesStorageProvider{},
+			PresentProofClient:   &mockpresentproof.Client{},
+		})
+		require.NoError(t, err)
+
+		invitationID := uuid.New().String()
+		attachID := uuid.New().String()
+		expected := service.NewDIDCommMsgMap(&presentproof.Presentation{
+			Formats: []presentproofsvc.Format{{
+				AttachID: attachID,
+				Format:   "dif/presentation_submission@0.0.1",
+			}},
+			PresentationsAttach: []decorator.Attachment{{
+				ID: attachID,
+				Data: decorator.AttachmentData{
+					JSON: newIssuerResponseVP(t,
+						fmt.Sprintf(presentationSubmissionVPCredsPlaceholder, "{}")),
+				},
+			}},
+		})
+		err = expected.SetID(uuid.New().String())
+		require.NoError(t, err)
+
+		o.setThidInvitationData(&thidInvitationData{
+			threadID:         expected.ID(),
+			invitationDataID: invitationID,
+		})
+
+		o.setInvitationData(&invitationData{
+			id: invitationID,
+		})
+
+		err = o.handlePresentationMsg(expected)
+		require.Error(t, err)
+		require.True(t, errors.Is(err, errMalformedCredential))
+	})
+
+	t.Run("error if response attachment contains an invalid VP", func(t *testing.T) {
+		o, err := New(&Config{
+			DIDExchClient:        &stubDIDClient{},
+			Store:                memstore.NewProvider(),
+			AriesStorageProvider: &mockAriesStorageProvider{},
+			PresentProofClient:   &mockpresentproof.Client{},
+		})
+		require.NoError(t, err)
+
+		invitationID := uuid.New().String()
+		attachID := uuid.New().String()
+		expected := service.NewDIDCommMsgMap(&presentproof.Presentation{
+			Formats: []presentproofsvc.Format{{
+				AttachID: attachID,
+				Format:   "dif/presentation_submission@0.0.1",
+			}},
+			PresentationsAttach: []decorator.Attachment{{
+				ID: attachID,
+				Data: decorator.AttachmentData{
+					JSON: map[string]interface{}{},
+				},
+			}},
+		})
+		err = expected.SetID(uuid.New().String())
+		require.NoError(t, err)
+
+		o.setThidInvitationData(&thidInvitationData{
+			threadID:         expected.ID(),
+			invitationDataID: invitationID,
+		})
+
+		o.setInvitationData(&invitationData{
+			id: invitationID,
+		})
+
+		err = o.handlePresentationMsg(expected)
+		require.Error(t, err)
+		require.True(t, errors.Is(err, errMalformedCredential))
 	})
 }
 
@@ -2284,29 +2399,4 @@ func checkPresentationDefinitionAttachment(
 	err = json.NewDecoder(bytes.NewReader(bits)).Decode(result)
 	require.NoError(t, err)
 	require.Equal(t, presDef, result)
-}
-
-func newIssuerResponseVP(t *testing.T) *verifiable.Presentation {
-	vc := newUniversityDegreeVC(t)
-
-	vp, err := vc.Presentation()
-	require.NoError(t, err)
-
-	_, secretKey, err := ed25519.GenerateKey(rand.Reader)
-	require.NoError(t, err)
-
-	now := time.Now()
-	err = vp.AddLinkedDataProof(&verifiable.LinkedDataProofContext{
-		VerificationMethod:      "did:example:123",
-		SignatureRepresentation: verifiable.SignatureJWS,
-		SignatureType:           "Ed25519Signature2018",
-		Suite:                   ed25519signature2018.New(suite.WithSigner(&testSigner{privKey: secretKey})),
-		Created:                 &now,
-		Domain:                  "user.example.com",
-		Challenge:               uuid.New().String(),
-		Purpose:                 "authentication",
-	}, jsonld.WithDocumentLoader(testDocumentLoader))
-	require.NoError(t, err)
-
-	return vp
 }

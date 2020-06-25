@@ -21,22 +21,22 @@ func TestStringsContains(t *testing.T) {
 	require.False(t, StringsContains("Hi", words))
 }
 
-func TestDecodeIntoCustomCredential(t *testing.T) {
+func TestDecodeUnmarshaller(t *testing.T) {
 	t.Run("test decode - failure", func(t *testing.T) {
 		v := &struct {
 			field1 string
 		}{}
 
-		err := DecodeIntoCustomCredential(&verifiable.Credential{}, v)
+		err := DecodeJSONMarshaller(&verifiable.Credential{}, v)
 		require.NoError(t, err)
 	})
 
 	t.Run("test decode - failure", func(t *testing.T) {
 		v := 32
 
-		err := DecodeIntoCustomCredential(&verifiable.Credential{}, v)
+		err := DecodeJSONMarshaller(&verifiable.Credential{}, v)
 		require.Error(t, err)
-		require.Contains(t, err.Error(), "failed to decode custom credential")
+		require.Contains(t, err.Error(), "failed to decode custom jsonmarshaller")
 	})
 }
 

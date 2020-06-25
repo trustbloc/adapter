@@ -6,7 +6,11 @@ SPDX-License-Identifier: Apache-2.0
 
 package rp
 
-import "github.com/hyperledger/aries-framework-go/pkg/doc/verifiable"
+import (
+	"github.com/hyperledger/aries-framework-go/pkg/doc/verifiable"
+
+	"github.com/trustbloc/edge-adapter/pkg/presentationex"
+)
 
 const (
 	// DIDDocumentCredentialType is the DIDDocumentCredential's JSON-LD type.
@@ -23,4 +27,11 @@ type DIDDocumentCredential struct {
 type DIDDocCredentialSubject struct {
 	ID     string `json:"id"`
 	DIDDoc string `json:"didDoc"`
+}
+
+// PresentationSubmissionPresentation is the PresentationSubmission VerifiablePresentation.
+// https://identity.foundation/presentation-exchange/#presentation-submission.
+type PresentationSubmissionPresentation struct {
+	Base                   *verifiable.Presentation               `json:"-"`
+	PresentationSubmission *presentationex.PresentationSubmission `json:"presentation_submission,omitempty"`
 }

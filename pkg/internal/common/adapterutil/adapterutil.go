@@ -11,20 +11,23 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/url"
-
-	"github.com/hyperledger/aries-framework-go/pkg/doc/verifiable"
 )
 
-// DecodeIntoCustomCredential converts credential into custom credentials.
-func DecodeIntoCustomCredential(credential *verifiable.Credential, custom interface{}) error {
-	vcBytes, err := credential.MarshalJSON()
+// JSONMarshaller can marshal itself to JSON bytes.
+type JSONMarshaller interface {
+	MarshalJSON() ([]byte, error)
+}
+
+// DecodeJSONMarshaller decodes the JSONMarshaller into the given object.
+func DecodeJSONMarshaller(jm JSONMarshaller, custom interface{}) error {
+	bits, err := jm.MarshalJSON()
 	if err != nil {
-		return fmt.Errorf("failed to marshal credential as json : %w", err)
+		return fmt.Errorf("failed to execute MarshalJSON() : %w", err)
 	}
 
-	err = json.NewDecoder(bytes.NewReader(vcBytes)).Decode(custom)
+	err = json.NewDecoder(bytes.NewReader(bits)).Decode(custom)
 	if err != nil {
-		return fmt.Errorf("failed to decode custom credential : %w", err)
+		return fmt.Errorf("failed to decode custom jsonmarshaller : %w", err)
 	}
 
 	return nil

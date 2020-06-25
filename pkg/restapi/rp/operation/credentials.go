@@ -9,6 +9,8 @@ package operation
 import (
 	"fmt"
 
+	"github.com/hyperledger/aries-framework-go/pkg/client/presentproof"
+	"github.com/hyperledger/aries-framework-go/pkg/didcomm/protocol/decorator"
 	"github.com/hyperledger/aries-framework-go/pkg/doc/verifiable"
 	"github.com/pkg/errors"
 
@@ -20,13 +22,13 @@ import (
 var errMalformedCredential = errors.New("malformed credential")
 
 //nolint:unparam
-func getCustomCredentials(vpBytes []byte) (*rp.DIDDocumentCredential, *vc.UserConsentCredential, error) {
+func getDIDDocAndUserConsentCredentials(vpBytes []byte) (*rp.DIDDocumentCredential, *vc.UserConsentCredential, error) {
 	creds, err := parseCredentials(vpBytes)
 	if err != nil {
 		return nil, nil, err
 	}
 
-	return parseCustomCredentials(creds)
+	return parseDIDDocAndUserConsentCredentials(creds)
 }
 
 func parseCredentials(vpBytes []byte) ([2]*verifiable.Credential, error) {
@@ -67,7 +69,7 @@ func parseCredentials(vpBytes []byte) ([2]*verifiable.Credential, error) {
 	return allCreds, nil
 }
 
-func parseCustomCredentials(
+func parseDIDDocAndUserConsentCredentials(
 	creds [2]*verifiable.Credential) (*rp.DIDDocumentCredential, *vc.UserConsentCredential, error) {
 	var (
 		issuerDIDVC *rp.DIDDocumentCredential
@@ -82,7 +84,7 @@ func parseCustomCredentials(
 
 			issuerDIDVC = &rp.DIDDocumentCredential{}
 
-			err := adapterutil.DecodeIntoCustomCredential(cred, issuerDIDVC)
+			err := adapterutil.DecodeJSONMarshaller(cred, issuerDIDVC)
 			if err != nil {
 				return nil, nil, fmt.Errorf("failed to decode did doc vc : %w", err)
 			}
@@ -97,7 +99,7 @@ func parseCustomCredentials(
 
 			consentVC = &vc.UserConsentCredential{}
 
-			err := adapterutil.DecodeIntoCustomCredential(cred, consentVC)
+			err := adapterutil.DecodeJSONMarshaller(cred, consentVC)
 			if err != nil {
 				return nil, nil, fmt.Errorf("failed to decode user consent credential : %w", err)
 			}
@@ -109,4 +111,56 @@ func parseCustomCredentials(
 	}
 
 	return issuerDIDVC, consentVC, nil
+}
+
+func getPresentationSubmissionVP(
+	attachmentFormatID string, presentation *presentproof.Presentation) (*rp.PresentationSubmissionPresentation, error) {
+	var attachmentID string
+
+	for _, f := range presentation.Formats {
+		if f.Format == attachmentFormatID {
+			attachmentID = f.AttachID
+		}
+	}
+
+	if attachmentID == "" {
+		return nil, fmt.Errorf("no attachment found for given format %s", attachmentFormatID)
+	}
+
+	a := getAttachmentByID(attachmentID, presentation.PresentationsAttach)
+	if a == nil {
+		return nil, fmt.Errorf("attachment referenced by ID %s from a format was not found", attachmentID)
+	}
+
+	vpBytes, err := a.Data.Fetch()
+	if err != nil {
+		return nil, fmt.Errorf("failed to fetch contents of attachment with id %s : %w", attachmentID, err)
+	}
+
+	vp, err := verifiable.ParsePresentation(vpBytes)
+	if err != nil {
+		return nil,
+			errors.Wrapf(errMalformedCredential, fmt.Sprintf("failed to parse a verifiable presentation : %s", err))
+	}
+
+	presentationSubmissionVP := &rp.PresentationSubmissionPresentation{
+		Base: vp,
+	}
+
+	err = adapterutil.DecodeJSONMarshaller(vp, presentationSubmissionVP)
+	if err != nil {
+		return nil, fmt.Errorf("failed to decode presentation_submission VP : %w", err)
+	}
+
+	return presentationSubmissionVP, nil
+}
+
+func getAttachmentByID(id string, attachments []decorator.Attachment) *decorator.Attachment {
+	for i := range attachments {
+		if attachments[i].ID == id {
+			return &attachments[i]
+		}
+	}
+
+	return nil
 }

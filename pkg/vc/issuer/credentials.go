@@ -49,7 +49,7 @@ func ParseWalletResponse(vpBytes []byte) (*DIDConnectCredentialSubject, error) {
 
 	didConnectVC := &DIDConnectCredential{}
 
-	err = adapterutil.DecodeIntoCustomCredential(cred, didConnectVC)
+	err = adapterutil.DecodeJSONMarshaller(cred, didConnectVC)
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse credential : %s", err.Error())
 	}
