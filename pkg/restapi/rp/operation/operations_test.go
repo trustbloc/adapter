@@ -2353,6 +2353,10 @@ func (d *didexchangeEvent) InvitationID() string {
 	return d.invID
 }
 
+func (d *didexchangeEvent) All() map[string]interface{} {
+	return make(map[string]interface{})
+}
+
 func checkDIDAttachment(t *testing.T, didID string, request *presentproof.RequestPresentation) {
 	var attachID string
 
