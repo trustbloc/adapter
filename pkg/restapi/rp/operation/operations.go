@@ -25,7 +25,6 @@ import (
 	didexchangesvc "github.com/hyperledger/aries-framework-go/pkg/didcomm/protocol/didexchange"
 	presentproofsvc "github.com/hyperledger/aries-framework-go/pkg/didcomm/protocol/presentproof"
 	"github.com/hyperledger/aries-framework-go/pkg/doc/did"
-	"github.com/hyperledger/aries-framework-go/pkg/doc/verifiable"
 	ariesstorage "github.com/hyperledger/aries-framework-go/pkg/storage"
 	"github.com/hyperledger/aries-framework-go/pkg/store/connection"
 	"github.com/ory/hydra-client-go/client/admin"
@@ -37,7 +36,6 @@ import (
 	"github.com/trustbloc/edge-adapter/pkg/internal/common/support"
 	"github.com/trustbloc/edge-adapter/pkg/presentationex"
 	commhttp "github.com/trustbloc/edge-adapter/pkg/restapi/internal/common/http"
-	rpvc "github.com/trustbloc/edge-adapter/pkg/vc/rp"
 )
 
 // API endpoints.
@@ -732,10 +730,11 @@ func (o *Operation) chapiResponseHandler(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	// TODO save issuer DID VC and user Consent VC https://github.com/trustbloc/edge-adapter/issues/92
+	// TODO save issuer DID and user Consent VC https://github.com/trustbloc/edge-adapter/issues/92
+	// TODO validate the user consent credential (expected rp and user DIDs, etc.)
 
-	issuerDIDVC, _, err := getDIDDocAndUserConsentCredentials(request.VerifiablePresentation)
-	if errors.Is(err, errMalformedCredential) {
+	consentVC, err := parseWalletResponse(invData.pd, request.VerifiablePresentation)
+	if errors.Is(err, errInvalidCredential) {
 		logger.Warnf("malformed credentials : %s", err)
 		commhttp.WriteErrorResponse(w, http.StatusBadRequest, "malformed credentials")
 
@@ -750,7 +749,7 @@ func (o *Operation) chapiResponseHandler(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	diddocBytes, err := base64.URLEncoding.DecodeString(issuerDIDVC.Subject.DIDDoc)
+	diddocBytes, err := base64.URLEncoding.DecodeString(consentVC.Subject.IssuerDID.DocB64URL)
 	if err != nil {
 		msg := fmt.Sprintf("failed to decode did document : %s", err)
 		logger.Errorf(msg)
@@ -937,14 +936,14 @@ func (o *Operation) listenForIssuerResponses() {
 			continue
 		}
 
-		err := o.handlePresentationMsg(action.Message)
+		err := o.handleIssuerPresentationMsg(action.Message)
 		if err != nil {
 			logger.Warnf("failed to handle present-proof response : %s", err)
 		}
 	}
 }
 
-func (o *Operation) handlePresentationMsg(msg service.DIDCommMsg) error {
+func (o *Operation) handleIssuerPresentationMsg(msg service.DIDCommMsg) error {
 	thid, err := msg.ThreadID()
 	if err != nil {
 		return fmt.Errorf("failed to extract threadID from didcomm msg : %w", err)
@@ -969,41 +968,15 @@ func (o *Operation) handlePresentationMsg(msg service.DIDCommMsg) error {
 
 	logger.Debugf("handling present-proof message: %+v", presentation)
 
-	presentationSubmissionVP, err := getPresentationSubmissionVP(presentationSubmissionFormat, presentation)
+	presentationSubmissionVP, err := parseIssuerResponse(invData.pd, presentation)
 	if err != nil {
 		return fmt.Errorf("failed to parse verifiable presentation : %w", err)
 	}
 
 	logger.Debugf("received presentation_submission : %+v", presentationSubmissionVP)
 
-	err = evaluatePresentationSubmission(presentationSubmissionVP)
-	if err != nil {
-		return fmt.Errorf("failed to evaluate presentation submission : %w", err)
-	}
-
 	return nil
 }
-
-func evaluatePresentationSubmission(p *rpvc.PresentationSubmissionPresentation) error {
-	rawCreds, err := p.Base.MarshalledCredentials()
-	if err != nil {
-		return fmt.Errorf("failed to marshal raw credentials from presentation : %w", err)
-	}
-
-	if len(rawCreds) != 1 {
-		return fmt.Errorf("expected 1 VC in presentation but got %d", len(rawCreds))
-	}
-
-	_, err = verifiable.ParseCredential(rawCreds[0])
-	if err != nil {
-		return fmt.Errorf("%w : failed to parse raw credential : %s", errMalformedCredential, err)
-	}
-
-	// TODO validate presentation_submission returned by the issuer
-	//  https://github.com/trustbloc/edge-adapter/issues/108
-	return nil
-}
-
 func testResponse(w io.Writer) {
 	_, err := w.Write([]byte("OK"))
 	if err != nil {

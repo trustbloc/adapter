@@ -24,9 +24,17 @@ SPDX-License-Identifier: Apache-2.0
             const credentialQuery = {
                 web: {
                     VerifiablePresentation: {
-                        query: {type: "CredentialsQuery"},
-                        presentationDefinition: this.presentationRequest.pd,
-                        did: this.presentationRequest.invitation,
+                        query: [
+                            {
+                                type: "presentationDefinitionQuery",
+                                presentationDefinitionQuery: this.presentationRequest.pd
+
+                            },
+                            {
+                                type: "DIDComm",
+                                invitation: this.presentationRequest.invitation
+                            }
+                        ]
                     }
                 }
             }

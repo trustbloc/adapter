@@ -19,6 +19,9 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/hyperledger/aries-framework-go/pkg/client/presentproof"
+	"github.com/hyperledger/aries-framework-go/pkg/didcomm/protocol/decorator"
+	presentproofsvc "github.com/hyperledger/aries-framework-go/pkg/didcomm/protocol/presentproof"
 	"github.com/hyperledger/aries-framework-go/pkg/doc/did"
 	"github.com/hyperledger/aries-framework-go/pkg/doc/signature/jsonld"
 	"github.com/hyperledger/aries-framework-go/pkg/doc/signature/suite"
@@ -28,124 +31,192 @@ import (
 	"github.com/mr-tron/base58"
 	"github.com/piprate/json-gold/ld"
 	"github.com/stretchr/testify/require"
+
+	"github.com/trustbloc/edge-adapter/pkg/vc/rp"
 )
 
-const (
-	didDocVC = `{
-  "@context": [
-    "https://www.w3.org/2018/credentials/v1",
-    "https://trustbloc.github.io/context/vc/examples-v1.jsonld"
-  ],
-  "id": "http://example.edu/credentials/1872",
-  "type": [
-    "VerifiableCredential",
-    "DIDDocumentCredential"
-  ],
-  "credentialSubject": {
-    "id": "%s",
-    "didDoc": "%s"
-  },
-  "issuer": {
-    "id": "did:peer:76e12ec712ebc6f1c221ebfeb1f"
-  },
-  "issuanceDate": "2010-01-01T19:23:24Z"
-}`
-	userConsentVC = `{
-	"@context": [
-		"https://www.w3.org/2018/credentials/v1",
-		"https://trustbloc.github.io/context/vc/examples-v1.jsonld"
-	],
-	"type": [
-		"VerifiableCredential",
-		"UserConsentCredential"
-	],
-	"id": "http://example.gov/credentials/ff98f978-588f-4eb0-b17b-60c18e1dac2c",
-	"issuanceDate": "2020-03-16T22:37:26.544Z",
-	"issuer": {
-		"id": "did:web:vc.transmute.world",
-		"name": "University"
-	},
-	"credentialSubject": {
-		"id": "did:peer:user",
-		"rpDID": "did:peer:rp",
-		"issuerDID": "did:peer:issuer",
-		"presDef": "base64URLEncode(presDef)"
-	}
-}`
-	validPresentationSubmissionVP = `{
-  	"@context": [
-    	"https://www.w3.org/2018/credentials/v1",
-    	"https://trustbloc.github.io/context/vp/presentation-exchange-submission-v1.jsonld"
-  	],
-  	"type": [
-    	"VerifiablePresentation",
-    	"PresentationSubmission"
-  	],
-  	"presentation_submission": {
-    	"descriptor_map": [{
-    		"id": "banking_input_1",
-    		"path": "$.verifiableCredential.[0]"
-    	}]
-  	},
-  	"verifiableCredential": [{
-		"@context": [
-			"https://www.w3.org/2018/credentials/v1",
-			"https://trustbloc.github.io/context/vc/examples-v1.jsonld"
-		],
-		"type": [
-			"VerifiableCredential",
-			"CreditCardStatementCredential"
-		],
-		"id": "http://example.gov/credentials/ff98f978-588f-4eb0-b17b-60c18e1dac2c",
-		"issuanceDate": "2020-03-16T22:37:26.544Z",
-		"issuer": {
-			"id": "did:peer:issuer"
-		},
-		"credentialSubject": {
-			"id": "did:peer:user",
-			"stmt": {
-				"description": "June 2020 Credit Card Statement",
-				"url": "http://acmebank.com/invoice.pdf",
-				"accountId": "xxxx-xxxx-xxxx-1234",
-				"customer": {
-					"@type": "Person",
-					"name": "Jane Doe"
+//nolint:gochecknoglobals
+var testDocumentLoader = createTestJSONLDDocumentLoader()
+
+func TestParseWalletResponse(t *testing.T) {
+	t.Run("valid response", func(t *testing.T) {
+		userDID := newPeerDID(t)
+		rpDID := newPeerDID(t)
+		issuerDID := newPeerDID(t)
+		vp := newPresentationSubmissionVP(t, newUserConsentVC(t, userDID.ID, rpDID, issuerDID))
+		consentVC, err := parseWalletResponse(nil, marshalVP(t, vp))
+		require.NoError(t, err)
+		require.NotNil(t, consentVC.Subject)
+		// check user's DID
+		require.Equal(t, userDID.ID, consentVC.Subject.ID)
+		// check issuer's DID
+		require.NotNil(t, consentVC.Subject.IssuerDID)
+		require.Equal(t, issuerDID.ID, consentVC.Subject.IssuerDID.ID)
+		require.Equal(t,
+			base64.URLEncoding.EncodeToString(marshalDID(t, issuerDID)),
+			consentVC.Subject.IssuerDID.DocB64URL)
+		// check rp's DID
+		require.NotNil(t, consentVC.Subject.RPDID)
+		require.Equal(t, rpDID.ID, consentVC.Subject.RPDID.ID)
+		require.Equal(t,
+			base64.URLEncoding.EncodeToString(marshalDID(t, rpDID)),
+			consentVC.Subject.RPDID.DocB64URL)
+	})
+
+	t.Run("ignores credentials not of the expected type", func(t *testing.T) {
+		vp := newPresentationSubmissionVP(t,
+			newUniversityDegreeVC(t), // ignored
+			newUserConsentVC(t, newPeerDID(t).ID, newPeerDID(t), newPeerDID(t)),
+		)
+		result, err := parseWalletResponse(nil, marshalVP(t, vp))
+		require.NoError(t, err)
+		require.NotNil(t, result)
+	})
+
+	t.Run("errInvalidCredential if vp cannot be parsed", func(t *testing.T) {
+		consentVC := newUserConsentVC(t, newPeerDID(t).ID, newPeerDID(t), newPeerDID(t))
+		vp, err := consentVC.Presentation()
+		require.NoError(t, err)
+		_, err = parseWalletResponse(nil, marshalVP(t, vp))
+		require.True(t, errors.Is(err, errInvalidCredential))
+	})
+
+	t.Run("errInvalidCredential on invalid verifiable presentation type", func(t *testing.T) {
+		vc := newUserConsentVC(t, newPeerDID(t).ID, newPeerDID(t), newPeerDID(t))
+		vp, err := vc.Presentation()
+		addLDProof(t, vp)
+		require.NoError(t, err)
+		require.NotContains(t, vp.Type, rp.PresentationSubmissionPresentationType)
+		_, err = parseWalletResponse(nil, marshalVP(t, vp))
+		require.True(t, errors.Is(err, errInvalidCredential))
+	})
+
+	t.Run("errInvalidCredential on no credentials", func(t *testing.T) {
+		vp := newPresentationSubmissionVP(t)
+		_, err := parseWalletResponse(nil, marshalVP(t, vp))
+		require.True(t, errors.Is(err, errInvalidCredential))
+	})
+}
+
+func TestParseIssuerResponse(t *testing.T) {
+	t.Run("valid response", func(t *testing.T) {
+		attachID := uuid.New().String()
+		expectedVC := newCreditCardStatementVC(t)
+		expectedVP := newPresentationSubmissionVP(t, expectedVC)
+		result, err := parseIssuerResponse(nil, &presentproof.Presentation{
+			Formats: []presentproofsvc.Format{{
+				AttachID: attachID,
+				Format:   presentationSubmissionFormat,
+			}},
+			PresentationsAttach: []decorator.Attachment{{
+				ID: attachID,
+				Data: decorator.AttachmentData{
+					JSON: expectedVP,
 				},
-				"paymentDueDate": "2020-06-30T12:00:00",
-				"minimumPaymentDue": {
-					"@type": "PriceSpecification",
-					"price": 15.00,
-					"priceCurrency": "CAD"
+			}},
+		})
+		require.NoError(t, err)
+		require.Equal(t, expectedVP, result.Base)
+		raw, err := result.Base.MarshalledCredentials()
+		require.NoError(t, err)
+		require.Len(t, raw, 1)
+		resultVC := parseVC(t, string(raw[0]))
+		require.Equal(t, expectedVC.Subject, resultVC.Subject)
+	})
+
+	t.Run("error if no attachment found with the expected format", func(t *testing.T) {
+		attachID := uuid.New().String()
+		expectedVC := newCreditCardStatementVC(t)
+		expectedVP := newPresentationSubmissionVP(t, expectedVC)
+		_, err := parseIssuerResponse(nil, &presentproof.Presentation{
+			Formats: []presentproofsvc.Format{{
+				AttachID: attachID,
+				Format:   "INVALID_FORMAT",
+			}},
+			PresentationsAttach: []decorator.Attachment{{
+				ID: attachID,
+				Data: decorator.AttachmentData{
+					JSON: expectedVP,
 				},
-				"totalPaymentDue": {
-					"@type": "PriceSpecification",
-					"price": 200.00,
-					"priceCurrency": "CAD"
+			}},
+		})
+		require.Error(t, err)
+	})
+
+	t.Run("error if attachment IDs do not match", func(t *testing.T) {
+		expectedVC := newCreditCardStatementVC(t)
+		expectedVP := newPresentationSubmissionVP(t, expectedVC)
+		_, err := parseIssuerResponse(nil, &presentproof.Presentation{
+			Formats: []presentproofsvc.Format{{
+				AttachID: uuid.New().String(),
+				Format:   presentationSubmissionFormat,
+			}},
+			PresentationsAttach: []decorator.Attachment{{
+				ID: uuid.New().String(),
+				Data: decorator.AttachmentData{
+					JSON: expectedVP,
 				},
-				"billingPeriod": "P30D",
-				"paymentStatus": "http://schema.org/PaymentDue"			
-			}
-		}
-    }]
-}`
-	invalidPresentationSubmissionVPNoCreds = `{
-  	"@context": [
-    	"https://www.w3.org/2018/credentials/v1",
-    	"https://trustbloc.github.io/context/vp/presentation-exchange-submission-v1.jsonld"
-  	],
-  	"type": [
-    	"VerifiablePresentation",
-    	"PresentationSubmission"
-  	],
-  	"presentation_submission": {
-    	"descriptor_map": [{
-    		"id": "banking_input_1",
-    		"path": "$.verifiableCredential.[0]"
-    	}]
-  	},
-  	"verifiableCredential": []
-}`
-	presentationSubmissionVPCredsPlaceholder = `{
+			}},
+		})
+		require.Error(t, err)
+	})
+
+	t.Run("error if attachment's contents are malformed", func(t *testing.T) {
+		attachID := uuid.New().String()
+		_, err := parseIssuerResponse(nil, &presentproof.Presentation{
+			Formats: []presentproofsvc.Format{{
+				AttachID: attachID,
+				Format:   presentationSubmissionFormat,
+			}},
+			PresentationsAttach: []decorator.Attachment{{
+				ID: attachID,
+				Data: decorator.AttachmentData{
+					Base64: "MALFORMED",
+				},
+			}},
+		})
+		require.Error(t, err)
+	})
+
+	t.Run("errInvalidCredential is VP cannot be parsed", func(t *testing.T) {
+		attachID := uuid.New().String()
+		_, err := parseIssuerResponse(nil, &presentproof.Presentation{
+			Formats: []presentproofsvc.Format{{
+				AttachID: attachID,
+				Format:   presentationSubmissionFormat,
+			}},
+			PresentationsAttach: []decorator.Attachment{{
+				ID: attachID,
+				Data: decorator.AttachmentData{
+					JSON: map[string]interface{}{},
+				},
+			}},
+		})
+		require.True(t, errors.Is(err, errInvalidCredential))
+	})
+
+	t.Run("errInvalidCredential if presentation submission fails evaluation", func(t *testing.T) {
+		vp := newPresentationSubmissionVP(t, newCreditCardStatementVC(t))
+		vp.Type = []string{"VerifiablePresentation"}
+		attachID := uuid.New().String()
+		_, err := parseIssuerResponse(nil, &presentproof.Presentation{
+			Formats: []presentproofsvc.Format{{
+				AttachID: attachID,
+				Format:   presentationSubmissionFormat,
+			}},
+			PresentationsAttach: []decorator.Attachment{{
+				ID: attachID,
+				Data: decorator.AttachmentData{
+					JSON: vp,
+				},
+			}},
+		})
+		require.True(t, errors.Is(err, errInvalidCredential))
+	})
+}
+
+func newPresentationSubmissionVP(t *testing.T, credentials ...*verifiable.Credential) *verifiable.Presentation {
+	template := `{
   	"@context": [
     	"https://www.w3.org/2018/credentials/v1",
     	"https://trustbloc.github.io/context/vp/presentation-exchange-submission-v1.jsonld"
@@ -162,7 +233,125 @@ const (
   	},
   	"verifiableCredential": [%s]
 }`
-	universityDegreeVC = `{
+
+	var contents string
+
+	switch len(credentials) > 0 {
+	case true:
+		rawCreds := make([]string, len(credentials))
+
+		for i := range credentials {
+			raw, err := credentials[i].MarshalJSON()
+			require.NoError(t, err)
+
+			rawCreds[i] = string(raw)
+		}
+
+		contents = fmt.Sprintf(template, strings.Join(rawCreds, ", "))
+	default:
+		contents = strings.ReplaceAll(template, "%s", "")
+	}
+
+	vp, err := verifiable.ParseUnverifiedPresentation([]byte(contents))
+	require.NoError(t, err)
+
+	addLDProof(t, vp)
+
+	return vp
+}
+
+func newUserConsentVC(t *testing.T, userDID string, rpDID, issuerDID *did.Doc) *verifiable.Credential {
+	const (
+		userConsentVCTemplate = `{
+	"@context": [
+		"https://www.w3.org/2018/credentials/v1",
+		"https://trustbloc.github.io/context/vc/examples-v1.jsonld"
+	],
+	"type": [
+		"VerifiableCredential",
+		"UserConsentCredential"
+	],
+	"id": "http://example.gov/credentials/ff98f978-588f-4eb0-b17b-60c18e1dac2c",
+	"issuanceDate": "2020-03-16T22:37:26.544Z",
+	"issuer": {
+		"id": "%s"
+	},
+	"credentialSubject": {
+		"id": "%s",
+		"rpDID": %s,
+		"issuerDID": %s,
+		"presDef": "base64URLEncode(presDef)"
+	}
+}`
+		didDocTemplate = `{
+	"id": "%s",
+	"docB64Url": "%s"
+}`
+	)
+
+	bits, err := rpDID.JSONBytes()
+	require.NoError(t, err)
+
+	rpDIDClaim := fmt.Sprintf(didDocTemplate, rpDID.ID, base64.URLEncoding.EncodeToString(bits))
+
+	bits, err = issuerDID.JSONBytes()
+	require.NoError(t, err)
+
+	issuerDIDClaim := fmt.Sprintf(didDocTemplate, issuerDID.ID, base64.URLEncoding.EncodeToString(bits))
+	contents := fmt.Sprintf(
+		userConsentVCTemplate,
+		userDID, userDID, rpDIDClaim, issuerDIDClaim)
+
+	return parseVC(t, contents)
+}
+
+func newCreditCardStatementVC(t *testing.T) *verifiable.Credential {
+	const template = `{
+	"@context": [
+		"https://www.w3.org/2018/credentials/v1",
+		"https://trustbloc.github.io/context/vc/examples-v1.jsonld"
+	],
+	"type": [
+		"VerifiableCredential",
+		"CreditCardStatementCredential"
+	],
+	"id": "http://example.gov/credentials/ff98f978-588f-4eb0-b17b-60c18e1dac2c",
+	"issuanceDate": "2020-03-16T22:37:26.544Z",
+	"issuer": {
+		"id": "did:peer:issuer"
+	},
+	"credentialSubject": {
+		"id": "did:peer:user",
+		"stmt": {
+			"description": "June 2020 Credit Card Statement",
+			"url": "http://acmebank.com/invoice.pdf",
+			"accountId": "xxxx-xxxx-xxxx-1234",
+			"customer": {
+				"@type": "Person",
+				"name": "Jane Doe"
+			},
+			"paymentDueDate": "2020-06-30T12:00:00",
+			"minimumPaymentDue": {
+				"@type": "PriceSpecification",
+				"price": 15.00,
+				"priceCurrency": "CAD"
+			},
+			"totalPaymentDue": {
+				"@type": "PriceSpecification",
+				"price": 200.00,
+				"priceCurrency": "CAD"
+			},
+			"billingPeriod": "P30D",
+			"paymentStatus": "http://schema.org/PaymentDue"			
+		}
+	}
+}`
+
+	return parseVC(t, template)
+}
+
+func newUniversityDegreeVC(t *testing.T) *verifiable.Credential {
+	const contents = `{
 	"@context": [
 		"https://www.w3.org/2018/credentials/v1",
 		"https://www.w3.org/2018/credentials/examples/v1"
@@ -187,206 +376,21 @@ const (
 		"spouse": "did:example:c276e12ec21ebfeb1f712ebc6f1"
 	}
 }`
-)
 
-//nolint:gochecknoglobals
-var testDocumentLoader = createTestJSONLDDocumentLoader()
-
-func TestGetCustomCredentials(t *testing.T) {
-	t.Run("valid vp", func(t *testing.T) {
-		vp, _ := newCHAPIResponseVP(t)
-		vpBytes, err := vp.MarshalJSON()
-		require.NoError(t, err)
-		_, _, err = getDIDDocAndUserConsentCredentials(vpBytes)
-		require.NoError(t, err)
-	})
-
-	t.Run("errMalformedCredential on invalid vp", func(t *testing.T) {
-		consentVC := newUserConsentVC(t)
-		vp, err := consentVC.Presentation()
-		require.NoError(t, err)
-		vpBytes, err := vp.MarshalJSON()
-		require.NoError(t, err)
-		_, _, err = getDIDDocAndUserConsentCredentials(vpBytes)
-		require.True(t, errors.Is(err, errMalformedCredential))
-	})
+	return parseVC(t, contents)
 }
 
-func TestParseCredentials(t *testing.T) {
-	t.Run("valid vp", func(t *testing.T) {
-		vp, _ := newCHAPIResponseVP(t)
-		vpBytes, err := vp.MarshalJSON()
-		require.NoError(t, err)
-		result, err := parseCredentials(vpBytes)
-		require.NoError(t, err)
-		for _, r := range result {
-			require.NotNil(t, r)
-		}
-	})
-
-	t.Run("errMalformedCredential if vp format is wrong", func(t *testing.T) {
-		_, err := parseCredentials([]byte("invalid"))
-		require.True(t, errors.Is(err, errMalformedCredential))
-	})
-
-	t.Run("errMalformedCredential if insufficient number of credentials", func(t *testing.T) {
-		_, secretKey, err := ed25519.GenerateKey(rand.Reader)
-		require.NoError(t, err)
-		userConsentVC := newUserConsentVC(t)
-		vp, err := userConsentVC.Presentation()
-		require.NoError(t, err)
-
-		now := time.Now()
-		err = vp.AddLinkedDataProof(&verifiable.LinkedDataProofContext{
-			VerificationMethod:      "did:example:123",
-			SignatureRepresentation: verifiable.SignatureJWS,
-			SignatureType:           "Ed25519Signature2018",
-			Suite:                   ed25519signature2018.New(suite.WithSigner(&testSigner{privKey: secretKey})),
-			Created:                 &now,
-			Domain:                  "user.example.com",
-			Challenge:               uuid.New().String(),
-			Purpose:                 "authentication",
-		}, jsonld.WithDocumentLoader(testDocumentLoader))
-		require.NoError(t, err)
-		vpBytes, err := vp.MarshalJSON()
-		require.NoError(t, err)
-		_, err = parseCredentials(vpBytes)
-		require.True(t, errors.Is(err, errMalformedCredential))
-	})
-}
-
-func TestParseCustomCredentials(t *testing.T) {
-	t.Run("valid credentials", func(t *testing.T) {
-		vp, peerDID := newCHAPIResponseVP(t)
-		peerDIDBytes, err := peerDID.JSONBytes()
-		require.NoError(t, err)
-		vpBytes, err := vp.MarshalJSON()
-		require.NoError(t, err)
-		creds, err := parseCredentials(vpBytes)
-		require.NoError(t, err)
-		didVC, consentVC, err := parseDIDDocAndUserConsentCredentials(creds)
-		require.NoError(t, err)
-		require.NotEmpty(t, didVC.Subject.DIDDoc)
-		require.Equal(t, peerDID.ID, didVC.Subject.ID)
-		require.Equal(t, base64.URLEncoding.EncodeToString(peerDIDBytes), didVC.Subject.DIDDoc)
-		require.Equal(t, "did:peer:user", consentVC.Subject.ID)
-		require.Equal(t, "did:peer:issuer", consentVC.Subject.IssuerDID)
-		require.Equal(t, "did:peer:rp", consentVC.Subject.RPDID)
-		require.Equal(t, "base64URLEncode(presDef)", consentVC.Subject.PresDef)
-	})
-
-	t.Run("errMalformedCredential on duplicate diddoc vc", func(t *testing.T) {
-		publicKey, _, err := ed25519.GenerateKey(rand.Reader)
-		require.NoError(t, err)
-		didDocVC, _ := newDIDDocVC(t, publicKey)
-		_, _, err = parseDIDDocAndUserConsentCredentials([2]*verifiable.Credential{didDocVC, didDocVC})
-		require.True(t, errors.Is(err, errMalformedCredential))
-	})
-
-	t.Run("errMalformedCredential on duplicate consent VC", func(t *testing.T) {
-		consentVC := newUserConsentVC(t)
-		_, _, err := parseDIDDocAndUserConsentCredentials([2]*verifiable.Credential{consentVC, consentVC})
-		require.True(t, errors.Is(err, errMalformedCredential))
-	})
-
-	t.Run("errMalformedCredential on unrecognized cred types", func(t *testing.T) {
-		consentVC := newUserConsentVC(t)
-		universityVC := newUniversityDegreeVC(t) // unrecognized
-		_, _, err := parseDIDDocAndUserConsentCredentials([2]*verifiable.Credential{consentVC, universityVC})
-		require.True(t, errors.Is(err, errMalformedCredential))
-	})
-}
-
-func newCHAPIResponseVP(t *testing.T) (*verifiable.Presentation, *did.Doc) {
-	publicKey, secretKey, err := ed25519.GenerateKey(rand.Reader)
-	require.NoError(t, err)
-
-	didDocVC, peerDID := newDIDDocVC(t, publicKey)
-	vp := newCHAPIResponseVPWithDIDVC(t, secretKey, didDocVC)
-
-	return vp, peerDID
-}
-
-func newCHAPIResponseVPWithDIDVC(
-	t *testing.T, secretKey []byte, didDocVC *verifiable.Credential) *verifiable.Presentation {
-	userConsentVC := newUserConsentVC(t)
-	vp, err := userConsentVC.Presentation()
-	require.NoError(t, err)
-
-	err = vp.SetCredentials(didDocVC, userConsentVC)
-	require.NoError(t, err)
-
-	now := time.Now()
-	err = vp.AddLinkedDataProof(&verifiable.LinkedDataProofContext{
-		VerificationMethod:      "did:example:123",
-		SignatureRepresentation: verifiable.SignatureJWS,
-		SignatureType:           "Ed25519Signature2018",
-		Suite:                   ed25519signature2018.New(suite.WithSigner(&testSigner{privKey: secretKey})),
-		Created:                 &now,
-		Domain:                  "user.example.com",
-		Challenge:               uuid.New().String(),
-		Purpose:                 "authentication",
-	}, jsonld.WithDocumentLoader(testDocumentLoader))
-	require.NoError(t, err)
-
-	return vp
-}
-
-func newUserConsentVC(t *testing.T) *verifiable.Credential {
-	vc, err := verifiable.ParseCredential(
-		[]byte(userConsentVC), verifiable.WithJSONLDDocumentLoader(testDocumentLoader))
+func parseVC(t *testing.T, contents string) *verifiable.Credential {
+	vc, err := verifiable.ParseCredential([]byte(contents), verifiable.WithJSONLDDocumentLoader(testDocumentLoader))
 	require.NoError(t, err)
 
 	return vc
 }
 
-func newDIDDocVC(t *testing.T, pubKey []byte) (*verifiable.Credential, *did.Doc) {
-	doc := newPeerDID(t, pubKey)
-	return newDIDDocVCWithDID(t, doc)
-}
-
-func newDIDDocVCWithDID(t *testing.T, doc *did.Doc) (*verifiable.Credential, *did.Doc) {
-	docBytes, err := doc.JSONBytes()
+func newPeerDID(t *testing.T) *did.Doc {
+	pubKey, _, err := ed25519.GenerateKey(rand.Reader)
 	require.NoError(t, err)
 
-	docVCString := fmt.Sprintf(didDocVC, doc.ID, base64.URLEncoding.EncodeToString(docBytes))
-	vc, err := verifiable.ParseCredential([]byte(docVCString))
-	require.NoError(t, err)
-
-	return vc, doc
-}
-
-func newUniversityDegreeVC(t *testing.T) *verifiable.Credential {
-	vc, err := verifiable.ParseCredential([]byte(universityDegreeVC))
-	require.NoError(t, err)
-
-	return vc
-}
-
-func newIssuerResponseVP(t *testing.T, template string) *verifiable.Presentation {
-	vp, err := verifiable.ParseUnverifiedPresentation([]byte(template))
-	require.NoError(t, err)
-
-	_, secretKey, err := ed25519.GenerateKey(rand.Reader)
-	require.NoError(t, err)
-
-	now := time.Now()
-	err = vp.AddLinkedDataProof(&verifiable.LinkedDataProofContext{
-		VerificationMethod:      "did:example:123",
-		SignatureRepresentation: verifiable.SignatureJWS,
-		SignatureType:           "Ed25519Signature2018",
-		Suite:                   ed25519signature2018.New(suite.WithSigner(&testSigner{privKey: secretKey})),
-		Created:                 &now,
-		Domain:                  "user.example.com",
-		Challenge:               uuid.New().String(),
-		Purpose:                 "authentication",
-	}, jsonld.WithDocumentLoader(testDocumentLoader))
-	require.NoError(t, err)
-
-	return vp
-}
-
-func newPeerDID(t *testing.T, pubKey []byte) *did.Doc {
 	key := did.PublicKey{
 		ID:         uuid.New().String(),
 		Type:       "Ed25519VerificationKey2018",
@@ -412,6 +416,24 @@ func newPeerDID(t *testing.T, pubKey []byte) *did.Doc {
 	require.NoError(t, err)
 
 	return doc
+}
+
+func addLDProof(t *testing.T, vp *verifiable.Presentation) {
+	_, secretKey, err := ed25519.GenerateKey(rand.Reader)
+	require.NoError(t, err)
+
+	now := time.Now()
+	err = vp.AddLinkedDataProof(&verifiable.LinkedDataProofContext{
+		VerificationMethod:      "did:example:123",
+		SignatureRepresentation: verifiable.SignatureJWS,
+		SignatureType:           "Ed25519Signature2018",
+		Suite:                   ed25519signature2018.New(suite.WithSigner(&testSigner{privKey: secretKey})),
+		Created:                 &now,
+		Domain:                  "user.example.com",
+		Challenge:               uuid.New().String(),
+		Purpose:                 "authentication",
+	}, jsonld.WithDocumentLoader(testDocumentLoader))
+	require.NoError(t, err)
 }
 
 type testSigner struct {

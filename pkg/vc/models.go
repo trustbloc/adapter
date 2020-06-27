@@ -21,8 +21,16 @@ type UserConsentCredential struct {
 
 // UserConsentCredentialSubject is the custom credentialSubject of a UserConsentCredential.
 type UserConsentCredentialSubject struct {
+	ID        string       `json:"id"`
+	RPDID     *DIDDocument `json:"rpDID"`
+	IssuerDID *DIDDocument `json:"issuerDID"`
+	PresDef   string       `json:"presDef"`
+}
+
+// DIDDocument is how a DID document is transported over the wire.
+// The ID is separate from the contents (DocB64URL) because of the self-certifying properties of some
+// DID methods (eg. did:peer and did:key) where the ID is derived from the rest of the contents of the document.
+type DIDDocument struct {
 	ID        string `json:"id"`
-	RPDID     string `json:"rpDID"`
-	IssuerDID string `json:"issuerDID"`
-	PresDef   string `json:"presDef"`
+	DocB64URL string `json:"docB64Url"`
 }

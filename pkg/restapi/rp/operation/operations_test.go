@@ -8,8 +8,6 @@ package operation
 import (
 	"bytes"
 	"context"
-	"crypto/ed25519"
-	"crypto/rand"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -40,6 +38,7 @@ import (
 	mockstorage "github.com/trustbloc/edge-core/pkg/storage/mockstore"
 
 	"github.com/trustbloc/edge-adapter/pkg/db/rp"
+	"github.com/trustbloc/edge-adapter/pkg/internal/common/adapterutil"
 	"github.com/trustbloc/edge-adapter/pkg/internal/mock/mockpresentproof"
 	"github.com/trustbloc/edge-adapter/pkg/presentationex"
 )
@@ -1319,9 +1318,10 @@ func TestCHAPIResponseHandler(t *testing.T) {
 	t.Run("valid chapi response", func(t *testing.T) {
 		invitationID := uuid.New().String()
 		rpPublicDID := newDID(t).String()
-		rpPeerDID := newDID(t).String()
+		rpPeerDID := newPeerDID(t)
+		issuerPeerDID := newPeerDID(t)
 		userPeerDID := newDID(t).String()
-		vp, issuerPeerDID := newCHAPIResponseVP(t)
+		vp := newPresentationSubmissionVP(t, newUserConsentVC(t, userPeerDID, rpPeerDID, issuerPeerDID))
 		presDef := &presentationex.PresentationDefinitions{}
 		sent := false
 
@@ -1332,7 +1332,7 @@ func TestCHAPIResponseHandler(t *testing.T) {
 			PresentProofClient: &mockpresentproof.Client{
 				RequestPresentationFunc: func(request *presentproof.RequestPresentation, myDID, theirDID string) (string, error) {
 					sent = true
-					require.Equal(t, rpPeerDID, myDID)
+					require.Equal(t, rpPeerDID.ID, myDID)
 					require.Equal(t, issuerPeerDID.ID, theirDID)
 					require.Len(t, request.RequestPresentationsAttach, 2)
 					checkDIDAttachment(t, userPeerDID, request)
@@ -1348,7 +1348,7 @@ func TestCHAPIResponseHandler(t *testing.T) {
 			id:          invitationID,
 			userSubject: uuid.New().String(),
 			rpPublicDID: rpPublicDID,
-			rpPeerDID:   rpPeerDID,
+			rpPeerDID:   rpPeerDID.ID,
 			userDID:     userPeerDID,
 			pd:          presDef,
 		})
@@ -1409,19 +1409,16 @@ func TestCHAPIResponseHandler(t *testing.T) {
 	})
 
 	t.Run("bad request if issuer did doc is malformed", func(t *testing.T) {
-		publicKey, secretKey, err := ed25519.GenerateKey(rand.Reader)
-		require.NoError(t, err)
-		invalid := newPeerDID(t, publicKey)
+		invitationID := uuid.New().String()
+		rpPublicDID := newDID(t).String()
+		rpPeerDID := newPeerDID(t)
+		invalid := newPeerDID(t)
+
 		invalid.Context = nil
 		invalid.Service = nil
 		invalid.PublicKey = nil
 
-		invalidDidDocVC, _ := newDIDDocVCWithDID(t, invalid)
-		vp := newCHAPIResponseVPWithDIDVC(t, secretKey, invalidDidDocVC)
-
-		invitationID := uuid.New().String()
-		rpPublicDID := newDID(t).String()
-		rpPeerDID := newDID(t).String()
+		vp := newPresentationSubmissionVP(t, newUserConsentVC(t, newPeerDID(t).ID, rpPeerDID, invalid))
 
 		c, err := New(&Config{
 			DIDExchClient:        &stubDIDClient{},
@@ -1435,7 +1432,7 @@ func TestCHAPIResponseHandler(t *testing.T) {
 			id:          invitationID,
 			userSubject: uuid.New().String(),
 			rpPublicDID: rpPublicDID,
-			rpPeerDID:   rpPeerDID,
+			rpPeerDID:   rpPeerDID.ID,
 		})
 
 		w := &httptest.ResponseRecorder{}
@@ -1443,18 +1440,14 @@ func TestCHAPIResponseHandler(t *testing.T) {
 		require.Equal(t, http.StatusBadRequest, w.Code)
 	})
 
-	t.Run("bad request if did doc does not have a didcomm service endpoint", func(t *testing.T) {
-		publicKey, secretKey, err := ed25519.GenerateKey(rand.Reader)
-		require.NoError(t, err)
-		invalid := newPeerDID(t, publicKey)
-		invalid.Service[0].Type = "invalid"
-
-		invalidDidDocVC, _ := newDIDDocVCWithDID(t, invalid)
-		vp := newCHAPIResponseVPWithDIDVC(t, secretKey, invalidDidDocVC)
-
+	t.Run("bad request if issuer's did doc does not have a didcomm service endpoint", func(t *testing.T) {
 		invitationID := uuid.New().String()
 		rpPublicDID := newDID(t).String()
-		rpPeerDID := newDID(t).String()
+		rpPeerDID := newPeerDID(t)
+		invalid := newPeerDID(t)
+		invalid.Service[0].Type = "invalid"
+
+		vp := newPresentationSubmissionVP(t, newUserConsentVC(t, newPeerDID(t).ID, rpPeerDID, invalid))
 
 		c, err := New(&Config{
 			DIDExchClient:        &stubDIDClient{},
@@ -1468,7 +1461,7 @@ func TestCHAPIResponseHandler(t *testing.T) {
 			id:          invitationID,
 			userSubject: uuid.New().String(),
 			rpPublicDID: rpPublicDID,
-			rpPeerDID:   rpPeerDID,
+			rpPeerDID:   rpPeerDID.ID,
 		})
 
 		w := &httptest.ResponseRecorder{}
@@ -1477,10 +1470,10 @@ func TestCHAPIResponseHandler(t *testing.T) {
 	})
 
 	t.Run("internal server error if error saving connection record", func(t *testing.T) {
-		vp, _ := newCHAPIResponseVP(t)
 		invitationID := uuid.New().String()
 		rpPublicDID := newDID(t).String()
-		rpPeerDID := newDID(t).String()
+		rpPeerDID := newPeerDID(t)
+		vp := newPresentationSubmissionVP(t, newUserConsentVC(t, newPeerDID(t).ID, rpPeerDID, newPeerDID(t)))
 
 		c, err := New(&Config{
 			DIDExchClient: &stubDIDClient{},
@@ -1498,7 +1491,7 @@ func TestCHAPIResponseHandler(t *testing.T) {
 			id:          invitationID,
 			userSubject: uuid.New().String(),
 			rpPublicDID: rpPublicDID,
-			rpPeerDID:   rpPeerDID,
+			rpPeerDID:   rpPeerDID.ID,
 		})
 
 		w := &httptest.ResponseRecorder{}
@@ -1507,10 +1500,10 @@ func TestCHAPIResponseHandler(t *testing.T) {
 	})
 
 	t.Run("internal server error if cannot send request-presentation", func(t *testing.T) {
-		vp, _ := newCHAPIResponseVP(t)
 		invitationID := uuid.New().String()
 		rpPublicDID := newDID(t).String()
-		rpPeerDID := newDID(t).String()
+		rpPeerDID := newPeerDID(t)
+		vp := newPresentationSubmissionVP(t, newUserConsentVC(t, newPeerDID(t).ID, rpPeerDID, newPeerDID(t)))
 
 		c, err := New(&Config{
 			DIDExchClient:        &stubDIDClient{},
@@ -1528,7 +1521,7 @@ func TestCHAPIResponseHandler(t *testing.T) {
 			id:          invitationID,
 			userSubject: uuid.New().String(),
 			rpPublicDID: rpPublicDID,
-			rpPeerDID:   rpPeerDID,
+			rpPeerDID:   rpPeerDID.ID,
 		})
 
 		w := &httptest.ResponseRecorder{}
@@ -1537,7 +1530,7 @@ func TestCHAPIResponseHandler(t *testing.T) {
 	})
 }
 
-func TestHandlePresentationMsg(t *testing.T) {
+func TestHandleIssuerPresentationMsg(t *testing.T) {
 	t.Run("valid response", func(t *testing.T) {
 		o, err := New(&Config{
 			DIDExchClient:        &stubDIDClient{},
@@ -1556,7 +1549,7 @@ func TestHandlePresentationMsg(t *testing.T) {
 			}},
 			PresentationsAttach: []decorator.Attachment{{
 				ID:   attachID,
-				Data: decorator.AttachmentData{JSON: newIssuerResponseVP(t, validPresentationSubmissionVP)},
+				Data: decorator.AttachmentData{JSON: newPresentationSubmissionVP(t, newCreditCardStatementVC(t))},
 			}},
 		})
 		err = expected.SetID(uuid.New().String())
@@ -1571,7 +1564,7 @@ func TestHandlePresentationMsg(t *testing.T) {
 			id: invitationID,
 		})
 
-		err = o.handlePresentationMsg(expected)
+		err = o.handleIssuerPresentationMsg(expected)
 		require.NoError(t, err)
 	})
 
@@ -1584,7 +1577,7 @@ func TestHandlePresentationMsg(t *testing.T) {
 		})
 		require.NoError(t, err)
 
-		err = o.handlePresentationMsg(service.NewDIDCommMsgMap(&presentproof.Presentation{}))
+		err = o.handleIssuerPresentationMsg(service.NewDIDCommMsgMap(&presentproof.Presentation{}))
 		require.Error(t, err)
 	})
 
@@ -1599,7 +1592,7 @@ func TestHandlePresentationMsg(t *testing.T) {
 		msg := service.NewDIDCommMsgMap(&presentproof.Presentation{})
 		err = msg.SetID(uuid.New().String())
 		require.NoError(t, err)
-		err = o.handlePresentationMsg(msg)
+		err = o.handleIssuerPresentationMsg(msg)
 		require.Error(t, err)
 	})
 
@@ -1617,7 +1610,7 @@ func TestHandlePresentationMsg(t *testing.T) {
 		o.setThidInvitationData(&thidInvitationData{
 			threadID: msg.ID(),
 		})
-		err = o.handlePresentationMsg(msg)
+		err = o.handleIssuerPresentationMsg(msg)
 		require.Error(t, err)
 	})
 
@@ -1640,7 +1633,7 @@ func TestHandlePresentationMsg(t *testing.T) {
 		o.setInvitationData(&invitationData{
 			id: invitationID,
 		})
-		err = o.handlePresentationMsg(msg)
+		err = o.handleIssuerPresentationMsg(msg)
 		require.Error(t, err)
 	})
 
@@ -1671,7 +1664,7 @@ func TestHandlePresentationMsg(t *testing.T) {
 		o.setInvitationData(&invitationData{
 			id: invitationID,
 		})
-		err = o.handlePresentationMsg(msg)
+		err = o.handleIssuerPresentationMsg(msg)
 		require.Error(t, err)
 	})
 
@@ -1706,11 +1699,11 @@ func TestHandlePresentationMsg(t *testing.T) {
 		o.setInvitationData(&invitationData{
 			id: invitationID,
 		})
-		err = o.handlePresentationMsg(msg)
+		err = o.handleIssuerPresentationMsg(msg)
 		require.Error(t, err)
 	})
 
-	t.Run("error if VP does not contain expected number of credentials", func(t *testing.T) {
+	t.Run("error if response attachment contains an unparseable VP", func(t *testing.T) {
 		o, err := New(&Config{
 			DIDExchClient:        &stubDIDClient{},
 			Store:                memstore.NewProvider(),
@@ -1724,85 +1717,7 @@ func TestHandlePresentationMsg(t *testing.T) {
 		expected := service.NewDIDCommMsgMap(&presentproof.Presentation{
 			Formats: []presentproofsvc.Format{{
 				AttachID: attachID,
-				Format:   "dif/presentation_submission@0.0.1",
-			}},
-			PresentationsAttach: []decorator.Attachment{{
-				ID:   attachID,
-				Data: decorator.AttachmentData{JSON: newIssuerResponseVP(t, invalidPresentationSubmissionVPNoCreds)},
-			}},
-		})
-		err = expected.SetID(uuid.New().String())
-		require.NoError(t, err)
-
-		o.setThidInvitationData(&thidInvitationData{
-			threadID:         expected.ID(),
-			invitationDataID: invitationID,
-		})
-
-		o.setInvitationData(&invitationData{
-			id: invitationID,
-		})
-
-		err = o.handlePresentationMsg(expected)
-		require.Error(t, err)
-	})
-
-	t.Run("error if VP contains a malformed credential", func(t *testing.T) {
-		o, err := New(&Config{
-			DIDExchClient:        &stubDIDClient{},
-			Store:                memstore.NewProvider(),
-			AriesStorageProvider: &mockAriesStorageProvider{},
-			PresentProofClient:   &mockpresentproof.Client{},
-		})
-		require.NoError(t, err)
-
-		invitationID := uuid.New().String()
-		attachID := uuid.New().String()
-		expected := service.NewDIDCommMsgMap(&presentproof.Presentation{
-			Formats: []presentproofsvc.Format{{
-				AttachID: attachID,
-				Format:   "dif/presentation_submission@0.0.1",
-			}},
-			PresentationsAttach: []decorator.Attachment{{
-				ID: attachID,
-				Data: decorator.AttachmentData{
-					JSON: newIssuerResponseVP(t,
-						fmt.Sprintf(presentationSubmissionVPCredsPlaceholder, "{}")),
-				},
-			}},
-		})
-		err = expected.SetID(uuid.New().String())
-		require.NoError(t, err)
-
-		o.setThidInvitationData(&thidInvitationData{
-			threadID:         expected.ID(),
-			invitationDataID: invitationID,
-		})
-
-		o.setInvitationData(&invitationData{
-			id: invitationID,
-		})
-
-		err = o.handlePresentationMsg(expected)
-		require.Error(t, err)
-		require.True(t, errors.Is(err, errMalformedCredential))
-	})
-
-	t.Run("error if response attachment contains an invalid VP", func(t *testing.T) {
-		o, err := New(&Config{
-			DIDExchClient:        &stubDIDClient{},
-			Store:                memstore.NewProvider(),
-			AriesStorageProvider: &mockAriesStorageProvider{},
-			PresentProofClient:   &mockpresentproof.Client{},
-		})
-		require.NoError(t, err)
-
-		invitationID := uuid.New().String()
-		attachID := uuid.New().String()
-		expected := service.NewDIDCommMsgMap(&presentproof.Presentation{
-			Formats: []presentproofsvc.Format{{
-				AttachID: attachID,
-				Format:   "dif/presentation_submission@0.0.1",
+				Format:   presentationSubmissionFormat,
 			}},
 			PresentationsAttach: []decorator.Attachment{{
 				ID: attachID,
@@ -1823,9 +1738,9 @@ func TestHandlePresentationMsg(t *testing.T) {
 			id: invitationID,
 		})
 
-		err = o.handlePresentationMsg(expected)
+		err = o.handleIssuerPresentationMsg(expected)
 		require.Error(t, err)
-		require.True(t, errors.Is(err, errMalformedCredential))
+		require.True(t, errors.Is(err, errInvalidCredential))
 	})
 }
 
@@ -2330,6 +2245,20 @@ func (m *mockAriesStorageProvider) TransientStorageProvider() ariesstorage.Provi
 
 func toBytes(t *testing.T, v interface{}) []byte {
 	bits, err := json.Marshal(v)
+	require.NoError(t, err)
+
+	return bits
+}
+
+func marshalDID(t *testing.T, d *did.Doc) []byte {
+	bits, err := d.JSONBytes()
+	require.NoError(t, err)
+
+	return bits
+}
+
+func marshalVP(t *testing.T, vp adapterutil.JSONMarshaller) []byte {
+	bits, err := vp.MarshalJSON()
 	require.NoError(t, err)
 
 	return bits
