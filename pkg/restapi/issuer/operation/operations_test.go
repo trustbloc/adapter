@@ -15,10 +15,13 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"testing"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/gorilla/mux"
+	"github.com/hyperledger/aries-framework-go/pkg/didcomm/common/service"
 	"github.com/hyperledger/aries-framework-go/pkg/didcomm/protocol/didexchange"
+	issuecredsvc "github.com/hyperledger/aries-framework-go/pkg/didcomm/protocol/issuecredential"
 	"github.com/hyperledger/aries-framework-go/pkg/didcomm/protocol/mediator"
 	"github.com/hyperledger/aries-framework-go/pkg/doc/verifiable"
 	mocksvc "github.com/hyperledger/aries-framework-go/pkg/mock/didcomm/protocol/didexchange"
@@ -33,6 +36,7 @@ import (
 
 	"github.com/trustbloc/edge-adapter/pkg/aries"
 	mockconn "github.com/trustbloc/edge-adapter/pkg/internal/mock/connection"
+	"github.com/trustbloc/edge-adapter/pkg/internal/mock/issuecredential"
 	"github.com/trustbloc/edge-adapter/pkg/profile/issuer"
 )
 
@@ -278,6 +282,7 @@ func TestConnectWallet(t *testing.T) {
 			ServiceMap: map[string]interface{}{
 				didexchange.DIDExchange: &mocksvc.MockDIDExchangeSvc{},
 				mediator.Coordination:   &mockroute.MockMediatorSvc{},
+				issuecredsvc.Name:       &issuecredential.MockIssueCredentialSvc{},
 			},
 			LegacyKMSValue:       &mockkms.CloseableKMS{CreateKeyErr: errors.New("key generation error")},
 			ServiceEndpointValue: "endpoint",
@@ -643,6 +648,76 @@ func TestGenerateInvitation(t *testing.T) {
 	})
 }
 
+func TestIssueCredential(t *testing.T) {
+	t.Run("test issue credential", func(t *testing.T) {
+		c, err := issueCredentialClient(getAriesCtx())
+		require.NoError(t, err)
+		require.NotNil(t, c)
+
+		c, err = issueCredentialClient(&mockprovider.Provider{})
+		require.Error(t, err)
+		require.Nil(t, c)
+
+		c, err = issueCredentialClient(&mockprovider.Provider{
+			ServiceMap: map[string]interface{}{
+				issuecredsvc.Name: &issuecredential.MockIssueCredentialSvc{
+					RegisterActionEventErr: errors.New("register error")},
+			},
+		})
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "register error")
+		require.Nil(t, c)
+	})
+
+	t.Run("test issue credential actions - unsupported message", func(t *testing.T) {
+		actionCh := make(chan service.DIDCommAction, 1)
+
+		go issueCredentialActionListener(actionCh)
+
+		done := make(chan struct{})
+
+		actionCh <- service.DIDCommAction{
+			Message: service.NewDIDCommMsgMap(issuecredsvc.RequestCredential{
+				Type: "unsupported-message-type",
+			}),
+			Stop: func(err error) {
+				require.NotNil(t, err)
+				require.Contains(t, err.Error(), "unsupported message type")
+				done <- struct{}{}
+			},
+		}
+
+		select {
+		case <-done:
+		case <-time.After(5 * time.Second):
+			require.Fail(t, "tests are not validated due to timeout")
+		}
+	})
+
+	t.Run("test issue credential actions - request issue cred message", func(t *testing.T) {
+		actionCh := make(chan service.DIDCommAction, 1)
+
+		go issueCredentialActionListener(actionCh)
+
+		done := make(chan struct{})
+
+		actionCh <- service.DIDCommAction{
+			Message: service.NewDIDCommMsgMap(issuecredsvc.RequestCredential{
+				Type: issuecredsvc.RequestCredentialMsgType,
+			}),
+			Continue: func(args interface{}) {
+				done <- struct{}{}
+			},
+		}
+
+		select {
+		case <-done:
+		case <-time.After(5 * time.Second):
+			require.Fail(t, "tests are not validated due to timeout")
+		}
+	})
+}
+
 func getAriesCtx() aries.CtxProvider {
 	return &mockprovider.Provider{
 		TransientStorageProviderValue: mockstore.NewMockStoreProvider(),
@@ -650,6 +725,7 @@ func getAriesCtx() aries.CtxProvider {
 		ServiceMap: map[string]interface{}{
 			didexchange.DIDExchange: &mocksvc.MockDIDExchangeSvc{},
 			mediator.Coordination:   &mockroute.MockMediatorSvc{},
+			issuecredsvc.Name:       &issuecredential.MockIssueCredentialSvc{},
 		},
 		LegacyKMSValue:       &mockkms.CloseableKMS{CreateEncryptionKeyValue: "sample-key"},
 		ServiceEndpointValue: "endpoint",

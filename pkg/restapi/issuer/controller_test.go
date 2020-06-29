@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/hyperledger/aries-framework-go/pkg/didcomm/protocol/didexchange"
+	issuecredsvc "github.com/hyperledger/aries-framework-go/pkg/didcomm/protocol/issuecredential"
 	"github.com/hyperledger/aries-framework-go/pkg/didcomm/protocol/mediator"
 	mocksvc "github.com/hyperledger/aries-framework-go/pkg/mock/didcomm/protocol/didexchange"
 	mockroute "github.com/hyperledger/aries-framework-go/pkg/mock/didcomm/protocol/mediator"
@@ -17,6 +18,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"github.com/trustbloc/edge-core/pkg/storage/memstore"
 
+	"github.com/trustbloc/edge-adapter/pkg/internal/mock/issuecredential"
 	"github.com/trustbloc/edge-adapter/pkg/restapi/issuer/operation"
 )
 
@@ -28,6 +30,7 @@ func TestNew(t *testing.T) {
 			ServiceMap: map[string]interface{}{
 				didexchange.DIDExchange: &mocksvc.MockDIDExchangeSvc{},
 				mediator.Coordination:   &mockroute.MockMediatorSvc{},
+				issuecredsvc.Name:       &issuecredential.MockIssueCredentialSvc{},
 			},
 		}
 
