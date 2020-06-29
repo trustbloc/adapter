@@ -37,3 +37,8 @@ type HandleCHAPIResponse struct {
 	InvitationID           string          `json:"invID"`
 	VerifiablePresentation json.RawMessage `json:"vp"`
 }
+
+// HandleCHAPIResponseResult is the body of the response to a HandleCHAPIResponse request.
+type HandleCHAPIResponseResult struct {
+	RedirectURL string `json:"redirectURL"`
+}

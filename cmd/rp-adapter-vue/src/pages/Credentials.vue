@@ -43,6 +43,7 @@ SPDX-License-Identifier: Apache-2.0
             const redirectURL = this.validatePresentation(webCredential)
             // redirect user
             console.log(`redirecting user to ${redirectURL}`)
+            // TODO add redirection
         },
         data() {
             return {
@@ -64,8 +65,17 @@ SPDX-License-Identifier: Apache-2.0
                 )
             },
             validatePresentation(presentation) {
-                // TODO submit user presentation to the backend for validation and return redirect URL
-                const redirectURL = "http://test.com"
+                // TODO show error page if validation fails: https://github.com/trustbloc/edge-adapter/issues/128
+                let redirectURL = ""
+                this.$http.post(`/presentations/handleResponse`).then(
+                    resp => {
+                        redirectURL = resp.data.redirectURL
+                        console.log(`received redirect url: ${redirectURL}`)
+                    },
+                    err => {
+                        console.error(`failed to validate chapi response: ${err}`)
+                    }
+                )
                 console.log(`submitted presentation=${presentation} and got redirectURL=${redirectURL}`)
                 return redirectURL
             }
