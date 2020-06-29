@@ -19,8 +19,12 @@ import (
 	"time"
 
 	"github.com/cucumber/godog"
+	"github.com/google/uuid"
 	"github.com/hyperledger/aries-framework-go/pkg/client/didexchange"
+	issuecredclient "github.com/hyperledger/aries-framework-go/pkg/client/issuecredential"
 	didexcmd "github.com/hyperledger/aries-framework-go/pkg/controller/command/didexchange"
+	issuecredcmd "github.com/hyperledger/aries-framework-go/pkg/controller/command/issuecredential"
+	issuecredsvc "github.com/hyperledger/aries-framework-go/pkg/didcomm/protocol/issuecredential"
 	"github.com/hyperledger/aries-framework-go/pkg/doc/util"
 	"github.com/hyperledger/aries-framework-go/pkg/doc/verifiable"
 	"github.com/trustbloc/edge-core/pkg/log"
@@ -40,27 +44,34 @@ const (
 	receiveInvitationPath = connOperationID + "/receive-invitation"
 	acceptInvitationPath  = connOperationID + "/%s/accept-invitation"
 	connectionsByID       = connOperationID + "/{id}"
+
+	issueCredOperationID = "/issuecredential"
+	sendCredRequest      = issueCredOperationID + "/send-request"
+	issueCredActions     = issueCredOperationID + "/actions"
+	acceptCredentialPath = issueCredOperationID + "/%s/accept-credential"
 )
 
 var logger = log.New("aries-framework/tests")
 
 // Steps contains steps for aries agent.
 type Steps struct {
-	bddContext     *context.BDDContext
-	Args           map[string]string
-	ControllerURLs map[string]string
-	WebhookURLs    map[string]string
-	webSocketConns map[string]*websocket.Conn
+	bddContext         *context.BDDContext
+	Args               map[string]string
+	ControllerURLs     map[string]string
+	WebhookURLs        map[string]string
+	webSocketConns     map[string]*websocket.Conn
+	adapterConnections map[string]*didexchange.Connection
 }
 
 // NewSteps returns new agent steps.
 func NewSteps(ctx *context.BDDContext) *Steps {
 	return &Steps{
-		bddContext:     ctx,
-		Args:           make(map[string]string),
-		ControllerURLs: make(map[string]string),
-		WebhookURLs:    make(map[string]string),
-		webSocketConns: make(map[string]*websocket.Conn),
+		bddContext:         ctx,
+		Args:               make(map[string]string),
+		ControllerURLs:     make(map[string]string),
+		WebhookURLs:        make(map[string]string),
+		webSocketConns:     make(map[string]*websocket.Conn),
+		adapterConnections: make(map[string]*didexchange.Connection),
 	}
 }
 
@@ -70,6 +81,7 @@ func (a *Steps) RegisterSteps(s *godog.Suite) {
 		a.validateAgentConnection)
 	s.Step(`^"([^"]*)" responds to connect request from Issuer adapter \("([^"]*)"\) within "([^"]*)" seconds$`,
 		a.handleDIDConnectRequest)
+	s.Step(`^"([^"]*)" sends request credential message and receives credential from the issuer$`, a.fetchCredential)
 }
 
 func (a *Steps) validateAgentConnection(agentID, inboundHost,
@@ -166,6 +178,8 @@ func (a *Steps) handleDIDConnectRequest(agentID, issuerID string, timeout int) e
 	if conn.State != completedState {
 		return fmt.Errorf("expected state[%s] for agent[%s], but got[%s]", completedState, agentID, conn.State)
 	}
+
+	a.adapterConnections[agentID] = conn
 
 	subject := issuer.DIDConnectCredentialSubject{
 		ID:              connectionID,
@@ -310,6 +324,134 @@ func (a *Steps) pullEventsFromWebSocket(agentID, state string) (string, error) {
 			}
 		}
 	}
+}
+
+func (a *Steps) fetchCredential(agentID string) error {
+	conn, ok := a.adapterConnections[agentID]
+	if !ok {
+		return fmt.Errorf("unable to find the issuer adapter connection data [%s]", agentID)
+	}
+
+	controllerURL, ok := a.ControllerURLs[agentID]
+	if !ok {
+		return fmt.Errorf("unable to find controller URL registered for agent [%s]", agentID)
+	}
+
+	req := &issuecredcmd.SendRequestArgs{
+		MyDID:             conn.MyDID,
+		TheirDID:          conn.TheirDID,
+		RequestCredential: &issuecredclient.RequestCredential{},
+	}
+
+	reqBytes, err := json.Marshal(req)
+	if err != nil {
+		return fmt.Errorf("failed marshal issue-credential send request : %w", err)
+	}
+
+	err = sendHTTP(http.MethodPost, controllerURL+sendCredRequest, reqBytes, nil)
+	if err != nil {
+		return fmt.Errorf("[issue-credential] failed to send request : %w", err)
+	}
+
+	piid, err := actionPIID(controllerURL)
+	if err != nil {
+		return err
+	}
+
+	credentialName := uuid.New().String()
+
+	err = acceptCredential(piid, credentialName, controllerURL)
+	if err != nil {
+		return fmt.Errorf("[issue-credential] failed to accept credential : %w", err)
+	}
+
+	err = validateCredential(credentialName, controllerURL)
+	if err != nil {
+		return fmt.Errorf("[issue-credential] failed to validate credential : %w", err)
+	}
+
+	return nil
+}
+
+func acceptCredential(piid, credentialName, controllerURL string) error {
+	req := issuecredcmd.AcceptCredentialArgs{
+		Names: []string{credentialName},
+	}
+
+	reqBytes, err := json.Marshal(req)
+	if err != nil {
+		return fmt.Errorf("failed to perform approve request : %w", err)
+	}
+
+	err = sendHTTP(http.MethodPost, controllerURL+fmt.Sprintf(acceptCredentialPath, piid), reqBytes, nil)
+	if err != nil {
+		return fmt.Errorf("failed to perform approve request : %w", err)
+	}
+
+	return nil
+}
+
+func validateCredential(credentialName, controllerURL string) error {
+	// TODO use listener rather than polling (update once aries bdd-tests are refactored)
+	const (
+		timeoutWait = 10 * time.Second
+		retryDelay  = 500 * time.Millisecond
+	)
+
+	start := time.Now()
+
+	for {
+		if time.Since(start) > timeoutWait {
+			break
+		}
+
+		var result interface{}
+
+		err := sendHTTP(http.MethodGet,
+			fmt.Sprintf("%s/verifiable/credential/name/%s", controllerURL, credentialName), nil, &result)
+		if err != nil {
+			time.Sleep(retryDelay)
+			continue
+		}
+
+		return nil
+	}
+
+	return fmt.Errorf("failed to validate credential: not found")
+}
+
+func actionPIID(endpoint string) (string, error) {
+	// TODO use listener rather than polling (update once aries bdd-tests are refactored)
+	const (
+		timeoutWait = 10 * time.Second
+		retryDelay  = 500 * time.Millisecond
+	)
+
+	start := time.Now()
+
+	for {
+		if time.Since(start) > timeoutWait {
+			break
+		}
+
+		var result struct {
+			Actions []issuecredsvc.Action `json:"actions"`
+		}
+
+		err := sendHTTP(http.MethodGet, endpoint+issueCredActions, nil, &result)
+		if err != nil {
+			return "", fmt.Errorf("failed to get action PIID: %w", err)
+		}
+
+		if len(result.Actions) == 0 {
+			time.Sleep(retryDelay)
+			continue
+		}
+
+		return result.Actions[0].PIID, nil
+	}
+
+	return "", fmt.Errorf("unable to get action PIID: timeout")
 }
 
 func sendHTTP(method, destination string, message []byte, result interface{}) error {
