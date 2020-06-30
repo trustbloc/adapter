@@ -15,6 +15,7 @@ import (
 	"net/http"
 	"net/url"
 	"sync"
+	"time"
 
 	"github.com/coreos/go-oidc"
 	"github.com/google/uuid"
@@ -25,6 +26,7 @@ import (
 	didexchangesvc "github.com/hyperledger/aries-framework-go/pkg/didcomm/protocol/didexchange"
 	presentproofsvc "github.com/hyperledger/aries-framework-go/pkg/didcomm/protocol/presentproof"
 	"github.com/hyperledger/aries-framework-go/pkg/doc/did"
+	"github.com/hyperledger/aries-framework-go/pkg/doc/verifiable"
 	ariesstorage "github.com/hyperledger/aries-framework-go/pkg/storage"
 	"github.com/hyperledger/aries-framework-go/pkg/store/connection"
 	"github.com/ory/hydra-client-go/client/admin"
@@ -36,6 +38,7 @@ import (
 	"github.com/trustbloc/edge-adapter/pkg/internal/common/support"
 	"github.com/trustbloc/edge-adapter/pkg/presentationex"
 	commhttp "github.com/trustbloc/edge-adapter/pkg/restapi/internal/common/http"
+	rp2 "github.com/trustbloc/edge-adapter/pkg/vc/rp"
 )
 
 // API endpoints.
@@ -126,11 +129,11 @@ type consentRequest struct {
 
 type invitationData struct {
 	id          string
-	userSubject string
 	userDID     string
 	rpPublicDID string
 	rpPeerDID   string
 	pd          *presentationex.PresentationDefinitions
+	cr          *admin.GetConsentRequestOK
 }
 
 // used to map present-proof theadID to invitationData.id.
@@ -139,8 +142,16 @@ type thidInvitationData struct {
 	invitationDataID string
 }
 
+type issuerResponseStatus struct {
+	err        error
+	submission *rp2.PresentationSubmissionPresentation
+}
+
 // New returns CreateCredential instance.
 func New(config *Config) (*Operation, error) {
+	// TODO set timeout issuer's response: https://github.com/trustbloc/edge-adapter/issues/110
+	const defaultTimeout = 5 * time.Second
+
 	o := &Operation{
 		presentationExProvider:  config.PresentationExProvider,
 		hydra:                   config.Hydra,
@@ -157,6 +168,9 @@ func New(config *Config) (*Operation, error) {
 		ppClient:                config.PresentProofClient,
 		ppActions:               make(chan service.DIDCommAction),
 		thidInvitationDataMap:   make(map[string]*thidInvitationData),
+		issuerCallbacks:         make(map[string]chan *issuerResponseStatus),
+		issuerCallbacksLock:     &sync.Mutex{},
+		issuerCallbackTimeout:   defaultTimeout,
 	}
 
 	err := o.didClient.RegisterActionEvent(o.didActions)
@@ -233,6 +247,9 @@ type Operation struct {
 	ppActions               chan service.DIDCommAction
 	thidInvitationDataMap   map[string]*thidInvitationData
 	thidInvDataLock         sync.Mutex
+	issuerCallbacks         map[string]chan *issuerResponseStatus
+	issuerCallbacksLock     sync.Locker
+	issuerCallbackTimeout   time.Duration
 }
 
 // GetRESTHandlers get all controller API handler available for this service.
@@ -456,6 +473,22 @@ func (o *Operation) getAndUnsetThidInvitationData(thid string) *thidInvitationDa
 	return o.thidInvitationDataMap[thid]
 }
 
+func (o *Operation) setIssuerCallbackCh(thid string, c chan *issuerResponseStatus) {
+	o.issuerCallbacksLock.Lock()
+	defer o.issuerCallbacksLock.Unlock()
+
+	o.issuerCallbacks[thid] = c
+}
+
+func (o *Operation) getAndUnsetIssuerCallbackCh(thid string) (chan *issuerResponseStatus, bool) {
+	o.issuerCallbacksLock.Lock()
+	defer o.issuerCallbacksLock.Unlock()
+
+	ch, ok := o.issuerCallbacks[thid]
+
+	return ch, ok
+}
+
 func acceptLoginAndRedirectToHydra(
 	w http.ResponseWriter, r *http.Request, hydra Hydra, login *models.LoginRequest) error {
 	accept := admin.NewAcceptLoginRequestParams()
@@ -675,9 +708,9 @@ func (o *Operation) getPresentationsRequest(rw http.ResponseWriter, req *http.Re
 
 	o.setInvitationData(&invitationData{
 		id:          invitation.ID,
-		userSubject: cr.cr.GetPayload().Subject,
 		rpPublicDID: cr.rpDID,
 		pd:          cr.pd,
+		cr:          cr.cr,
 	})
 
 	response := &GetPresentationRequestResponse{
@@ -713,7 +746,7 @@ func (o *Operation) saveConsentRequest(r *consentRequest) error {
 // - all required credentials in a single response, or
 // - consent credential + didcomm endpoint where the requested presentations can be obtained, or
 // - nothing (an error response?), indicating they cannot satisfy the request.
-func (o *Operation) chapiResponseHandler(w http.ResponseWriter, r *http.Request) { //nolint:funlen
+func (o *Operation) chapiResponseHandler(w http.ResponseWriter, r *http.Request) { //nolint:funlen,gocyclo
 	request := &HandleCHAPIResponse{}
 
 	err := json.NewDecoder(r.Body).Decode(request)
@@ -818,7 +851,6 @@ func (o *Operation) chapiResponseHandler(w http.ResponseWriter, r *http.Request)
 		},
 	}
 
-	// TODO set timeout on request-presentation: https://github.com/trustbloc/edge-adapter/issues/110
 	thid, err := o.ppClient.SendRequestPresentation(&presentproof.RequestPresentation{
 		Formats: []presentproofsvc.Format{
 			{
@@ -840,15 +872,113 @@ func (o *Operation) chapiResponseHandler(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
+	callback := make(chan *issuerResponseStatus)
+
+	o.setIssuerCallbackCh(thid, callback)
+
 	o.setThidInvitationData(&thidInvitationData{
 		threadID:         thid,
 		invitationDataID: invData.id,
 	})
 
-	// TODO parse presentation_submission from issuer, validate against presentation-definitions,
-	//  build response object for RP, accept the consent request at hydra (include response object),
-	//  respond with a redirect URL to hydra
-	testResponse(w)
+	select {
+	case c := <-callback:
+		o.handleIssuerCallback(w, r, invData, c)
+	case <-time.After(o.issuerCallbackTimeout):
+		msg := "timeout waiting for credentials"
+		logger.Errorf(msg)
+		commhttp.WriteErrorResponse(w, http.StatusGatewayTimeout, msg)
+	}
+}
+
+func (o *Operation) handleIssuerCallback(
+	w http.ResponseWriter, r *http.Request, invData *invitationData, c *issuerResponseStatus) {
+	if errors.Is(c.err, errInvalidCredential) {
+		commhttp.WriteErrorResponse(w, http.StatusBadRequest, "received invalid credentials from the issuer")
+
+		return
+	}
+
+	if c.err != nil {
+		commhttp.WriteErrorResponse(w, http.StatusInternalServerError, "failed to validate credentials")
+
+		return
+	}
+
+	rpData, err := mapPresentationSubmissionToRPData(c.submission)
+	if err != nil {
+		msg := fmt.Sprintf("failed to map VCs into RP object : %s", err)
+		logger.Errorf(msg)
+		commhttp.WriteErrorResponse(w, http.StatusInternalServerError, msg)
+
+		return
+	}
+
+	accept := &admin.AcceptConsentRequestParams{}
+	accept.SetContext(r.Context())
+	accept.SetConsentChallenge(invData.cr.Payload.Challenge)
+	accept.SetBody(&models.AcceptConsentRequest{
+		GrantAccessTokenAudience: invData.cr.Payload.RequestedAccessTokenAudience,
+		GrantScope:               invData.cr.Payload.RequestedScope, // TODO support selective disclosure
+		HandledAt:                models.NullTime(time.Now()),
+		Remember:                 true, // TODO support user choice whether consent should be remembered
+		Session: &models.ConsentRequestSession{
+			IDToken: rpData,
+		},
+	})
+
+	resp, err := o.hydra.AcceptConsentRequest(accept)
+	if err != nil {
+		msg := fmt.Sprintf("failed to accept consent request at hydra : %s", err)
+		logger.Errorf(msg)
+		commhttp.WriteErrorResponse(w, http.StatusBadGateway, msg)
+
+		return
+	}
+
+	commhttp.WriteResponse(w, &HandleCHAPIResponseResult{
+		RedirectURL: resp.Payload.RedirectTo,
+	})
+
+	logger.Debugf("redirected user to: %s", resp.Payload.RedirectTo)
+}
+
+// TODO surely there must be a better way to unmarshal the credentialSubject of a VC into a map????
+func mapPresentationSubmissionToRPData(
+	submission *rp2.PresentationSubmissionPresentation) (map[string]interface{}, error) {
+	rpdata := make(map[string]interface{})
+
+	raw, err := submission.Base.MarshalledCredentials()
+	if err != nil {
+		return nil, fmt.Errorf("failed to extract marshalled credentials : %w", err)
+	}
+
+	if len(raw) == 0 {
+		return nil, errors.New("expected at least one credentialSubject in VP")
+	}
+
+	vc, err := verifiable.ParseCredential(raw[0])
+	if err != nil {
+		return nil, fmt.Errorf("failed to unmarshal ")
+	}
+
+	bits, err := json.Marshal(vc.Subject)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal vc subject : %w", err)
+	}
+
+	err = json.Unmarshal(bits, &rpdata)
+	if err != nil {
+		return nil, fmt.Errorf("failed to unmarshal vc subject : %w", err)
+	}
+
+	return filterJSONLDisms(rpdata), nil
+}
+
+func filterJSONLDisms(in map[string]interface{}) map[string]interface{} {
+	// TODO filter JSONLD-isms from the credential subject like "@id", "@type", "@context", etc.
+	//  https://github.com/trustbloc/edge-adapter/issues/127
+	return in
 }
 
 // RP requests user data.
@@ -939,7 +1069,12 @@ func (o *Operation) listenForIssuerResponses() {
 		err := o.handleIssuerPresentationMsg(action.Message)
 		if err != nil {
 			logger.Warnf("failed to handle present-proof response : %s", err)
+			action.Stop(err)
+
+			continue
 		}
+
+		action.Continue(nil)
 	}
 }
 
@@ -949,34 +1084,66 @@ func (o *Operation) handleIssuerPresentationMsg(msg service.DIDCommMsg) error {
 		return fmt.Errorf("failed to extract threadID from didcomm msg : %w", err)
 	}
 
+	responseChan, found := o.getAndUnsetIssuerCallbackCh(thid)
+	if !found {
+		return fmt.Errorf("no callback channel registered for threadID=%s", thid)
+	}
+
 	data := o.getAndUnsetThidInvitationData(thid)
 	if data == nil {
-		return fmt.Errorf("ignoring present-proof response for invalid threadID=%s", thid)
+		err = fmt.Errorf("ignoring present-proof response for invalid threadID=%s", thid)
+		notifyIssuerResponseError(err, responseChan)
+
+		return err
 	}
 
 	invData := o.getAndUnsetInvitationData(data.invitationDataID)
 	if invData == nil {
-		return fmt.Errorf("expecting invitationData for thid %s but none was found", thid)
+		err = fmt.Errorf("expecting invitationData for thid %s but none was found", thid)
+		notifyIssuerResponseError(err, responseChan)
+
+		return err
 	}
 
 	presentation := &presentproof.Presentation{}
 
 	err = msg.Decode(presentation)
 	if err != nil {
-		return fmt.Errorf("failed to decode present-proof message : %w", err)
+		err = fmt.Errorf("failed to decode present-proof message : %w", err)
+		notifyIssuerResponseError(err, responseChan)
+
+		return err
 	}
 
 	logger.Debugf("handling present-proof message: %+v", presentation)
 
 	presentationSubmissionVP, err := parseIssuerResponse(invData.pd, presentation)
 	if err != nil {
-		return fmt.Errorf("failed to parse verifiable presentation : %w", err)
+		err = fmt.Errorf("failed to parse verifiable presentation : %w", err)
+		notifyIssuerResponseError(err, responseChan)
+
+		return err
 	}
 
 	logger.Debugf("received presentation_submission : %+v", presentationSubmissionVP)
 
+	notifyIssuerResponse(presentationSubmissionVP, responseChan)
+
 	return nil
 }
+
+func notifyIssuerResponseError(err error, c chan *issuerResponseStatus) {
+	c <- &issuerResponseStatus{
+		err: err,
+	}
+}
+
+func notifyIssuerResponse(p *rp2.PresentationSubmissionPresentation, c chan *issuerResponseStatus) {
+	c <- &issuerResponseStatus{
+		submission: p,
+	}
+}
+
 func testResponse(w io.Writer) {
 	_, err := w.Write([]byte("OK"))
 	if err != nil {
