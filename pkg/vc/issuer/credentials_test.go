@@ -9,6 +9,10 @@ package issuer
 import (
 	"testing"
 
+	mockdiddoc "github.com/hyperledger/aries-framework-go/pkg/mock/diddoc"
+
+	"github.com/trustbloc/edge-adapter/pkg/internal/common/adapterutil"
+
 	"github.com/hyperledger/aries-framework-go/pkg/doc/verifiable"
 
 	"github.com/stretchr/testify/require"
@@ -114,6 +118,24 @@ func TestParseWalletResponse(t *testing.T) {
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "vc doesn't contain DIDConnection type")
 		require.Nil(t, conn)
+	})
+}
+
+func TestCreateDIDCommInitCredential(t *testing.T) {
+	t.Run("test create didcomm init credential", func(t *testing.T) {
+		didDocument := mockdiddoc.GetMockDIDDoc()
+
+		didDocJSON, err := didDocument.JSONBytes()
+		require.NoError(t, err)
+
+		vc := CreateDIDCommInitCredential(didDocJSON)
+		require.True(t, adapterutil.StringsContains(DIDCommInitCredentialType, vc.Types))
+
+		didCommInitVC := &DIDCommInitCredential{}
+
+		err = adapterutil.DecodeJSONMarshaller(vc, didCommInitVC)
+		require.NoError(t, err)
+		require.Equal(t, string(didDocJSON), string(didCommInitVC.Subject.DIDDoc))
 	})
 }
 

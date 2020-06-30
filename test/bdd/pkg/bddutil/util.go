@@ -7,6 +7,8 @@ SPDX-License-Identifier: Apache-2.0
 package bddutil
 
 import (
+	"bytes"
+	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
@@ -54,4 +56,35 @@ func GetDIDConnectRequestKey(issuerID, agentID string) string {
 // GetDIDConnectResponseKey key for storing DID Connect response.
 func GetDIDConnectResponseKey(issuerID, agentID string) string {
 	return issuerID + agentID + "-didconnect-response"
+}
+
+// JSONMarshaller can marshal itself to JSON bytes.
+type JSONMarshaller interface {
+	MarshalJSON() ([]byte, error)
+}
+
+// DecodeJSONMarshaller decodes the JSONMarshaller into the given object.
+func DecodeJSONMarshaller(jm JSONMarshaller, custom interface{}) error {
+	bits, err := jm.MarshalJSON()
+	if err != nil {
+		return fmt.Errorf("failed to execute MarshalJSON() : %w", err)
+	}
+
+	err = json.NewDecoder(bytes.NewReader(bits)).Decode(custom)
+	if err != nil {
+		return fmt.Errorf("failed to decode custom jsonmarshaller : %w", err)
+	}
+
+	return nil
+}
+
+// StringsContains check if the string is present in the string array.
+func StringsContains(val string, slice []string) bool {
+	for _, s := range slice {
+		if val == s {
+			return true
+		}
+	}
+
+	return false
 }

@@ -9,7 +9,10 @@ package issuer
 import (
 	"errors"
 	"fmt"
+	"time"
 
+	"github.com/google/uuid"
+	"github.com/hyperledger/aries-framework-go/pkg/doc/util"
 	"github.com/hyperledger/aries-framework-go/pkg/doc/verifiable"
 
 	"github.com/trustbloc/edge-adapter/pkg/internal/common/adapterutil"
@@ -18,6 +21,9 @@ import (
 const (
 	// DIDConnectCredentialType vc type.
 	DIDConnectCredentialType = "DIDConnection"
+
+	// DIDCommInitCredentialType vc type.
+	DIDCommInitCredentialType = "DIDCommInit"
 )
 
 // ParseWalletResponse parses VP received from the wallet and returns the DIDConnect response.
@@ -55,4 +61,31 @@ func ParseWalletResponse(vpBytes []byte) (*DIDConnectCredentialSubject, error) {
 	}
 
 	return didConnectVC.Subject, nil
+}
+
+// CreateDIDCommInitCredential creates DIDComm init credential.
+func CreateDIDCommInitCredential(docJSON []byte) *verifiable.Credential {
+	issued := time.Now()
+
+	// TODO define context
+	vc := &verifiable.Credential{
+		Context: []string{
+			"https://www.w3.org/2018/credentials/v1",
+		},
+		ID: uuid.New().URN(),
+		Types: []string{
+			"VerifiableCredential",
+			DIDCommInitCredentialType,
+		},
+		Subject: &DIDCommInitCredentialSubject{
+			ID:     uuid.New().String(),
+			DIDDoc: docJSON,
+		},
+		Issuer: verifiable.Issuer{
+			ID: uuid.New().URN(),
+		},
+		Issued: util.NewTime(issued),
+	}
+
+	return vc
 }

@@ -9,6 +9,7 @@ package agent
 import (
 	"bytes"
 	goctx "context"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -17,6 +18,8 @@ import (
 	"net/url"
 	"strings"
 	"time"
+
+	"github.com/hyperledger/aries-framework-go/pkg/doc/did"
 
 	"github.com/cucumber/godog"
 	"github.com/google/uuid"
@@ -391,7 +394,7 @@ func acceptCredential(piid, credentialName, controllerURL string) error {
 	return nil
 }
 
-func validateCredential(credentialName, controllerURL string) error {
+func validateCredential(credentialName, controllerURL string) error { // nolint: funlen
 	// TODO use listener rather than polling (update once aries bdd-tests are refactored)
 	const (
 		timeoutWait = 10 * time.Second
@@ -405,13 +408,55 @@ func validateCredential(credentialName, controllerURL string) error {
 			break
 		}
 
-		var result interface{}
+		var result struct {
+			ID   string `json:"id"`
+			Name string `json:"name"`
+		}
 
 		err := sendHTTP(http.MethodGet,
 			fmt.Sprintf("%s/verifiable/credential/name/%s", controllerURL, credentialName), nil, &result)
 		if err != nil {
 			time.Sleep(retryDelay)
 			continue
+		}
+
+		var getVCResp struct {
+			VC string `json:"verifiableCredential"`
+		}
+
+		err = sendHTTP(http.MethodGet,
+			fmt.Sprintf("%s/verifiable/credential/%s", controllerURL,
+				base64.StdEncoding.EncodeToString([]byte(result.ID))), nil, &getVCResp)
+		if err != nil {
+			return err
+		}
+
+		vc, err := verifiable.ParseCredential([]byte(getVCResp.VC))
+		if err != nil {
+			return err
+		}
+
+		if !bddutil.StringsContains(issuer.DIDCommInitCredentialType, vc.Types) {
+			return fmt.Errorf("missing vc type : %s", issuer.DIDCommInitCredentialType)
+		}
+
+		didCommInit := &struct {
+			Subject *issuer.DIDCommInitCredentialSubject `json:"credentialSubject"`
+		}{}
+
+		err = bddutil.DecodeJSONMarshaller(vc, &didCommInit)
+		if err != nil {
+			return fmt.Errorf("failed to parse credential : %s", err.Error())
+		}
+
+		didDoc, err := did.ParseDocument(didCommInit.Subject.DIDDoc)
+		if err != nil {
+			return err
+		}
+
+		if strings.Split(didDoc.ID, ":")[1] != "peer" {
+			return fmt.Errorf("unexpected did method : expected=%s actual=%s", "peer",
+				strings.Split(didDoc.ID, ":")[1])
 		}
 
 		return nil

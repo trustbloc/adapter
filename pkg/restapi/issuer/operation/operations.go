@@ -20,8 +20,7 @@ import (
 	"github.com/hyperledger/aries-framework-go/pkg/didcomm/common/service"
 	"github.com/hyperledger/aries-framework-go/pkg/didcomm/protocol/decorator"
 	issuecredsvc "github.com/hyperledger/aries-framework-go/pkg/didcomm/protocol/issuecredential"
-	"github.com/hyperledger/aries-framework-go/pkg/doc/util"
-	"github.com/hyperledger/aries-framework-go/pkg/doc/verifiable"
+	"github.com/hyperledger/aries-framework-go/pkg/framework/aries/api/vdri"
 	"github.com/hyperledger/aries-framework-go/pkg/store/connection"
 	"github.com/trustbloc/edge-core/pkg/storage"
 
@@ -82,7 +81,9 @@ func New(config *Config) (*Operation, error) {
 		return nil, fmt.Errorf("failed to create aries did exchange client : %s", err)
 	}
 
-	issueCredClient, err := issueCredentialClient(config.AriesCtx)
+	actionCh := make(chan service.DIDCommAction, 1)
+
+	issueCredClient, err := issueCredentialClient(config.AriesCtx, actionCh)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create aries issue credential client : %s", err)
 	}
@@ -107,7 +108,7 @@ func New(config *Config) (*Operation, error) {
 		return nil, fmt.Errorf("failed to initialize connection lookup : %w", err)
 	}
 
-	return &Operation{
+	op := &Operation{
 		didExClient:      didExClient,
 		issueCredClient:  issueCredClient,
 		uiEndpoint:       config.UIEndpoint,
@@ -115,7 +116,13 @@ func New(config *Config) (*Operation, error) {
 		txnStore:         txnStore,
 		tokenStore:       tokenStore,
 		connectionLookup: connectionLookup,
-	}, nil
+		vdriRegistry:     config.AriesCtx.VDRIRegistry(),
+		serviceEndpoint:  config.AriesCtx.ServiceEndpoint(),
+	}
+
+	go op.issueCredentialActionListener(actionCh)
+
+	return op, nil
 }
 
 // Operation defines handlers for rp operations.
@@ -127,6 +134,8 @@ type Operation struct {
 	tokenStore       storage.Store
 	connectionLookup connections
 	issueCredClient  *issuecredential.Client
+	vdriRegistry     vdri.Registry
+	serviceEndpoint  string
 }
 
 // GetRESTHandlers get all controller API handler available for this service.
@@ -388,64 +397,55 @@ func didExchangeClient(ariesCtx aries.CtxProvider) (*didexchange.Client, error) 
 	return didExClient, nil
 }
 
-func issueCredentialClient(prov issuecredential.Provider) (*issuecredential.Client, error) {
+func issueCredentialClient(prov issuecredential.Provider, actionCh chan service.DIDCommAction) (*issuecredential.Client, error) { // nolint: lll
 	issueCredentialClient, err := issuecredential.New(prov)
 	if err != nil {
 		return nil, err
 	}
-
-	actionCh := make(chan service.DIDCommAction, 1)
 
 	err = issueCredentialClient.RegisterActionEvent(actionCh)
 	if err != nil {
 		return nil, err
 	}
 
-	go issueCredentialActionListener(actionCh)
-
 	return issueCredentialClient, nil
 }
 
-func issueCredentialActionListener(ch <-chan service.DIDCommAction) {
+func (o *Operation) issueCredentialActionListener(ch <-chan service.DIDCommAction) {
 	for msg := range ch {
 		switch msg.Message.Type() {
 		case issuecredsvc.RequestCredentialMsgType:
-			handleRequestCredential(msg)
+			err := o.handleRequestCredential(msg)
+			if err != nil {
+				msg.Stop(fmt.Errorf("handle credential request : %w", err))
+			}
 		default:
 			msg.Stop(fmt.Errorf("unsupported message type : %s", msg.Message.Type()))
 		}
 	}
 }
 
-func handleRequestCredential(msg service.DIDCommAction) {
+func (o *Operation) handleRequestCredential(msg service.DIDCommAction) error {
 	// TODO https://github.com/trustbloc/edge-adapter/issues/124 Validate credential request from wallet
-	issued := time.Now()
-
-	// TODO https://github.com/trustbloc/edge-adapter/issues/125 Issue credential to wallet (for now, sending base VC)
-	vc := &verifiable.Credential{
-		Context: []string{
-			"https://www.w3.org/2018/credentials/v1",
-		},
-		ID: uuid.New().URN(),
-		Types: []string{
-			"VerifiableCredential",
-		},
-		Subject: struct {
-			ID string
-		}{
-			ID: uuid.New().String(),
-		},
-		Issuer: verifiable.Issuer{
-			ID: uuid.New().URN(),
-		},
-		Issued: util.NewTime(issued),
+	newDidDoc, err := o.vdriRegistry.Create("peer", vdri.WithServiceEndpoint(o.serviceEndpoint))
+	if err != nil {
+		return err
 	}
+
+	docJSON, err := newDidDoc.JSONBytes()
+	if err != nil {
+		return err
+	}
+
+	vc := issuervc.CreateDIDCommInitCredential(docJSON)
 
 	msg.Continue(issuecredential.WithIssueCredential(&issuecredential.IssueCredential{
 		CredentialsAttach: []decorator.Attachment{
 			{Data: decorator.AttachmentData{JSON: vc}},
 		},
 	}))
+
+	return nil
 }
 
 func getTxnStore(prov storage.Provider) (storage.Store, error) {
