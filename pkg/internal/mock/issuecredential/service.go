@@ -16,7 +16,7 @@ import (
 type MockIssueCredentialSvc struct {
 	ProtocolName           string
 	HandleFunc             func(service.DIDCommMsg) (string, error)
-	HandleOutboundFunc     func(msg service.DIDCommMsg, myDID, theirDID string) error
+	HandleOutboundFunc     func(msg service.DIDCommMsg, myDID, theirDID string) (string, error)
 	AcceptFunc             func(string) bool
 	RegisterActionEventErr error
 }
@@ -31,12 +31,12 @@ func (m *MockIssueCredentialSvc) HandleInbound(msg service.DIDCommMsg, myDID, th
 }
 
 // HandleOutbound msg.
-func (m *MockIssueCredentialSvc) HandleOutbound(msg service.DIDCommMsg, myDID, theirDID string) error {
+func (m *MockIssueCredentialSvc) HandleOutbound(msg service.DIDCommMsg, myDID, theirDID string) (string, error) {
 	if m.HandleOutboundFunc != nil {
 		return m.HandleOutboundFunc(msg, myDID, theirDID)
 	}
 
-	return nil
+	return uuid.New().String(), nil
 }
 
 // Accept msg checks the msg type.
