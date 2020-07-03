@@ -15,7 +15,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"github.com/trustbloc/edge-core/pkg/storage/memstore"
 
-	"github.com/trustbloc/edge-adapter/pkg/internal/mock/mockpresentproof"
+	mockpresentproof "github.com/trustbloc/edge-adapter/pkg/internal/mock/presentproof"
 	"github.com/trustbloc/edge-adapter/pkg/restapi/rp/operation"
 )
 

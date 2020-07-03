@@ -89,3 +89,12 @@ func CreateDIDCommInitCredential(docJSON []byte) *verifiable.Credential {
 
 	return vc
 }
+
+// CreatePresentation creates presentation to be sent to the rp.
+func CreatePresentation() *verifiable.Presentation {
+	// TODO https://github.com/trustbloc/edge-adapter/issues/138 create presentation
+	//  response (for now, sending dummy response)
+	vp := &verifiable.Presentation{}
+
+	return vp
+}

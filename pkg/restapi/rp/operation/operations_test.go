@@ -39,7 +39,7 @@ import (
 
 	"github.com/trustbloc/edge-adapter/pkg/db/rp"
 	"github.com/trustbloc/edge-adapter/pkg/internal/common/adapterutil"
-	"github.com/trustbloc/edge-adapter/pkg/internal/mock/mockpresentproof"
+	mockpresentproof "github.com/trustbloc/edge-adapter/pkg/internal/mock/presentproof"
 	"github.com/trustbloc/edge-adapter/pkg/presentationex"
 	rp2 "github.com/trustbloc/edge-adapter/pkg/vc/rp"
 )

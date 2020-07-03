@@ -23,6 +23,7 @@ import (
 	"github.com/hyperledger/aries-framework-go/pkg/didcomm/protocol/didexchange"
 	issuecredsvc "github.com/hyperledger/aries-framework-go/pkg/didcomm/protocol/issuecredential"
 	"github.com/hyperledger/aries-framework-go/pkg/didcomm/protocol/mediator"
+	presentproofsvc "github.com/hyperledger/aries-framework-go/pkg/didcomm/protocol/presentproof"
 	"github.com/hyperledger/aries-framework-go/pkg/doc/verifiable"
 	mocksvc "github.com/hyperledger/aries-framework-go/pkg/mock/didcomm/protocol/didexchange"
 	mockroute "github.com/hyperledger/aries-framework-go/pkg/mock/didcomm/protocol/mediator"
@@ -39,6 +40,7 @@ import (
 	"github.com/trustbloc/edge-adapter/pkg/aries"
 	mockconn "github.com/trustbloc/edge-adapter/pkg/internal/mock/connection"
 	"github.com/trustbloc/edge-adapter/pkg/internal/mock/issuecredential"
+	"github.com/trustbloc/edge-adapter/pkg/internal/mock/presentproof"
 	"github.com/trustbloc/edge-adapter/pkg/profile/issuer"
 )
 
@@ -285,6 +287,7 @@ func TestConnectWallet(t *testing.T) {
 				didexchange.DIDExchange: &mocksvc.MockDIDExchangeSvc{},
 				mediator.Coordination:   &mockroute.MockMediatorSvc{},
 				issuecredsvc.Name:       &issuecredential.MockIssueCredentialSvc{},
+				presentproofsvc.Name:    &presentproof.MockPresentProofSvc{},
 			},
 			LegacyKMSValue:       &mockkms.CloseableKMS{CreateKeyErr: errors.New("key generation error")},
 			ServiceEndpointValue: "endpoint",
@@ -650,7 +653,7 @@ func TestGenerateInvitation(t *testing.T) {
 	})
 }
 
-func TestIssueCredential(t *testing.T) {
+func TestDIDCommListeners(t *testing.T) {
 	t.Run("test issue credential", func(t *testing.T) {
 		actionCh := make(chan service.DIDCommAction, 1)
 
@@ -673,7 +676,29 @@ func TestIssueCredential(t *testing.T) {
 		require.Nil(t, c)
 	})
 
-	t.Run("test issue credential actions - unsupported message", func(t *testing.T) {
+	t.Run("test present proof", func(t *testing.T) {
+		actionCh := make(chan service.DIDCommAction, 1)
+
+		c, err := presentProofClient(getAriesCtx(), actionCh)
+		require.NoError(t, err)
+		require.NotNil(t, c)
+
+		c, err = presentProofClient(&mockprovider.Provider{}, actionCh)
+		require.Error(t, err)
+		require.Nil(t, c)
+
+		c, err = presentProofClient(&mockprovider.Provider{
+			ServiceMap: map[string]interface{}{
+				presentproofsvc.Name: &presentproof.MockPresentProofSvc{
+					RegisterActionEventErr: errors.New("register error")},
+			},
+		}, actionCh)
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "register error")
+		require.Nil(t, c)
+	})
+
+	t.Run("test didcomm actions - unsupported message", func(t *testing.T) {
 		actionCh := make(chan service.DIDCommAction, 1)
 
 		c, err := New(&Config{
@@ -682,7 +707,7 @@ func TestIssueCredential(t *testing.T) {
 		})
 		require.NoError(t, err)
 
-		go c.issueCredentialActionListener(actionCh)
+		go c.didCommActionListener(actionCh)
 
 		done := make(chan struct{})
 
@@ -704,77 +729,111 @@ func TestIssueCredential(t *testing.T) {
 		}
 	})
 
-	t.Run("test issue credential actions - request issue cred message", func(t *testing.T) {
-		actionCh := make(chan service.DIDCommAction, 1)
+	t.Run("test didcomm actions - issue credential request", func(t *testing.T) {
+		t.Run("test request issue cred - success", func(t *testing.T) {
+			actionCh := make(chan service.DIDCommAction, 1)
 
-		c, err := New(&Config{
-			AriesCtx:      getAriesCtx(),
-			StoreProvider: memstore.NewProvider(),
+			c, err := New(&Config{
+				AriesCtx:      getAriesCtx(),
+				StoreProvider: memstore.NewProvider(),
+			})
+			require.NoError(t, err)
+
+			go c.didCommActionListener(actionCh)
+
+			done := make(chan struct{})
+
+			actionCh <- service.DIDCommAction{
+				Message: service.NewDIDCommMsgMap(issuecredsvc.RequestCredential{
+					Type: issuecredsvc.RequestCredentialMsgType,
+				}),
+				Continue: func(args interface{}) {
+					done <- struct{}{}
+				},
+			}
+
+			select {
+			case <-done:
+			case <-time.After(5 * time.Second):
+				require.Fail(t, "tests are not validated due to timeout")
+			}
 		})
-		require.NoError(t, err)
 
-		go c.issueCredentialActionListener(actionCh)
+		t.Run("test request issue cred - did creation failure", func(t *testing.T) {
+			actionCh := make(chan service.DIDCommAction, 1)
 
-		done := make(chan struct{})
+			c, err := New(&Config{
+				AriesCtx: &mockprovider.Provider{
+					TransientStorageProviderValue: mockstore.NewMockStoreProvider(),
+					StorageProviderValue:          mockstore.NewMockStoreProvider(),
+					ServiceMap: map[string]interface{}{
+						didexchange.DIDExchange: &mocksvc.MockDIDExchangeSvc{},
+						mediator.Coordination:   &mockroute.MockMediatorSvc{},
+						issuecredsvc.Name:       &issuecredential.MockIssueCredentialSvc{},
+						presentproofsvc.Name:    &presentproof.MockPresentProofSvc{},
+					},
+					LegacyKMSValue:       &mockkms.CloseableKMS{CreateEncryptionKeyValue: "sample-key"},
+					ServiceEndpointValue: "endpoint",
+					VDRIRegistryValue: &mockvdri.MockVDRIRegistry{
+						CreateErr: errors.New("did create error"),
+					},
+				},
+				StoreProvider: memstore.NewProvider(),
+			})
+			require.NoError(t, err)
 
-		actionCh <- service.DIDCommAction{
-			Message: service.NewDIDCommMsgMap(issuecredsvc.RequestCredential{
-				Type: issuecredsvc.RequestCredentialMsgType,
-			}),
-			Continue: func(args interface{}) {
-				done <- struct{}{}
-			},
-		}
+			go c.didCommActionListener(actionCh)
 
-		select {
-		case <-done:
-		case <-time.After(5 * time.Second):
-			require.Fail(t, "tests are not validated due to timeout")
-		}
+			done := make(chan struct{})
+
+			actionCh <- service.DIDCommAction{
+				Message: service.NewDIDCommMsgMap(issuecredsvc.RequestCredential{
+					Type: issuecredsvc.RequestCredentialMsgType,
+				}),
+				Stop: func(err error) {
+					require.NotNil(t, err)
+					require.Contains(t, err.Error(), "handle credential request")
+					done <- struct{}{}
+				},
+			}
+
+			select {
+			case <-done:
+			case <-time.After(5 * time.Second):
+				require.Fail(t, "tests are not validated due to timeout")
+			}
+		})
 	})
 
-	t.Run("test issue credential actions - did creation failure", func(t *testing.T) {
-		actionCh := make(chan service.DIDCommAction, 1)
+	t.Run("test didcomm actions - present proof request", func(t *testing.T) {
+		t.Run("test request issue cred - success", func(t *testing.T) {
+			actionCh := make(chan service.DIDCommAction, 1)
 
-		c, err := New(&Config{
-			AriesCtx: &mockprovider.Provider{
-				TransientStorageProviderValue: mockstore.NewMockStoreProvider(),
-				StorageProviderValue:          mockstore.NewMockStoreProvider(),
-				ServiceMap: map[string]interface{}{
-					didexchange.DIDExchange: &mocksvc.MockDIDExchangeSvc{},
-					mediator.Coordination:   &mockroute.MockMediatorSvc{},
-					issuecredsvc.Name:       &issuecredential.MockIssueCredentialSvc{},
+			c, err := New(&Config{
+				AriesCtx:      getAriesCtx(),
+				StoreProvider: memstore.NewProvider(),
+			})
+			require.NoError(t, err)
+
+			go c.didCommActionListener(actionCh)
+
+			done := make(chan struct{})
+
+			actionCh <- service.DIDCommAction{
+				Message: service.NewDIDCommMsgMap(issuecredsvc.RequestCredential{
+					Type: presentproofsvc.RequestPresentationMsgType,
+				}),
+				Continue: func(args interface{}) {
+					done <- struct{}{}
 				},
-				LegacyKMSValue:       &mockkms.CloseableKMS{CreateEncryptionKeyValue: "sample-key"},
-				ServiceEndpointValue: "endpoint",
-				VDRIRegistryValue: &mockvdri.MockVDRIRegistry{
-					CreateErr: errors.New("did create error"),
-				},
-			},
-			StoreProvider: memstore.NewProvider(),
+			}
+
+			select {
+			case <-done:
+			case <-time.After(5 * time.Second):
+				require.Fail(t, "tests are not validated due to timeout")
+			}
 		})
-		require.NoError(t, err)
-
-		go c.issueCredentialActionListener(actionCh)
-
-		done := make(chan struct{})
-
-		actionCh <- service.DIDCommAction{
-			Message: service.NewDIDCommMsgMap(issuecredsvc.RequestCredential{
-				Type: issuecredsvc.RequestCredentialMsgType,
-			}),
-			Stop: func(err error) {
-				require.NotNil(t, err)
-				require.Contains(t, err.Error(), "handle credential request")
-				done <- struct{}{}
-			},
-		}
-
-		select {
-		case <-done:
-		case <-time.After(5 * time.Second):
-			require.Fail(t, "tests are not validated due to timeout")
-		}
 	})
 }
 
@@ -786,6 +845,7 @@ func getAriesCtx() aries.CtxProvider {
 			didexchange.DIDExchange: &mocksvc.MockDIDExchangeSvc{},
 			mediator.Coordination:   &mockroute.MockMediatorSvc{},
 			issuecredsvc.Name:       &issuecredential.MockIssueCredentialSvc{},
+			presentproofsvc.Name:    &presentproof.MockPresentProofSvc{},
 		},
 		LegacyKMSValue:       &mockkms.CloseableKMS{CreateEncryptionKeyValue: "sample-key"},
 		ServiceEndpointValue: "endpoint",

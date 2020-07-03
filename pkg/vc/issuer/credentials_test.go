@@ -139,6 +139,12 @@ func TestCreateDIDCommInitCredential(t *testing.T) {
 	})
 }
 
+func TestCreatePresentationSubmission(t *testing.T) {
+	t.Run("test create presentation submission", func(t *testing.T) {
+		require.NotNil(t, CreatePresentation())
+	})
+}
+
 func getTestVP(t *testing.T) []byte {
 	vc, err := verifiable.ParseCredential([]byte(vc))
 	require.NoError(t, err)

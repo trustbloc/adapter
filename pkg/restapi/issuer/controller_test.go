@@ -11,6 +11,7 @@ import (
 	"github.com/hyperledger/aries-framework-go/pkg/didcomm/protocol/didexchange"
 	issuecredsvc "github.com/hyperledger/aries-framework-go/pkg/didcomm/protocol/issuecredential"
 	"github.com/hyperledger/aries-framework-go/pkg/didcomm/protocol/mediator"
+	presentproofsvc "github.com/hyperledger/aries-framework-go/pkg/didcomm/protocol/presentproof"
 	mocksvc "github.com/hyperledger/aries-framework-go/pkg/mock/didcomm/protocol/didexchange"
 	mockroute "github.com/hyperledger/aries-framework-go/pkg/mock/didcomm/protocol/mediator"
 	mockprovider "github.com/hyperledger/aries-framework-go/pkg/mock/provider"
@@ -19,6 +20,7 @@ import (
 	"github.com/trustbloc/edge-core/pkg/storage/memstore"
 
 	"github.com/trustbloc/edge-adapter/pkg/internal/mock/issuecredential"
+	"github.com/trustbloc/edge-adapter/pkg/internal/mock/presentproof"
 	"github.com/trustbloc/edge-adapter/pkg/restapi/issuer/operation"
 )
 
@@ -31,6 +33,7 @@ func TestNew(t *testing.T) {
 				didexchange.DIDExchange: &mocksvc.MockDIDExchangeSvc{},
 				mediator.Coordination:   &mockroute.MockMediatorSvc{},
 				issuecredsvc.Name:       &issuecredential.MockIssueCredentialSvc{},
+				presentproofsvc.Name:    &presentproof.MockPresentProofSvc{},
 			},
 		}
 
