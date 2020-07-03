@@ -8,6 +8,6 @@
 @rp_adapter
 Feature: RP Adapter
   Scenario: Register relying party
-    When a request is sent to create an RP tenant with label "test-tenant"
+    When a request is sent to create an RP tenant with label "test-tenant" and callback "http://todo.com"
     Then the trustbloc DID of the tenant with label "test-tenant" is resolvable
     And the client ID of the tenant with label "test-tenant" is registered at hydra

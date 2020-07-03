@@ -14,12 +14,15 @@ import (
 	"io/ioutil"
 	"net/http"
 	"net/url"
+	"strings"
 	"time"
 
 	"github.com/cenkalti/backoff"
+	"github.com/coreos/go-oidc"
 	"github.com/cucumber/godog"
 	"github.com/ory/hydra-client-go/client"
 	"github.com/ory/hydra-client-go/client/admin"
+	"github.com/ory/hydra-client-go/models"
 	trustblocvdri "github.com/trustbloc/trustbloc-did-method/pkg/vdri/trustbloc"
 
 	"github.com/trustbloc/edge-adapter/pkg/restapi/rp/operation"
@@ -33,29 +36,37 @@ const (
 	hydraURL     = "https://localhost:4445"
 )
 
+type tenantContext struct {
+	*operation.CreateRPTenantResponse
+	callback string
+}
+
 // Steps is the BDD steps for the RP Adapter BDD tests.
 type Steps struct {
-	context *bddctx.BDDContext
-	tenants map[string]*operation.CreateRPTenantResponse
+	context   *bddctx.BDDContext
+	tenantCtx map[string]*tenantContext
 }
 
 // NewSteps returns new agent from client SDK.
 func NewSteps(ctx *bddctx.BDDContext) *Steps {
 	return &Steps{
-		context: ctx,
-		tenants: make(map[string]*operation.CreateRPTenantResponse),
+		context:   ctx,
+		tenantCtx: make(map[string]*tenantContext),
 	}
 }
 
 // RegisterSteps registers agent steps.
 func (s *Steps) RegisterSteps(g *godog.Suite) {
-	g.Step(`^a request is sent to create an RP tenant with label "([^"]*)"$`, s.createTenant)
+	g.Step(`^a request is sent to create an RP tenant with label "([^"]*)" and callback "([^"]*)"$`, s.createTenant)
 	g.Step(`^the trustbloc DID of the tenant with label "([^"]*)" is resolvable$`, s.resolveDID)
 	g.Step(`^the client ID of the tenant with label "([^"]*)" is registered at hydra$`, s.lookupClientID)
 }
 
-func (s *Steps) createTenant(label string) error {
-	requestBytes, err := json.Marshal(&operation.CreateRPTenantRequest{Label: label})
+func (s *Steps) createTenant(label, callback string) error {
+	requestBytes, err := json.Marshal(&operation.CreateRPTenantRequest{
+		Label:    label,
+		Callback: callback,
+	})
 	if err != nil {
 		return err
 	}
@@ -88,7 +99,10 @@ func (s *Steps) createTenant(label string) error {
 		return fmt.Errorf("failed to decode create rp tenant response : %s", err)
 	}
 
-	s.tenants[label] = response
+	s.tenantCtx[label] = &tenantContext{
+		CreateRPTenantResponse: response,
+		callback:               callback,
+	}
 
 	return nil
 }
@@ -104,7 +118,7 @@ func (s *Steps) resolveDID(label string) error {
 		sleep      = 500 * time.Millisecond
 	)
 
-	publicDID := s.tenants[label].PublicDID
+	publicDID := s.tenantCtx[label].PublicDID
 
 	err := backoff.RetryNotify(
 		func() error {
@@ -150,13 +164,46 @@ func (s *Steps) lookupClientID(label string) error {
 		return fmt.Errorf("failed to list oauth2 clients at hydra url %s : %w", hydraURL, err)
 	}
 
+	tenantCtx := s.tenantCtx[label]
+
 	for _, c := range list.Payload {
-		if c.ClientID == s.tenants[label].ClientID {
-			return nil
+		if c.ClientID == tenantCtx.ClientID {
+			return validateTenantRegistration(tenantCtx, c)
 		}
 	}
 
 	return fmt.Errorf(
 		"rp tenant with label %s and clientID %s is not registered at hydra url %s",
-		label, s.tenants[label].ClientID, hydraURL)
+		label, s.tenantCtx[label].ClientID, hydraURL)
+}
+
+func validateTenantRegistration(expected *tenantContext, result *models.OAuth2Client) error {
+	if !stringsContain(result.RedirectUris, expected.callback) {
+		return fmt.Errorf(
+			"expected tenant to be registered with callback %s but instead got %v",
+			expected.callback, result.RedirectUris)
+	}
+
+	expectedScopes := []string{oidc.ScopeOpenID, "CreditCardStatement"}
+	resultScopes := strings.Split(result.Scope, " ")
+
+	for i := range expectedScopes {
+		if !stringsContain(resultScopes, expectedScopes[i]) {
+			return fmt.Errorf(
+				"expected tenant to be registered with scope %s but instead got %v",
+				expectedScopes[i], resultScopes)
+		}
+	}
+
+	return nil
+}
+
+func stringsContain(slice []string, val string) bool {
+	for i := range slice {
+		if slice[i] == val {
+			return true
+		}
+	}
+
+	return false
 }

@@ -22,7 +22,8 @@ type GetPresentationRequestResponse struct {
 
 // CreateRPTenantRequest API request body to register an RP tenant.
 type CreateRPTenantRequest struct {
-	Label string `json:"label"`
+	Label    string `json:"label"`
+	Callback string `json:"callback"`
 }
 
 // CreateRPTenantResponse API response body to register an RP tenant.

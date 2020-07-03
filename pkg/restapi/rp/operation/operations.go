@@ -14,6 +14,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"strings"
 	"sync"
 	"time"
 
@@ -101,6 +102,7 @@ type DIDClient interface {
 	RegisterActionEvent(chan<- service.DIDCommAction) error
 	RegisterMsgEvent(chan<- service.StateMsg) error
 	CreateInvitationWithDID(string, string) (*didexchange.Invitation, error)
+	CreateInvitation(string) (*didexchange.Invitation, error)
 }
 
 // PresentProofClient is the aries framework's presentproof.Client.
@@ -299,7 +301,16 @@ func (o *Operation) hydraLoginHandlerIterOne(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
-	_, err = o.rpStore.GetUserConnection(login.GetPayload().Client.ClientID, login.GetPayload().Subject)
+	subject := login.Payload.Subject
+
+	if subject == "" {
+		// subject is empty when Hydra cannot determine the user subject for any number of reasons,
+		// so for now we set it ourselves.
+		// This value should be handed to us by the OIDC provider once we're integrated with it.
+		subject = uuid.New().String()
+	}
+
+	_, err = o.rpStore.GetUserConnection(login.GetPayload().Client.ClientID, subject)
 	if err != nil && !errors.Is(err, storage.ErrValueNotFound) {
 		msg := fmt.Sprintf("failed to query rp user connections : %s", err)
 		logger.Errorf(msg)
@@ -697,7 +708,7 @@ func (o *Operation) getPresentationsRequest(rw http.ResponseWriter, req *http.Re
 		return
 	}
 
-	invitation, err := o.didClient.CreateInvitationWithDID(cr.rpLabel, cr.rpDID)
+	invitation, err := o.didClient.CreateInvitation(cr.rpLabel)
 	if err != nil {
 		msg := fmt.Sprintf("failed to create didexchange invitation with DID : %s", err)
 		logger.Errorf(msg)
@@ -1164,7 +1175,7 @@ func (o *Operation) createRPTenant(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if request.Label == "" {
+	if request.Label == "" || request.Callback == "" {
 		commhttp.WriteErrorResponse(w, http.StatusBadRequest, "missing required parameters")
 
 		return
@@ -1174,7 +1185,8 @@ func (o *Operation) createRPTenant(w http.ResponseWriter, r *http.Request) {
 	req.SetBody(&models.OAuth2Client{
 		GrantTypes:    []string{"authorization_code", "refresh_token"},
 		ResponseTypes: []string{"code", "id_token"},
-		Scope:         "CreditCardStatement",
+		Scope:         strings.Join([]string{oidc.ScopeOpenID, "CreditCardStatement"}, " "),
+		RedirectUris:  []string{request.Callback},
 	})
 
 	created, err := o.hydra.CreateOAuth2Client(req)

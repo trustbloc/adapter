@@ -12,8 +12,8 @@ import (
 	"github.com/hyperledger/aries-framework-go/pkg/store/connection"
 )
 
-// ConnectionsLookup mock connections lookup.
-type ConnectionsLookup struct {
+// MockConnectionsLookup mock connections lookup.
+type MockConnectionsLookup struct {
 	ConnIDByDIDs    string
 	ConnIDByDIDsErr error
 	ConnRecord      *connection.Record
@@ -21,7 +21,7 @@ type ConnectionsLookup struct {
 }
 
 // GetConnectionIDByDIDs returns the connection id based on dids (my or their did) metadata.
-func (c *ConnectionsLookup) GetConnectionIDByDIDs(myDID, theirDID string) (string, error) {
+func (c *MockConnectionsLookup) GetConnectionIDByDIDs(myDID, theirDID string) (string, error) {
 	switch {
 	case c.ConnIDByDIDsErr != nil:
 		return "", c.ConnIDByDIDsErr
@@ -33,7 +33,7 @@ func (c *ConnectionsLookup) GetConnectionIDByDIDs(myDID, theirDID string) (strin
 }
 
 // GetConnectionRecord returns the connection record based on the connection ID.
-func (c *ConnectionsLookup) GetConnectionRecord(id string) (*connection.Record, error) {
+func (c *MockConnectionsLookup) GetConnectionRecord(id string) (*connection.Record, error) {
 	switch {
 	case c.ConnRecordErr != nil:
 		return nil, c.ConnRecordErr

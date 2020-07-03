@@ -387,7 +387,7 @@ func TestValidateWalletResponse(t *testing.T) {
 	txn, err := c.getTxn(txnID)
 	require.NoError(t, err)
 
-	c.connectionLookup = &mockconn.ConnectionsLookup{
+	c.connectionLookup = &mockconn.MockConnectionsLookup{
 		ConnIDByDIDs: connID,
 		ConnRecord: &connection.Record{
 			ConnectionID:   connID,
@@ -468,7 +468,7 @@ func TestValidateWalletResponse(t *testing.T) {
 		txn, err = c.getTxn(txnID)
 		require.NoError(t, err)
 
-		c.connectionLookup = &mockconn.ConnectionsLookup{
+		c.connectionLookup = &mockconn.MockConnectionsLookup{
 			ConnIDByDIDs: connID,
 			ConnRecord: &connection.Record{
 				State:          didExCompletedState,
@@ -493,7 +493,7 @@ func TestValidateWalletResponse(t *testing.T) {
 
 	t.Run("test validate response - validate connection errors", func(t *testing.T) {
 		// inviterDID and inviteeDID combo not found
-		c.connectionLookup = &mockconn.ConnectionsLookup{
+		c.connectionLookup = &mockconn.MockConnectionsLookup{
 			ConnIDByDIDsErr: errors.New("connID not found"),
 		}
 
@@ -511,7 +511,7 @@ func TestValidateWalletResponse(t *testing.T) {
 		require.Contains(t, rr.Body.String(), "connection using DIDs not found")
 
 		// connection not found
-		c.connectionLookup = &mockconn.ConnectionsLookup{
+		c.connectionLookup = &mockconn.MockConnectionsLookup{
 			ConnIDByDIDs:  connID,
 			ConnRecordErr: errors.New("connection not found"),
 		}
@@ -523,7 +523,7 @@ func TestValidateWalletResponse(t *testing.T) {
 		require.Contains(t, rr.Body.String(), "connection using id not found")
 
 		// connection state not completed
-		c.connectionLookup = &mockconn.ConnectionsLookup{
+		c.connectionLookup = &mockconn.MockConnectionsLookup{
 			ConnIDByDIDs: connID,
 			ConnRecord: &connection.Record{
 				ParentThreadID: txn.DIDCommInvitation.ID,
@@ -537,7 +537,7 @@ func TestValidateWalletResponse(t *testing.T) {
 		require.Contains(t, rr.Body.String(), "connection state is not complete")
 
 		// threadID not found
-		c.connectionLookup = &mockconn.ConnectionsLookup{
+		c.connectionLookup = &mockconn.MockConnectionsLookup{
 			ConnIDByDIDs: connID,
 			ConnRecord: &connection.Record{
 				ParentThreadID: txn.DIDCommInvitation.ID,
@@ -560,7 +560,7 @@ func TestValidateWalletResponse(t *testing.T) {
 		})
 		require.NoError(t, err)
 
-		ops.connectionLookup = &mockconn.ConnectionsLookup{
+		ops.connectionLookup = &mockconn.MockConnectionsLookup{
 			ConnIDByDIDs: connID,
 			ConnRecord: &connection.Record{
 				ConnectionID:   connID,
