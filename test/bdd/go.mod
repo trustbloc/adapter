@@ -8,6 +8,7 @@ go 1.14
 
 require (
 	github.com/cenkalti/backoff v2.2.1+incompatible
+	github.com/coreos/go-oidc v2.2.1+incompatible
 	github.com/cucumber/godog v0.9.0
 	github.com/fsouza/go-dockerclient v1.6.5
 	github.com/google/uuid v1.1.1
