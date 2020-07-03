@@ -4,7 +4,7 @@ Copyright SecureKey Technologies Inc. All Rights Reserved.
 SPDX-License-Identifier: Apache-2.0
 */
 
-package mockpresentproof
+package presentproof
 
 import (
 	"github.com/hyperledger/aries-framework-go/pkg/client/presentproof"

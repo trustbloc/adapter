@@ -17,9 +17,11 @@ import (
 	"github.com/gorilla/mux"
 	"github.com/hyperledger/aries-framework-go/pkg/client/didexchange"
 	"github.com/hyperledger/aries-framework-go/pkg/client/issuecredential"
+	"github.com/hyperledger/aries-framework-go/pkg/client/presentproof"
 	"github.com/hyperledger/aries-framework-go/pkg/didcomm/common/service"
 	"github.com/hyperledger/aries-framework-go/pkg/didcomm/protocol/decorator"
 	issuecredsvc "github.com/hyperledger/aries-framework-go/pkg/didcomm/protocol/issuecredential"
+	presentproofsvc "github.com/hyperledger/aries-framework-go/pkg/didcomm/protocol/presentproof"
 	"github.com/hyperledger/aries-framework-go/pkg/framework/aries/api/vdri"
 	"github.com/hyperledger/aries-framework-go/pkg/store/connection"
 	"github.com/trustbloc/edge-core/pkg/storage"
@@ -88,6 +90,11 @@ func New(config *Config) (*Operation, error) {
 		return nil, fmt.Errorf("failed to create aries issue credential client : %s", err)
 	}
 
+	presentProofClient, err := presentProofClient(config.AriesCtx, actionCh)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create aries present proof client : %s", err)
+	}
+
 	p, err := issuer.New(config.StoreProvider)
 	if err != nil {
 		return nil, err
@@ -109,33 +116,35 @@ func New(config *Config) (*Operation, error) {
 	}
 
 	op := &Operation{
-		didExClient:      didExClient,
-		issueCredClient:  issueCredClient,
-		uiEndpoint:       config.UIEndpoint,
-		profileStore:     p,
-		txnStore:         txnStore,
-		tokenStore:       tokenStore,
-		connectionLookup: connectionLookup,
-		vdriRegistry:     config.AriesCtx.VDRIRegistry(),
-		serviceEndpoint:  config.AriesCtx.ServiceEndpoint(),
+		didExClient:        didExClient,
+		issueCredClient:    issueCredClient,
+		presentProofClient: presentProofClient,
+		uiEndpoint:         config.UIEndpoint,
+		profileStore:       p,
+		txnStore:           txnStore,
+		tokenStore:         tokenStore,
+		connectionLookup:   connectionLookup,
+		vdriRegistry:       config.AriesCtx.VDRIRegistry(),
+		serviceEndpoint:    config.AriesCtx.ServiceEndpoint(),
 	}
 
-	go op.issueCredentialActionListener(actionCh)
+	go op.didCommActionListener(actionCh)
 
 	return op, nil
 }
 
 // Operation defines handlers for rp operations.
 type Operation struct {
-	didExClient      *didexchange.Client
-	uiEndpoint       string
-	profileStore     *issuer.Profile
-	txnStore         storage.Store
-	tokenStore       storage.Store
-	connectionLookup connections
-	issueCredClient  *issuecredential.Client
-	vdriRegistry     vdri.Registry
-	serviceEndpoint  string
+	didExClient        *didexchange.Client
+	issueCredClient    *issuecredential.Client
+	presentProofClient *presentproof.Client
+	uiEndpoint         string
+	profileStore       *issuer.Profile
+	txnStore           storage.Store
+	tokenStore         storage.Store
+	connectionLookup   connections
+	vdriRegistry       vdri.Registry
+	serviceEndpoint    string
 }
 
 // GetRESTHandlers get all controller API handler available for this service.
@@ -411,7 +420,21 @@ func issueCredentialClient(prov issuecredential.Provider, actionCh chan service.
 	return issueCredentialClient, nil
 }
 
-func (o *Operation) issueCredentialActionListener(ch <-chan service.DIDCommAction) {
+func presentProofClient(prov presentproof.Provider, actionCh chan service.DIDCommAction) (*presentproof.Client, error) { // nolint: lll
+	presentProofClient, err := presentproof.New(prov)
+	if err != nil {
+		return nil, err
+	}
+
+	err = presentProofClient.RegisterActionEvent(actionCh)
+	if err != nil {
+		return nil, err
+	}
+
+	return presentProofClient, nil
+}
+
+func (o *Operation) didCommActionListener(ch <-chan service.DIDCommAction) {
 	for msg := range ch {
 		switch msg.Message.Type() {
 		case issuecredsvc.RequestCredentialMsgType:
@@ -419,6 +442,8 @@ func (o *Operation) issueCredentialActionListener(ch <-chan service.DIDCommActio
 			if err != nil {
 				msg.Stop(fmt.Errorf("handle credential request : %w", err))
 			}
+		case presentproofsvc.RequestPresentationMsgType:
+			o.handleRequestPresentation(msg)
 		default:
 			msg.Stop(fmt.Errorf("unsupported message type : %s", msg.Message.Type()))
 		}
@@ -446,6 +471,17 @@ func (o *Operation) handleRequestCredential(msg service.DIDCommAction) error {
 	}))
 
 	return nil
+}
+
+func (o *Operation) handleRequestPresentation(msg service.DIDCommAction) {
+	// TODO https://github.com/trustbloc/edge-adapter/issues/139 validate the presentation request
+	msg.Continue(presentproof.WithPresentation(&presentproof.Presentation{
+		PresentationsAttach: []decorator.Attachment{{
+			Data: decorator.AttachmentData{
+				JSON: issuervc.CreatePresentation(),
+			},
+		}},
+	}))
 }
 
 func getTxnStore(prov storage.Provider) (storage.Store, error) {

@@ -17,7 +17,9 @@ Feature: Issuer Adapter e2e
     ## Mocking CHAPI flow here
     Then  "Wallet" responds to connect request from Issuer adapter ("<profileID>") within "5" seconds
     And   Issuer adapter ("<profileID>") validates response from "Wallet" and redirects to "<profileCallBackURL>"
-    When  "Wallet" sends request credential message and receives credential from the issuer
+    When  "Wallet" sends request credential message and receives credential from the issuer ("<profileID>")
+    ## Mocking RP present proof call here (wallet calls instead of RP here)
+    Then  "Wallet" sends present proof request message and receives presentation from the issuer ("<profileID>")
     Examples:
       | profileID             | profileName           | profileCallBackURL                |
       | abc123                | Example Issuer        | http://example.com/cb             |
