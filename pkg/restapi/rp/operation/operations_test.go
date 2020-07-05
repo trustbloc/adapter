@@ -1345,8 +1345,7 @@ func TestCHAPIResponseHandler(t *testing.T) {
 				RequestPresentationFunc: func(request *presentproof.RequestPresentation, myDID, theirDID string) (string, error) {
 					require.Equal(t, rpPeerDID.ID, myDID)
 					require.Equal(t, issuerPeerDID.ID, theirDID)
-					require.Len(t, request.RequestPresentationsAttach, 2)
-					checkDIDAttachment(t, userPeerDID, request)
+					require.Len(t, request.RequestPresentationsAttach, 1)
 					checkPresentationDefinitionAttachment(t, presDef, request)
 
 					go func() { requestPresentationSent <- struct{}{} }()
@@ -1875,7 +1874,9 @@ func TestHandleIssuerPresentationMsg(t *testing.T) {
 		require.NoError(t, err)
 		invitationID := uuid.New().String()
 		thid := uuid.New().String()
-		msg := service.NewDIDCommMsgMap(&presentproof.Presentation{})
+		msg := service.NewDIDCommMsgMap(&presentproof.Presentation{
+			PresentationsAttach: []decorator.Attachment{},
+		})
 		err = msg.SetID(thid)
 		require.NoError(t, err)
 		o.setThidInvitationData(&thidInvitationData{
@@ -1902,37 +1903,6 @@ func TestHandleIssuerPresentationMsg(t *testing.T) {
 		}
 	})
 
-	t.Run("error on mismatched attachment IDs", func(t *testing.T) {
-		o, err := New(&Config{
-			DIDExchClient:        &mockdidexchange.MockClient{},
-			Store:                memstore.NewProvider(),
-			AriesStorageProvider: &mockAriesStorageProvider{},
-			PresentProofClient:   &mockpresentproof.MockClient{},
-		})
-		require.NoError(t, err)
-		invitationID := uuid.New().String()
-		msg := service.NewDIDCommMsgMap(&presentproof.Presentation{
-			Formats: []presentproofsvc.Format{{
-				AttachID: uuid.New().String(),
-				Format:   presentationSubmissionFormat,
-			}},
-			PresentationsAttach: []decorator.Attachment{{
-				ID: uuid.New().String(),
-			}},
-		})
-		err = msg.SetID(uuid.New().String())
-		require.NoError(t, err)
-		o.setThidInvitationData(&thidInvitationData{
-			threadID:         msg.ID(),
-			invitationDataID: invitationID,
-		})
-		o.setInvitationData(&invitationData{
-			id: invitationID,
-		})
-		err = o.handleIssuerPresentationMsg(msg)
-		require.Error(t, err)
-	})
-
 	t.Run("error fetching attachment contents", func(t *testing.T) {
 		o, err := New(&Config{
 			DIDExchClient:        &mockdidexchange.MockClient{},
@@ -1944,10 +1914,6 @@ func TestHandleIssuerPresentationMsg(t *testing.T) {
 		invitationID := uuid.New().String()
 		attachID := uuid.New().String()
 		msg := service.NewDIDCommMsgMap(&presentproof.Presentation{
-			Formats: []presentproofsvc.Format{{
-				AttachID: attachID,
-				Format:   presentationSubmissionFormat,
-			}},
 			PresentationsAttach: []decorator.Attachment{{
 				ID: attachID,
 				Data: decorator.AttachmentData{
@@ -2540,45 +2506,11 @@ func (d *didexchangeEvent) All() map[string]interface{} {
 	return make(map[string]interface{})
 }
 
-func checkDIDAttachment(t *testing.T, didID string, request *presentproof.RequestPresentation) {
-	var attachID string
-
-	for i := range request.Formats {
-		if request.Formats[i].Format == "w3c/did-core@v1.0-draft" {
-			attachID = request.Formats[i].AttachID
-
-			break
-		}
-	}
-
-	require.NotEmpty(t, attachID)
-
-	attach := getAttachmentByID(attachID, request.RequestPresentationsAttach)
-	require.NotNil(t, attach)
-
-	bits, err := attach.Data.Fetch()
-	require.NoError(t, err)
-	require.Equal(t, didID, string(bits))
-}
-
 func checkPresentationDefinitionAttachment(
 	t *testing.T, presDef *presentationex.PresentationDefinitions, request *presentproof.RequestPresentation) {
-	var attachID string
+	require.Len(t, request.RequestPresentationsAttach, 1)
 
-	for i := range request.Formats {
-		if request.Formats[i].Format == "dif/presentation_definition@0.0.1" {
-			attachID = request.Formats[i].AttachID
-
-			break
-		}
-	}
-
-	require.NotEmpty(t, attachID)
-
-	attach := getAttachmentByID(attachID, request.RequestPresentationsAttach)
-	require.NotNil(t, attach)
-
-	bits, err := attach.Data.Fetch()
+	bits, err := request.RequestPresentationsAttach[0].Data.Fetch()
 	require.NoError(t, err)
 
 	result := &presentationex.PresentationDefinitions{}
@@ -2591,10 +2523,6 @@ func checkPresentationDefinitionAttachment(
 func newIssuerResponse(t *testing.T, thid string, payload interface{}) service.DIDCommMsg {
 	response := service.NewDIDCommMsgMap(&presentproof.Presentation{
 		Type: presentproofsvc.PresentationMsgType,
-		Formats: []presentproofsvc.Format{{
-			AttachID: "123",
-			Format:   presentationSubmissionFormat,
-		}},
 		PresentationsAttach: []decorator.Attachment{{
 			ID:       "123",
 			MimeType: "application/ld+json",

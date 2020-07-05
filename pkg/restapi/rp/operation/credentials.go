@@ -10,7 +10,6 @@ import (
 	"fmt"
 
 	"github.com/hyperledger/aries-framework-go/pkg/client/presentproof"
-	"github.com/hyperledger/aries-framework-go/pkg/didcomm/protocol/decorator"
 	"github.com/hyperledger/aries-framework-go/pkg/doc/verifiable"
 	"github.com/pkg/errors"
 
@@ -30,7 +29,6 @@ func parseWalletResponse(
 			errInvalidCredential, fmt.Sprintf("error parsing a verifiable presentation : %s", err))
 	}
 
-	// TODO pass presentation definitions
 	err = evaluatePresentationSubmission(definitions, vp)
 	if err != nil {
 		return nil, errors.Wrapf(errInvalidCredential, "invalid presentation submission : %s", err)
@@ -74,28 +72,17 @@ func parseWalletResponse(
 	return consentVC, nil
 }
 
-func parseIssuerResponse(definitions *presentationex.PresentationDefinitions,
-	presentation *presentproof.Presentation) (*rp.PresentationSubmissionPresentation, error) {
-	var attachmentID string
-
-	for _, f := range presentation.Formats {
-		if f.Format == presentationSubmissionFormat {
-			attachmentID = f.AttachID
-		}
+func parseIssuerResponse(def *presentationex.PresentationDefinitions,
+	pres *presentproof.Presentation) (*rp.PresentationSubmissionPresentation, error) {
+	if len(pres.PresentationsAttach) == 0 {
+		return nil, fmt.Errorf("%w : expected at least 1 attachment but got 0", errInvalidCredential)
 	}
 
-	if attachmentID == "" {
-		return nil, fmt.Errorf("no attachment found with expected format %s", presentationSubmissionFormat)
-	}
+	attachment := pres.PresentationsAttach[0]
 
-	a := getAttachmentByID(attachmentID, presentation.PresentationsAttach)
-	if a == nil {
-		return nil, fmt.Errorf("attachment referenced by ID %s from a format was not found", attachmentID)
-	}
-
-	vpBytes, err := a.Data.Fetch()
+	vpBytes, err := attachment.Data.Fetch()
 	if err != nil {
-		return nil, fmt.Errorf("failed to fetch contents of attachment with id %s : %w", attachmentID, err)
+		return nil, fmt.Errorf("failed to fetch contents of attachment with id %s : %w", attachment.ID, err)
 	}
 
 	vp, err := verifiable.ParsePresentation(vpBytes)
@@ -104,7 +91,7 @@ func parseIssuerResponse(definitions *presentationex.PresentationDefinitions,
 			errors.Wrapf(errInvalidCredential, fmt.Sprintf("failed to parse a verifiable presentation : %s", err))
 	}
 
-	err = evaluatePresentationSubmission(definitions, vp)
+	err = evaluatePresentationSubmission(def, vp)
 	if err != nil {
 		return nil, errors.Wrapf(errInvalidCredential, "invalid presentation submission : %s", err)
 	}
@@ -133,14 +120,4 @@ func evaluatePresentationSubmission(_ *presentationex.PresentationDefinitions, v
 	}
 
 	return adapterutil.DecodeJSONMarshaller(vp, submission)
-}
-
-func getAttachmentByID(id string, attachments []decorator.Attachment) *decorator.Attachment {
-	for i := range attachments {
-		if attachments[i].ID == id {
-			return &attachments[i]
-		}
-	}
-
-	return nil
 }
