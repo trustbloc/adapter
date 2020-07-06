@@ -30,8 +30,6 @@ import (
 	"github.com/mr-tron/base58"
 	"github.com/piprate/json-gold/ld"
 	"github.com/stretchr/testify/require"
-
-	"github.com/trustbloc/edge-adapter/pkg/vc/rp"
 )
 
 //nolint:gochecknoglobals
@@ -76,16 +74,6 @@ func TestParseWalletResponse(t *testing.T) {
 		consentVC := newUserConsentVC(t, newPeerDID(t).ID, newPeerDID(t), newPeerDID(t))
 		vp, err := consentVC.Presentation()
 		require.NoError(t, err)
-		_, err = parseWalletResponse(nil, marshalVP(t, vp))
-		require.True(t, errors.Is(err, errInvalidCredential))
-	})
-
-	t.Run("errInvalidCredential on invalid verifiable presentation type", func(t *testing.T) {
-		vc := newUserConsentVC(t, newPeerDID(t).ID, newPeerDID(t), newPeerDID(t))
-		vp, err := vc.Presentation()
-		addLDProof(t, vp)
-		require.NoError(t, err)
-		require.NotContains(t, vp.Type, rp.PresentationSubmissionPresentationType)
 		_, err = parseWalletResponse(nil, marshalVP(t, vp))
 		require.True(t, errors.Is(err, errInvalidCredential))
 	})
@@ -141,21 +129,6 @@ func TestParseIssuerResponse(t *testing.T) {
 				ID: uuid.New().String(),
 				Data: decorator.AttachmentData{
 					JSON: map[string]interface{}{},
-				},
-			}},
-		})
-		require.True(t, errors.Is(err, errInvalidCredential))
-	})
-
-	t.Run("errInvalidCredential if presentation submission fails evaluation", func(t *testing.T) {
-		vp := newPresentationSubmissionVP(t, newCreditCardStatementVC(t))
-		vp.Type = []string{"VerifiablePresentation"}
-		attachID := uuid.New().String()
-		_, err := parseIssuerResponse(nil, &presentproof.Presentation{
-			PresentationsAttach: []decorator.Attachment{{
-				ID: attachID,
-				Data: decorator.AttachmentData{
-					JSON: vp,
 				},
 			}},
 		})

@@ -10,7 +10,7 @@ require (
 	github.com/coreos/go-oidc v2.2.1+incompatible
 	github.com/google/uuid v1.1.1
 	github.com/gorilla/mux v1.7.4
-	github.com/hyperledger/aries-framework-go v0.1.4-0.20200702154906-9d14b065ec75
+	github.com/hyperledger/aries-framework-go v0.1.4-0.20200708140159-459bb2161e10
 	github.com/kr/text v0.2.0 // indirect
 	github.com/mr-tron/base58 v1.1.3
 	github.com/niemeyer/pretty v0.0.0-20200227124842-a10e7caefd8e // indirect
@@ -21,7 +21,6 @@ require (
 	github.com/stretchr/testify v1.5.1
 	github.com/trustbloc/edge-core v0.1.4-0.20200520210037-e95d2dd69134
 	github.com/trustbloc/trustbloc-did-method v0.1.3
-	golang.org/x/net v0.0.0-20200226121028-0de0cce0169b // indirect
 	google.golang.org/appengine v1.6.5 // indirect
 	gopkg.in/check.v1 v1.0.0-20200227125254-8fa46927fb4f // indirect
 	gopkg.in/square/go-jose.v2 v2.5.1 // indirect

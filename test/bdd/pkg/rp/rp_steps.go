@@ -15,7 +15,9 @@ import (
 	"io/ioutil"
 	"net/http"
 	"net/http/cookiejar"
+	"net/http/httptest"
 	"net/url"
+	"reflect"
 	"strings"
 	"time"
 
@@ -23,6 +25,7 @@ import (
 	"github.com/coreos/go-oidc"
 	"github.com/cucumber/godog"
 	"github.com/google/uuid"
+	"github.com/hyperledger/aries-framework-go/pkg/doc/verifiable"
 	"github.com/ory/hydra-client-go/client"
 	"github.com/ory/hydra-client-go/client/admin"
 	"github.com/ory/hydra-client-go/models"
@@ -43,14 +46,29 @@ const (
 	hydraPublicURL = "https://localhost:4444/"
 )
 
+const relyingPartyResultsPageSimulation = "Your credentials have been received!"
+
 var logger = log.New("edge-adapter/bddtests/rp")
 
 type tenantContext struct {
 	*operation.CreateRPTenantResponse
-	callback     string
-	pdHandle     string
-	browser      *http.Client
-	walletConnID string
+	label               string
+	callbackURL         string
+	pdHandle            string
+	browser             *http.Client
+	callbackServer      *httptest.Server
+	walletConnID        string
+	invitationID        string
+	chapiResponseResult *handleChapiResponseCallResult
+	expectedUserData    interface{}
+	oidcProvider        *oidc.Provider
+	oauth2Config        *oauth2.Config
+	callbackReceived    *url.URL
+}
+
+type handleChapiResponseCallResult struct {
+	result *operation.HandleCHAPIResponseResult
+	err    error
 }
 
 // Steps is the BDD steps for the RP Adapter BDD tests.
@@ -72,24 +90,33 @@ func NewSteps(ctx *bddctx.BDDContext) *Steps {
 // RegisterSteps registers agent steps.
 func (s *Steps) RegisterSteps(g *godog.Suite) {
 	g.Step(`^the "([^"]*)" is running on "([^"]*)" port "([^"]*)" with controller "([^"]*)"$`, s.registerAgentController)
-	g.Step(`^a request is sent to create an RP tenant with label "([^"]*)" and callback "([^"]*)"$`, s.createTenant)
+	g.Step(`^a request is sent to create an RP tenant with label "([^"]*)"$`, s.createTenant)
 	g.Step(`^the trustbloc DID of the tenant with label "([^"]*)" is resolvable$`, s.resolveDID)
 	g.Step(`^the client ID of the tenant with label "([^"]*)" is registered at hydra$`, s.lookupClientID)
-	g.Step(`^a registered rp tenant with label "([^"]*)" and callback "([^"]*)"$`, s.registerTenantFlow)
-	g.Step(`^the rp tenant "([^"]*)" redirects the user to the rp adapter$`, s.redirectUserToAdapter)
+	g.Step(`^a registered rp tenant with label "([^"]*)"$`, s.registerTenantFlow)
+	g.Step(`^the rp tenant "([^"]*)" redirects the user to the rp adapter with scope "([^"]*)"$`, s.redirectUserToAdapter)
 	g.Step(`the rp adapter "([^"]*)" submits a CHAPI request to "([^"]*)" with presentation-definitions and a didcomm invitation to connect`, s.sendCHAPIRequestToWallet) //nolint:lll
 	g.Step(`^"([^"]*)" accepts the didcomm invitation$`, s.walletAcceptsDIDCommInvitation)
 	g.Step(`^"([^"]*)" connects with the RP adapter "([^"]*)"$`, s.validateConnection)
+	g.Step(`^"([^"]*)" and "([^"]*)" have a didcomm connection$`, s.connectAgents)
+	g.Step(`^an rp tenant with label "([^"]*)" that requests the "([^"]*)" scope from the "([^"]*)"`, s.didexchangeFlow)
+	g.Step(`^the "([^"]*)" provides a consent credential via CHAPI that contains the DIDs of rp "([^"]*)" and issuer "([^"]*)"$`, s.walletRespondsWithConsentCredential) //nolint:lll
+	g.Step(`^"([^"]*)" responds to "([^"]*)" with the user's data$`, s.issuerRepliesWithUserData)
+	g.Step(`^the user is redirected to the rp tenant "([^"]*)"$`, s.userRedirectBackToTenant)
+	g.Step(`^the rp tenant "([^"]*)" retrieves the user data from the rp adapter$`, s.rpTenantRetrievesUserData)
 }
 
 func (s *Steps) registerAgentController(agentID, inboundHost, inboundPort, controllerURL string) error {
 	return s.controller.ValidateAgentConnection(agentID, inboundHost, inboundPort, controllerURL)
 }
 
-func (s *Steps) createTenant(label, callback string) error {
+func (s *Steps) createTenant(label string) error {
+	callbackServer := httptest.NewServer(s)
+	callbackURL := callbackServer.URL + "/" + label
+
 	requestBytes, err := json.Marshal(&operation.CreateRPTenantRequest{
 		Label:    label,
-		Callback: callback,
+		Callback: callbackURL,
 	})
 	if err != nil {
 		return err
@@ -125,7 +152,9 @@ func (s *Steps) createTenant(label, callback string) error {
 
 	s.tenantCtx[label] = &tenantContext{
 		CreateRPTenantResponse: response,
-		callback:               callback,
+		label:                  label,
+		callbackURL:            callbackURL,
+		callbackServer:         callbackServer,
 	}
 
 	return nil
@@ -151,7 +180,7 @@ func (s *Steps) resolveDID(label string) error {
 		},
 		backoff.WithMaxRetries(backoff.NewConstantBackOff(sleep), maxRetries),
 		func(retryErr error, sleep time.Duration) {
-			fmt.Printf("WARNING - failed to resolve %s - will sleep for %s before trying again : %s\n",
+			logger.Debugf("failed to resolve %s - will sleep for %s before trying again : %s",
 				publicDID, sleep, retryErr)
 		},
 	)
@@ -201,10 +230,10 @@ func (s *Steps) lookupClientID(label string) error {
 }
 
 func validateTenantRegistration(expected *tenantContext, result *models.OAuth2Client) error {
-	if !stringsContain(result.RedirectUris, expected.callback) {
+	if !stringsContain(result.RedirectUris, expected.callbackURL) {
 		return fmt.Errorf(
 			"expected tenant to be registered with callback %s but instead got %v",
-			expected.callback, result.RedirectUris)
+			expected.callbackURL, result.RedirectUris)
 	}
 
 	expectedScopes := []string{oidc.ScopeOpenID, "CreditCardStatement"}
@@ -221,8 +250,8 @@ func validateTenantRegistration(expected *tenantContext, result *models.OAuth2Cl
 	return nil
 }
 
-func (s *Steps) registerTenantFlow(label, callback string) error {
-	err := s.createTenant(label, callback)
+func (s *Steps) registerTenantFlow(label string) error {
+	err := s.createTenant(label)
 	if err != nil {
 		return err
 	}
@@ -235,7 +264,7 @@ func (s *Steps) registerTenantFlow(label, callback string) error {
 	return s.lookupClientID(label)
 }
 
-func (s *Steps) redirectUserToAdapter(label string) error {
+func (s *Steps) redirectUserToAdapter(label, scope string) error {
 	cookieJar, err := cookiejar.New(nil)
 	if err != nil {
 		return fmt.Errorf("failed to initialize cookie jar : %w", err)
@@ -257,8 +286,8 @@ func (s *Steps) redirectUserToAdapter(label string) error {
 		ClientID:     tenant.ClientID,
 		ClientSecret: tenant.ClientSecret,
 		Endpoint:     provider.Endpoint(),
-		RedirectURL:  tenant.callback,
-		Scopes:       []string{oidc.ScopeOpenID, "CreditCardStatement"},
+		RedirectURL:  tenant.callbackURL,
+		Scopes:       []string{oidc.ScopeOpenID, scope},
 	}
 
 	state := strings.ReplaceAll(uuid.New().String(), "-", "")
@@ -290,6 +319,8 @@ func (s *Steps) redirectUserToAdapter(label string) error {
 		return errors.New("adapter failed to redirect user to UI with a handle")
 	}
 
+	tenant.oidcProvider = provider
+	tenant.oauth2Config = &oauth2Config
 	tenant.pdHandle = handle
 	tenant.browser = browser
 
@@ -328,6 +359,7 @@ func (s *Steps) fetchCHAPIRequest(tenantID, walletID string) error {
 		return fmt.Errorf("failed to marshal didcomm invitation : %w", err)
 	}
 
+	tenant.invitationID = result.Inv.ID
 	s.context.Store[bddutil.GetDIDConnectRequestKey(tenantID, walletID)] = string(bits)
 
 	return nil
@@ -365,13 +397,284 @@ func (s *Steps) validateConnection(walletID, tenantID string) error {
 		},
 		backoff.WithMaxRetries(backoff.NewConstantBackOff(time.Second), 3),
 		func(e error, d time.Duration) {
-			logger.Warnf(
+			logger.Debugf(
 				"caught an error [%s] while validating connection status between %s and %s - will sleep for %s before trying again", //nolint:lll
 				e.Error(), walletID, tenantID, d)
 		},
 	)
 
 	return err
+}
+
+func (s *Steps) connectAgents(agentA, agentB string) error {
+	return s.controller.Connect(agentA, agentB)
+}
+
+func (s *Steps) didexchangeFlow(tenantID, scope, walletID string) error {
+	err := s.registerTenantFlow(tenantID)
+	if err != nil {
+		return err
+	}
+
+	err = s.redirectUserToAdapter(tenantID, scope)
+	if err != nil {
+		return err
+	}
+
+	err = s.sendCHAPIRequestToWallet(tenantID, walletID)
+	if err != nil {
+		return err
+	}
+
+	err = s.walletAcceptsDIDCommInvitation(walletID)
+	if err != nil {
+		return err
+	}
+
+	return s.validateConnection(walletID, tenantID)
+}
+
+func (s *Steps) walletRespondsWithConsentCredential(wallet, tenant, issuer string) error {
+	submissionVP, err := s.walletCreatesConsentCredential(wallet, tenant, issuer)
+	if err != nil {
+		return fmt.Errorf("failed to create presentation submission VP : %w", err)
+	}
+
+	vpBytes, err := submissionVP.MarshalJSON()
+	if err != nil {
+		return fmt.Errorf("failed to marshal verifiable presentation : %w", err)
+	}
+
+	tenantCtx := s.tenantCtx[tenant]
+
+	chapiResponseBytes, err := json.Marshal(&operation.HandleCHAPIResponse{
+		InvitationID:           tenantCtx.invitationID,
+		VerifiablePresentation: vpBytes,
+	})
+	if err != nil {
+		return fmt.Errorf("failed to marshal chapi response : %w", err)
+	}
+
+	go func() {
+		// this call blocks until a timeout occurs, or the issuer responds with the presentation
+		resp, err := tenantCtx.browser.Post( //nolint:bodyclose
+			rpAdapterURL+"/presentations/handleResponse", "application/json", bytes.NewReader(chapiResponseBytes))
+		if err != nil {
+			tenantCtx.chapiResponseResult = &handleChapiResponseCallResult{err: err}
+
+			logger.Errorf("failed to send chapi response to rp adapter : %s", err)
+
+			return
+		}
+
+		defer bddutil.CloseResponseBody(resp.Body)
+
+		var result operation.HandleCHAPIResponseResult
+
+		err = json.NewDecoder(resp.Body).Decode(&result)
+		if err != nil {
+			err = fmt.Errorf("failed to decode handle chapi response : %s", err)
+			tenantCtx.chapiResponseResult = &handleChapiResponseCallResult{err: err}
+
+			logger.Errorf("%s", err)
+
+			return
+		}
+
+		tenantCtx.chapiResponseResult = &handleChapiResponseCallResult{result: &result}
+	}()
+
+	return nil
+}
+
+func (s *Steps) walletCreatesConsentCredential(wallet, tenant, issuer string) (*verifiable.Presentation, error) {
+	walletTenantConn, err := s.controller.GetConnectionBetweenAgents(wallet, tenant)
+	if err != nil {
+		return nil, err
+	}
+
+	rpDID, err := s.controller.ResolveDID(wallet, walletTenantConn.TheirDID)
+	if err != nil {
+		return nil, fmt.Errorf("%s failed to resolve %s's DID %s : %w", wallet, tenant, walletTenantConn.TheirDID, err)
+	}
+
+	// TODO using "issuer-adapter" as the issuer's ID because that is the default label set for
+	//  mock issuer in its configuration.
+	walletIssuerConn, err := s.controller.GetConnectionBetweenAgents(wallet, "issuer-adapter")
+	if err != nil {
+		return nil, err
+	}
+
+	issuerDID, err := s.controller.ResolveDID(wallet, walletIssuerConn.TheirDID)
+	if err != nil {
+		return nil, fmt.Errorf("%s failed to resolve %s's DID %s : %w", wallet, issuer, walletIssuerConn.TheirDID, err)
+	}
+
+	_, err = s.controller.CreateConnection(issuer, issuerDID.ID, tenant, rpDID)
+	if err != nil {
+		return nil, fmt.Errorf("%s failed to create a connection to %s : %w", issuer, tenant, err)
+	}
+
+	userDID := walletTenantConn.MyDID
+
+	userConsentVC, err := newUserConsentVC(userDID, rpDID, issuerDID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create user consent credential : %w", err)
+	}
+
+	submissionVP, err := newVerifiablePresentation(userConsentVC)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create presentation submission VP : %w", err)
+	}
+
+	return submissionVP, nil
+}
+
+func (s *Steps) issuerRepliesWithUserData(issuer, tenant string) error {
+	vc, err := newCreditCardStatementVC()
+	if err != nil {
+		return fmt.Errorf("failed to create credit card statement vc : %w", err)
+	}
+
+	bits, err := json.Marshal(vc.Subject)
+	if err != nil {
+		return fmt.Errorf(`"%s" failed to marshal credential subject : %w`, issuer, err)
+	}
+
+	expected := make([]map[string]interface{}, 0)
+
+	err = json.Unmarshal(bits, &expected)
+	if err != nil {
+		return fmt.Errorf(`"%s" failed to unmarshal credential subject : %w`, issuer, err)
+	}
+
+	tenantCtx := s.tenantCtx[tenant]
+
+	tenantCtx.expectedUserData = expected[0]["stmt"]
+
+	vp, err := newVerifiablePresentation(vc)
+	if err != nil {
+		return fmt.Errorf("failed to create verifiable presentation : %w", err)
+	}
+
+	err = s.controller.AcceptRequestPresentation(issuer, vp)
+	if err != nil {
+		return fmt.Errorf("%s failed to accept request-presentation : %w", issuer, err)
+	}
+
+	return nil
+}
+
+func (s *Steps) userRedirectBackToTenant(tenant string) error {
+	tenantCtx := s.tenantCtx[tenant]
+
+	err := backoff.Retry(
+		func() error {
+			if tenantCtx.chapiResponseResult == nil {
+				return fmt.Errorf(`no chapi response result received for tenant "%s"`, tenant)
+			}
+
+			return nil
+		},
+		backoff.WithMaxRetries(backoff.NewConstantBackOff(time.Second), 3),
+	)
+	if err != nil {
+		return err
+	}
+
+	chapiResponseResult := tenantCtx.chapiResponseResult
+
+	if chapiResponseResult.err != nil {
+		return fmt.Errorf(
+			"chapi response result received an error from the rp adapter %s : %w", tenant, chapiResponseResult.err)
+	}
+
+	redirectURL := chapiResponseResult.result.RedirectURL
+
+	resp, err := tenantCtx.browser.Get(redirectURL) //nolint:bodyclose
+	if err != nil {
+		return fmt.Errorf("failed to redirect user to %s : %w", redirectURL, err)
+	}
+
+	defer bddutil.CloseResponseBody(resp.Body)
+
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("expected %d but rp results page returned %d", http.StatusOK, resp.StatusCode)
+	}
+
+	resultsPage, err := ioutil.ReadAll(resp.Body)
+	if err != nil {
+		return fmt.Errorf("failed to read contents of rp results page : %w", err)
+	}
+
+	if relyingPartyResultsPageSimulation != string(resultsPage) {
+		return fmt.Errorf("unexpected contents of rp results page : %s", resultsPage)
+	}
+
+	return nil
+}
+
+func (s *Steps) rpTenantRetrievesUserData(tenant string) error {
+	tenantCtx := s.tenantCtx[tenant]
+
+	oauth2Token, err := tenantCtx.oauth2Config.Exchange(
+		context.WithValue(context.Background(), oauth2.HTTPClient, tenantCtx.browser),
+		tenantCtx.callbackReceived.Query().Get("code"),
+	)
+	if err != nil {
+		return fmt.Errorf(`"%s" failed to exchange code for oauth2 token : %w`, tenant, err)
+	}
+
+	rawIDToken, ok := oauth2Token.Extra("id_token").(string)
+	if !ok {
+		return fmt.Errorf(`"%s" did not receive an id_token from the adapter`, tenant)
+	}
+
+	verifier := tenantCtx.oidcProvider.Verifier(&oidc.Config{
+		ClientID: tenantCtx.ClientID,
+	})
+
+	idToken, err := verifier.Verify(context.Background(), rawIDToken)
+	if err != nil {
+		return fmt.Errorf(`"%s" failed to verify idToken "%s" : %w`, tenant, idToken, err)
+	}
+
+	resultUserData := make(map[string]interface{})
+
+	err = idToken.Claims(&resultUserData)
+	if err != nil {
+		return fmt.Errorf(`"%s" failed to extract the claims from the id_token : %w`, tenant, err)
+	}
+
+	if !reflect.DeepEqual(tenantCtx.expectedUserData, resultUserData["stmt"]) {
+		return fmt.Errorf(`"%s" did not get the expected data from the issuer`, tenant)
+	}
+
+	return nil
+}
+
+func (s *Steps) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	var tenantCtx *tenantContext
+
+	for label, ctx := range s.tenantCtx {
+		if strings.HasPrefix(r.URL.String(), "/"+label) {
+			tenantCtx = ctx
+			break
+		}
+	}
+
+	if tenantCtx == nil {
+		logger.Errorf("no tenant registered with callback: %s", r.URL)
+
+		return
+	}
+
+	tenantCtx.callbackReceived = r.URL
+
+	_, err := w.Write([]byte(relyingPartyResultsPageSimulation))
+	if err != nil {
+		logger.Warnf("failed to display rp screen to user : %s", err)
+	}
 }
 
 func stringsContain(slice []string, val string) bool {

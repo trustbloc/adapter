@@ -111,10 +111,6 @@ func parseIssuerResponse(def *presentationex.PresentationDefinitions,
 // TODO validate presentation_submission against presentation_definitions
 //  https://github.com/trustbloc/edge-adapter/issues/108
 func evaluatePresentationSubmission(_ *presentationex.PresentationDefinitions, vp *verifiable.Presentation) error {
-	if !adapterutil.StringsContains(rp.PresentationSubmissionPresentationType, vp.Type) {
-		return errors.Wrapf(errInvalidCredential, "unexpected verifiable presentation type: %+v", vp.Type)
-	}
-
 	submission := &rp.PresentationSubmissionPresentation{
 		Base: vp,
 	}

@@ -19,6 +19,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/cenkalti/backoff"
 	"github.com/cucumber/godog"
 	"github.com/google/uuid"
 	"github.com/hyperledger/aries-framework-go/pkg/client/didexchange"
@@ -27,6 +28,7 @@ import (
 	didexcmd "github.com/hyperledger/aries-framework-go/pkg/controller/command/didexchange"
 	issuecredcmd "github.com/hyperledger/aries-framework-go/pkg/controller/command/issuecredential"
 	presentproofcmd "github.com/hyperledger/aries-framework-go/pkg/controller/command/presentproof"
+	vdricmd "github.com/hyperledger/aries-framework-go/pkg/controller/command/vdri"
 	verifiablecmd "github.com/hyperledger/aries-framework-go/pkg/controller/command/verifiable"
 	"github.com/hyperledger/aries-framework-go/pkg/didcomm/protocol/decorator"
 	issuecredsvc "github.com/hyperledger/aries-framework-go/pkg/didcomm/protocol/issuecredential"
@@ -52,18 +54,25 @@ const (
 
 	connOperationID       = "/connections"
 	receiveInvitationPath = connOperationID + "/receive-invitation"
+	createInvitationPath  = connOperationID + "/create-invitation"
 	acceptInvitationPath  = connOperationID + "/%s/accept-invitation"
-	connectionsByID       = connOperationID + "/{id}"
+	connectionsByIDPath   = connOperationID + "/{id}"
+	createConnectionPath  = connOperationID + "/create"
 
 	issueCredOperationID = "/issuecredential"
 	sendCredRequest      = issueCredOperationID + "/send-request"
 	issueCredActions     = issueCredOperationID + "/actions"
 	acceptCredentialPath = issueCredOperationID + "/%s/accept-credential"
 
-	presentProofOperationID = "/presentproof"
-	sendRequestPresentation = presentProofOperationID + "/send-request-presentation"
-	acceptPresentationPath  = presentProofOperationID + "/%s/accept-presentation"
-	presentProofActions     = presentProofOperationID + "/actions"
+	presentProofOperationID   = "/presentproof"
+	sendRequestPresentation   = presentProofOperationID + "/send-request-presentation"
+	acceptRequestPresentation = presentProofOperationID + "/%s/accept-request-presentation"
+	acceptPresentationPath    = presentProofOperationID + "/%s/accept-presentation"
+	presentProofActions       = presentProofOperationID + "/actions"
+
+	vdriOperationID = "/vdri"
+	vdriDIDPath     = vdriOperationID + "/did"
+	resolveDIDPath  = vdriDIDPath + "/resolve/%s"
 )
 
 var logger = log.New("edge-adapter/tests")
@@ -259,6 +268,58 @@ func (a *Steps) ValidateConnection(agentID, connID string) (*didexchange.Connect
 	return conn, nil
 }
 
+// Connect establishes a didcomm connection between the two agents.
+func (a *Steps) Connect(inviter, invitee string) error {
+	agentAInv, err := a.createInvitation(inviter)
+	if err != nil {
+		return fmt.Errorf("%s failed to create invitation for %s : %w", inviter, invitee, err)
+	}
+
+	bits, err := json.Marshal(agentAInv)
+	if err != nil {
+		return fmt.Errorf("failed to marshal invitation : %w", err)
+	}
+
+	agentBConnID, err := a.ReceiveInvitation(invitee, string(bits))
+	if err != nil {
+		return fmt.Errorf("%s failed to receive invitation from %s : %w", invitee, inviter, err)
+	}
+
+	err = a.ApproveInvitation(invitee)
+	if err != nil {
+		return fmt.Errorf("%s failed to approve invitation from %s: %w", invitee, inviter, err)
+	}
+
+	return backoff.RetryNotify(
+		func() error {
+			_, err = a.ValidateConnection(invitee, agentBConnID)
+			return err
+		},
+		backoff.WithMaxRetries(backoff.NewConstantBackOff(time.Second), 3),
+		func(e error, d time.Duration) {
+			logger.Debugf(
+				"caught an error [%s] while validating connection status for %s - will sleep for %s before trying again", //nolint:lll
+				e.Error(), invitee, d)
+		},
+	)
+}
+
+func (a *Steps) createInvitation(agent string) (*didexchange.Invitation, error) {
+	destination, ok := a.ControllerURLs[agent]
+	if !ok {
+		return nil, fmt.Errorf("unable to find controller URL registered for agent [%s]", agent)
+	}
+
+	var resp didexcmd.CreateInvitationResponse
+
+	err := sendHTTP(http.MethodPost, destination+createInvitationPath, nil, &resp)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create invitation, cause : %s", err)
+	}
+
+	return resp.Invitation, nil
+}
+
 // ReceiveInvitation will make the agent accept the given invitation.
 func (a *Steps) ReceiveInvitation(agentID, invitation string) (string, error) {
 	destination, ok := a.ControllerURLs[agentID]
@@ -329,13 +390,71 @@ func (a *Steps) getConnection(agentID, connectionID string) (*didexchange.Connec
 	// call controller
 	var response didexcmd.QueryConnectionResponse
 
-	err := sendHTTP(http.MethodGet, destination+strings.Replace(connectionsByID, "{id}", connectionID, 1), nil, &response)
+	err := sendHTTP(http.MethodGet,
+		destination+strings.Replace(connectionsByIDPath, "{id}", connectionID, 1), nil, &response)
 	if err != nil {
 		logger.Errorf("Failed to perform receive invitation, cause : %s", err)
 		return nil, err
 	}
 
 	return response.Result, nil
+}
+
+// GetConnectionBetweenAgents returns a didcomm connection record between the two agents, if one exists.
+func (a *Steps) GetConnectionBetweenAgents(agentA, agentB string) (*didexchange.Connection, error) {
+	destination, ok := a.ControllerURLs[agentA]
+	if !ok {
+		return nil, fmt.Errorf(" unable to find controller URL registered for agent [%s]", agentA)
+	}
+
+	var resp didexcmd.QueryConnectionsResponse
+
+	err := sendHTTP(http.MethodGet, destination+connOperationID, nil, &resp)
+	if err != nil {
+		return nil, fmt.Errorf("%s failed to query connection records : %w", agentA, err)
+	}
+
+	for i := range resp.Results {
+		if agentB == resp.Results[i].TheirLabel {
+			return resp.Results[i], nil
+		}
+	}
+
+	return nil, fmt.Errorf("no connection found between %s and %s", agentA, agentB)
+}
+
+// CreateConnection creates a didcomm connection for the agent between myDID and theirDID.
+func (a *Steps) CreateConnection(agent, myDID, label string, theirDID *did.Doc) (string, error) {
+	destination, ok := a.ControllerURLs[agent]
+	if !ok {
+		return "", fmt.Errorf(" unable to find controller URL registered for agent [%s]", agent)
+	}
+
+	theirDIDBytes, err := theirDID.JSONBytes()
+	if err != nil {
+		return "", fmt.Errorf("theirDID failed to marshal to bytes : %w", err)
+	}
+
+	request, err := json.Marshal(&didexcmd.CreateConnectionRequest{
+		MyDID: myDID,
+		TheirDID: didexcmd.DIDDocument{
+			ID:       theirDID.ID,
+			Contents: theirDIDBytes,
+		},
+		TheirLabel: label,
+	})
+	if err != nil {
+		return "", fmt.Errorf("failed to marshal save connection request : %w", err)
+	}
+
+	var resp didexcmd.ConnectionIDArg
+
+	err = sendHTTP(http.MethodPost, destination+createConnectionPath, request, &resp)
+	if err != nil {
+		return "", fmt.Errorf("%s failed to create connection : %w", agent, err)
+	}
+
+	return resp.ID, nil
 }
 
 func (a *Steps) pullEventsFromWebSocket(agentID, state string) (string, error) {
@@ -496,6 +615,66 @@ func (a *Steps) fetchPresentation(agentID, issuerID string) error {
 	}
 
 	return nil
+}
+
+// ResolveDID resolves the did on behalf of the agent.
+func (a *Steps) ResolveDID(agent, didID string) (*did.Doc, error) {
+	destination, ok := a.ControllerURLs[agent]
+	if !ok {
+		return nil, fmt.Errorf("unable to find controller URL registered for agent [%s]", agent)
+	}
+
+	destination = fmt.Sprintf(destination+resolveDIDPath, base64.StdEncoding.EncodeToString([]byte(didID)))
+
+	var resp vdricmd.Document
+
+	err := sendHTTP(http.MethodGet, destination, nil, &resp)
+	if err != nil {
+		return nil, fmt.Errorf("%s failed to fetch did=%s : %w", agent, didID, err)
+	}
+
+	doc, err := did.ParseDocument(resp.DID)
+	if err != nil {
+		return nil, fmt.Errorf("%s failed to parse did document : %w", agent, err)
+	}
+
+	return doc, nil
+}
+
+// AcceptRequestPresentation accepts the request for presentation.
+func (a *Steps) AcceptRequestPresentation(agent string, presentation *verifiable.Presentation) error {
+	destination := a.ControllerURLs[agent]
+
+	piid, err := actionPIID(destination, presentProofActions)
+	if err != nil {
+		return err
+	}
+
+	vpBytes, err := presentation.MarshalJSON()
+	if err != nil {
+		return fmt.Errorf("failed to marshal verifiable presentation : %w", err)
+	}
+
+	request, err := json.Marshal(presentproofcmd.AcceptRequestPresentationArgs{
+		PIID: piid,
+		Presentation: &presentproof.Presentation{
+			Type: presentproofsvc.PresentationMsgType,
+			PresentationsAttach: []decorator.Attachment{{
+				ID:       uuid.New().String(),
+				MimeType: "application/ld+json",
+				Data: decorator.AttachmentData{
+					Base64: base64.StdEncoding.EncodeToString(vpBytes),
+				},
+			}},
+		},
+	})
+	if err != nil {
+		return fmt.Errorf("failed to marshal accept request presentation request : %w", err)
+	}
+
+	acceptRequestURL := fmt.Sprintf(destination+acceptRequestPresentation, piid)
+
+	return sendHTTP(http.MethodPost, acceptRequestURL, request, &presentproofcmd.AcceptRequestPresentationResponse{})
 }
 
 func sendPresentationRequest(conn *didexchange.Connection, vc *verifiable.Credential, controllerURL string) error {

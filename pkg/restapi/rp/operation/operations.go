@@ -28,6 +28,7 @@ import (
 	presentproofsvc "github.com/hyperledger/aries-framework-go/pkg/didcomm/protocol/presentproof"
 	"github.com/hyperledger/aries-framework-go/pkg/doc/did"
 	"github.com/hyperledger/aries-framework-go/pkg/doc/verifiable"
+	"github.com/hyperledger/aries-framework-go/pkg/framework/aries/api/vdri"
 	ariesstorage "github.com/hyperledger/aries-framework-go/pkg/storage"
 	"github.com/hyperledger/aries-framework-go/pkg/store/connection"
 	"github.com/ory/hydra-client-go/client/admin"
@@ -60,9 +61,6 @@ const (
 )
 
 const (
-	// didexhange protocol service is setting the connection record's namespace to "my" on inbound invitations
-	connectionRecordNamespace = "my"
-
 	// TODO define present-proof V2 formats for did uris, presentation_definition, presentation_submission,
 	//  and consentVC: https://github.com/trustbloc/edge-adapter/issues/106
 	consentVCAttachmentFormat = "trustbloc/UserConsentVerifiableCredential@0.1.0"
@@ -102,6 +100,7 @@ type DIDClient interface {
 	RegisterMsgEvent(chan<- service.StateMsg) error
 	CreateInvitationWithDID(string, string) (*didexchange.Invitation, error)
 	CreateInvitation(string) (*didexchange.Invitation, error)
+	CreateConnection(string, *did.Doc, ...didexchange.ConnectionOption) (string, error)
 }
 
 // PresentProofClient is the aries framework's presentproof.Client.
@@ -115,10 +114,11 @@ type PublicDIDCreator interface {
 	Create() (*did.Doc, error)
 }
 
-// AriesStorageProvider is the dependency interface for the connection.Recorder.
-type AriesStorageProvider interface {
+// AriesContextProvider is the dependency interface for the connection.Recorder.
+type AriesContextProvider interface {
 	StorageProvider() ariesstorage.Provider
 	TransientStorageProvider() ariesstorage.Provider
+	VDRIRegistry() vdri.Registry
 }
 
 type consentRequest struct {
@@ -172,6 +172,7 @@ func New(config *Config) (*Operation, error) {
 		issuerCallbacks:         make(map[string]chan *issuerResponseStatus),
 		issuerCallbacksLock:     &sync.Mutex{},
 		issuerCallbackTimeout:   defaultTimeout,
+		vdriReg:                 config.AriesStorageProvider.VDRIRegistry(),
 	}
 
 	err := o.didClient.RegisterActionEvent(o.didActions)
@@ -218,7 +219,7 @@ type Config struct {
 	DIDExchClient          DIDClient
 	Store                  storage.Provider
 	PublicDIDCreator       PublicDIDCreator
-	AriesStorageProvider   AriesStorageProvider
+	AriesStorageProvider   AriesContextProvider
 	PresentProofClient     PresentProofClient
 }
 
@@ -251,6 +252,7 @@ type Operation struct {
 	issuerCallbacks         map[string]chan *issuerResponseStatus
 	issuerCallbacksLock     sync.Locker
 	issuerCallbackTimeout   time.Duration
+	vdriReg                 vdri.Registry
 }
 
 // GetRESTHandlers get all controller API handler available for this service.
@@ -773,7 +775,7 @@ func (o *Operation) chapiResponseHandler(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	// TODO save issuer DID and user Consent VC https://github.com/trustbloc/edge-adapter/issues/92
+	// TODO save user Consent VC https://github.com/trustbloc/edge-adapter/issues/92
 	// TODO validate the user consent credential (expected rp and user DIDs, etc.)
 
 	consentVC, err := parseWalletResponse(invData.pd, request.VerifiablePresentation)
@@ -810,34 +812,10 @@ func (o *Operation) chapiResponseHandler(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	dest, err := service.CreateDestination(issuerDID)
-	if err != nil {
-		msg := fmt.Sprintf("failed to create didcomm destination : %s", err)
-		logger.Errorf(msg)
-		commhttp.WriteErrorResponse(w, http.StatusBadRequest, msg)
-
-		return
-	}
-
 	// TODO Issuer's label on the connection record https://github.com/trustbloc/edge-adapter/issues/93
-	err = o.connections.SaveConnectionRecord(&connection.Record{
-		ConnectionID:    uuid.New().String(),
-		State:           didexchangesvc.StateIDCompleted,
-		ThreadID:        uuid.New().String(),
-		ParentThreadID:  invData.id,
-		TheirLabel:      "",
-		TheirDID:        issuerDID.ID,
-		MyDID:           invData.rpPeerDID,
-		ServiceEndPoint: dest.ServiceEndpoint,
-		RecipientKeys:   dest.RecipientKeys,
-		RoutingKeys:     dest.RoutingKeys,
-		InvitationID:    invData.id,
-		InvitationDID:   invData.rpPublicDID,
-		Implicit:        false,
-		Namespace:       connectionRecordNamespace,
-	})
+	_, err = o.didClient.CreateConnection(invData.rpPeerDID, issuerDID)
 	if err != nil {
-		msg := fmt.Sprintf("failed to save connection record : %s", err)
+		msg := fmt.Sprintf("failed to create didcomm connection : %s", err)
 		logger.Errorf(msg)
 		commhttp.WriteErrorResponse(w, http.StatusInternalServerError, msg)
 
@@ -885,6 +863,8 @@ func (o *Operation) chapiResponseHandler(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
+	logger.Debugf("sent request-presentation with threadID=%s", thid)
+
 	callback := make(chan *issuerResponseStatus)
 
 	o.setIssuerCallbackCh(thid, callback)
@@ -894,8 +874,11 @@ func (o *Operation) chapiResponseHandler(w http.ResponseWriter, r *http.Request)
 		invitationDataID: invData.id,
 	})
 
+	start := time.Now()
+
 	select {
 	case c := <-callback:
+		logger.Infof("got response from issuer in %s", time.Since(start))
 		o.handleIssuerCallback(w, r, invData, c)
 	case <-time.After(o.issuerCallbackTimeout):
 		msg := "timeout waiting for credentials"
@@ -936,7 +919,7 @@ func (o *Operation) handleIssuerCallback(
 		HandledAt:                models.NullTime(time.Now()),
 		Remember:                 true, // TODO support user choice whether consent should be remembered
 		Session: &models.ConsentRequestSession{
-			IDToken: rpData,
+			IDToken: rpData[0],
 		},
 	})
 
@@ -958,8 +941,8 @@ func (o *Operation) handleIssuerCallback(
 
 // TODO surely there must be a better way to unmarshal the credentialSubject of a VC into a map????
 func mapPresentationSubmissionToRPData(
-	submission *rp2.PresentationSubmissionPresentation) (map[string]interface{}, error) {
-	rpdata := make(map[string]interface{})
+	submission *rp2.PresentationSubmissionPresentation) ([]map[string]interface{}, error) {
+	rpdata := make([]map[string]interface{}, 0)
 
 	raw, err := submission.Base.MarshalledCredentials()
 	if err != nil {
@@ -988,7 +971,7 @@ func mapPresentationSubmissionToRPData(
 	return filterJSONLDisms(rpdata), nil
 }
 
-func filterJSONLDisms(in map[string]interface{}) map[string]interface{} {
+func filterJSONLDisms(in []map[string]interface{}) []map[string]interface{} {
 	// TODO filter JSONLD-isms from the credential subject like "@id", "@type", "@context", etc.
 	//  https://github.com/trustbloc/edge-adapter/issues/127
 	return in
@@ -1087,7 +1070,7 @@ func (o *Operation) listenForIssuerResponses() {
 			continue
 		}
 
-		action.Continue(nil)
+		action.Continue(presentproof.WithFriendlyNames(uuid.New().String()))
 	}
 }
 
