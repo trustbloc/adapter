@@ -62,7 +62,7 @@ const (
 	presentProofActions     = presentProofOperationID + "/actions"
 )
 
-var logger = log.New("aries-framework/tests")
+var logger = log.New("edge-adapter/tests")
 
 // Steps contains steps for aries agent.
 type Steps struct {
@@ -87,7 +87,7 @@ func NewSteps(ctx *context.BDDContext) *Steps {
 // RegisterSteps registers agent steps.
 func (a *Steps) RegisterSteps(s *godog.Suite) {
 	s.Step(`^"([^"]*)" agent is running on "([^"]*)" port "([^"]*)" with controller "([^"]*)"$`,
-		a.validateAgentConnection)
+		a.ValidateAgentConnection)
 	s.Step(`^"([^"]*)" responds to connect request from Issuer adapter \("([^"]*)"\) within "([^"]*)" seconds$`,
 		a.handleDIDConnectRequest)
 	s.Step(`^"([^"]*)" sends request credential message and receives credential from the issuer \("([^"]*)"\)$`,
@@ -96,7 +96,8 @@ func (a *Steps) RegisterSteps(s *godog.Suite) {
 		a.fetchPresentation)
 }
 
-func (a *Steps) validateAgentConnection(agentID, inboundHost,
+// ValidateAgentConnection checks if the controller agent is running.
+func (a *Steps) ValidateAgentConnection(agentID, inboundHost,
 	inboundPort, controllerURL string) error {
 	if err := a.checkAgentIsRunning(agentID, controllerURL); err != nil {
 		return err
@@ -168,12 +169,12 @@ func (a *Steps) handleDIDConnectRequest(agentID, issuerID string, timeout int) e
 	// Mock CHAPI request from Issuer
 	invitationJSON := a.bddContext.Store[bddutil.GetDIDConnectRequestKey(issuerID, agentID)]
 
-	connectionID, err := a.receiveInvitation(agentID, invitationJSON)
+	connectionID, err := a.ReceiveInvitation(agentID, invitationJSON)
 	if err != nil {
 		return err
 	}
 
-	err = a.approveInvitation(agentID)
+	err = a.ApproveInvitation(agentID)
 	if err != nil {
 		return err
 	}
@@ -181,17 +182,10 @@ func (a *Steps) handleDIDConnectRequest(agentID, issuerID string, timeout int) e
 	// Added to mock CHAPI timeout (ie, DIDExchange should happen with this duration)
 	time.Sleep(time.Duration(timeout) * time.Second)
 
-	conn, err := a.getConnection(agentID, connectionID)
+	conn, err := a.ValidateConnection(agentID, connectionID)
 	if err != nil {
 		return err
 	}
-
-	// Verify state
-	if conn.State != completedState {
-		return fmt.Errorf("expected state[%s] for agent[%s], but got[%s]", completedState, agentID, conn.State)
-	}
-
-	a.adapterConnections[agentID] = conn
 
 	subject := issuer.DIDConnectCredentialSubject{
 		ID:              connectionID,
@@ -225,7 +219,25 @@ func (a *Steps) handleDIDConnectRequest(agentID, issuerID string, timeout int) e
 	return nil
 }
 
-func (a *Steps) receiveInvitation(agentID, invitation string) (string, error) {
+// ValidateConnection retrieves the agent's connection record and tests whether its state is completed.
+func (a *Steps) ValidateConnection(agentID, connID string) (*didexchange.Connection, error) {
+	conn, err := a.getConnection(agentID, connID)
+	if err != nil {
+		return nil, err
+	}
+
+	// Verify state
+	if conn.State != completedState {
+		return nil, fmt.Errorf("expected state[%s] for agent[%s], but got[%s]", completedState, agentID, conn.State)
+	}
+
+	a.adapterConnections[agentID] = conn
+
+	return conn, nil
+}
+
+// ReceiveInvitation will make the agent accept the given invitation.
+func (a *Steps) ReceiveInvitation(agentID, invitation string) (string, error) {
 	destination, ok := a.ControllerURLs[agentID]
 	if !ok {
 		return "", fmt.Errorf("unable to find controller URL registered for agent [%s]", agentID)
@@ -248,7 +260,8 @@ func (a *Steps) receiveInvitation(agentID, invitation string) (string, error) {
 	return result.ConnectionID, nil
 }
 
-func (a *Steps) approveInvitation(agentID string) error {
+// ApproveInvitation will make the agent approve any outstanding invitations.
+func (a *Steps) ApproveInvitation(agentID string) error {
 	connectionID, err := a.pullEventsFromWebSocket(agentID, "invited")
 	if err != nil {
 		return fmt.Errorf("approve exchange invitation : %w", err)

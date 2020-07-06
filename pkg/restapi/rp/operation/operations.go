@@ -322,7 +322,7 @@ func (o *Operation) hydraLoginHandlerIterOne(w http.ResponseWriter, r *http.Requ
 	if errors.Is(err, storage.ErrValueNotFound) {
 		err = o.rpStore.SaveUserConnection(&rp.UserConnection{
 			User: &rp.User{
-				Subject: login.GetPayload().Subject,
+				Subject: subject,
 			},
 			RP: &rp.Tenant{
 				ClientID:  tenant.ClientID,
@@ -346,7 +346,7 @@ func (o *Operation) hydraLoginHandlerIterOne(w http.ResponseWriter, r *http.Requ
 
 	accept.SetLoginChallenge(login.GetPayload().Challenge)
 	accept.SetBody(&models.AcceptLoginRequest{
-		Subject: &login.GetPayload().Subject,
+		Subject: &subject,
 	})
 
 	loginResponse, err := o.hydra.AcceptLoginRequest(accept)
