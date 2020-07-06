@@ -21,7 +21,6 @@ import (
 	"github.com/google/uuid"
 	"github.com/hyperledger/aries-framework-go/pkg/client/presentproof"
 	"github.com/hyperledger/aries-framework-go/pkg/didcomm/protocol/decorator"
-	presentproofsvc "github.com/hyperledger/aries-framework-go/pkg/didcomm/protocol/presentproof"
 	"github.com/hyperledger/aries-framework-go/pkg/doc/did"
 	"github.com/hyperledger/aries-framework-go/pkg/doc/signature/jsonld"
 	"github.com/hyperledger/aries-framework-go/pkg/doc/signature/suite"
@@ -100,16 +99,11 @@ func TestParseWalletResponse(t *testing.T) {
 
 func TestParseIssuerResponse(t *testing.T) {
 	t.Run("valid response", func(t *testing.T) {
-		attachID := uuid.New().String()
 		expectedVC := newCreditCardStatementVC(t)
 		expectedVP := newPresentationSubmissionVP(t, expectedVC)
 		result, err := parseIssuerResponse(nil, &presentproof.Presentation{
-			Formats: []presentproofsvc.Format{{
-				AttachID: attachID,
-				Format:   presentationSubmissionFormat,
-			}},
 			PresentationsAttach: []decorator.Attachment{{
-				ID: attachID,
+				ID: uuid.New().String(),
 				Data: decorator.AttachmentData{
 					JSON: expectedVP,
 				},
@@ -124,52 +118,15 @@ func TestParseIssuerResponse(t *testing.T) {
 		require.Equal(t, expectedVC.Subject, resultVC.Subject)
 	})
 
-	t.Run("error if no attachment found with the expected format", func(t *testing.T) {
-		attachID := uuid.New().String()
-		expectedVC := newCreditCardStatementVC(t)
-		expectedVP := newPresentationSubmissionVP(t, expectedVC)
-		_, err := parseIssuerResponse(nil, &presentproof.Presentation{
-			Formats: []presentproofsvc.Format{{
-				AttachID: attachID,
-				Format:   "INVALID_FORMAT",
-			}},
-			PresentationsAttach: []decorator.Attachment{{
-				ID: attachID,
-				Data: decorator.AttachmentData{
-					JSON: expectedVP,
-				},
-			}},
-		})
-		require.Error(t, err)
-	})
-
-	t.Run("error if attachment IDs do not match", func(t *testing.T) {
-		expectedVC := newCreditCardStatementVC(t)
-		expectedVP := newPresentationSubmissionVP(t, expectedVC)
-		_, err := parseIssuerResponse(nil, &presentproof.Presentation{
-			Formats: []presentproofsvc.Format{{
-				AttachID: uuid.New().String(),
-				Format:   presentationSubmissionFormat,
-			}},
-			PresentationsAttach: []decorator.Attachment{{
-				ID: uuid.New().String(),
-				Data: decorator.AttachmentData{
-					JSON: expectedVP,
-				},
-			}},
-		})
+	t.Run("error if no attachments were provided", func(t *testing.T) {
+		_, err := parseIssuerResponse(nil, &presentproof.Presentation{})
 		require.Error(t, err)
 	})
 
 	t.Run("error if attachment's contents are malformed", func(t *testing.T) {
-		attachID := uuid.New().String()
 		_, err := parseIssuerResponse(nil, &presentproof.Presentation{
-			Formats: []presentproofsvc.Format{{
-				AttachID: attachID,
-				Format:   presentationSubmissionFormat,
-			}},
 			PresentationsAttach: []decorator.Attachment{{
-				ID: attachID,
+				ID: uuid.New().String(),
 				Data: decorator.AttachmentData{
 					Base64: "MALFORMED",
 				},
@@ -179,14 +136,9 @@ func TestParseIssuerResponse(t *testing.T) {
 	})
 
 	t.Run("errInvalidCredential is VP cannot be parsed", func(t *testing.T) {
-		attachID := uuid.New().String()
 		_, err := parseIssuerResponse(nil, &presentproof.Presentation{
-			Formats: []presentproofsvc.Format{{
-				AttachID: attachID,
-				Format:   presentationSubmissionFormat,
-			}},
 			PresentationsAttach: []decorator.Attachment{{
-				ID: attachID,
+				ID: uuid.New().String(),
 				Data: decorator.AttachmentData{
 					JSON: map[string]interface{}{},
 				},
@@ -200,10 +152,6 @@ func TestParseIssuerResponse(t *testing.T) {
 		vp.Type = []string{"VerifiablePresentation"}
 		attachID := uuid.New().String()
 		_, err := parseIssuerResponse(nil, &presentproof.Presentation{
-			Formats: []presentproofsvc.Format{{
-				AttachID: attachID,
-				Format:   presentationSubmissionFormat,
-			}},
 			PresentationsAttach: []decorator.Attachment{{
 				ID: attachID,
 				Data: decorator.AttachmentData{

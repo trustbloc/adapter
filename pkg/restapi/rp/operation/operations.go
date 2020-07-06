@@ -39,6 +39,7 @@ import (
 	"github.com/trustbloc/edge-adapter/pkg/internal/common/support"
 	"github.com/trustbloc/edge-adapter/pkg/presentationex"
 	commhttp "github.com/trustbloc/edge-adapter/pkg/restapi/internal/common/http"
+	"github.com/trustbloc/edge-adapter/pkg/vc"
 	rp2 "github.com/trustbloc/edge-adapter/pkg/vc/rp"
 )
 
@@ -62,11 +63,9 @@ const (
 	// didexhange protocol service is setting the connection record's namespace to "my" on inbound invitations
 	connectionRecordNamespace = "my"
 
-	// TODO define present-proof V2 formats for did uris, presentation_definition, presentation_submission
-	//  https://github.com/trustbloc/edge-adapter/issues/106
-	didURIAttachmentFormat       = "w3c/did-core@v1.0-draft"
-	presentationDefinitionFormat = "dif/presentation_definition@0.0.1"
-	presentationSubmissionFormat = "dif/presentation_submission@0.0.1"
+	// TODO define present-proof V2 formats for did uris, presentation_definition, presentation_submission,
+	//  and consentVC: https://github.com/trustbloc/edge-adapter/issues/106
+	consentVCAttachmentFormat = "trustbloc/UserConsentVerifiableCredential@0.1.0"
 )
 
 var logger = log.New("edge-adapter/rp-operations")
@@ -845,35 +844,38 @@ func (o *Operation) chapiResponseHandler(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	attachments := [2]decorator.Attachment{
-		{
-			ID:       uuid.New().String(),
-			MimeType: "text/plain",
-			Data: decorator.AttachmentData{
-				Base64: base64.StdEncoding.EncodeToString([]byte(invData.userDID)),
-			},
-		},
-		{
-			ID:       uuid.New().String(),
-			MimeType: "application/json",
-			Data: decorator.AttachmentData{
-				JSON: invData.pd,
-			},
-		},
+	vp, err := o.toVP(consentVC)
+	if err != nil {
+		msg := fmt.Sprintf("failed to convert user consent VC to a verifiable presentation : %s", err)
+		logger.Errorf(msg)
+		commhttp.WriteErrorResponse(w, http.StatusInternalServerError, msg)
+
+		return
 	}
 
+	consentVCBits, err := vp.MarshalJSON()
+	if err != nil {
+		msg := fmt.Sprintf("failed to marshal user consent VP to json : %s", err)
+		logger.Errorf(msg)
+		commhttp.WriteErrorResponse(w, http.StatusInternalServerError, msg)
+
+		return
+	}
+
+	attachID := uuid.New().String()
+
 	thid, err := o.ppClient.SendRequestPresentation(&presentproof.RequestPresentation{
-		Formats: []presentproofsvc.Format{
-			{
-				AttachID: attachments[0].ID,
-				Format:   didURIAttachmentFormat,
+		Formats: []presentproofsvc.Format{{
+			AttachID: attachID,
+			Format:   consentVCAttachmentFormat,
+		}},
+		RequestPresentationsAttach: []decorator.Attachment{{
+			ID:       attachID,
+			MimeType: "application/ld+json",
+			Data: decorator.AttachmentData{
+				Base64: base64.StdEncoding.EncodeToString(consentVCBits),
 			},
-			{
-				AttachID: attachments[1].ID,
-				Format:   presentationDefinitionFormat,
-			},
-		},
-		RequestPresentationsAttach: attachments[:],
+		}},
 	}, invData.rpPeerDID, issuerDID.ID)
 	if err != nil {
 		msg := fmt.Sprintf("failed to send request-presentation : %s", err)
@@ -968,12 +970,12 @@ func mapPresentationSubmissionToRPData(
 		return nil, errors.New("expected at least one credentialSubject in VP")
 	}
 
-	vc, err := verifiable.ParseCredential(raw[0])
+	cred, err := verifiable.ParseCredential(raw[0])
 	if err != nil {
 		return nil, fmt.Errorf("failed to unmarshal ")
 	}
 
-	bits, err := json.Marshal(vc.Subject)
+	bits, err := json.Marshal(cred.Subject)
 	if err != nil {
 		return nil, fmt.Errorf("failed to marshal vc subject : %w", err)
 	}
@@ -1237,4 +1239,9 @@ func (o *Operation) createRPTenant(w http.ResponseWriter, r *http.Request) {
 		ClientSecret: created.Payload.ClientSecret,
 		PublicDID:    publicDID.ID,
 	})
+}
+
+// TODO add an LD proof that contains the issuer's challenge: https://github.com/trustbloc/edge-adapter/issues/145
+func (o *Operation) toVP(consentVC *vc.UserConsentCredential) (*verifiable.Presentation, error) {
+	return consentVC.Base.Presentation()
 }
