@@ -31,19 +31,19 @@ SPDX-License-Identifier: Apache-2.0
         },
         methods: {
             connectWallet: async function () {
-                const invitationUrl = "/issuer/didcomm/invitation?txnID=" + this.$route.query.txnID
+                const invitationUrl = "/issuer/didcomm/chapi/request?txnID=" + this.$route.query.txnID
 
-                let invitation
+                let chapiRequest
                 await this.$http.get(invitationUrl).then(
                     resp => {
-                        invitation = resp.data
+                        chapiRequest = resp.data
                     },
                     err => {
                         console.error(`failed to retrieve didcomm invitation: url=${invitationUrl} err=${err}`)
                     }
                 )
 
-                if (invitation === undefined) {
+                if (chapiRequest === undefined) {
                     this.connectWalletErr = "Failed to Connect Wallet."
 
                     return;
@@ -53,10 +53,7 @@ SPDX-License-Identifier: Apache-2.0
 
                 const connectionRequest = {
                     web: {
-                        VerifiablePresentation: {
-                            query: {type: "DIDConnect"},
-                            invitation: invitation
-                        }
+                        VerifiablePresentation: chapiRequest
                     }
                 };
 

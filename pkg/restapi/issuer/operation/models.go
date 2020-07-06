@@ -14,9 +14,10 @@ import (
 
 // ProfileDataRequest req for profile creation.
 type ProfileDataRequest struct {
-	ID          string `json:"id,omitempty"`
-	Name        string `json:"name"`
-	CallbackURL string `json:"callbackURL"`
+	ID                  string   `json:"id,omitempty"`
+	Name                string   `json:"name"`
+	SupportedVCContexts []string `json:"supportedVCContexts"`
+	CallbackURL         string   `json:"callbackURL"`
 }
 
 // WalletConnect response from wallet.
@@ -26,9 +27,22 @@ type WalletConnect struct {
 
 // txnData contains session data.
 type txnData struct {
-	IssuerID          string                  `json:"issuerID,omitempty"`
-	State             string                  `json:"state,omitempty"`
-	DIDCommInvitation *didexchange.Invitation `json:"didCommInvitation,omitempty"`
+	IssuerID            string                  `json:"issuerID,omitempty"`
+	State               string                  `json:"state,omitempty"`
+	DIDCommInvitation   *didexchange.Invitation `json:"didCommInvitation,omitempty"`
+	SupportedVCContexts []string                `json:"supportedVCContexts,omitempty"`
+}
+
+// CHAPIRequest wallet chapi request.
+type CHAPIRequest struct {
+	Query             *CHAPIQuery             `json:"query,omitempty"`
+	DIDCommInvitation *didexchange.Invitation `json:"invitation,omitempty"`
+	Manifest          json.RawMessage         `json:"manifest,omitempty"`
+}
+
+// CHAPIQuery chapi query type data.
+type CHAPIQuery struct {
+	Type string `json:"type,omitempty"`
 }
 
 // ValidateConnectResp response from validate connect api.

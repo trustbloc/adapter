@@ -49,6 +49,25 @@ const (
 	}`
 )
 
+func TestCreateManifestCredential(t *testing.T) {
+	t.Run("test create manifest credential", func(t *testing.T) {
+		contexts := []string{"abc", "xyz"}
+
+		vcBytes, err := CreateManifestCredential(contexts)
+		require.NoError(t, err)
+
+		vc, err := verifiable.ParseCredential(vcBytes)
+		require.NoError(t, err)
+		require.True(t, adapterutil.StringsContains(ManifestCredentialType, vc.Types))
+
+		manifestVC := &ManifestCredential{}
+
+		err = adapterutil.DecodeJSONMarshaller(vc, manifestVC)
+		require.NoError(t, err)
+		require.Equal(t, contexts, manifestVC.Subject.Contexts)
+	})
+}
+
 func TestParseWalletResponse(t *testing.T) {
 	t.Run("test parse wallet - success", func(t *testing.T) {
 		conn, err := ParseWalletResponse(getTestVP(t))

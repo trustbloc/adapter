@@ -41,7 +41,7 @@ const (
 	profileEndpoint                 = "/profile"
 	getProfileEndpoint              = profileEndpoint + "/{id}"
 	walletConnectEndpoint           = "/{id}/connect/wallet"
-	generateInvitationEndpoint      = didCommBasePath + "/invitation"
+	getCHAPIRequestEndpoint         = didCommBasePath + "/chapi/request"
 	validateConnectResponseEndpoint = "/connect/validate"
 
 	// http params
@@ -55,6 +55,9 @@ const (
 
 	// protocol
 	didExCompletedState = "completed"
+
+	// DIDConnectCHAPIQueryType CHAPI query type DIDConnect
+	DIDConnectCHAPIQueryType = "DIDConnect"
 )
 
 // Handler http handler for each controller API endpoint.
@@ -157,7 +160,7 @@ func (o *Operation) GetRESTHandlers() []Handler {
 		// didcomm
 		support.NewHTTPHandler(walletConnectEndpoint, http.MethodGet, o.walletConnectHandler),
 		support.NewHTTPHandler(validateConnectResponseEndpoint, http.MethodPost, o.validateWalletResponseHandler),
-		support.NewHTTPHandler(generateInvitationEndpoint, http.MethodGet, o.generateInvitationHandler),
+		support.NewHTTPHandler(getCHAPIRequestEndpoint, http.MethodGet, o.getCHAPIRequestHandler),
 	}
 }
 
@@ -172,10 +175,11 @@ func (o *Operation) createIssuerProfileHandler(rw http.ResponseWriter, req *http
 
 	created := time.Now().UTC()
 	profileData := &issuer.ProfileData{
-		ID:          data.ID,
-		Name:        data.Name,
-		CallbackURL: data.CallbackURL,
-		CreatedAt:   &created,
+		ID:                  data.ID,
+		Name:                data.Name,
+		SupportedVCContexts: data.SupportedVCContexts,
+		CallbackURL:         data.CallbackURL,
+		CreatedAt:           &created,
 	}
 
 	err := o.profileStore.SaveProfile(profileData)
@@ -206,7 +210,7 @@ func (o *Operation) getIssuerProfileHandler(rw http.ResponseWriter, req *http.Re
 func (o *Operation) walletConnectHandler(rw http.ResponseWriter, req *http.Request) {
 	profileID := mux.Vars(req)[idPathParam]
 
-	_, err := o.profileStore.GetProfile(profileID)
+	profile, err := o.profileStore.GetProfile(profileID)
 	if err != nil {
 		commhttp.WriteErrorResponse(rw, http.StatusBadRequest, err.Error())
 
@@ -221,7 +225,7 @@ func (o *Operation) walletConnectHandler(rw http.ResponseWriter, req *http.Reque
 	}
 
 	// store the txn data
-	txnID, err := o.createTxn(profileID, state)
+	txnID, err := o.createTxn(profile, state)
 	if err != nil {
 		commhttp.WriteErrorResponse(rw, http.StatusInternalServerError,
 			fmt.Sprintf("failed to create txn : %s", err.Error()))
@@ -298,7 +302,7 @@ func (o *Operation) validateWalletResponseHandler(rw http.ResponseWriter, req *h
 	commhttp.WriteResponse(rw, &ValidateConnectResp{RedirectURL: redirectURL})
 }
 
-func (o *Operation) generateInvitationHandler(rw http.ResponseWriter, req *http.Request) {
+func (o *Operation) getCHAPIRequestHandler(rw http.ResponseWriter, req *http.Request) {
 	// get the txnID
 	txnID := req.URL.Query().Get(txnIDQueryParam)
 
@@ -316,7 +320,19 @@ func (o *Operation) generateInvitationHandler(rw http.ResponseWriter, req *http.
 		return
 	}
 
-	commhttp.WriteResponse(rw, txnData.DIDCommInvitation)
+	manifestVC, err := issuervc.CreateManifestCredential(txnData.SupportedVCContexts)
+	if err != nil {
+		commhttp.WriteErrorResponse(rw, http.StatusInternalServerError,
+			fmt.Sprintf("error creating manifest vc : %s", err.Error()))
+
+		return
+	}
+
+	commhttp.WriteResponse(rw, &CHAPIRequest{
+		Query:             &CHAPIQuery{Type: DIDConnectCHAPIQueryType},
+		DIDCommInvitation: txnData.DIDCommInvitation,
+		Manifest:          manifestVC,
+	})
 }
 
 func (o *Operation) validateAndGetConnection(connectData *issuervc.DIDConnectCredentialSubject) (*connection.Record, error) { // nolint: lll
@@ -343,7 +359,7 @@ func (o *Operation) validateAndGetConnection(connectData *issuervc.DIDConnectCre
 	return conn, nil
 }
 
-func (o *Operation) createTxn(profileID, state string) (string, error) {
+func (o *Operation) createTxn(profile *issuer.ProfileData, state string) (string, error) {
 	invitation, err := o.didExClient.CreateInvitation("issuer")
 	if err != nil {
 		return "", fmt.Errorf("failed to create invitation : %w", err)
@@ -353,9 +369,10 @@ func (o *Operation) createTxn(profileID, state string) (string, error) {
 
 	// store the txn data
 	data := &txnData{
-		IssuerID:          profileID,
-		State:             state,
-		DIDCommInvitation: invitation,
+		IssuerID:            profile.ID,
+		SupportedVCContexts: profile.SupportedVCContexts,
+		State:               state,
+		DIDCommInvitation:   invitation,
 	}
 
 	dataBytes, err := json.Marshal(data)

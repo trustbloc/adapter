@@ -51,9 +51,10 @@ func TestCredentialRecord_SaveProfile(t *testing.T) {
 		require.NotNil(t, record)
 
 		value := &ProfileData{
-			ID:          "profile1",
-			Name:        "Issuer Profile 1",
-			CallbackURL: "http://issuer.example.com/cb",
+			ID:                  "profile1",
+			Name:                "Issuer Profile 1",
+			SupportedVCContexts: []string{"https://w3id.org/citizenship/v3"},
+			CallbackURL:         "http://issuer.example.com/cb",
 		}
 
 		err = record.SaveProfile(value)
@@ -74,14 +75,19 @@ func TestCredentialRecord_SaveProfile(t *testing.T) {
 
 		err = record.SaveProfile(value)
 		require.Error(t, err)
-		require.Contains(t, err.Error(), "missing profile id")
+		require.Contains(t, err.Error(), "profile id mandatory")
 
 		value.ID = "profile1"
 		err = record.SaveProfile(value)
 		require.Error(t, err)
-		require.Contains(t, err.Error(), "missing profile name")
+		require.Contains(t, err.Error(), "profile name mandatory")
 
 		value.Name = "Issuer Profile 1"
+		err = record.SaveProfile(value)
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "supported vc contexts mandatory")
+
+		value.SupportedVCContexts = []string{"https://w3id.org/citizenship/v3"}
 		err = record.SaveProfile(value)
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "callback url is invalid")
@@ -93,9 +99,10 @@ func TestCredentialRecord_SaveProfile(t *testing.T) {
 		require.NotNil(t, record)
 
 		value := &ProfileData{
-			ID:          "profile1",
-			Name:        "Issuer Profile 1",
-			CallbackURL: "http://issuer.example.com/cb",
+			ID:                  "profile1",
+			Name:                "Issuer Profile 1",
+			SupportedVCContexts: []string{"https://w3id.org/citizenship/v3"},
+			CallbackURL:         "http://issuer.example.com/cb",
 		}
 
 		err = record.SaveProfile(value)

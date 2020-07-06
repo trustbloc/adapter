@@ -37,6 +37,7 @@ import (
 	"nhooyr.io/websocket"
 	"nhooyr.io/websocket/wsjson"
 
+	issuerops "github.com/trustbloc/edge-adapter/pkg/restapi/issuer/operation"
 	"github.com/trustbloc/edge-adapter/pkg/vc/issuer"
 	"github.com/trustbloc/edge-adapter/test/bdd/pkg/bddutil"
 	"github.com/trustbloc/edge-adapter/test/bdd/pkg/context"
@@ -89,6 +90,8 @@ func (a *Steps) RegisterSteps(s *godog.Suite) {
 	s.Step(`^"([^"]*)" agent is running on "([^"]*)" port "([^"]*)" with controller "([^"]*)"$`,
 		a.ValidateAgentConnection)
 	s.Step(`^"([^"]*)" responds to connect request from Issuer adapter \("([^"]*)"\) within "([^"]*)" seconds$`,
+		a.handleDIDConnectRequest)
+	s.Step(`^"([^"]*)" validates the supportedVCContexts "([^"]*)" in connect request from Issuer adapter \("([^"]*)"\) and responds within "([^"]*)" seconds$`, // nolint: lll
 		a.handleDIDConnectRequest)
 	s.Step(`^"([^"]*)" sends request credential message and receives credential from the issuer \("([^"]*)"\)$`,
 		a.fetchCredential)
@@ -165,11 +168,28 @@ func (a *Steps) healthCheck(endpoint string) error {
 	return errors.New("url scheme is not supported for url = " + endpoint)
 }
 
-func (a *Steps) handleDIDConnectRequest(agentID, issuerID string, timeout int) error {
+func (a *Steps) handleDIDConnectRequest(agentID, supportedVCContexts, issuerID string, timeout int) error { // nolint: funlen,lll
 	// Mock CHAPI request from Issuer
-	invitationJSON := a.bddContext.Store[bddutil.GetDIDConnectRequestKey(issuerID, agentID)]
+	didConnReq := a.bddContext.Store[bddutil.GetDIDConnectRequestKey(issuerID, agentID)]
 
-	connectionID, err := a.ReceiveInvitation(agentID, invitationJSON)
+	request := &issuerops.CHAPIRequest{}
+
+	err := json.Unmarshal([]byte(didConnReq), request)
+	if err != nil {
+		return err
+	}
+
+	err = validateManifestCred(request.Manifest, supportedVCContexts)
+	if err != nil {
+		return fmt.Errorf("failed to parse credential : %s", err.Error())
+	}
+
+	invitationBytes, err := json.Marshal(request.DIDCommInvitation)
+	if err != nil {
+		return err
+	}
+
+	connectionID, err := a.ReceiveInvitation(agentID, string(invitationBytes))
 	if err != nil {
 		return err
 	}
@@ -612,6 +632,27 @@ func actionPIID(endpoint, urlPath string) (string, error) {
 	}
 
 	return "", fmt.Errorf("unable to get action PIID: timeout")
+}
+
+func validateManifestCred(manifestVCBytes []byte, supportedVCContexts string) error {
+	manifestCred, err := verifiable.ParseCredential(manifestVCBytes)
+	if err != nil {
+		return err
+	}
+
+	manifestCredSub := &issuer.ManifestCredential{}
+
+	err = bddutil.DecodeJSONMarshaller(manifestCred, manifestCredSub)
+	if err != nil {
+		return fmt.Errorf("failed to parse credential : %s", err.Error())
+	}
+
+	if len(manifestCredSub.Subject.Contexts) != len(strings.Split(supportedVCContexts, ",")) {
+		return fmt.Errorf("supported vc count doesnt match : expected=%d actual=%d",
+			len(strings.Split(supportedVCContexts, ",")), len(manifestCredSub.Subject.Contexts))
+	}
+
+	return nil
 }
 
 func sendHTTP(method, destination string, message []byte, result interface{}) error {
