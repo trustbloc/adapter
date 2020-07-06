@@ -117,11 +117,7 @@ func TestCreateProfile(t *testing.T) {
 	handler := getHandler(t, op, endpoint)
 
 	t.Run("create profile - success", func(t *testing.T) {
-		vReq := &ProfileDataRequest{
-			ID:          uuid.New().String(),
-			Name:        "test",
-			CallbackURL: "http://issuer.example.com/callback",
-		}
+		vReq := createProfileData(uuid.New().String())
 
 		vReqBytes, err := json.Marshal(vReq)
 		require.NoError(t, err)
@@ -154,7 +150,7 @@ func TestCreateProfile(t *testing.T) {
 		rr := serveHTTP(t, handler.Handle(), http.MethodPost, endpoint, vReqBytes)
 
 		require.Equal(t, http.StatusBadRequest, rr.Code)
-		require.Contains(t, rr.Body.String(), "failed to create profile: missing profile id")
+		require.Contains(t, rr.Body.String(), "failed to create profile: profile id mandatory")
 	})
 }
 
@@ -171,12 +167,7 @@ func TestGetProfile(t *testing.T) {
 	urlVars := make(map[string]string)
 
 	t.Run("get profile - success", func(t *testing.T) {
-		vReq := &issuer.ProfileData{
-			ID:          "test",
-			Name:        "Issuer Profile",
-			CallbackURL: "http://issuer.example.com/cb",
-		}
-
+		vReq := createProfileData(uuid.New().String())
 		err := op.profileStore.SaveProfile(vReq)
 		require.NoError(t, err)
 
@@ -217,11 +208,7 @@ func TestConnectWallet(t *testing.T) {
 		})
 		require.NoError(t, err)
 
-		data := &issuer.ProfileData{
-			ID:          profileID,
-			Name:        "Issuer Profile 1",
-			CallbackURL: "http://issuer.example.com/cb",
-		}
+		data := createProfileData(profileID)
 		err = c.profileStore.SaveProfile(data)
 		require.NoError(t, err)
 
@@ -261,11 +248,7 @@ func TestConnectWallet(t *testing.T) {
 		})
 		require.NoError(t, err)
 
-		data := &issuer.ProfileData{
-			ID:          profileID,
-			Name:        "Issuer Profile 1",
-			CallbackURL: "http://issuer.example.com/cb",
-		}
+		data := createProfileData(profileID)
 		err = c.profileStore.SaveProfile(data)
 		require.NoError(t, err)
 
@@ -300,11 +283,7 @@ func TestConnectWallet(t *testing.T) {
 		})
 		require.NoError(t, err)
 
-		data := &issuer.ProfileData{
-			ID:          profileID,
-			Name:        "Issuer Profile 1",
-			CallbackURL: "http://issuer.example.com/cb",
-		}
+		data := createProfileData(profileID)
 		err = c.profileStore.SaveProfile(data)
 		require.NoError(t, err)
 
@@ -326,11 +305,7 @@ func TestConnectWallet(t *testing.T) {
 		})
 		require.NoError(t, err)
 
-		data := &issuer.ProfileData{
-			ID:          profileID,
-			Name:        "Issuer Profile 1",
-			CallbackURL: "http://issuer.example.com/cb",
-		}
+		data := createProfileData(profileID)
 		err = c.profileStore.SaveProfile(data)
 		require.NoError(t, err)
 
@@ -360,11 +335,9 @@ func TestValidateWalletResponse(t *testing.T) {
 	profileID := "profile1"
 	callbackURL := "http://issuer.example.com/cb"
 
-	data := &issuer.ProfileData{
-		ID:          profileID,
-		Name:        "Issuer Profile 1",
-		CallbackURL: callbackURL,
-	}
+	data := createProfileData(profileID)
+	data.CallbackURL = callbackURL
+
 	err = c.profileStore.SaveProfile(data)
 	require.NoError(t, err)
 
@@ -381,7 +354,7 @@ func TestValidateWalletResponse(t *testing.T) {
 	threadID := uuid.New().String()
 	state := uuid.New().String()
 
-	txnID, err := c.createTxn(profileID, state)
+	txnID, err := c.createTxn(data, state)
 	require.NoError(t, err)
 
 	txn, err := c.getTxn(txnID)
@@ -451,7 +424,7 @@ func TestValidateWalletResponse(t *testing.T) {
 	})
 
 	t.Run("test validate response - invalid vp", func(t *testing.T) {
-		txnID, err = c.createTxn("profile1", uuid.New().String())
+		txnID, err = c.createTxn(createProfileData("profile1"), uuid.New().String())
 		require.NoError(t, err)
 
 		rr := serveHTTP(t, handler.Handle(), http.MethodPost,
@@ -462,7 +435,7 @@ func TestValidateWalletResponse(t *testing.T) {
 	})
 
 	t.Run("test validate response - profile not found", func(t *testing.T) {
-		txnID, err = c.createTxn("invalid-profile", uuid.New().String())
+		txnID, err = c.createTxn(createProfileData("invalid-profile"), uuid.New().String())
 		require.NoError(t, err)
 
 		txn, err = c.getTxn(txnID)
@@ -575,7 +548,7 @@ func TestValidateWalletResponse(t *testing.T) {
 		err = ops.profileStore.SaveProfile(data)
 		require.NoError(t, err)
 
-		id, err := ops.createTxn(profileID, state)
+		id, err := ops.createTxn(createProfileData(profileID), state)
 		require.NoError(t, err)
 
 		ops.tokenStore = &mockstorage.MockStore{Store: make(map[string][]byte), ErrPut: errors.New("error put")}
@@ -597,7 +570,7 @@ func TestValidateWalletResponse(t *testing.T) {
 	})
 }
 
-func TestGenerateInvitation(t *testing.T) {
+func TestCHAPIRequest(t *testing.T) {
 	t.Run("test fetch invitation - success", func(t *testing.T) {
 		c, err := New(&Config{
 			AriesCtx:      getAriesCtx(),
@@ -605,20 +578,23 @@ func TestGenerateInvitation(t *testing.T) {
 		})
 		require.NoError(t, err)
 
-		txnID, err := c.createTxn("profile1", uuid.New().String())
+		txnID, err := c.createTxn(createProfileData("profile1"), uuid.New().String())
 		require.NoError(t, err)
 
-		generateInvitationHandler := getHandler(t, c, generateInvitationEndpoint)
+		getCHAPIRequestHandler := getHandler(t, c, getCHAPIRequestEndpoint)
 
-		rr := serveHTTP(t, generateInvitationHandler.Handle(), http.MethodGet,
-			generateInvitationEndpoint+"?"+txnIDQueryParam+"="+txnID, nil)
+		rr := serveHTTP(t, getCHAPIRequestHandler.Handle(), http.MethodGet,
+			getCHAPIRequestEndpoint+"?"+txnIDQueryParam+"="+txnID, nil)
+
+		fmt.Println(rr.Body.String())
 
 		require.Equal(t, http.StatusOK, rr.Code)
 
-		invitation := &didexchange.Invitation{}
-		err = json.Unmarshal(rr.Body.Bytes(), &invitation)
+		chapiReq := &CHAPIRequest{}
+		err = json.Unmarshal(rr.Body.Bytes(), &chapiReq)
 		require.NoError(t, err)
-		require.Equal(t, "https://didcomm.org/didexchange/1.0/invitation", invitation.Type)
+		require.Equal(t, DIDConnectCHAPIQueryType, chapiReq.Query.Type)
+		require.Equal(t, "https://didcomm.org/didexchange/1.0/invitation", chapiReq.DIDCommInvitation.Type)
 	})
 
 	t.Run("test fetch invitation - no txnID in the url query", func(t *testing.T) {
@@ -628,9 +604,9 @@ func TestGenerateInvitation(t *testing.T) {
 		})
 		require.NoError(t, err)
 
-		generateInvitationHandler := getHandler(t, c, generateInvitationEndpoint)
+		getCHAPIRequestHandler := getHandler(t, c, getCHAPIRequestEndpoint)
 
-		rr := serveHTTP(t, generateInvitationHandler.Handle(), http.MethodGet, generateInvitationEndpoint, nil)
+		rr := serveHTTP(t, getCHAPIRequestHandler.Handle(), http.MethodGet, getCHAPIRequestEndpoint, nil)
 
 		require.Equal(t, http.StatusBadRequest, rr.Code)
 		require.Contains(t, rr.Body.String(), "failed to get txnID from the url")
@@ -643,10 +619,10 @@ func TestGenerateInvitation(t *testing.T) {
 		})
 		require.NoError(t, err)
 
-		generateInvitationHandler := getHandler(t, c, generateInvitationEndpoint)
+		getCHAPIRequestHandler := getHandler(t, c, getCHAPIRequestEndpoint)
 
-		rr := serveHTTP(t, generateInvitationHandler.Handle(), http.MethodGet,
-			generateInvitationEndpoint+"?"+txnIDQueryParam+"=invalid-txnID", nil)
+		rr := serveHTTP(t, getCHAPIRequestHandler.Handle(), http.MethodGet,
+			getCHAPIRequestEndpoint+"?"+txnIDQueryParam+"=invalid-txnID", nil)
 
 		require.Equal(t, http.StatusBadRequest, rr.Code)
 		require.Contains(t, rr.Body.String(), "txn data not found")
@@ -943,4 +919,13 @@ func getTestVP(t *testing.T, inviteeDID, inviterDID, threadID string) []byte { /
 	require.NoError(t, err)
 
 	return vpJSON
+}
+
+func createProfileData(profileID string) *issuer.ProfileData {
+	return &issuer.ProfileData{
+		ID:                  profileID,
+		Name:                "Issuer Profile 1",
+		SupportedVCContexts: []string{"https://w3id.org/citizenship/v3"},
+		CallbackURL:         "http://issuer.example.com/cb",
+	}
 }

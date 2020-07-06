@@ -31,10 +31,11 @@ type Profile struct {
 
 // ProfileData struct for profile.
 type ProfileData struct {
-	ID          string     `json:"id,omitempty"`
-	Name        string     `json:"name"`
-	CallbackURL string     `json:"callbackURL"`
-	CreatedAt   *time.Time `json:"createdAt"`
+	ID                  string     `json:"id,omitempty"`
+	Name                string     `json:"name"`
+	CallbackURL         string     `json:"callbackURL"`
+	SupportedVCContexts []string   `json:"supportedVCContexts"`
+	CreatedAt           *time.Time `json:"createdAt"`
 }
 
 // New returns new issuer profile instance.
@@ -97,11 +98,15 @@ func (c *Profile) GetProfile(id string) (*ProfileData, error) {
 
 func validateProfileRequest(pr *ProfileData) error {
 	if pr.ID == "" {
-		return fmt.Errorf("missing profile id")
+		return fmt.Errorf("profile id mandatory")
 	}
 
 	if pr.Name == "" {
-		return fmt.Errorf("missing profile name")
+		return fmt.Errorf("profile name mandatory")
+	}
+
+	if len(pr.SupportedVCContexts) == 0 {
+		return fmt.Errorf("supported vc contexts mandatory")
 	}
 
 	if !adapterutil.ValidHTTPURL(pr.CallbackURL) {

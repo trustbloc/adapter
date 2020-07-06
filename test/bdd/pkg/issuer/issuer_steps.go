@@ -48,8 +48,10 @@ func NewSteps(ctx *context.BDDContext) *Steps {
 
 // RegisterSteps registers agent steps.
 func (e *Steps) RegisterSteps(s *godog.Suite) {
-	s.Step(`^Issuer Profile with id "([^"]*)", name "([^"]*)" and callbackURL "([^"]*)"$`, e.createProfile)
-	s.Step(`^Retrieved profile with id "([^"]*)" contains name "([^"]*)" and callbackURL "([^"]*)"$`, e.retrieveProfile)
+	s.Step(`^Issuer Profile with id "([^"]*)", name "([^"]*)", callbackURL "([^"]*)" and supportedVCContexts "([^"]*)"$`, // nolint: lll
+		e.createProfile)
+	s.Step(`^Retrieved profile with id "([^"]*)" contains name "([^"]*)", callbackURL "([^"]*)" and supportedVCContexts "([^"]*)"$`, // nolint: lll
+		e.retrieveProfile)
 	s.Step(`^Issuer adapter shows the wallet connect UI when the issuer "([^"]*)" wants to connect to the wallet$`,
 		e.walletConnect)
 	s.Step(`^Issuer adapter \("([^"]*)"\) creates DIDExchange request for "([^"]*)"$`, e.didExchangeRequest)
@@ -57,11 +59,12 @@ func (e *Steps) RegisterSteps(s *godog.Suite) {
 		e.validateConnectResp)
 }
 
-func (e *Steps) createProfile(id, name, callbackURL string) error {
+func (e *Steps) createProfile(id, name, callbackURL, supportedVCContexts string) error {
 	profileReq := operation.ProfileDataRequest{
-		ID:          id,
-		Name:        name,
-		CallbackURL: callbackURL,
+		ID:                  id,
+		Name:                name,
+		CallbackURL:         callbackURL,
+		SupportedVCContexts: strings.Split(supportedVCContexts, ","),
 	}
 
 	requestBytes, err := json.Marshal(profileReq)
@@ -90,7 +93,7 @@ func (e *Steps) createProfile(id, name, callbackURL string) error {
 	return nil
 }
 
-func (e *Steps) retrieveProfile(id, name, callbackURL string) error {
+func (e *Steps) retrieveProfile(id, name, callbackURL, supportedVCContexts string) error {
 	resp, err := bddutil.HTTPDo(http.MethodGet, //nolint: bodyclose
 		fmt.Sprintf(issuerAdapterURL+"/profile/%s", id), "", "", nil)
 	if err != nil {
@@ -124,6 +127,11 @@ func (e *Steps) retrieveProfile(id, name, callbackURL string) error {
 			callbackURL, profileResponse.CallbackURL)
 	}
 
+	if len(profileResponse.SupportedVCContexts) != len(strings.Split(supportedVCContexts, ",")) {
+		return fmt.Errorf("supported vc count doesnt match : expected=%d actual=%d",
+			len(strings.Split(supportedVCContexts, ",")), len(profileResponse.SupportedVCContexts))
+	}
+
 	return nil
 }
 
@@ -151,7 +159,7 @@ func (e *Steps) walletConnect(issuerID string) error {
 
 func (e *Steps) didExchangeRequest(issuerID, agentID string) error {
 	resp, err := bddutil.HTTPDo(http.MethodGet, //nolint: bodyclose
-		issuerAdapterURL+"/issuer/didcomm/invitation?txnID="+e.txnIDs[issuerID], "", "", nil)
+		issuerAdapterURL+"/issuer/didcomm/chapi/request?txnID="+e.txnIDs[issuerID], "", "", nil)
 	if err != nil {
 		return err
 	}

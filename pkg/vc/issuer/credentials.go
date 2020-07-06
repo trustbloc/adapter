@@ -19,12 +19,50 @@ import (
 )
 
 const (
+	// VerifiableCredential vc type.
+	VerifiableCredential = "VerifiableCredential"
+
+	// ManifestCredentialType vc type.
+	ManifestCredentialType = "IssuerManifestCredential"
+
 	// DIDConnectCredentialType vc type.
 	DIDConnectCredentialType = "DIDConnection"
 
 	// DIDCommInitCredentialType vc type.
 	DIDCommInitCredentialType = "DIDCommInit"
+
+	// jsonld contexts
+	// TODO - should be configurable
+	issuerManifestContext = "https://trustbloc.github.io/context/vc/issuer-manifest-credential-v1.jsonld"
 )
+
+// CreateManifestCredential creates issuer manifest credential.
+func CreateManifestCredential(supportedContexts []string) ([]byte, error) {
+	issued := time.Now()
+
+	// TODO define context
+	vc := &verifiable.Credential{
+		Context: []string{
+			"https://www.w3.org/2018/credentials/v1",
+			issuerManifestContext,
+		},
+		ID: uuid.New().URN(),
+		Types: []string{
+			VerifiableCredential,
+			ManifestCredentialType,
+		},
+		Subject: &ManifestCredentialSubject{
+			ID:       uuid.New().String(),
+			Contexts: supportedContexts,
+		},
+		Issuer: verifiable.Issuer{
+			ID: uuid.New().URN(),
+		},
+		Issued: util.NewTime(issued),
+	}
+
+	return vc.MarshalJSON()
+}
 
 // ParseWalletResponse parses VP received from the wallet and returns the DIDConnect response.
 func ParseWalletResponse(vpBytes []byte) (*DIDConnectCredentialSubject, error) {
@@ -74,7 +112,7 @@ func CreateDIDCommInitCredential(docJSON []byte) *verifiable.Credential {
 		},
 		ID: uuid.New().URN(),
 		Types: []string{
-			"VerifiableCredential",
+			VerifiableCredential,
 			DIDCommInitCredentialType,
 		},
 		Subject: &DIDCommInitCredentialSubject{
