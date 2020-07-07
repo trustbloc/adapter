@@ -9,13 +9,12 @@ package issuer
 import (
 	"testing"
 
+	"github.com/hyperledger/aries-framework-go/pkg/doc/verifiable"
 	mockdiddoc "github.com/hyperledger/aries-framework-go/pkg/mock/diddoc"
+	"github.com/stretchr/testify/require"
 
 	"github.com/trustbloc/edge-adapter/pkg/internal/common/adapterutil"
-
-	"github.com/hyperledger/aries-framework-go/pkg/doc/verifiable"
-
-	"github.com/stretchr/testify/require"
+	adaptervc "github.com/trustbloc/edge-adapter/pkg/vc"
 )
 
 const (
@@ -140,21 +139,25 @@ func TestParseWalletResponse(t *testing.T) {
 	})
 }
 
-func TestCreateDIDCommInitCredential(t *testing.T) {
+func TestCreateConsentCredential(t *testing.T) {
 	t.Run("test create didcomm init credential", func(t *testing.T) {
 		didDocument := mockdiddoc.GetMockDIDDoc()
 
 		didDocJSON, err := didDocument.JSONBytes()
 		require.NoError(t, err)
 
-		vc := CreateDIDCommInitCredential(didDocJSON)
-		require.True(t, adapterutil.StringsContains(DIDCommInitCredentialType, vc.Types))
+		userDID := "did:example:abc789"
 
-		didCommInitVC := &DIDCommInitCredential{}
+		vc := CreateConsentCredential(didDocJSON, didDocJSON, userDID)
+		require.True(t, adapterutil.StringsContains(adaptervc.ConsentCredentialType, vc.Types))
 
-		err = adapterutil.DecodeJSONMarshaller(vc, didCommInitVC)
+		consentVC := &adaptervc.ConsentCredential{}
+
+		err = adapterutil.DecodeJSONMarshaller(vc, consentVC)
 		require.NoError(t, err)
-		require.Equal(t, string(didDocJSON), string(didCommInitVC.Subject.DIDDoc))
+		require.Equal(t, string(didDocJSON), string(consentVC.Subject.IssuerDIDDoc))
+		require.Equal(t, string(didDocJSON), string(consentVC.Subject.RPDIDDoc))
+		require.Equal(t, userDID, consentVC.Subject.UserDID)
 	})
 }
 

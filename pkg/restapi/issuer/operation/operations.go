@@ -468,7 +468,13 @@ func (o *Operation) didCommActionListener(ch <-chan service.DIDCommAction) {
 }
 
 func (o *Operation) handleRequestCredential(msg service.DIDCommAction) error {
+	consentCreReq, err := fetchConsentCredReq(msg)
+	if err != nil {
+		return err
+	}
+
 	// TODO https://github.com/trustbloc/edge-adapter/issues/124 Validate credential request from wallet
+
 	newDidDoc, err := o.vdriRegistry.Create("peer", vdri.WithServiceEndpoint(o.serviceEndpoint))
 	if err != nil {
 		return err
@@ -479,7 +485,9 @@ func (o *Operation) handleRequestCredential(msg service.DIDCommAction) error {
 		return err
 	}
 
-	vc := issuervc.CreateDIDCommInitCredential(docJSON)
+	vc := issuervc.CreateConsentCredential(docJSON, consentCreReq.RPDIDDoc, consentCreReq.UserDID)
+
+	// TODO save handle to the VC to verify when proof is requested
 
 	msg.Continue(issuecredential.WithIssueCredential(&issuecredential.IssueCredential{
 		CredentialsAttach: []decorator.Attachment{
@@ -527,4 +535,31 @@ func getTokenStore(prov storage.Provider) (storage.Store, error) {
 	}
 
 	return txnStore, nil
+}
+
+func fetchConsentCredReq(msg service.DIDCommAction) (*ConsentCredentialReq, error) {
+	credReq := &issuecredsvc.RequestCredential{}
+
+	err := msg.Message.Decode(credReq)
+	if err != nil {
+		return nil, err
+	}
+
+	if len(credReq.RequestsAttach) != 1 {
+		return nil, errors.New("credential request should have one attachment")
+	}
+
+	reqJSON, err := credReq.RequestsAttach[0].Data.Fetch()
+	if err != nil {
+		return nil, fmt.Errorf("no data inside the credential request attachment : %w", err)
+	}
+
+	consentCreReq := &ConsentCredentialReq{}
+
+	err = json.Unmarshal(reqJSON, consentCreReq)
+	if err != nil {
+		return nil, fmt.Errorf("invalid json data in credential request : %w", err)
+	}
+
+	return consentCreReq, nil
 }

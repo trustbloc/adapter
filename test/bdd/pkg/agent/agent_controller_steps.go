@@ -19,8 +19,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/hyperledger/aries-framework-go/pkg/doc/did"
-
 	"github.com/cucumber/godog"
 	"github.com/google/uuid"
 	"github.com/hyperledger/aries-framework-go/pkg/client/didexchange"
@@ -30,7 +28,9 @@ import (
 	issuecredcmd "github.com/hyperledger/aries-framework-go/pkg/controller/command/issuecredential"
 	presentproofcmd "github.com/hyperledger/aries-framework-go/pkg/controller/command/presentproof"
 	verifiablecmd "github.com/hyperledger/aries-framework-go/pkg/controller/command/verifiable"
+	"github.com/hyperledger/aries-framework-go/pkg/didcomm/protocol/decorator"
 	issuecredsvc "github.com/hyperledger/aries-framework-go/pkg/didcomm/protocol/issuecredential"
+	"github.com/hyperledger/aries-framework-go/pkg/doc/did"
 	"github.com/hyperledger/aries-framework-go/pkg/doc/util"
 	"github.com/hyperledger/aries-framework-go/pkg/doc/verifiable"
 	"github.com/trustbloc/edge-core/pkg/log"
@@ -38,6 +38,7 @@ import (
 	"nhooyr.io/websocket/wsjson"
 
 	issuerops "github.com/trustbloc/edge-adapter/pkg/restapi/issuer/operation"
+	adaptervc "github.com/trustbloc/edge-adapter/pkg/vc"
 	"github.com/trustbloc/edge-adapter/pkg/vc/issuer"
 	"github.com/trustbloc/edge-adapter/test/bdd/pkg/bddutil"
 	"github.com/trustbloc/edge-adapter/test/bdd/pkg/context"
@@ -89,8 +90,6 @@ func NewSteps(ctx *context.BDDContext) *Steps {
 func (a *Steps) RegisterSteps(s *godog.Suite) {
 	s.Step(`^"([^"]*)" agent is running on "([^"]*)" port "([^"]*)" with controller "([^"]*)"$`,
 		a.ValidateAgentConnection)
-	s.Step(`^"([^"]*)" responds to connect request from Issuer adapter \("([^"]*)"\) within "([^"]*)" seconds$`,
-		a.handleDIDConnectRequest)
 	s.Step(`^"([^"]*)" validates the supportedVCContexts "([^"]*)" in connect request from Issuer adapter \("([^"]*)"\) and responds within "([^"]*)" seconds$`, // nolint: lll
 		a.handleDIDConnectRequest)
 	s.Step(`^"([^"]*)" sends request credential message and receives credential from the issuer \("([^"]*)"\)$`,
@@ -382,10 +381,24 @@ func (a *Steps) fetchCredential(agentID, issuerID string) error {
 		return fmt.Errorf("unable to find controller URL registered for agent [%s]", agentID)
 	}
 
+	ccReq := &issuerops.ConsentCredentialReq{
+		UserDID: conn.MyDID,
+		// TODO Need to send RP DID Doc
+	}
+
 	req := &issuecredcmd.SendRequestArgs{
-		MyDID:             conn.MyDID,
-		TheirDID:          conn.TheirDID,
-		RequestCredential: &issuecredclient.RequestCredential{},
+		MyDID:    conn.MyDID,
+		TheirDID: conn.TheirDID,
+		RequestCredential: &issuecredclient.RequestCredential{
+			Type: issuecredsvc.RequestCredentialMsgType,
+			RequestsAttach: []decorator.Attachment{
+				{
+					Data: decorator.AttachmentData{
+						JSON: ccReq,
+					},
+				},
+			},
+		},
 	}
 
 	reqBytes, err := json.Marshal(req)
@@ -410,9 +423,9 @@ func (a *Steps) fetchCredential(agentID, issuerID string) error {
 		return fmt.Errorf("[issue-credential] failed to accept credential : %w", err)
 	}
 
-	err = validateCredential(credentialName, controllerURL)
+	err = validateConsentCredential(credentialName, controllerURL, ccReq)
 	if err != nil {
-		return fmt.Errorf("[issue-credential] failed to validate credential : %w", err)
+		return fmt.Errorf("[issue-credential] failed to validate consent credential : %w", err)
 	}
 
 	return nil
@@ -496,7 +509,7 @@ func acceptCredential(piid, credentialName, controllerURL string) error {
 	return nil
 }
 
-func validateCredential(credentialName, controllerURL string) error { // nolint: funlen
+func getCredential(credentialName, controllerURL string) (*verifiable.Credential, error) {
 	// TODO use listener rather than polling (update once aries bdd-tests are refactored)
 	const (
 		timeoutWait = 10 * time.Second
@@ -530,41 +543,55 @@ func validateCredential(credentialName, controllerURL string) error { // nolint:
 			fmt.Sprintf("%s/verifiable/credential/%s", controllerURL,
 				base64.StdEncoding.EncodeToString([]byte(result.ID))), nil, &getVCResp)
 		if err != nil {
-			return err
+			return nil, err
 		}
 
 		vc, err := verifiable.ParseCredential([]byte(getVCResp.VC))
 		if err != nil {
-			return err
+			return nil, err
 		}
 
-		if !bddutil.StringsContains(issuer.DIDCommInitCredentialType, vc.Types) {
-			return fmt.Errorf("missing vc type : %s", issuer.DIDCommInitCredentialType)
-		}
-
-		didCommInit := &struct {
-			Subject *issuer.DIDCommInitCredentialSubject `json:"credentialSubject"`
-		}{}
-
-		err = bddutil.DecodeJSONMarshaller(vc, &didCommInit)
-		if err != nil {
-			return fmt.Errorf("failed to parse credential : %s", err.Error())
-		}
-
-		didDoc, err := did.ParseDocument(didCommInit.Subject.DIDDoc)
-		if err != nil {
-			return err
-		}
-
-		if strings.Split(didDoc.ID, ":")[1] != "peer" {
-			return fmt.Errorf("unexpected did method : expected=%s actual=%s", "peer",
-				strings.Split(didDoc.ID, ":")[1])
-		}
-
-		return nil
+		return vc, nil
 	}
 
-	return fmt.Errorf("failed to validate credential: not found")
+	return nil, fmt.Errorf("failed to validate credential: not found")
+}
+
+func validateConsentCredential(credentialName, controllerURL string, ccReq *issuerops.ConsentCredentialReq) error {
+	vc, err := getCredential(credentialName, controllerURL)
+	if err != nil {
+		return err
+	}
+
+	if !bddutil.StringsContains(adaptervc.ConsentCredentialType, vc.Types) {
+		return fmt.Errorf("missing vc type : %s", adaptervc.ConsentCredentialType)
+	}
+
+	consentVC := &struct {
+		Subject *adaptervc.ConsentCredentialSubject `json:"credentialSubject"`
+	}{}
+
+	err = bddutil.DecodeJSONMarshaller(vc, &consentVC)
+	if err != nil {
+		return fmt.Errorf("failed to parse credential : %s", err.Error())
+	}
+
+	if consentVC.Subject.UserDID != ccReq.UserDID {
+		return fmt.Errorf("unexpected user did consent credential : expected=%s actual=%s", ccReq.UserDID,
+			consentVC.Subject.UserDID)
+	}
+
+	didDoc, err := did.ParseDocument(consentVC.Subject.IssuerDIDDoc)
+	if err != nil {
+		return err
+	}
+
+	if strings.Split(didDoc.ID, ":")[1] != "peer" {
+		return fmt.Errorf("unexpected did method : expected=%s actual=%s", "peer",
+			strings.Split(didDoc.ID, ":")[1])
+	}
+
+	return nil
 }
 
 func acceptPresentation(piid, presentationName, controllerURL string) error {

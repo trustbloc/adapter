@@ -6,7 +6,11 @@ SPDX-License-Identifier: Apache-2.0
 
 package vc
 
-import "github.com/hyperledger/aries-framework-go/pkg/doc/verifiable"
+import (
+	"encoding/json"
+
+	"github.com/hyperledger/aries-framework-go/pkg/doc/verifiable"
+)
 
 const (
 	// UserConsentCredentialType is the UserConsentCredential's JSON-LD type.
@@ -33,4 +37,17 @@ type UserConsentCredentialSubject struct {
 type DIDDocument struct {
 	ID        string `json:"id"`
 	DocB64URL string `json:"docB64Url"`
+}
+
+// ConsentCredential is a VC that contains the issuer/rp/user did docs.
+type ConsentCredential struct {
+	Subject *ConsentCredentialSubject `json:"credentialSubject"`
+}
+
+// ConsentCredentialSubject struct for sending the issuer IssuerDIDDoc to wallet.
+type ConsentCredentialSubject struct {
+	ID           string          `json:"id"`
+	IssuerDIDDoc json.RawMessage `json:"issuerDIDDoc"`
+	RPDIDDoc     json.RawMessage `json:"rpDIDDoc"`
+	UserDID      string          `json:"userDID"`
 }

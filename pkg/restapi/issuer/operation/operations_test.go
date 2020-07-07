@@ -20,6 +20,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/gorilla/mux"
 	"github.com/hyperledger/aries-framework-go/pkg/didcomm/common/service"
+	"github.com/hyperledger/aries-framework-go/pkg/didcomm/protocol/decorator"
 	"github.com/hyperledger/aries-framework-go/pkg/didcomm/protocol/didexchange"
 	issuecredsvc "github.com/hyperledger/aries-framework-go/pkg/didcomm/protocol/issuecredential"
 	"github.com/hyperledger/aries-framework-go/pkg/didcomm/protocol/mediator"
@@ -586,8 +587,6 @@ func TestCHAPIRequest(t *testing.T) {
 		rr := serveHTTP(t, getCHAPIRequestHandler.Handle(), http.MethodGet,
 			getCHAPIRequestEndpoint+"?"+txnIDQueryParam+"="+txnID, nil)
 
-		fmt.Println(rr.Body.String())
-
 		require.Equal(t, http.StatusOK, rr.Code)
 
 		chapiReq := &CHAPIRequest{}
@@ -717,11 +716,19 @@ func TestDIDCommListeners(t *testing.T) {
 
 			go c.didCommActionListener(actionCh)
 
+			rpDIDDOcBytes, err := mockdiddoc.GetMockDIDDoc().JSONBytes()
+			require.NoError(t, err)
+
 			done := make(chan struct{})
 
 			actionCh <- service.DIDCommAction{
 				Message: service.NewDIDCommMsgMap(issuecredsvc.RequestCredential{
 					Type: issuecredsvc.RequestCredentialMsgType,
+					RequestsAttach: []decorator.Attachment{
+						{Data: decorator.AttachmentData{
+							JSON: createConsentCredReq(t, "did:example:xyz123", rpDIDDOcBytes),
+						}},
+					},
 				}),
 				Continue: func(args interface{}) {
 					done <- struct{}{}
@@ -778,6 +785,43 @@ func TestDIDCommListeners(t *testing.T) {
 			case <-time.After(5 * time.Second):
 				require.Fail(t, "tests are not validated due to timeout")
 			}
+		})
+
+		t.Run("test request issue cred - request validation", func(t *testing.T) {
+			cc, err := fetchConsentCredReq(service.DIDCommAction{
+				Message: service.NewDIDCommMsgMap(issuecredsvc.RequestCredential{
+					Type: issuecredsvc.RequestCredentialMsgType,
+				}),
+			})
+			require.Error(t, err)
+			require.Contains(t, err.Error(), "credential request should have one attachment")
+			require.Nil(t, cc)
+
+			cc, err = fetchConsentCredReq(service.DIDCommAction{
+				Message: service.NewDIDCommMsgMap(issuecredsvc.RequestCredential{
+					Type: issuecredsvc.RequestCredentialMsgType,
+					RequestsAttach: []decorator.Attachment{
+						{Data: decorator.AttachmentData{}},
+					},
+				}),
+			})
+			require.Error(t, err)
+			require.Contains(t, err.Error(), "no data inside the credential request attachment")
+			require.Nil(t, cc)
+
+			cc, err = fetchConsentCredReq(service.DIDCommAction{
+				Message: service.NewDIDCommMsgMap(issuecredsvc.RequestCredential{
+					Type: issuecredsvc.RequestCredentialMsgType,
+					RequestsAttach: []decorator.Attachment{
+						{Data: decorator.AttachmentData{
+							JSON: []byte("invalid json"),
+						}},
+					},
+				}),
+			})
+			require.Error(t, err)
+			require.Contains(t, err.Error(), "invalid json data in credential request")
+			require.Nil(t, cc)
 		})
 	})
 
@@ -928,4 +972,16 @@ func createProfileData(profileID string) *issuer.ProfileData {
 		SupportedVCContexts: []string{"https://w3id.org/citizenship/v3"},
 		CallbackURL:         "http://issuer.example.com/cb",
 	}
+}
+
+func createConsentCredReq(t *testing.T, userDID string, rpDIDDoc []byte) json.RawMessage {
+	ccReq := ConsentCredentialReq{
+		UserDID:  userDID,
+		RPDIDDoc: rpDIDDoc,
+	}
+
+	ccReqBytes, err := json.Marshal(ccReq)
+	require.NoError(t, err)
+
+	return ccReqBytes
 }
