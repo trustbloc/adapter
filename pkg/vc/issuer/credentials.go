@@ -16,6 +16,7 @@ import (
 	"github.com/hyperledger/aries-framework-go/pkg/doc/verifiable"
 
 	"github.com/trustbloc/edge-adapter/pkg/internal/common/adapterutil"
+	adaptervc "github.com/trustbloc/edge-adapter/pkg/vc"
 )
 
 const (
@@ -28,22 +29,20 @@ const (
 	// DIDConnectCredentialType vc type.
 	DIDConnectCredentialType = "DIDConnection"
 
-	// DIDCommInitCredentialType vc type.
-	DIDCommInitCredentialType = "DIDCommInit"
-
 	// jsonld contexts
 	// TODO - should be configurable
-	issuerManifestContext = "https://trustbloc.github.io/context/vc/issuer-manifest-credential-v1.jsonld"
+	issuerManifestContext       = "https://trustbloc.github.io/context/vc/issuer-manifest-credential-v1.jsonld"
+	consentCredentialContext    = "https://trustbloc.github.io/context/vc/consent-credential-v1.jsonld"
+	verifiableCredentialContext = "https://www.w3.org/2018/credentials/v1"
 )
 
 // CreateManifestCredential creates issuer manifest credential.
 func CreateManifestCredential(supportedContexts []string) ([]byte, error) {
 	issued := time.Now()
 
-	// TODO define context
 	vc := &verifiable.Credential{
 		Context: []string{
-			"https://www.w3.org/2018/credentials/v1",
+			verifiableCredentialContext,
 			issuerManifestContext,
 		},
 		ID: uuid.New().URN(),
@@ -101,23 +100,25 @@ func ParseWalletResponse(vpBytes []byte) (*DIDConnectCredentialSubject, error) {
 	return didConnectVC.Subject, nil
 }
 
-// CreateDIDCommInitCredential creates DIDComm init credential.
-func CreateDIDCommInitCredential(docJSON []byte) *verifiable.Credential {
+// CreateConsentCredential creates consent credential.
+func CreateConsentCredential(docJSON, rpDocJSON []byte, userDID string) *verifiable.Credential {
 	issued := time.Now()
 
-	// TODO define context
 	vc := &verifiable.Credential{
 		Context: []string{
-			"https://www.w3.org/2018/credentials/v1",
+			verifiableCredentialContext,
+			consentCredentialContext,
 		},
 		ID: uuid.New().URN(),
 		Types: []string{
 			VerifiableCredential,
-			DIDCommInitCredentialType,
+			adaptervc.ConsentCredentialType,
 		},
-		Subject: &DIDCommInitCredentialSubject{
-			ID:     uuid.New().String(),
-			DIDDoc: docJSON,
+		Subject: &adaptervc.ConsentCredentialSubject{
+			ID:           uuid.New().String(),
+			IssuerDIDDoc: docJSON,
+			RPDIDDoc:     rpDocJSON,
+			UserDID:      userDID,
 		},
 		Issuer: verifiable.Issuer{
 			ID: uuid.New().URN(),

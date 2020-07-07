@@ -49,3 +49,9 @@ type CHAPIQuery struct {
 type ValidateConnectResp struct {
 	RedirectURL string `json:"redirectURL,omitempty"`
 }
+
+// ConsentCredentialReq consent credential request from wallet.
+type ConsentCredentialReq struct {
+	UserDID  string          `json:"userDID,omitempty"`
+	RPDIDDoc json.RawMessage `json:"rpDIDDoc,omitempty"`
+}
