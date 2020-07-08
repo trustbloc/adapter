@@ -10,6 +10,8 @@ import (
 	"encoding/json"
 
 	"github.com/hyperledger/aries-framework-go/pkg/client/didexchange"
+
+	adaptervc "github.com/trustbloc/edge-adapter/pkg/vc"
 )
 
 // ProfileDataRequest req for profile creation.
@@ -52,6 +54,6 @@ type ValidateConnectResp struct {
 
 // ConsentCredentialReq consent credential request from wallet.
 type ConsentCredentialReq struct {
-	UserDID  string          `json:"userDID,omitempty"`
-	RPDIDDoc json.RawMessage `json:"rpDIDDoc,omitempty"`
+	UserDID  string            `json:"userDID,omitempty"`
+	RPDIDDoc *adaptervc.DIDDoc `json:"rpDIDDoc,omitempty"`
 }

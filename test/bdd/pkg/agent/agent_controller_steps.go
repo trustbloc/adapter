@@ -581,14 +581,14 @@ func validateConsentCredential(credentialName, controllerURL string, ccReq *issu
 			consentVC.Subject.UserDID)
 	}
 
-	didDoc, err := did.ParseDocument(consentVC.Subject.IssuerDIDDoc)
+	_, err = did.ParseDocument(consentVC.Subject.IssuerDIDDoc.Doc)
 	if err != nil {
-		return err
+		return fmt.Errorf("invalid did document : %w", err)
 	}
 
-	if strings.Split(didDoc.ID, ":")[1] != "peer" {
+	if strings.Split(consentVC.Subject.IssuerDIDDoc.ID, ":")[1] != "peer" {
 		return fmt.Errorf("unexpected did method : expected=%s actual=%s", "peer",
-			strings.Split(didDoc.ID, ":")[1])
+			strings.Split(consentVC.Subject.IssuerDIDDoc.ID, ":")[1])
 	}
 
 	return nil

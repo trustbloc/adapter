@@ -485,7 +485,7 @@ func (o *Operation) handleRequestCredential(msg service.DIDCommAction) error {
 		return err
 	}
 
-	vc := issuervc.CreateConsentCredential(docJSON, consentCreReq.RPDIDDoc, consentCreReq.UserDID)
+	vc := issuervc.CreateConsentCredential(newDidDoc.ID, docJSON, consentCreReq.RPDIDDoc, consentCreReq.UserDID)
 
 	// TODO save handle to the VC to verify when proof is requested
 

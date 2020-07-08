@@ -148,15 +148,22 @@ func TestCreateConsentCredential(t *testing.T) {
 
 		userDID := "did:example:abc789"
 
-		vc := CreateConsentCredential(didDocJSON, didDocJSON, userDID)
+		rpDIDDoc := &adaptervc.DIDDoc{
+			ID:  didDocument.ID,
+			Doc: didDocJSON,
+		}
+
+		vc := CreateConsentCredential(didDocument.ID, didDocJSON, rpDIDDoc, userDID)
 		require.True(t, adapterutil.StringsContains(adaptervc.ConsentCredentialType, vc.Types))
 
 		consentVC := &adaptervc.ConsentCredential{}
 
 		err = adapterutil.DecodeJSONMarshaller(vc, consentVC)
 		require.NoError(t, err)
-		require.Equal(t, string(didDocJSON), string(consentVC.Subject.IssuerDIDDoc))
-		require.Equal(t, string(didDocJSON), string(consentVC.Subject.RPDIDDoc))
+		require.Equal(t, didDocument.ID, consentVC.Subject.IssuerDIDDoc.ID)
+		require.Equal(t, string(didDocJSON), string(consentVC.Subject.IssuerDIDDoc.Doc))
+		require.Equal(t, rpDIDDoc.ID, consentVC.Subject.RPDIDDoc.ID)
+		require.Equal(t, string(didDocJSON), string(consentVC.Subject.RPDIDDoc.Doc))
 		require.Equal(t, userDID, consentVC.Subject.UserDID)
 	})
 }

@@ -101,7 +101,8 @@ func ParseWalletResponse(vpBytes []byte) (*DIDConnectCredentialSubject, error) {
 }
 
 // CreateConsentCredential creates consent credential.
-func CreateConsentCredential(docJSON, rpDocJSON []byte, userDID string) *verifiable.Credential {
+func CreateConsentCredential(did string, docJSON []byte, rpDIDDoc *adaptervc.DIDDoc,
+	userDID string) *verifiable.Credential {
 	issued := time.Now()
 
 	vc := &verifiable.Credential{
@@ -115,10 +116,13 @@ func CreateConsentCredential(docJSON, rpDocJSON []byte, userDID string) *verifia
 			adaptervc.ConsentCredentialType,
 		},
 		Subject: &adaptervc.ConsentCredentialSubject{
-			ID:           uuid.New().String(),
-			IssuerDIDDoc: docJSON,
-			RPDIDDoc:     rpDocJSON,
-			UserDID:      userDID,
+			ID: uuid.New().String(),
+			IssuerDIDDoc: &adaptervc.DIDDoc{
+				ID:  did,
+				Doc: docJSON,
+			},
+			RPDIDDoc: rpDIDDoc,
+			UserDID:  userDID,
 		},
 		Issuer: verifiable.Issuer{
 			ID: uuid.New().URN(),
