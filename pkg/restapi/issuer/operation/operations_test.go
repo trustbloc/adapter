@@ -45,6 +45,7 @@ import (
 	"github.com/trustbloc/edge-adapter/pkg/internal/mock/presentproof"
 	"github.com/trustbloc/edge-adapter/pkg/profile/issuer"
 	adaptervc "github.com/trustbloc/edge-adapter/pkg/vc"
+	issuervc "github.com/trustbloc/edge-adapter/pkg/vc/issuer"
 )
 
 const (
@@ -630,6 +631,7 @@ func TestCHAPIRequest(t *testing.T) {
 	})
 }
 
+// nolint
 func TestDIDCommListeners(t *testing.T) {
 	t.Run("test issue credential", func(t *testing.T) {
 		actionCh := make(chan service.DIDCommAction, 1)
@@ -716,6 +718,14 @@ func TestDIDCommListeners(t *testing.T) {
 			})
 			require.NoError(t, err)
 
+			connID := uuid.New().String()
+			c.connectionLookup = &mockconn.MockConnectionsLookup{
+				ConnIDByDIDs: connID,
+			}
+
+			err = c.tokenStore.Put(connID, []byte(uuid.New().String()))
+			require.NoError(t, err)
+
 			go c.didCommActionListener(actionCh)
 
 			done := make(chan struct{})
@@ -732,6 +742,7 @@ func TestDIDCommListeners(t *testing.T) {
 				Continue: func(args interface{}) {
 					done <- struct{}{}
 				},
+				Properties: &actionEventEvent{},
 			}
 
 			select {
@@ -768,22 +779,93 @@ func TestDIDCommListeners(t *testing.T) {
 
 			done := make(chan struct{})
 
-			actionCh <- service.DIDCommAction{
-				Message: service.NewDIDCommMsgMap(issuecredsvc.RequestCredential{
-					Type: issuecredsvc.RequestCredentialMsgType,
-				}),
-				Stop: func(err error) {
-					require.NotNil(t, err)
-					require.Contains(t, err.Error(), "handle credential request")
-					done <- struct{}{}
-				},
-			}
+			actionCh <- createCredentialReqMsg(t, nil, nil, func(err error) {
+				require.NotNil(t, err)
+				require.Contains(t, err.Error(), "handle credential request : did create error")
+				done <- struct{}{}
+			})
 
 			select {
 			case <-done:
 			case <-time.After(5 * time.Second):
 				require.Fail(t, "tests are not validated due to timeout")
 			}
+		})
+
+		t.Run("test request issue cred - validation failures", func(t *testing.T) {
+			actionCh := make(chan service.DIDCommAction, 1)
+
+			c, err := New(&Config{
+				AriesCtx:      getAriesCtx(),
+				StoreProvider: memstore.NewProvider(),
+			})
+			require.NoError(t, err)
+
+			go c.didCommActionListener(actionCh)
+
+			done := make(chan struct{})
+
+			// connection not found
+			actionCh <- createCredentialReqMsg(t, nil, nil, func(err error) {
+				require.NotNil(t, err)
+				require.Contains(t, err.Error(), "handle credential request : connection using DIDs not found")
+				done <- struct{}{}
+			})
+
+			select {
+			case <-done:
+			case <-time.After(5 * time.Second):
+				require.Fail(t, "tests are not validated due to timeout")
+			}
+
+			// connID-token mapping not found
+			connID := uuid.New().String()
+			c.connectionLookup = &mockconn.MockConnectionsLookup{
+				ConnIDByDIDs: connID,
+			}
+
+			actionCh <- createCredentialReqMsg(t, nil, nil, func(err error) {
+				require.NotNil(t, err)
+				require.Contains(t, err.Error(), "get token from the connectionID")
+				done <- struct{}{}
+			})
+
+			select {
+			case <-done:
+			case <-time.After(5 * time.Second):
+				require.Fail(t, "tests are not validated due to timeout")
+			}
+
+			// error saving consent cred data
+			err = c.tokenStore.Put(connID, []byte(uuid.New().String()))
+			require.NoError(t, err)
+
+			c.txnStore = &mockstorage.MockStore{
+				Store:  make(map[string][]byte),
+				ErrPut: errors.New("error inserting data"),
+			}
+
+			actionCh <- createCredentialReqMsg(t, nil, nil, func(err error) {
+				require.NotNil(t, err)
+				require.Contains(t, err.Error(), "handle credential request : store consent credential")
+				done <- struct{}{}
+			})
+
+			select {
+			case <-done:
+			case <-time.After(5 * time.Second):
+				require.Fail(t, "tests are not validated due to timeout")
+			}
+
+			// no attachment
+			actionCh <- createCredentialReqMsg(t, issuecredsvc.RequestCredential{
+				Type: issuecredsvc.RequestCredentialMsgType,
+			}, nil, func(err error) {
+				require.NotNil(t, err)
+				require.Contains(t, err.Error(),
+					"handle credential request : credential request should have one attachment")
+				done <- struct{}{}
+			})
 		})
 
 		t.Run("test request issue cred - request validation", func(t *testing.T) {
@@ -825,7 +907,63 @@ func TestDIDCommListeners(t *testing.T) {
 	})
 
 	t.Run("test didcomm actions - present proof request", func(t *testing.T) {
-		t.Run("test request issue cred - success", func(t *testing.T) {
+		t.Run("test request presentation - success", func(t *testing.T) {
+			actionCh := make(chan service.DIDCommAction, 1)
+
+			c, err := New(&Config{
+				AriesCtx:      getAriesCtx(),
+				StoreProvider: memstore.NewProvider(),
+			})
+			require.NoError(t, err)
+
+			go c.didCommActionListener(actionCh)
+
+			didDocument := mockdiddoc.GetMockDIDDoc()
+
+			didDocJSON, err := didDocument.JSONBytes()
+			require.NoError(t, err)
+
+			userDID := "did:example:abc789"
+
+			rpDIDDoc := &adaptervc.DIDDoc{
+				ID:  didDocument.ID,
+				Doc: didDocJSON,
+			}
+
+			vc := createConsentCredential(t)
+
+			handle := &ConsentCredentialHandle{
+				ID:        vc.ID,
+				IssuerDID: didDocument.ID,
+				UserDID:   userDID,
+				RPDID:     rpDIDDoc.ID,
+				Token:     uuid.New().String(),
+			}
+
+			err = c.storeConsentCredHandle(handle)
+			require.NoError(t, err)
+
+			done := make(chan struct{})
+
+			actionCh <- createProofReqMsg(t, presentproofsvc.RequestPresentation{
+				Type: presentproofsvc.RequestPresentationMsgType,
+				RequestPresentationsAttach: []decorator.Attachment{
+					{Data: decorator.AttachmentData{
+						JSON: vc,
+					}},
+				},
+			}, func(args interface{}) {
+				done <- struct{}{}
+			}, nil)
+
+			select {
+			case <-done:
+			case <-time.After(5 * time.Second):
+				require.Fail(t, "tests are not validated due to timeout")
+			}
+		})
+
+		t.Run("test request presentation - failures", func(t *testing.T) {
 			actionCh := make(chan service.DIDCommAction, 1)
 
 			c, err := New(&Config{
@@ -838,14 +976,68 @@ func TestDIDCommListeners(t *testing.T) {
 
 			done := make(chan struct{})
 
-			actionCh <- service.DIDCommAction{
-				Message: service.NewDIDCommMsgMap(issuecredsvc.RequestCredential{
-					Type: presentproofsvc.RequestPresentationMsgType,
-				}),
-				Continue: func(args interface{}) {
-					done <- struct{}{}
-				},
+			// request doesn't have attachment
+			actionCh <- createProofReqMsg(t, presentproofsvc.RequestPresentation{
+				Type: presentproofsvc.RequestPresentationMsgType,
+			}, nil, func(err error) {
+				require.NotNil(t, err)
+				require.Contains(t, err.Error(),
+					"handle presentation request : presentation request should have one attachment")
+				done <- struct{}{}
+			})
+
+			select {
+			case <-done:
+			case <-time.After(5 * time.Second):
+				require.Fail(t, "tests are not validated due to timeout")
 			}
+
+			// request doesn't have consent cred
+			actionCh <- createProofReqMsg(t, presentproofsvc.RequestPresentation{
+				Type: presentproofsvc.RequestPresentationMsgType,
+				RequestPresentationsAttach: []decorator.Attachment{
+					{Data: decorator.AttachmentData{}},
+				},
+			}, nil, func(err error) {
+				require.NotNil(t, err)
+				require.Contains(t, err.Error(),
+					"handle presentation request : no data inside the presentation request attachment")
+				done <- struct{}{}
+			})
+
+			select {
+			case <-done:
+			case <-time.After(5 * time.Second):
+				require.Fail(t, "tests are not validated due to timeout")
+			}
+
+			// invalid consent cred
+			actionCh <- createProofReqMsg(t, presentproofsvc.RequestPresentation{
+				Type: presentproofsvc.RequestPresentationMsgType,
+				RequestPresentationsAttach: []decorator.Attachment{
+					{Data: decorator.AttachmentData{
+						JSON: "invalid vc",
+					}},
+				},
+			}, nil, func(err error) {
+				require.NotNil(t, err)
+				require.Contains(t, err.Error(),
+					"handle presentation request : decode new credential: embedded proof is not JSON")
+				done <- struct{}{}
+			})
+
+			select {
+			case <-done:
+			case <-time.After(5 * time.Second):
+				require.Fail(t, "tests are not validated due to timeout")
+			}
+
+			// consent cred not found
+			actionCh <- createProofReqMsg(t, nil, nil, func(err error) {
+				require.NotNil(t, err)
+				require.Contains(t, err.Error(), "handle presentation request : consent credential not found")
+				done <- struct{}{}
+			})
 
 			select {
 			case <-done:
@@ -853,6 +1045,79 @@ func TestDIDCommListeners(t *testing.T) {
 				require.Fail(t, "tests are not validated due to timeout")
 			}
 		})
+	})
+}
+
+func TestGetConnectionIDFromEvent(t *testing.T) {
+	c, err := New(&Config{
+		AriesCtx:      getAriesCtx(),
+		StoreProvider: memstore.NewProvider(),
+	})
+	require.NoError(t, err)
+
+	connID := uuid.New().String()
+	c.connectionLookup = &mockconn.MockConnectionsLookup{
+		ConnIDByDIDs: connID,
+	}
+
+	t.Run("test get connID from event - success", func(t *testing.T) {
+		id, err := c.getConnectionIDFromEvent(
+			service.DIDCommAction{
+				Properties: &actionEventEvent{},
+			},
+		)
+
+		require.NoError(t, err)
+		require.Equal(t, connID, id)
+	})
+
+	t.Run("test get connID from event - error", func(t *testing.T) {
+		// no props found
+		id, err := c.getConnectionIDFromEvent(
+			service.DIDCommAction{
+				Properties: &actionEventEvent{props: make(map[string]interface{})},
+			},
+		)
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "no properties in the event")
+		require.Empty(t, id)
+
+		// myDID not found
+		id, err = c.getConnectionIDFromEvent(
+			service.DIDCommAction{
+				Properties: &actionEventEvent{props: map[string]interface{}{
+					"theirDID": "did:example:789",
+				}},
+			},
+		)
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "myDID not found")
+		require.Empty(t, id)
+
+		// theirDID not found
+		id, err = c.getConnectionIDFromEvent(
+			service.DIDCommAction{
+				Properties: &actionEventEvent{props: map[string]interface{}{
+					"myDID": "did:example:123",
+				}},
+			},
+		)
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "theirDID not found")
+		require.Empty(t, id)
+
+		// theirDID value is not string
+		id, err = c.getConnectionIDFromEvent(
+			service.DIDCommAction{
+				Properties: &actionEventEvent{props: map[string]interface{}{
+					"myDID":    "did:example:123",
+					"theirDID": 100,
+				}},
+			},
+		)
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "theirDID not a string")
+		require.Empty(t, id)
 	})
 }
 
@@ -989,4 +1254,81 @@ func createConsentCredReq(t *testing.T, userDID string, rpDIDDoc *did.Doc) json.
 	require.NoError(t, err)
 
 	return ccReqBytes
+}
+
+func createConsentCredential(t *testing.T) *verifiable.Credential {
+	didDocument := mockdiddoc.GetMockDIDDoc()
+
+	didDocJSON, err := didDocument.JSONBytes()
+	require.NoError(t, err)
+
+	userDID := "did:example:abc789"
+
+	rpDIDDoc := &adaptervc.DIDDoc{
+		ID:  didDocument.ID,
+		Doc: didDocJSON,
+	}
+
+	vc := issuervc.CreateConsentCredential(didDocument.ID, didDocJSON, rpDIDDoc, userDID)
+
+	return vc
+}
+
+func createCredentialReqMsg(t *testing.T, msg interface{}, continueFn func(args interface{}), // nolint: unparam
+	stopFn func(err error)) service.DIDCommAction {
+	if msg == nil {
+		msg = issuecredsvc.RequestCredential{
+			Type: issuecredsvc.RequestCredentialMsgType,
+			RequestsAttach: []decorator.Attachment{
+				{Data: decorator.AttachmentData{
+					JSON: createConsentCredReq(t, "did:example:xyz123", mockdiddoc.GetMockDIDDoc()),
+				}},
+			},
+		}
+	}
+
+	return service.DIDCommAction{
+		Message:    service.NewDIDCommMsgMap(msg),
+		Continue:   continueFn,
+		Stop:       stopFn,
+		Properties: &actionEventEvent{},
+	}
+}
+
+func createProofReqMsg(t *testing.T, msg interface{}, continueFn func(args interface{}),
+	stopFn func(err error)) service.DIDCommAction {
+	if msg == nil {
+		msg = presentproofsvc.RequestPresentation{
+			Type: presentproofsvc.RequestPresentationMsgType,
+			RequestPresentationsAttach: []decorator.Attachment{
+				{Data: decorator.AttachmentData{
+					JSON: createConsentCredential(t),
+				}},
+			},
+		}
+	}
+
+	return service.DIDCommAction{
+		Message:    service.NewDIDCommMsgMap(msg),
+		Continue:   continueFn,
+		Stop:       stopFn,
+		Properties: &actionEventEvent{},
+	}
+}
+
+type actionEventEvent struct {
+	myDID    string
+	theirDID string
+	props    map[string]interface{}
+}
+
+func (e *actionEventEvent) All() map[string]interface{} {
+	if e.props != nil {
+		return e.props
+	}
+
+	return map[string]interface{}{
+		"myDID":    e.myDID,
+		"theirDID": e.theirDID,
+	}
 }

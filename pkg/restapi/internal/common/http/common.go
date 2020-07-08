@@ -1,5 +1,6 @@
 /*
 Copyright SecureKey Technologies Inc. All Rights Reserved.
+
 SPDX-License-Identifier: Apache-2.0
 */
 
@@ -10,8 +11,10 @@ import (
 	"io"
 	"net/http"
 
-	log "github.com/sirupsen/logrus"
+	"github.com/trustbloc/edge-core/pkg/log"
 )
+
+var logger = log.New("edge-adapter/http")
 
 // ErrorResponse to send error message in the response.
 type ErrorResponse struct {
@@ -27,7 +30,7 @@ func WriteErrorResponse(rw http.ResponseWriter, status int, msg string) {
 	})
 
 	if err != nil {
-		log.Errorf("Unable to send error message, %s", err)
+		logger.Errorf("Unable to send error message, %s", err)
 	}
 }
 
@@ -35,6 +38,6 @@ func WriteErrorResponse(rw http.ResponseWriter, status int, msg string) {
 func WriteResponse(rw io.Writer, v interface{}) {
 	err := json.NewEncoder(rw).Encode(v)
 	if err != nil {
-		log.Errorf("Unable to send error response, %s", err)
+		logger.Errorf("Unable to send error response, %s", err)
 	}
 }

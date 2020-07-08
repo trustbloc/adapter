@@ -57,3 +57,14 @@ type ConsentCredentialReq struct {
 	UserDID  string            `json:"userDID,omitempty"`
 	RPDIDDoc *adaptervc.DIDDoc `json:"rpDIDDoc,omitempty"`
 }
+
+// ConsentCredentialHandle stores consent credential related data.
+type ConsentCredentialHandle struct {
+	ID               string `json:"id,omitempty"`
+	IssuerDID        string `json:"issuerDID,omitempty"`
+	UserDID          string `json:"userDID,omitempty"`
+	RPDID            string `json:"rpDID,omitempty"`
+	UserConnectionID string `json:"userConnectionID,omitempty"`
+	RPConnectionID   string `json:"rpConnectionID,omitempty"`
+	Token            string `json:"token,omitempty"`
+}

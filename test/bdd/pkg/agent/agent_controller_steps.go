@@ -30,9 +30,11 @@ import (
 	verifiablecmd "github.com/hyperledger/aries-framework-go/pkg/controller/command/verifiable"
 	"github.com/hyperledger/aries-framework-go/pkg/didcomm/protocol/decorator"
 	issuecredsvc "github.com/hyperledger/aries-framework-go/pkg/didcomm/protocol/issuecredential"
+	presentproofsvc "github.com/hyperledger/aries-framework-go/pkg/didcomm/protocol/presentproof"
 	"github.com/hyperledger/aries-framework-go/pkg/doc/did"
 	"github.com/hyperledger/aries-framework-go/pkg/doc/util"
 	"github.com/hyperledger/aries-framework-go/pkg/doc/verifiable"
+	mockdiddoc "github.com/hyperledger/aries-framework-go/pkg/mock/diddoc"
 	"github.com/trustbloc/edge-core/pkg/log"
 	"nhooyr.io/websocket"
 	"nhooyr.io/websocket/wsjson"
@@ -73,6 +75,7 @@ type Steps struct {
 	WebhookURLs        map[string]string
 	webSocketConns     map[string]*websocket.Conn
 	adapterConnections map[string]*didexchange.Connection
+	credentials        map[string]*verifiable.Credential
 }
 
 // NewSteps returns new agent steps.
@@ -83,6 +86,7 @@ func NewSteps(ctx *context.BDDContext) *Steps {
 		WebhookURLs:        make(map[string]string),
 		webSocketConns:     make(map[string]*websocket.Conn),
 		adapterConnections: make(map[string]*didexchange.Connection),
+		credentials:        make(map[string]*verifiable.Credential),
 	}
 }
 
@@ -370,7 +374,7 @@ func (a *Steps) pullEventsFromWebSocket(agentID, state string) (string, error) {
 	}
 }
 
-func (a *Steps) fetchCredential(agentID, issuerID string) error {
+func (a *Steps) fetchCredential(agentID, issuerID string) error { // nolint: funlen
 	conn, ok := a.adapterConnections[agentID]
 	if !ok {
 		return fmt.Errorf("unable to find the issuer adapter connection data [%s]", agentID)
@@ -381,9 +385,20 @@ func (a *Steps) fetchCredential(agentID, issuerID string) error {
 		return fmt.Errorf("unable to find controller URL registered for agent [%s]", agentID)
 	}
 
+	// TODO Update with actual DID Doc (using mock now)
+	didDocument := mockdiddoc.GetMockDIDDoc()
+
+	didDocJSON, err := didDocument.JSONBytes()
+	if err != nil {
+		return err
+	}
+
 	ccReq := &issuerops.ConsentCredentialReq{
 		UserDID: conn.MyDID,
-		// TODO Need to send RP DID Doc
+		RPDIDDoc: &adaptervc.DIDDoc{
+			ID:  didDocument.ID,
+			Doc: didDocJSON,
+		},
 	}
 
 	req := &issuecredcmd.SendRequestArgs{
@@ -423,10 +438,17 @@ func (a *Steps) fetchCredential(agentID, issuerID string) error {
 		return fmt.Errorf("[issue-credential] failed to accept credential : %w", err)
 	}
 
-	err = validateConsentCredential(credentialName, controllerURL, ccReq)
+	vc, err := getCredential(credentialName, controllerURL)
+	if err != nil {
+		return err
+	}
+
+	err = validateConsentCredential(vc, ccReq)
 	if err != nil {
 		return fmt.Errorf("[issue-credential] failed to validate consent credential : %w", err)
 	}
+
+	a.credentials[agentID] = vc
 
 	return nil
 }
@@ -442,8 +464,13 @@ func (a *Steps) fetchPresentation(agentID, issuerID string) error {
 		return fmt.Errorf("unable to find controller URL registered for agent [%s]", agentID)
 	}
 
+	vc, ok := a.credentials[agentID]
+	if !ok {
+		return fmt.Errorf("unable to find the the consent credential for agent [%s]", agentID)
+	}
+
 	// send presentation request
-	err := sendPresentationRequest(conn, controllerURL)
+	err := sendPresentationRequest(conn, vc, controllerURL)
 	if err != nil {
 		return err
 	}
@@ -471,11 +498,18 @@ func (a *Steps) fetchPresentation(agentID, issuerID string) error {
 	return nil
 }
 
-func sendPresentationRequest(conn *didexchange.Connection, controllerURL string) error {
+func sendPresentationRequest(conn *didexchange.Connection, vc *verifiable.Credential, controllerURL string) error {
 	req := &presentproofcmd.SendRequestPresentationArgs{
-		MyDID:               conn.MyDID,
-		TheirDID:            conn.TheirDID,
-		RequestPresentation: &presentproof.RequestPresentation{},
+		MyDID:    conn.MyDID,
+		TheirDID: conn.TheirDID,
+		RequestPresentation: &presentproof.RequestPresentation{
+			Type: presentproofsvc.RequestPresentationMsgType,
+			RequestPresentationsAttach: []decorator.Attachment{
+				{Data: decorator.AttachmentData{
+					JSON: vc,
+				}},
+			},
+		},
 	}
 
 	reqBytes, err := json.Marshal(req)
@@ -557,12 +591,7 @@ func getCredential(credentialName, controllerURL string) (*verifiable.Credential
 	return nil, fmt.Errorf("failed to validate credential: not found")
 }
 
-func validateConsentCredential(credentialName, controllerURL string, ccReq *issuerops.ConsentCredentialReq) error {
-	vc, err := getCredential(credentialName, controllerURL)
-	if err != nil {
-		return err
-	}
-
+func validateConsentCredential(vc *verifiable.Credential, ccReq *issuerops.ConsentCredentialReq) error {
 	if !bddutil.StringsContains(adaptervc.ConsentCredentialType, vc.Types) {
 		return fmt.Errorf("missing vc type : %s", adaptervc.ConsentCredentialType)
 	}
@@ -571,7 +600,7 @@ func validateConsentCredential(credentialName, controllerURL string, ccReq *issu
 		Subject *adaptervc.ConsentCredentialSubject `json:"credentialSubject"`
 	}{}
 
-	err = bddutil.DecodeJSONMarshaller(vc, &consentVC)
+	err := bddutil.DecodeJSONMarshaller(vc, &consentVC)
 	if err != nil {
 		return fmt.Errorf("failed to parse credential : %s", err.Error())
 	}
