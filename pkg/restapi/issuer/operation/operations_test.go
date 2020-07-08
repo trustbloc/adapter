@@ -25,6 +25,7 @@ import (
 	issuecredsvc "github.com/hyperledger/aries-framework-go/pkg/didcomm/protocol/issuecredential"
 	"github.com/hyperledger/aries-framework-go/pkg/didcomm/protocol/mediator"
 	presentproofsvc "github.com/hyperledger/aries-framework-go/pkg/didcomm/protocol/presentproof"
+	"github.com/hyperledger/aries-framework-go/pkg/doc/did"
 	"github.com/hyperledger/aries-framework-go/pkg/doc/verifiable"
 	mocksvc "github.com/hyperledger/aries-framework-go/pkg/mock/didcomm/protocol/didexchange"
 	mockroute "github.com/hyperledger/aries-framework-go/pkg/mock/didcomm/protocol/mediator"
@@ -43,6 +44,7 @@ import (
 	"github.com/trustbloc/edge-adapter/pkg/internal/mock/issuecredential"
 	"github.com/trustbloc/edge-adapter/pkg/internal/mock/presentproof"
 	"github.com/trustbloc/edge-adapter/pkg/profile/issuer"
+	adaptervc "github.com/trustbloc/edge-adapter/pkg/vc"
 )
 
 const (
@@ -716,9 +718,6 @@ func TestDIDCommListeners(t *testing.T) {
 
 			go c.didCommActionListener(actionCh)
 
-			rpDIDDOcBytes, err := mockdiddoc.GetMockDIDDoc().JSONBytes()
-			require.NoError(t, err)
-
 			done := make(chan struct{})
 
 			actionCh <- service.DIDCommAction{
@@ -726,7 +725,7 @@ func TestDIDCommListeners(t *testing.T) {
 					Type: issuecredsvc.RequestCredentialMsgType,
 					RequestsAttach: []decorator.Attachment{
 						{Data: decorator.AttachmentData{
-							JSON: createConsentCredReq(t, "did:example:xyz123", rpDIDDOcBytes),
+							JSON: createConsentCredReq(t, "did:example:xyz123", mockdiddoc.GetMockDIDDoc()),
 						}},
 					},
 				}),
@@ -974,10 +973,16 @@ func createProfileData(profileID string) *issuer.ProfileData {
 	}
 }
 
-func createConsentCredReq(t *testing.T, userDID string, rpDIDDoc []byte) json.RawMessage {
+func createConsentCredReq(t *testing.T, userDID string, rpDIDDoc *did.Doc) json.RawMessage {
+	rpDIDDOcBytes, err := mockdiddoc.GetMockDIDDoc().JSONBytes()
+	require.NoError(t, err)
+
 	ccReq := ConsentCredentialReq{
-		UserDID:  userDID,
-		RPDIDDoc: rpDIDDoc,
+		UserDID: userDID,
+		RPDIDDoc: &adaptervc.DIDDoc{
+			ID:  rpDIDDoc.ID,
+			Doc: rpDIDDOcBytes,
+		},
 	}
 
 	ccReqBytes, err := json.Marshal(ccReq)
