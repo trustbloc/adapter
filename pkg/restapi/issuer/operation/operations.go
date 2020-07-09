@@ -22,8 +22,10 @@ import (
 	"github.com/hyperledger/aries-framework-go/pkg/didcomm/protocol/decorator"
 	issuecredsvc "github.com/hyperledger/aries-framework-go/pkg/didcomm/protocol/issuecredential"
 	presentproofsvc "github.com/hyperledger/aries-framework-go/pkg/didcomm/protocol/presentproof"
+	"github.com/hyperledger/aries-framework-go/pkg/doc/verifiable"
 	"github.com/hyperledger/aries-framework-go/pkg/framework/aries/api/vdri"
 	"github.com/hyperledger/aries-framework-go/pkg/store/connection"
+	"github.com/trustbloc/edge-core/pkg/log"
 	"github.com/trustbloc/edge-core/pkg/storage"
 
 	"github.com/trustbloc/edge-adapter/pkg/aries"
@@ -32,6 +34,8 @@ import (
 	commhttp "github.com/trustbloc/edge-adapter/pkg/restapi/internal/common/http"
 	issuervc "github.com/trustbloc/edge-adapter/pkg/vc/issuer"
 )
+
+var logger = log.New("edge-adapter/issuerops")
 
 const (
 	// API endpoints
@@ -457,11 +461,17 @@ func (o *Operation) didCommActionListener(ch <-chan service.DIDCommAction) {
 		case issuecredsvc.RequestCredentialMsgType:
 			err := o.handleRequestCredential(msg)
 			if err != nil {
+				logger.Errorf("handle credential request error : %s", err.Error())
 				msg.Stop(fmt.Errorf("handle credential request : %w", err))
 			}
 		case presentproofsvc.RequestPresentationMsgType:
-			o.handleRequestPresentation(msg)
+			err := o.handleRequestPresentation(msg)
+			if err != nil {
+				logger.Errorf("handle presentation request error : %s", err.Error())
+				msg.Stop(fmt.Errorf("handle presentation request : %w", err))
+			}
 		default:
+			logger.Errorf("handle presentation request error : %s", msg.Message.Type())
 			msg.Stop(fmt.Errorf("unsupported message type : %s", msg.Message.Type()))
 		}
 	}
@@ -487,7 +497,29 @@ func (o *Operation) handleRequestCredential(msg service.DIDCommAction) error {
 
 	vc := issuervc.CreateConsentCredential(newDidDoc.ID, docJSON, consentCreReq.RPDIDDoc, consentCreReq.UserDID)
 
-	// TODO save handle to the VC to verify when proof is requested
+	connID, err := o.getConnectionIDFromEvent(msg)
+	if err != nil {
+		return fmt.Errorf("connection using DIDs not found : %w", err)
+	}
+
+	token, err := o.tokenStore.Get(connID)
+	if err != nil {
+		return fmt.Errorf("get token from the connectionID : %w", err)
+	}
+
+	handle := &ConsentCredentialHandle{
+		ID:               vc.ID,
+		IssuerDID:        newDidDoc.ID,
+		UserDID:          consentCreReq.UserDID,
+		RPDID:            consentCreReq.RPDIDDoc.ID,
+		UserConnectionID: connID,
+		Token:            string(token),
+	}
+
+	err = o.storeConsentCredHandle(handle)
+	if err != nil {
+		return fmt.Errorf("store consent credential : %w", err)
+	}
 
 	msg.Continue(issuecredential.WithIssueCredential(&issuecredential.IssueCredential{
 		CredentialsAttach: []decorator.Attachment{
@@ -498,15 +530,75 @@ func (o *Operation) handleRequestCredential(msg service.DIDCommAction) error {
 	return nil
 }
 
-func (o *Operation) handleRequestPresentation(msg service.DIDCommAction) {
+func (o *Operation) handleRequestPresentation(msg service.DIDCommAction) error {
 	// TODO https://github.com/trustbloc/edge-adapter/issues/139 validate the presentation request
+	consentCred, err := fetchConsentCred(msg)
+	if err != nil {
+		return err
+	}
+
+	data, err := o.txnStore.Get(consentCred.ID)
+	if err != nil {
+		return fmt.Errorf("consent credential not found : %w", err)
+	}
+
+	consentCreHandle := &ConsentCredentialHandle{}
+
+	err = json.Unmarshal(data, consentCreHandle)
+	if err != nil {
+		return fmt.Errorf("invalid json data in presentation request : %w", err)
+	}
+
+	// TODO https://github.com/trustbloc/edge-adapter/issues/138 create the data VC
+	vc := &verifiable.Credential{}
+
+	vp, err := issuervc.CreatePresentation(vc)
+	if err != nil {
+		return err
+	}
+
 	msg.Continue(presentproof.WithPresentation(&presentproof.Presentation{
 		PresentationsAttach: []decorator.Attachment{{
 			Data: decorator.AttachmentData{
-				JSON: issuervc.CreatePresentation(),
+				JSON: vp,
 			},
 		}},
 	}))
+
+	return nil
+}
+
+func (o *Operation) getConnectionIDFromEvent(msg service.DIDCommAction) (string, error) {
+	myDID, err := getStrPropFromEvent("myDID", msg)
+	if err != nil {
+		return "", err
+	}
+
+	theirDID, err := getStrPropFromEvent("theirDID", msg)
+	if err != nil {
+		return "", err
+	}
+
+	connID, err := o.connectionLookup.GetConnectionIDByDIDs(myDID, theirDID)
+	if err != nil {
+		return "", err
+	}
+
+	return connID, nil
+}
+
+func (o *Operation) storeConsentCredHandle(handle *ConsentCredentialHandle) error {
+	dataBytes, err := json.Marshal(handle)
+	if err != nil {
+		return err
+	}
+
+	err = o.txnStore.Put(handle.ID, dataBytes)
+	if err != nil {
+		return err
+	}
+
+	return nil
 }
 
 func getTxnStore(prov storage.Provider) (storage.Store, error) {
@@ -562,4 +654,47 @@ func fetchConsentCredReq(msg service.DIDCommAction) (*ConsentCredentialReq, erro
 	}
 
 	return consentCreReq, nil
+}
+
+func fetchConsentCred(msg service.DIDCommAction) (*verifiable.Credential, error) {
+	credReq := &presentproofsvc.RequestPresentation{}
+
+	err := msg.Message.Decode(credReq)
+	if err != nil {
+		return nil, err
+	}
+
+	if len(credReq.RequestPresentationsAttach) != 1 {
+		return nil, errors.New("presentation request should have one attachment")
+	}
+
+	reqJSON, err := credReq.RequestPresentationsAttach[0].Data.Fetch()
+	if err != nil {
+		return nil, fmt.Errorf("no data inside the presentation request attachment : %w", err)
+	}
+
+	vc, err := verifiable.ParseCredential(reqJSON)
+	if err != nil {
+		return nil, err
+	}
+
+	return vc, nil
+}
+
+func getStrPropFromEvent(prop string, msg service.DIDCommAction) (string, error) {
+	if len(msg.Properties.All()) == 0 {
+		return "", errors.New("no properties in the event")
+	}
+
+	val, ok := msg.Properties.All()[prop]
+	if !ok {
+		return "", fmt.Errorf("%s not found", prop)
+	}
+
+	strVal, ok := val.(string)
+	if !ok {
+		return "", fmt.Errorf("%s not a string", prop)
+	}
+
+	return strVal, nil
 }

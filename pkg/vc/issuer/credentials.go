@@ -23,6 +23,9 @@ const (
 	// VerifiableCredential vc type.
 	VerifiableCredential = "VerifiableCredential"
 
+	// VerifiablePresentation vp type.
+	VerifiablePresentation = "VerifiablePresentation"
+
 	// ManifestCredentialType vc type.
 	ManifestCredentialType = "IssuerManifestCredential"
 
@@ -134,10 +137,6 @@ func CreateConsentCredential(did string, docJSON []byte, rpDIDDoc *adaptervc.DID
 }
 
 // CreatePresentation creates presentation to be sent to the rp.
-func CreatePresentation() *verifiable.Presentation {
-	// TODO https://github.com/trustbloc/edge-adapter/issues/138 create presentation
-	//  response (for now, sending dummy response)
-	vp := &verifiable.Presentation{}
-
-	return vp
+func CreatePresentation(vc *verifiable.Credential) (*verifiable.Presentation, error) {
+	return vc.Presentation()
 }

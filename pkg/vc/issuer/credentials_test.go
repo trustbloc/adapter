@@ -168,9 +168,11 @@ func TestCreateConsentCredential(t *testing.T) {
 	})
 }
 
-func TestCreatePresentationSubmission(t *testing.T) {
-	t.Run("test create presentation submission", func(t *testing.T) {
-		require.NotNil(t, CreatePresentation())
+func TestCreatePresentation(t *testing.T) {
+	t.Run("test create presentation", func(t *testing.T) {
+		vp, err := CreatePresentation(&verifiable.Credential{})
+		require.NoError(t, err)
+		require.NotNil(t, vp)
 	})
 }
 
