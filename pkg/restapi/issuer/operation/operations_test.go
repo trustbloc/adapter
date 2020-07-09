@@ -11,6 +11,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io/ioutil"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -135,7 +136,7 @@ func TestCreateProfile(t *testing.T) {
 		require.NoError(t, err)
 		require.Equal(t, vReq.ID, profileRes.ID)
 		require.Equal(t, vReq.Name, profileRes.Name)
-		require.Equal(t, vReq.CallbackURL, profileRes.CallbackURL)
+		require.Equal(t, vReq.URL, profileRes.URL)
 	})
 
 	t.Run("create profile - invalid request", func(t *testing.T) {
@@ -340,7 +341,7 @@ func TestValidateWalletResponse(t *testing.T) {
 	callbackURL := "http://issuer.example.com/cb"
 
 	data := createProfileData(profileID)
-	data.CallbackURL = callbackURL
+	data.URL = callbackURL
 
 	err = c.profileStore.SaveProfile(data)
 	require.NoError(t, err)
@@ -419,6 +420,19 @@ func TestValidateWalletResponse(t *testing.T) {
 
 	t.Run("test validate response - invalid txn id", func(t *testing.T) {
 		txnID = "invalid-txn-id"
+
+		rr := serveHTTP(t, handler.Handle(), http.MethodPost,
+			validateConnectResponseEndpoint+"?"+txnIDQueryParam+"="+txnID, vReqBytes)
+
+		require.Equal(t, http.StatusBadRequest, rr.Code)
+		require.Contains(t, rr.Body.String(), "txn data not found")
+	})
+
+	t.Run("test validate response - invalid txn data", func(t *testing.T) {
+		txnID = uuid.New().String()
+
+		putErr := c.txnStore.Put(txnID, []byte("invalid json"))
+		require.NoError(t, putErr)
 
 		rr := serveHTTP(t, handler.Handle(), http.MethodPost,
 			validateConnectResponseEndpoint+"?"+txnIDQueryParam+"="+txnID, vReqBytes)
@@ -570,7 +584,7 @@ func TestValidateWalletResponse(t *testing.T) {
 			validateConnectResponseEndpoint+"?"+txnIDQueryParam+"="+id, reqBytes)
 
 		require.Equal(t, http.StatusInternalServerError, rr.Code)
-		require.Contains(t, rr.Body.String(), "failed to store token mapping")
+		require.Contains(t, rr.Body.String(), "failed to store user connection mapping")
 	})
 }
 
@@ -723,7 +737,11 @@ func TestDIDCommListeners(t *testing.T) {
 				ConnIDByDIDs: connID,
 			}
 
-			err = c.tokenStore.Put(connID, []byte(uuid.New().String()))
+			err = c.storeUserConnectionMapping(&UserConnectionMapping{
+				ConnectionID: connID,
+				IssuerID:     uuid.New().String(),
+				Token:        uuid.New().String(),
+			})
 			require.NoError(t, err)
 
 			go c.didCommActionListener(actionCh)
@@ -837,7 +855,11 @@ func TestDIDCommListeners(t *testing.T) {
 			}
 
 			// error saving consent cred data
-			err = c.tokenStore.Put(connID, []byte(uuid.New().String()))
+			err = c.storeUserConnectionMapping(&UserConnectionMapping{
+				ConnectionID: connID,
+				IssuerID:     uuid.New().String(),
+				Token:        uuid.New().String(),
+			})
 			require.NoError(t, err)
 
 			c.txnStore = &mockstorage.MockStore{
@@ -916,6 +938,17 @@ func TestDIDCommListeners(t *testing.T) {
 			})
 			require.NoError(t, err)
 
+			c.httpClient = &mockHTTPClient{
+				respValue: &http.Response{
+					StatusCode: http.StatusOK, Body: ioutil.NopCloser(bytes.NewReader([]byte(prCardVC))),
+				},
+			}
+
+			issuerID := uuid.New().String()
+
+			err = c.profileStore.SaveProfile(createProfileData(issuerID))
+			require.NoError(t, err)
+
 			go c.didCommActionListener(actionCh)
 
 			didDocument := mockdiddoc.GetMockDIDDoc()
@@ -938,6 +971,7 @@ func TestDIDCommListeners(t *testing.T) {
 				UserDID:   userDID,
 				RPDID:     rpDIDDoc.ID,
 				Token:     uuid.New().String(),
+				IssuerID:  issuerID,
 			}
 
 			err = c.storeConsentCredHandle(handle)
@@ -1044,6 +1078,129 @@ func TestDIDCommListeners(t *testing.T) {
 			case <-time.After(5 * time.Second):
 				require.Fail(t, "tests are not validated due to timeout")
 			}
+
+			// consent cred data error
+			didDocument := mockdiddoc.GetMockDIDDoc()
+
+			didDocJSON, err := didDocument.JSONBytes()
+			require.NoError(t, err)
+
+			userDID := "did:example:abc789"
+
+			rpDIDDoc := &adaptervc.DIDDoc{
+				ID:  didDocument.ID,
+				Doc: didDocJSON,
+			}
+
+			vc := createConsentCredential(t)
+
+			err = c.txnStore.Put(vc.ID, []byte("invalid data"))
+			require.NoError(t, err)
+
+			actionCh <- createProofReqMsg(t, presentproofsvc.RequestPresentation{
+				Type: presentproofsvc.RequestPresentationMsgType,
+				RequestPresentationsAttach: []decorator.Attachment{
+					{Data: decorator.AttachmentData{
+						JSON: vc,
+					}},
+				},
+			}, nil, func(err error) {
+				require.NotNil(t, err)
+				require.Contains(t, err.Error(), "handle presentation request : consent credential handle")
+				done <- struct{}{}
+			})
+
+			select {
+			case <-done:
+			case <-time.After(5 * time.Second):
+				require.Fail(t, "tests are not validated due to timeout")
+			}
+
+			// issuer doesnt exists
+			handle := &ConsentCredentialHandle{
+				ID:        vc.ID,
+				IssuerDID: didDocument.ID,
+				UserDID:   userDID,
+				RPDID:     rpDIDDoc.ID,
+				Token:     uuid.New().String(),
+				IssuerID:  uuid.New().String(),
+			}
+
+			err = c.storeConsentCredHandle(handle)
+			require.NoError(t, err)
+
+			actionCh <- createProofReqMsg(t, presentproofsvc.RequestPresentation{
+				Type: presentproofsvc.RequestPresentationMsgType,
+				RequestPresentationsAttach: []decorator.Attachment{
+					{Data: decorator.AttachmentData{
+						JSON: vc,
+					}},
+				},
+			}, nil, func(err error) {
+				require.NotNil(t, err)
+				require.Contains(t, err.Error(), "handle presentation request : get profile")
+				done <- struct{}{}
+			})
+
+			select {
+			case <-done:
+			case <-time.After(5 * time.Second):
+				require.Fail(t, "tests are not validated due to timeout")
+			}
+
+			// http request fails
+			issuerID := uuid.New().String()
+			handle.IssuerID = issuerID
+			err = c.storeConsentCredHandle(handle)
+			require.NoError(t, err)
+
+			err = c.profileStore.SaveProfile(createProfileData(issuerID))
+			require.NoError(t, err)
+
+			actionCh <- createProofReqMsg(t, presentproofsvc.RequestPresentation{
+				Type: presentproofsvc.RequestPresentationMsgType,
+				RequestPresentationsAttach: []decorator.Attachment{
+					{Data: decorator.AttachmentData{
+						JSON: vc,
+					}},
+				},
+			}, nil, func(err error) {
+				require.NotNil(t, err)
+				require.Contains(t, err.Error(), "handle presentation request : http request")
+				done <- struct{}{}
+			})
+
+			select {
+			case <-done:
+			case <-time.After(5 * time.Second):
+				require.Fail(t, "tests are not validated due to timeout")
+			}
+
+			// invalid vc data
+			c.httpClient = &mockHTTPClient{
+				respValue: &http.Response{
+					StatusCode: http.StatusOK, Body: ioutil.NopCloser(bytes.NewReader([]byte("invalid vc json"))),
+				},
+			}
+
+			actionCh <- createProofReqMsg(t, presentproofsvc.RequestPresentation{
+				Type: presentproofsvc.RequestPresentationMsgType,
+				RequestPresentationsAttach: []decorator.Attachment{
+					{Data: decorator.AttachmentData{
+						JSON: vc,
+					}},
+				},
+			}, nil, func(err error) {
+				require.NotNil(t, err)
+				require.Contains(t, err.Error(), "handle presentation request : parse user data vc")
+				done <- struct{}{}
+			})
+
+			select {
+			case <-done:
+			case <-time.After(5 * time.Second):
+				require.Fail(t, "tests are not validated due to timeout")
+			}
 		})
 	})
 }
@@ -1119,6 +1276,34 @@ func TestGetConnectionIDFromEvent(t *testing.T) {
 		require.Contains(t, err.Error(), "theirDID not a string")
 		require.Empty(t, id)
 	})
+
+	t.Run("test get connection mapping - error", func(t *testing.T) {
+		connID := uuid.New().String()
+
+		err := c.tokenStore.Put(connID, []byte("invalid json data"))
+		require.NoError(t, err)
+
+		data, err := c.getUserConnectionMapping(connID)
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "user conn map :")
+		require.Empty(t, data)
+	})
+
+	t.Run("test send http request - error", func(t *testing.T) {
+		c.httpClient = &mockHTTPClient{
+			respValue: &http.Response{
+				StatusCode: http.StatusBadRequest, Body: ioutil.NopCloser(bytes.NewReader([]byte("invalid vc"))),
+			},
+		}
+
+		req, err := http.NewRequest(http.MethodPost, "", nil)
+		require.NoError(t, err)
+
+		data, err := sendHTTPRequest(req, c.httpClient, http.StatusOK, "abc789")
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "http request: 400 invalid vc")
+		require.Empty(t, data)
+	})
 }
 
 func getAriesCtx() aries.CtxProvider {
@@ -1191,7 +1376,8 @@ func serveHTTPMux(t *testing.T, handler Handler, endpoint string, reqBytes []byt
 	return rr
 }
 
-const vcFmt = `{
+const (
+	vcFmt = `{
 	   "@context":[
 		  "https://www.w3.org/2018/credentials/v1",
 		  "https://www.w3.org/2018/credentials/examples/v1"
@@ -1211,6 +1397,42 @@ const vcFmt = `{
 	   "issuer":"did:example:76e12ec712ebc6f1c221ebfeb1f",
 	   "issuanceDate":"2010-01-01T19:23:24Z"
 	}`
+
+	prCardVC = `{
+	  "@context": [
+		"https://www.w3.org/2018/credentials/v1",
+		"https://w3id.org/citizenship/v1"
+	  ],
+	  "id": "https://issuer.oidp.uscis.gov/credentials/83627465",
+	  "type": [
+		"VerifiableCredential",
+		"PermanentResidentCard"
+	  ],
+	  "name": "Permanent Resident Card",
+	  "description": "Permanent Resident Card",
+	  "issuer": "did:example:28394728934792387",
+	  "issuanceDate": "2019-12-03T12:19:52Z",
+	  "expirationDate": "2029-12-03T12:19:52Z",
+	  "credentialSubject": {
+		"id": "did:example:b34ca6cd37bbf23",
+		"type": [
+		  "PermanentResident",
+		  "Person"
+		],
+		"givenName": "JOHN",
+		"familyName": "SMITH",
+		"gender": "Male",
+		"image": "data:image/png;base64,iVBORw0KGgo...kJggg==",
+		"residentSince": "2015-01-01",
+		"lprCategory": "C09",
+		"lprNumber": "999-999-999",
+		"commuterClassification": "C1",
+		"birthCountry": "Bahamas",
+		"birthDate": "1958-07-17"
+	  }
+	}
+	`
+)
 
 func getDefaultTestVP(t *testing.T) []byte {
 	return getTestVP(t, inviteeDID, inviterDID, uuid.New().String())
@@ -1234,7 +1456,7 @@ func createProfileData(profileID string) *issuer.ProfileData {
 		ID:                  profileID,
 		Name:                "Issuer Profile 1",
 		SupportedVCContexts: []string{"https://w3id.org/citizenship/v3"},
-		CallbackURL:         "http://issuer.example.com/cb",
+		URL:                 "http://issuer.example.com",
 	}
 }
 
@@ -1331,4 +1553,17 @@ func (e *actionEventEvent) All() map[string]interface{} {
 		"myDID":    e.myDID,
 		"theirDID": e.theirDID,
 	}
+}
+
+type mockHTTPClient struct {
+	respValue *http.Response
+	respErr   error
+}
+
+func (m *mockHTTPClient) Do(req *http.Request) (*http.Response, error) {
+	if m.respErr != nil {
+		return nil, m.respErr
+	}
+
+	return m.respValue, nil
 }

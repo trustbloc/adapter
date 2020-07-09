@@ -1,0 +1,24 @@
+#
+# Copyright SecureKey Technologies Inc. All Rights Reserved.
+#
+# SPDX-License-Identifier: Apache-2.0
+#
+version: '2'
+
+services:
+
+  issuer.example.com:
+    container_name: issuer.example.com
+    image: docker.pkg.github.com/mock-issuer:latest
+    environment:
+      - ISSUER_PORT=${ISSUER_PORT}
+    ports:
+      - ${ISSUER_PORT}:${ISSUER_PORT}
+    networks:
+      adapter-rest_bdd_net:
+        aliases:
+          - issuer.example.com
+
+networks:
+  adapter-rest_bdd_net:
+    external: true

@@ -48,9 +48,9 @@ func NewSteps(ctx *context.BDDContext) *Steps {
 
 // RegisterSteps registers agent steps.
 func (e *Steps) RegisterSteps(s *godog.Suite) {
-	s.Step(`^Issuer Profile with id "([^"]*)", name "([^"]*)", callbackURL "([^"]*)" and supportedVCContexts "([^"]*)"$`, // nolint: lll
+	s.Step(`^Issuer Profile with id "([^"]*)", name "([^"]*)", issuerURL "([^"]*)" and supportedVCContexts "([^"]*)"$`, // nolint: lll
 		e.createProfile)
-	s.Step(`^Retrieved profile with id "([^"]*)" contains name "([^"]*)", callbackURL "([^"]*)" and supportedVCContexts "([^"]*)"$`, // nolint: lll
+	s.Step(`^Retrieved profile with id "([^"]*)" contains name "([^"]*)", issuerURL "([^"]*)" and supportedVCContexts "([^"]*)"$`, // nolint: lll
 		e.retrieveProfile)
 	s.Step(`^Issuer adapter shows the wallet connect UI when the issuer "([^"]*)" wants to connect to the wallet$`,
 		e.walletConnect)
@@ -59,11 +59,11 @@ func (e *Steps) RegisterSteps(s *godog.Suite) {
 		e.validateConnectResp)
 }
 
-func (e *Steps) createProfile(id, name, callbackURL, supportedVCContexts string) error {
+func (e *Steps) createProfile(id, name, issuerURL, supportedVCContexts string) error {
 	profileReq := operation.ProfileDataRequest{
 		ID:                  id,
 		Name:                name,
-		CallbackURL:         callbackURL,
+		URL:                 issuerURL,
 		SupportedVCContexts: strings.Split(supportedVCContexts, ","),
 	}
 
@@ -93,7 +93,7 @@ func (e *Steps) createProfile(id, name, callbackURL, supportedVCContexts string)
 	return nil
 }
 
-func (e *Steps) retrieveProfile(id, name, callbackURL, supportedVCContexts string) error {
+func (e *Steps) retrieveProfile(id, name, issuerURL, supportedVCContexts string) error {
 	resp, err := bddutil.HTTPDo(http.MethodGet, //nolint: bodyclose
 		fmt.Sprintf(issuerAdapterURL+"/profile/%s", id), "", "", nil)
 	if err != nil {
@@ -122,9 +122,9 @@ func (e *Steps) retrieveProfile(id, name, callbackURL, supportedVCContexts strin
 		return fmt.Errorf("profile name doesn't match : expected=%s actual=%s", name, profileResponse.Name)
 	}
 
-	if profileResponse.CallbackURL != callbackURL {
+	if profileResponse.URL != issuerURL {
 		return fmt.Errorf("profile callback url doesn't match : expected=%s actual=%s",
-			callbackURL, profileResponse.CallbackURL)
+			issuerURL, profileResponse.URL)
 	}
 
 	if len(profileResponse.SupportedVCContexts) != len(strings.Split(supportedVCContexts, ",")) {
@@ -181,7 +181,7 @@ func (e *Steps) didExchangeRequest(issuerID, agentID string) error {
 	return nil
 }
 
-func (e *Steps) validateConnectResp(issuerID, agentID, callbackURL string) error {
+func (e *Steps) validateConnectResp(issuerID, agentID, issuerURL string) error {
 	validateURL := issuerAdapterURL + "/connect/validate?txnID=" + e.txnIDs[issuerID]
 	vp := e.bddContext.Store[bddutil.GetDIDConnectResponseKey(issuerID, agentID)]
 
@@ -218,9 +218,9 @@ func (e *Steps) validateConnectResp(issuerID, agentID, callbackURL string) error
 		return err
 	}
 
-	if !strings.Contains(validateResp.RedirectURL, callbackURL) {
-		return fmt.Errorf("expected redirectURL contains [%s] for issuer[%s], but got[%s]", callbackURL, issuerID,
-			validateResp.RedirectURL)
+	if !strings.Contains(validateResp.RedirectURL, getCallBackURL(issuerURL)) {
+		return fmt.Errorf("expected redirectURL contains [%s] for issuer[%s], but got[%s]",
+			getCallBackURL(issuerURL), issuerID, validateResp.RedirectURL)
 	}
 
 	u, err := url.Parse(validateResp.RedirectURL)
@@ -238,4 +238,8 @@ func (e *Steps) validateConnectResp(issuerID, agentID, callbackURL string) error
 	}
 
 	return nil
+}
+
+func getCallBackURL(issuerURL string) string {
+	return fmt.Sprintf("%s/cb", issuerURL)
 }

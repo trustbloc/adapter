@@ -33,7 +33,7 @@ type Profile struct {
 type ProfileData struct {
 	ID                  string     `json:"id,omitempty"`
 	Name                string     `json:"name"`
-	CallbackURL         string     `json:"callbackURL"`
+	URL                 string     `json:"url"`
 	SupportedVCContexts []string   `json:"supportedVCContexts"`
 	CreatedAt           *time.Time `json:"createdAt"`
 }
@@ -83,7 +83,7 @@ func (c *Profile) SaveProfile(data *ProfileData) error {
 func (c *Profile) GetProfile(id string) (*ProfileData, error) {
 	bytes, err := c.store.Get(getDBKey(id))
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("get profile : %w", err)
 	}
 
 	response := &ProfileData{}
@@ -109,8 +109,8 @@ func validateProfileRequest(pr *ProfileData) error {
 		return fmt.Errorf("supported vc contexts mandatory")
 	}
 
-	if !adapterutil.ValidHTTPURL(pr.CallbackURL) {
-		return fmt.Errorf("callback url is invalid")
+	if !adapterutil.ValidHTTPURL(pr.URL) {
+		return fmt.Errorf("issuer url is invalid")
 	}
 
 	return nil
