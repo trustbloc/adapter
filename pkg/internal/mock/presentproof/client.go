@@ -44,5 +44,9 @@ func (s *MockClient) UnregisterMsgEvent(ch chan<- service.StateMsg) error {
 // SendRequestPresentation simulates the action of sending a request presentation to theirDID.
 func (s *MockClient) SendRequestPresentation(
 	presentation *presentproof.RequestPresentation, myDID, theirDID string) (string, error) {
-	return s.RequestPresentationFunc(presentation, myDID, theirDID)
+	if s.RequestPresentationFunc != nil {
+		return s.RequestPresentationFunc(presentation, myDID, theirDID)
+	}
+
+	return "", nil
 }

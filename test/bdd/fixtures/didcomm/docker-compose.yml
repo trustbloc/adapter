@@ -34,9 +34,9 @@ services:
       - ARIESD_API_HOST=${ISSUER_AGENT_HOST}:${ISSUER_AGENT_API_PORT}
       - ARIESD_INBOUND_HOST=http@${ISSUER_AGENT_HOST}:${ISSUER_AGENT_INBOUND_PORT}
       - ARIESD_INBOUND_HOST_EXTERNAL=http@http://issuer.adapter.mock.example.com:${ISSUER_AGENT_INBOUND_PORT}
-      - ARIESD_WEBHOOK_URL=http://issuer.adapter.mock.example.com
       - ARIESD_DB_PATH=${ISSUER_AGENT_DB_PATH}
       - ARIESD_DEFAULT_LABEL=issuer-adapter
+      - ARIESD_AUTO_ACCEPT=true
     ports:
       - ${ISSUER_AGENT_INBOUND_PORT}:${ISSUER_AGENT_INBOUND_PORT}
       - ${ISSUER_AGENT_API_PORT}:${ISSUER_AGENT_API_PORT}

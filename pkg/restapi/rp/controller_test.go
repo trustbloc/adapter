@@ -8,6 +8,7 @@ package rp
 import (
 	"testing"
 
+	vdriapi "github.com/hyperledger/aries-framework-go/pkg/framework/aries/api/vdri"
 	ariesmockstorage "github.com/hyperledger/aries-framework-go/pkg/mock/storage"
 	ariesstorage "github.com/hyperledger/aries-framework-go/pkg/storage"
 	"github.com/stretchr/testify/require"
@@ -23,7 +24,7 @@ func TestController_New(t *testing.T) {
 		controller, err := New(&operation.Config{
 			DIDExchClient:        &didexchange.MockClient{},
 			Store:                memstore.NewProvider(),
-			AriesStorageProvider: &mockAriesStorageProvider{},
+			AriesStorageProvider: &mockAriesContextProvider{},
 			PresentProofClient:   &mockpresentproof.MockClient{},
 		})
 		require.NoError(t, err)
@@ -34,12 +35,13 @@ func TestController_New(t *testing.T) {
 	})
 }
 
-type mockAriesStorageProvider struct {
-	store  ariesstorage.Provider
-	tstore ariesstorage.Provider
+type mockAriesContextProvider struct {
+	store   ariesstorage.Provider
+	tstore  ariesstorage.Provider
+	vdriReg vdriapi.Registry
 }
 
-func (m *mockAriesStorageProvider) StorageProvider() ariesstorage.Provider {
+func (m *mockAriesContextProvider) StorageProvider() ariesstorage.Provider {
 	if m.store != nil {
 		return m.store
 	}
@@ -47,10 +49,14 @@ func (m *mockAriesStorageProvider) StorageProvider() ariesstorage.Provider {
 	return ariesmockstorage.NewMockStoreProvider()
 }
 
-func (m *mockAriesStorageProvider) TransientStorageProvider() ariesstorage.Provider {
+func (m *mockAriesContextProvider) TransientStorageProvider() ariesstorage.Provider {
 	if m.tstore != nil {
 		return m.tstore
 	}
 
 	return ariesmockstorage.NewMockStoreProvider()
+}
+
+func (m *mockAriesContextProvider) VDRIRegistry() vdriapi.Registry {
+	return m.vdriReg
 }
