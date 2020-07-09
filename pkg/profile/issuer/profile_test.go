@@ -54,7 +54,7 @@ func TestCredentialRecord_SaveProfile(t *testing.T) {
 			ID:                  "profile1",
 			Name:                "Issuer Profile 1",
 			SupportedVCContexts: []string{"https://w3id.org/citizenship/v3"},
-			CallbackURL:         "http://issuer.example.com/cb",
+			URL:                 "http://issuer.example.com",
 		}
 
 		err = record.SaveProfile(value)
@@ -90,7 +90,7 @@ func TestCredentialRecord_SaveProfile(t *testing.T) {
 		value.SupportedVCContexts = []string{"https://w3id.org/citizenship/v3"}
 		err = record.SaveProfile(value)
 		require.Error(t, err)
-		require.Contains(t, err.Error(), "callback url is invalid")
+		require.Contains(t, err.Error(), "issuer url is invalid")
 	})
 
 	t.Run("test save profile - profile already exists", func(t *testing.T) {
@@ -102,7 +102,7 @@ func TestCredentialRecord_SaveProfile(t *testing.T) {
 			ID:                  "profile1",
 			Name:                "Issuer Profile 1",
 			SupportedVCContexts: []string{"https://w3id.org/citizenship/v3"},
-			CallbackURL:         "http://issuer.example.com/cb",
+			URL:                 "http://issuer.example.com",
 		}
 
 		err = record.SaveProfile(value)

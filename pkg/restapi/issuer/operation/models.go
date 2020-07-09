@@ -19,7 +19,7 @@ type ProfileDataRequest struct {
 	ID                  string   `json:"id,omitempty"`
 	Name                string   `json:"name"`
 	SupportedVCContexts []string `json:"supportedVCContexts"`
-	CallbackURL         string   `json:"callbackURL"`
+	URL                 string   `json:"url"`
 }
 
 // WalletConnect response from wallet.
@@ -67,4 +67,17 @@ type ConsentCredentialHandle struct {
 	UserConnectionID string `json:"userConnectionID,omitempty"`
 	RPConnectionID   string `json:"rpConnectionID,omitempty"`
 	Token            string `json:"token,omitempty"`
+	IssuerID         string `json:"issuerID,omitempty"`
+}
+
+// UserConnectionMapping stores mapping between the connectionID and issuer.
+type UserConnectionMapping struct {
+	ConnectionID string `json:"connectionID,omitempty"`
+	IssuerID     string `json:"issuerID,omitempty"`
+	Token        string `json:"token,omitempty"`
+}
+
+// IssuerVCReq request to issuer for user data.
+type IssuerVCReq struct {
+	Token string `json:"token,omitempty"`
 }

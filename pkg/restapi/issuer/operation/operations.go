@@ -7,9 +7,11 @@ SPDX-License-Identifier: Apache-2.0
 package operation
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io/ioutil"
 	"net/http"
 	"time"
 
@@ -133,11 +135,17 @@ func New(config *Config) (*Operation, error) {
 		connectionLookup:   connectionLookup,
 		vdriRegistry:       config.AriesCtx.VDRIRegistry(),
 		serviceEndpoint:    config.AriesCtx.ServiceEndpoint(),
+		// TODO build http client with certs
+		httpClient: &http.Client{},
 	}
 
 	go op.didCommActionListener(actionCh)
 
 	return op, nil
+}
+
+type httpClient interface {
+	Do(req *http.Request) (*http.Response, error)
 }
 
 // Operation defines handlers for rp operations.
@@ -152,6 +160,7 @@ type Operation struct {
 	connectionLookup   connections
 	vdriRegistry       vdri.Registry
 	serviceEndpoint    string
+	httpClient         httpClient
 }
 
 // GetRESTHandlers get all controller API handler available for this service.
@@ -182,7 +191,7 @@ func (o *Operation) createIssuerProfileHandler(rw http.ResponseWriter, req *http
 		ID:                  data.ID,
 		Name:                data.Name,
 		SupportedVCContexts: data.SupportedVCContexts,
-		CallbackURL:         data.CallbackURL,
+		URL:                 data.URL,
 		CreatedAt:           &created,
 	}
 
@@ -292,15 +301,21 @@ func (o *Operation) validateWalletResponseHandler(rw http.ResponseWriter, req *h
 
 	token := uuid.New().String()
 
-	err = o.tokenStore.Put(conn.ConnectionID, []byte(token))
+	userConnMap := &UserConnectionMapping{
+		ConnectionID: conn.ConnectionID,
+		IssuerID:     txnData.IssuerID,
+		Token:        token,
+	}
+
+	err = o.storeUserConnectionMapping(userConnMap)
 	if err != nil {
 		commhttp.WriteErrorResponse(rw, http.StatusInternalServerError,
-			fmt.Sprintf("failed to store token mapping: %s", err.Error()))
+			fmt.Sprintf("failed to store user connection mapping: %s", err.Error()))
 
 		return
 	}
 
-	redirectURL := fmt.Sprintf(redirectURLFmt, profile.CallbackURL, txnData.State, token)
+	redirectURL := fmt.Sprintf(redirectURLFmt, getCallBackURL(profile.URL), txnData.State, token)
 
 	rw.WriteHeader(http.StatusOK)
 	commhttp.WriteResponse(rw, &ValidateConnectResp{RedirectURL: redirectURL})
@@ -393,19 +408,49 @@ func (o *Operation) createTxn(profile *issuer.ProfileData, state string) (string
 }
 
 func (o *Operation) getTxn(id string) (*txnData, error) {
-	bytes, err := o.txnStore.Get(id)
-	if err != nil || bytes == nil {
+	dataBytes, err := o.txnStore.Get(id)
+	if err != nil || dataBytes == nil {
 		return nil, err
 	}
 
 	data := &txnData{}
 
-	err = json.Unmarshal(bytes, data)
+	err = json.Unmarshal(dataBytes, data)
 	if err != nil {
 		return nil, err
 	}
 
 	return data, nil
+}
+
+func (o *Operation) storeUserConnectionMapping(userConnMap *UserConnectionMapping) error {
+	userConnMapBytes, err := json.Marshal(userConnMap)
+	if err != nil {
+		return err
+	}
+
+	err = o.tokenStore.Put(userConnMap.ConnectionID, userConnMapBytes)
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func (o *Operation) getUserConnectionMapping(connID string) (*UserConnectionMapping, error) {
+	userConnMapBytes, err := o.tokenStore.Get(connID)
+	if err != nil {
+		return nil, err
+	}
+
+	userConnMap := &UserConnectionMapping{}
+
+	err = json.Unmarshal(userConnMapBytes, userConnMap)
+	if err != nil {
+		return nil, fmt.Errorf("user conn map : %w", err)
+	}
+
+	return userConnMap, nil
 }
 
 func didExchangeClient(ariesCtx aries.CtxProvider) (*didexchange.Client, error) {
@@ -502,7 +547,7 @@ func (o *Operation) handleRequestCredential(msg service.DIDCommAction) error {
 		return fmt.Errorf("connection using DIDs not found : %w", err)
 	}
 
-	token, err := o.tokenStore.Get(connID)
+	userConnMap, err := o.getUserConnectionMapping(connID)
 	if err != nil {
 		return fmt.Errorf("get token from the connectionID : %w", err)
 	}
@@ -513,7 +558,8 @@ func (o *Operation) handleRequestCredential(msg service.DIDCommAction) error {
 		UserDID:          consentCreReq.UserDID,
 		RPDID:            consentCreReq.RPDIDDoc.ID,
 		UserConnectionID: connID,
-		Token:            string(token),
+		Token:            userConnMap.Token,
+		IssuerID:         userConnMap.IssuerID,
 	}
 
 	err = o.storeConsentCredHandle(handle)
@@ -542,17 +588,14 @@ func (o *Operation) handleRequestPresentation(msg service.DIDCommAction) error {
 		return fmt.Errorf("consent credential not found : %w", err)
 	}
 
-	consentCreHandle := &ConsentCredentialHandle{}
+	consentCredHandle := &ConsentCredentialHandle{}
 
-	err = json.Unmarshal(data, consentCreHandle)
+	err = json.Unmarshal(data, consentCredHandle)
 	if err != nil {
-		return fmt.Errorf("invalid json data in presentation request : %w", err)
+		return fmt.Errorf("consent credential handle : %w", err)
 	}
 
-	// TODO https://github.com/trustbloc/edge-adapter/issues/138 create the data VC
-	vc := &verifiable.Credential{}
-
-	vp, err := issuervc.CreatePresentation(vc)
+	vp, err := o.generateUserPresentation(consentCredHandle)
 	if err != nil {
 		return err
 	}
@@ -566,6 +609,37 @@ func (o *Operation) handleRequestPresentation(msg service.DIDCommAction) error {
 	}))
 
 	return nil
+}
+
+func (o *Operation) generateUserPresentation(handle *ConsentCredentialHandle) (*verifiable.Presentation, error) {
+	vcReq := &IssuerVCReq{Token: handle.Token}
+
+	reqBytes, err := json.Marshal(vcReq)
+	if err != nil {
+		return nil, err
+	}
+
+	profile, err := o.profileStore.GetProfile(handle.IssuerID)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPost, getUserCredentialURL(profile.URL), bytes.NewBuffer(reqBytes))
+	if err != nil {
+		return nil, err
+	}
+
+	vcBytes, err := sendHTTPRequest(req, o.httpClient, http.StatusOK, "")
+	if err != nil {
+		return nil, err
+	}
+
+	vc, err := verifiable.ParseCredential(vcBytes)
+	if err != nil {
+		return nil, fmt.Errorf("parse user data vc : %w", err)
+	}
+
+	return issuervc.CreatePresentation(vc)
 }
 
 func (o *Operation) getConnectionIDFromEvent(msg service.DIDCommAction) (string, error) {
@@ -697,4 +771,41 @@ func getStrPropFromEvent(prop string, msg service.DIDCommAction) (string, error)
 	}
 
 	return strVal, nil
+}
+
+func getCallBackURL(issuerURL string) string {
+	return fmt.Sprintf("%s/cb", issuerURL)
+}
+
+func getUserCredentialURL(issuerURL string) string {
+	return fmt.Sprintf("%s/credential", issuerURL)
+}
+
+func sendHTTPRequest(req *http.Request, client httpClient, status int, bearerToken string) ([]byte, error) {
+	if bearerToken != "" {
+		req.Header.Add("Authorization", "Bearer "+bearerToken)
+	}
+
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("http request : %w", err)
+	}
+
+	defer func() {
+		err = resp.Body.Close()
+		if err != nil {
+			logger.Warnf("failed to close response body")
+		}
+	}()
+
+	if resp.StatusCode != status {
+		body, err := ioutil.ReadAll(resp.Body)
+		if err != nil {
+			logger.Warnf("failed to read response body for status: %d", resp.StatusCode)
+		}
+
+		return nil, fmt.Errorf("http request: %d %s", resp.StatusCode, string(body))
+	}
+
+	return ioutil.ReadAll(resp.Body)
 }
