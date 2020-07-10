@@ -795,11 +795,16 @@ func TestDIDCommListeners(t *testing.T) {
 
 			go c.didCommActionListener(actionCh)
 
+			connID := uuid.New().String()
+			c.connectionLookup = &mockconn.MockConnectionsLookup{
+				ConnIDByDIDs: connID,
+			}
+
 			done := make(chan struct{})
 
 			actionCh <- createCredentialReqMsg(t, nil, nil, func(err error) {
 				require.NotNil(t, err)
-				require.Contains(t, err.Error(), "handle credential request : did create error")
+				require.Contains(t, err.Error(), "handle credential request : create new issuer did")
 				done <- struct{}{}
 			})
 
@@ -924,6 +929,36 @@ func TestDIDCommListeners(t *testing.T) {
 			})
 			require.Error(t, err)
 			require.Contains(t, err.Error(), "invalid json data in credential request")
+			require.Nil(t, cc)
+
+			// consent cred does't contain userDID
+			cc, err = fetchConsentCredReq(service.DIDCommAction{
+				Message: service.NewDIDCommMsgMap(issuecredsvc.RequestCredential{
+					Type: issuecredsvc.RequestCredentialMsgType,
+					RequestsAttach: []decorator.Attachment{
+						{Data: decorator.AttachmentData{
+							JSON: createConsentCredReq(t, "", mockdiddoc.GetMockDIDDoc()),
+						}},
+					},
+				}),
+			})
+			require.Error(t, err)
+			require.Contains(t, err.Error(), "user did is missing in consent cred request")
+			require.Nil(t, cc)
+
+			// consent cred does't contain rpDIDDoc
+			cc, err = fetchConsentCredReq(service.DIDCommAction{
+				Message: service.NewDIDCommMsgMap(issuecredsvc.RequestCredential{
+					Type: issuecredsvc.RequestCredentialMsgType,
+					RequestsAttach: []decorator.Attachment{
+						{Data: decorator.AttachmentData{
+							JSON: createConsentCredReq(t, "did:example:123", nil),
+						}},
+					},
+				}),
+			})
+			require.Error(t, err)
+			require.Contains(t, err.Error(), "rp did data is missing in consent cred request")
 			require.Nil(t, cc)
 		})
 	})
@@ -1466,10 +1501,13 @@ func createConsentCredReq(t *testing.T, userDID string, rpDIDDoc *did.Doc) json.
 
 	ccReq := ConsentCredentialReq{
 		UserDID: userDID,
-		RPDIDDoc: &adaptervc.DIDDoc{
+	}
+
+	if rpDIDDoc != nil {
+		ccReq.RPDIDDoc = &adaptervc.DIDDoc{
 			ID:  rpDIDDoc.ID,
 			Doc: rpDIDDOcBytes,
-		},
+		}
 	}
 
 	ccReqBytes, err := json.Marshal(ccReq)

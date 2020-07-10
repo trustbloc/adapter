@@ -36,7 +36,6 @@ import (
 	"github.com/hyperledger/aries-framework-go/pkg/doc/did"
 	"github.com/hyperledger/aries-framework-go/pkg/doc/util"
 	"github.com/hyperledger/aries-framework-go/pkg/doc/verifiable"
-	mockdiddoc "github.com/hyperledger/aries-framework-go/pkg/mock/diddoc"
 	"github.com/trustbloc/edge-core/pkg/log"
 	"nhooyr.io/websocket"
 	"nhooyr.io/websocket/wsjson"
@@ -493,7 +492,7 @@ func (a *Steps) pullEventsFromWebSocket(agentID, state string) (string, error) {
 	}
 }
 
-func (a *Steps) fetchCredential(agentID, issuerID string) error { // nolint: funlen
+func (a *Steps) fetchCredential(agentID, issuerID string) error { // nolint: funlen, gocyclo
 	conn, ok := a.adapterConnections[agentID]
 	if !ok {
 		return fmt.Errorf("unable to find the issuer adapter connection data [%s]", agentID)
@@ -504,8 +503,10 @@ func (a *Steps) fetchCredential(agentID, issuerID string) error { // nolint: fun
 		return fmt.Errorf("unable to find controller URL registered for agent [%s]", agentID)
 	}
 
-	// TODO Update with actual DID Doc (using mock now)
-	didDocument := mockdiddoc.GetMockDIDDoc()
+	didDocument, err := a.ResolveDID(agentID, conn.MyDID)
+	if err != nil {
+		return err
+	}
 
 	didDocJSON, err := didDocument.JSONBytes()
 	if err != nil {
@@ -562,18 +563,36 @@ func (a *Steps) fetchCredential(agentID, issuerID string) error { // nolint: fun
 		return err
 	}
 
-	err = validateConsentCredential(vc, ccReq)
+	consentData, err := validateAndGetConsentCredential(vc, ccReq)
 	if err != nil {
 		return fmt.Errorf("[issue-credential] failed to validate consent credential : %w", err)
 	}
 
+	issuerDIDDoc, err := did.ParseDocument(consentData.IssuerDIDDoc.Doc)
+	if err != nil {
+		return err
+	}
+
+	issuerDIDDoc.ID = consentData.IssuerDIDDoc.ID
+
+	connID, err := a.CreateConnection(agentID, consentData.RPDIDDoc.ID, uuid.New().String(), issuerDIDDoc)
+	if err != nil {
+		return err
+	}
+
+	extConn, err := a.getConnection(agentID, connID)
+	if err != nil {
+		return err
+	}
+
+	a.adapterConnections[getExtCreateConnKey(agentID)] = extConn
 	a.credentials[agentID] = vc
 
 	return nil
 }
 
 func (a *Steps) fetchPresentation(agentID, issuerID string) error {
-	conn, ok := a.adapterConnections[agentID]
+	conn, ok := a.adapterConnections[getExtCreateConnKey(agentID)]
 	if !ok {
 		return fmt.Errorf("unable to find the issuer connection data [%s]", agentID)
 	}
@@ -770,9 +789,10 @@ func getCredential(credentialName, controllerURL string) (*verifiable.Credential
 	return nil, fmt.Errorf("failed to validate credential: not found")
 }
 
-func validateConsentCredential(vc *verifiable.Credential, ccReq *issuerops.ConsentCredentialReq) error {
+func validateAndGetConsentCredential(vc *verifiable.Credential,
+	ccReq *issuerops.ConsentCredentialReq) (*adaptervc.ConsentCredentialSubject, error) {
 	if !bddutil.StringsContains(adaptervc.ConsentCredentialType, vc.Types) {
-		return fmt.Errorf("missing vc type : %s", adaptervc.ConsentCredentialType)
+		return nil, fmt.Errorf("missing vc type : %s", adaptervc.ConsentCredentialType)
 	}
 
 	consentVC := &struct {
@@ -781,25 +801,25 @@ func validateConsentCredential(vc *verifiable.Credential, ccReq *issuerops.Conse
 
 	err := bddutil.DecodeJSONMarshaller(vc, &consentVC)
 	if err != nil {
-		return fmt.Errorf("failed to parse credential : %s", err.Error())
+		return nil, fmt.Errorf("failed to parse credential : %s", err.Error())
 	}
 
 	if consentVC.Subject.UserDID != ccReq.UserDID {
-		return fmt.Errorf("unexpected user did consent credential : expected=%s actual=%s", ccReq.UserDID,
+		return nil, fmt.Errorf("unexpected user did consent credential : expected=%s actual=%s", ccReq.UserDID,
 			consentVC.Subject.UserDID)
 	}
 
 	_, err = did.ParseDocument(consentVC.Subject.IssuerDIDDoc.Doc)
 	if err != nil {
-		return fmt.Errorf("invalid did document : %w", err)
+		return nil, fmt.Errorf("invalid did document : %w", err)
 	}
 
 	if strings.Split(consentVC.Subject.IssuerDIDDoc.ID, ":")[1] != "peer" {
-		return fmt.Errorf("unexpected did method : expected=%s actual=%s", "peer",
+		return nil, fmt.Errorf("unexpected did method : expected=%s actual=%s", "peer",
 			strings.Split(consentVC.Subject.IssuerDIDDoc.ID, ":")[1])
 	}
 
-	return nil
+	return consentVC.Subject, nil
 }
 
 func acceptPresentation(piid, presentationName, controllerURL string) error {
@@ -888,6 +908,10 @@ func validateManifestCred(manifestVCBytes []byte, supportedVCContexts string) er
 	}
 
 	return nil
+}
+
+func getExtCreateConnKey(agentID string) string {
+	return agentID + "-ext"
 }
 
 func sendHTTP(method, destination string, message []byte, result interface{}) error {
