@@ -24,6 +24,7 @@ import (
 	"github.com/hyperledger/aries-framework-go/pkg/didcomm/protocol/decorator"
 	issuecredsvc "github.com/hyperledger/aries-framework-go/pkg/didcomm/protocol/issuecredential"
 	presentproofsvc "github.com/hyperledger/aries-framework-go/pkg/didcomm/protocol/presentproof"
+	"github.com/hyperledger/aries-framework-go/pkg/doc/did"
 	"github.com/hyperledger/aries-framework-go/pkg/doc/verifiable"
 	"github.com/hyperledger/aries-framework-go/pkg/framework/aries/api/vdri"
 	"github.com/hyperledger/aries-framework-go/pkg/store/connection"
@@ -453,53 +454,6 @@ func (o *Operation) getUserConnectionMapping(connID string) (*UserConnectionMapp
 	return userConnMap, nil
 }
 
-func didExchangeClient(ariesCtx aries.CtxProvider) (*didexchange.Client, error) {
-	didExClient, err := didexchange.New(ariesCtx)
-	if err != nil {
-		return nil, err
-	}
-
-	actionCh := make(chan service.DIDCommAction, 1)
-
-	err = didExClient.RegisterActionEvent(actionCh)
-	if err != nil {
-		return nil, err
-	}
-
-	// TODO https://github.com/trustbloc/edge-adapter/issues/102 verify connection request before approving
-	go service.AutoExecuteActionEvent(actionCh)
-
-	return didExClient, nil
-}
-
-func issueCredentialClient(prov issuecredential.Provider, actionCh chan service.DIDCommAction) (*issuecredential.Client, error) { // nolint: lll
-	issueCredentialClient, err := issuecredential.New(prov)
-	if err != nil {
-		return nil, err
-	}
-
-	err = issueCredentialClient.RegisterActionEvent(actionCh)
-	if err != nil {
-		return nil, err
-	}
-
-	return issueCredentialClient, nil
-}
-
-func presentProofClient(prov presentproof.Provider, actionCh chan service.DIDCommAction) (*presentproof.Client, error) { // nolint: lll
-	presentProofClient, err := presentproof.New(prov)
-	if err != nil {
-		return nil, err
-	}
-
-	err = presentProofClient.RegisterActionEvent(actionCh)
-	if err != nil {
-		return nil, err
-	}
-
-	return presentProofClient, nil
-}
-
 func (o *Operation) didCommActionListener(ch <-chan service.DIDCommAction) {
 	for msg := range ch {
 		switch msg.Message.Type() {
@@ -522,17 +476,20 @@ func (o *Operation) didCommActionListener(ch <-chan service.DIDCommAction) {
 	}
 }
 
-func (o *Operation) handleRequestCredential(msg service.DIDCommAction) error {
+func (o *Operation) handleRequestCredential(msg service.DIDCommAction) error { // nolint: funlen
+	connID, err := o.getConnectionIDFromEvent(msg)
+	if err != nil {
+		return fmt.Errorf("connection using DIDs not found : %w", err)
+	}
+
 	consentCreReq, err := fetchConsentCredReq(msg)
 	if err != nil {
 		return err
 	}
 
-	// TODO https://github.com/trustbloc/edge-adapter/issues/124 Validate credential request from wallet
-
 	newDidDoc, err := o.vdriRegistry.Create("peer", vdri.WithServiceEndpoint(o.serviceEndpoint))
 	if err != nil {
-		return err
+		return fmt.Errorf("create new issuer did : %w", err)
 	}
 
 	docJSON, err := newDidDoc.JSONBytes()
@@ -540,12 +497,19 @@ func (o *Operation) handleRequestCredential(msg service.DIDCommAction) error {
 		return err
 	}
 
-	vc := issuervc.CreateConsentCredential(newDidDoc.ID, docJSON, consentCreReq.RPDIDDoc, consentCreReq.UserDID)
-
-	connID, err := o.getConnectionIDFromEvent(msg)
+	rpDIDDoc, err := did.ParseDocument(consentCreReq.RPDIDDoc.Doc)
 	if err != nil {
-		return fmt.Errorf("connection using DIDs not found : %w", err)
+		return fmt.Errorf("parse rp did doc : %w", err)
 	}
+
+	rpDIDDoc.ID = consentCreReq.RPDIDDoc.ID
+
+	_, err = o.didExClient.CreateConnection(newDidDoc.ID, rpDIDDoc)
+	if err != nil {
+		return fmt.Errorf("create connection with rp : %w", err)
+	}
+
+	vc := issuervc.CreateConsentCredential(newDidDoc.ID, docJSON, consentCreReq.RPDIDDoc, consentCreReq.UserDID)
 
 	userConnMap, err := o.getUserConnectionMapping(connID)
 	if err != nil {
@@ -675,6 +639,53 @@ func (o *Operation) storeConsentCredHandle(handle *ConsentCredentialHandle) erro
 	return nil
 }
 
+func didExchangeClient(ariesCtx aries.CtxProvider) (*didexchange.Client, error) {
+	didExClient, err := didexchange.New(ariesCtx)
+	if err != nil {
+		return nil, err
+	}
+
+	actionCh := make(chan service.DIDCommAction, 1)
+
+	err = didExClient.RegisterActionEvent(actionCh)
+	if err != nil {
+		return nil, err
+	}
+
+	// TODO https://github.com/trustbloc/edge-adapter/issues/102 verify connection request before approving
+	go service.AutoExecuteActionEvent(actionCh)
+
+	return didExClient, nil
+}
+
+func issueCredentialClient(prov issuecredential.Provider, actionCh chan service.DIDCommAction) (*issuecredential.Client, error) { // nolint: lll
+	issueCredentialClient, err := issuecredential.New(prov)
+	if err != nil {
+		return nil, err
+	}
+
+	err = issueCredentialClient.RegisterActionEvent(actionCh)
+	if err != nil {
+		return nil, err
+	}
+
+	return issueCredentialClient, nil
+}
+
+func presentProofClient(prov presentproof.Provider, actionCh chan service.DIDCommAction) (*presentproof.Client, error) { // nolint: lll
+	presentProofClient, err := presentproof.New(prov)
+	if err != nil {
+		return nil, err
+	}
+
+	err = presentProofClient.RegisterActionEvent(actionCh)
+	if err != nil {
+		return nil, err
+	}
+
+	return presentProofClient, nil
+}
+
 func getTxnStore(prov storage.Provider) (storage.Store, error) {
 	err := prov.CreateStore(txnStoreName)
 	if err != nil && err != storage.ErrDuplicateStore {
@@ -725,6 +736,14 @@ func fetchConsentCredReq(msg service.DIDCommAction) (*ConsentCredentialReq, erro
 	err = json.Unmarshal(reqJSON, consentCreReq)
 	if err != nil {
 		return nil, fmt.Errorf("invalid json data in credential request : %w", err)
+	}
+
+	if consentCreReq.UserDID == "" {
+		return nil, errors.New("user did is missing in consent cred request")
+	}
+
+	if consentCreReq.RPDIDDoc == nil || consentCreReq.RPDIDDoc.ID == "" || consentCreReq.RPDIDDoc.Doc == nil {
+		return nil, errors.New("rp did data is missing in consent cred request")
 	}
 
 	return consentCreReq, nil
