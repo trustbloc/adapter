@@ -40,7 +40,6 @@ import (
 	"github.com/trustbloc/edge-adapter/pkg/internal/common/support"
 	"github.com/trustbloc/edge-adapter/pkg/presentationex"
 	commhttp "github.com/trustbloc/edge-adapter/pkg/restapi/internal/common/http"
-	"github.com/trustbloc/edge-adapter/pkg/vc"
 	rp2 "github.com/trustbloc/edge-adapter/pkg/vc/rp"
 )
 
@@ -778,7 +777,7 @@ func (o *Operation) chapiResponseHandler(w http.ResponseWriter, r *http.Request)
 	// TODO save user Consent VC https://github.com/trustbloc/edge-adapter/issues/92
 	// TODO validate the user consent credential (expected rp and user DIDs, etc.)
 
-	consentVC, err := parseWalletResponse(invData.pd, request.VerifiablePresentation)
+	customConsentVC, origConsentVC, err := parseWalletResponse(invData.pd, request.VerifiablePresentation)
 	if errors.Is(err, errInvalidCredential) {
 		logger.Warnf("malformed credentials : %s", err)
 		commhttp.WriteErrorResponse(w, http.StatusBadRequest, "malformed credentials")
@@ -794,16 +793,7 @@ func (o *Operation) chapiResponseHandler(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	diddocBytes, err := base64.URLEncoding.DecodeString(consentVC.Subject.IssuerDID.DocB64URL)
-	if err != nil {
-		msg := fmt.Sprintf("failed to decode did document : %s", err)
-		logger.Errorf(msg)
-		commhttp.WriteErrorResponse(w, http.StatusBadRequest, msg)
-
-		return
-	}
-
-	issuerDID, err := did.ParseDocument(diddocBytes)
+	issuerDID, err := did.ParseDocument(customConsentVC.Subject.IssuerDIDDoc.Doc)
 	if err != nil {
 		msg := fmt.Sprintf("failed to parse did document : %s", err)
 		logger.Errorf(msg)
@@ -822,7 +812,7 @@ func (o *Operation) chapiResponseHandler(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	vp, err := o.toVP(consentVC)
+	vp, err := o.toVP(origConsentVC)
 	if err != nil {
 		msg := fmt.Sprintf("failed to convert user consent VC to a verifiable presentation : %s", err)
 		logger.Errorf(msg)
@@ -1225,6 +1215,6 @@ func (o *Operation) createRPTenant(w http.ResponseWriter, r *http.Request) {
 }
 
 // TODO add an LD proof that contains the issuer's challenge: https://github.com/trustbloc/edge-adapter/issues/145
-func (o *Operation) toVP(consentVC *vc.UserConsentCredential) (*verifiable.Presentation, error) {
-	return consentVC.Base.Presentation()
+func (o *Operation) toVP(consentVC *verifiable.Credential) (*verifiable.Presentation, error) {
+	return consentVC.Presentation()
 }

@@ -3,7 +3,6 @@ package rp
 import (
 	"crypto/ed25519"
 	"crypto/rand"
-	"encoding/base64"
 	"fmt"
 	"io/ioutil"
 	"path/filepath"
@@ -66,11 +65,11 @@ func newUserConsentVC(userDID string, rpDID, issuerDID *did.Doc) (*verifiable.Cr
 		userConsentVCTemplate = `{
 	"@context": [
 		"https://www.w3.org/2018/credentials/v1",
-		"https://trustbloc.github.io/context/vc/examples-v1.jsonld"
+		"https://trustbloc.github.io/context/vc/consent-credential-v1.jsonld"
 	],
 	"type": [
 		"VerifiableCredential",
-		"UserConsentCredential"
+		"ConsentCredential"
 	],
 	"id": "http://example.gov/credentials/ff98f978-588f-4eb0-b17b-60c18e1dac2c",
 	"issuanceDate": "2020-03-16T22:37:26.544Z",
@@ -79,14 +78,14 @@ func newUserConsentVC(userDID string, rpDID, issuerDID *did.Doc) (*verifiable.Cr
 	},
 	"credentialSubject": {
 		"id": "%s",
-		"rpDID": %s,
-		"issuerDID": %s,
-		"presDef": "base64URLEncode(presDef)"
+		"rpDIDDoc": %s,
+		"issuerDIDDoc": %s,
+		"userDID": "%s"
 	}
 }`
 		didDocTemplate = `{
 	"id": "%s",
-	"docB64Url": "%s"
+	"doc": %s
 }`
 	)
 
@@ -95,17 +94,17 @@ func newUserConsentVC(userDID string, rpDID, issuerDID *did.Doc) (*verifiable.Cr
 		return nil, err
 	}
 
-	rpDIDClaim := fmt.Sprintf(didDocTemplate, rpDID.ID, base64.URLEncoding.EncodeToString(bits))
+	rpDIDClaim := fmt.Sprintf(didDocTemplate, rpDID.ID, bits)
 
 	bits, err = issuerDID.JSONBytes()
 	if err != nil {
 		return nil, err
 	}
 
-	issuerDIDClaim := fmt.Sprintf(didDocTemplate, issuerDID.ID, base64.URLEncoding.EncodeToString(bits))
+	issuerDIDClaim := fmt.Sprintf(didDocTemplate, issuerDID.ID, bits)
 	contents := fmt.Sprintf(
 		userConsentVCTemplate,
-		userDID, userDID, rpDIDClaim, issuerDIDClaim)
+		userDID, userDID, rpDIDClaim, issuerDIDClaim, userDID)
 
 	return verifiable.ParseCredential([]byte(contents), verifiable.WithJSONLDDocumentLoader(testDocumentLoader))
 }
@@ -114,11 +113,11 @@ func newCreditCardStatementVC() (*verifiable.Credential, error) {
 	const template = `{
 	"@context": [
 		"https://www.w3.org/2018/credentials/v1",
-		"https://trustbloc.github.io/context/vc/examples-v1.jsonld"
+		"https://trustbloc.github.io/context/vc/examples-ext-v1.jsonld"
 	],
 	"type": [
 		"VerifiableCredential",
-		"CreditCardStatementCredential"
+		"CreditCardStatement"
 	],
 	"id": "http://example.gov/credentials/ff98f978-588f-4eb0-b17b-60c18e1dac2c",
 	"issuanceDate": "2020-03-16T22:37:26.544Z",
@@ -199,8 +198,12 @@ func createTestJSONLDDocumentLoader() *ld.CachingDocumentLoader {
 			filename: "schema.org.jsonld",
 		},
 		{
-			vocab:    "https://trustbloc.github.io/context/vc/examples-v1.jsonld",
-			filename: "trustbloc_example.jsonld",
+			vocab:    "https://trustbloc.github.io/context/vc/consent-credential-v1.jsonld",
+			filename: "consent-credential-v1.jsonld",
+		},
+		{
+			vocab:    "https://trustbloc.github.io/context/vc/examples-ext-v1.jsonld",
+			filename: "examples-ext-v1.jsonld",
 		},
 		{
 			vocab:    "https://trustbloc.github.io/context/vp/presentation-exchange-submission-v1.jsonld",

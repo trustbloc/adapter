@@ -9,7 +9,6 @@ package operation
 import (
 	"crypto/ed25519"
 	"crypto/rand"
-	"encoding/base64"
 	"errors"
 	"fmt"
 	"io/ioutil"
@@ -40,24 +39,22 @@ func TestParseWalletResponse(t *testing.T) {
 		userDID := newPeerDID(t)
 		rpDID := newPeerDID(t)
 		issuerDID := newPeerDID(t)
-		vp := newPresentationSubmissionVP(t, newUserConsentVC(t, userDID.ID, rpDID, issuerDID))
-		consentVC, err := parseWalletResponse(nil, marshalVP(t, vp))
+		origConsentVC := newUserConsentVC(t, userDID.ID, rpDID, issuerDID)
+		vp := newPresentationSubmissionVP(t, origConsentVC)
+		customConsentVC, resultOrigConsentVC, err := parseWalletResponse(nil, marshalVP(t, vp))
 		require.NoError(t, err)
-		require.NotNil(t, consentVC.Subject)
+		require.Equal(t, origConsentVC.Subject, resultOrigConsentVC.Subject)
+		require.NotNil(t, customConsentVC.Subject)
 		// check user's DID
-		require.Equal(t, userDID.ID, consentVC.Subject.ID)
+		require.Equal(t, userDID.ID, customConsentVC.Subject.ID)
 		// check issuer's DID
-		require.NotNil(t, consentVC.Subject.IssuerDID)
-		require.Equal(t, issuerDID.ID, consentVC.Subject.IssuerDID.ID)
-		require.Equal(t,
-			base64.URLEncoding.EncodeToString(marshalDID(t, issuerDID)),
-			consentVC.Subject.IssuerDID.DocB64URL)
+		require.NotNil(t, customConsentVC.Subject.IssuerDIDDoc)
+		require.Equal(t, issuerDID.ID, customConsentVC.Subject.IssuerDIDDoc.ID)
+		require.Equal(t, issuerDID.ID, parseDIDDoc(t, customConsentVC.Subject.IssuerDIDDoc.Doc).ID)
 		// check rp's DID
-		require.NotNil(t, consentVC.Subject.RPDID)
-		require.Equal(t, rpDID.ID, consentVC.Subject.RPDID.ID)
-		require.Equal(t,
-			base64.URLEncoding.EncodeToString(marshalDID(t, rpDID)),
-			consentVC.Subject.RPDID.DocB64URL)
+		require.NotNil(t, customConsentVC.Subject.RPDIDDoc)
+		require.Equal(t, rpDID.ID, customConsentVC.Subject.RPDIDDoc.ID)
+		require.Equal(t, rpDID.ID, parseDIDDoc(t, customConsentVC.Subject.RPDIDDoc.Doc).ID)
 	})
 
 	t.Run("ignores credentials not of the expected type", func(t *testing.T) {
@@ -65,22 +62,35 @@ func TestParseWalletResponse(t *testing.T) {
 			newUniversityDegreeVC(t), // ignored
 			newUserConsentVC(t, newPeerDID(t).ID, newPeerDID(t), newPeerDID(t)),
 		)
-		result, err := parseWalletResponse(nil, marshalVP(t, vp))
+		customConsentVC, origConsentVC, err := parseWalletResponse(nil, marshalVP(t, vp))
 		require.NoError(t, err)
-		require.NotNil(t, result)
+		require.NotNil(t, customConsentVC)
+		require.NotNil(t, origConsentVC)
 	})
 
 	t.Run("errInvalidCredential if vp cannot be parsed", func(t *testing.T) {
 		consentVC := newUserConsentVC(t, newPeerDID(t).ID, newPeerDID(t), newPeerDID(t))
 		vp, err := consentVC.Presentation()
 		require.NoError(t, err)
-		_, err = parseWalletResponse(nil, marshalVP(t, vp))
+		_, _, err = parseWalletResponse(nil, marshalVP(t, vp))
 		require.True(t, errors.Is(err, errInvalidCredential))
 	})
 
 	t.Run("errInvalidCredential on no credentials", func(t *testing.T) {
 		vp := newPresentationSubmissionVP(t)
-		_, err := parseWalletResponse(nil, marshalVP(t, vp))
+		_, _, err := parseWalletResponse(nil, marshalVP(t, vp))
+		require.True(t, errors.Is(err, errInvalidCredential))
+	})
+
+	t.Run("errInvalidCredential if issuer's did doc is missing", func(t *testing.T) {
+		vp := newPresentationSubmissionVP(t, newUserConsentVCMissingIssuerDIDDoc(t, newPeerDID(t).ID, newPeerDID(t)))
+		_, _, err := parseWalletResponse(nil, marshalVP(t, vp))
+		require.True(t, errors.Is(err, errInvalidCredential))
+	})
+
+	t.Run("errInvalidCredential if vc cannot be parsed", func(t *testing.T) {
+		vp := newPresentationSubmissionVPUnparseableVC(t)
+		_, _, err := parseWalletResponse(nil, marshalVP(t, vp))
 		require.True(t, errors.Is(err, errInvalidCredential))
 	})
 }
@@ -181,16 +191,43 @@ func newPresentationSubmissionVP(t *testing.T, credentials ...*verifiable.Creden
 	return vp
 }
 
+func newPresentationSubmissionVPUnparseableVC(t *testing.T) *verifiable.Presentation {
+	template := `{
+  	"@context": [
+    	"https://www.w3.org/2018/credentials/v1",
+    	"https://trustbloc.github.io/context/vp/presentation-exchange-submission-v1.jsonld"
+  	],
+  	"type": [
+    	"VerifiablePresentation",
+    	"PresentationSubmission"
+  	],
+  	"presentation_submission": {
+    	"descriptor_map": [{
+    		"id": "banking_input_1",
+    		"path": "$.verifiableCredential.[0]"
+    	}]
+  	},
+  	"verifiableCredential": [{}]
+}`
+
+	vp, err := verifiable.ParseUnverifiedPresentation([]byte(template))
+	require.NoError(t, err)
+
+	addLDProof(t, vp)
+
+	return vp
+}
+
 func newUserConsentVC(t *testing.T, userDID string, rpDID, issuerDID *did.Doc) *verifiable.Credential {
 	const (
 		userConsentVCTemplate = `{
 	"@context": [
 		"https://www.w3.org/2018/credentials/v1",
-		"https://trustbloc.github.io/context/vc/examples-v1.jsonld"
+		"https://trustbloc.github.io/context/vc/consent-credential-v1.jsonld"
 	],
 	"type": [
 		"VerifiableCredential",
-		"UserConsentCredential"
+		"ConsentCredential"
 	],
 	"id": "http://example.gov/credentials/ff98f978-588f-4eb0-b17b-60c18e1dac2c",
 	"issuanceDate": "2020-03-16T22:37:26.544Z",
@@ -199,29 +236,69 @@ func newUserConsentVC(t *testing.T, userDID string, rpDID, issuerDID *did.Doc) *
 	},
 	"credentialSubject": {
 		"id": "%s",
-		"rpDID": %s,
-		"issuerDID": %s,
-		"presDef": "base64URLEncode(presDef)"
+		"rpDIDDoc": %s,
+		"issuerDIDDoc": %s,
+		"userDID": "%s"
 	}
 }`
 		didDocTemplate = `{
 	"id": "%s",
-	"docB64Url": "%s"
+	"doc": %s
 }`
 	)
 
 	bits, err := rpDID.JSONBytes()
 	require.NoError(t, err)
 
-	rpDIDClaim := fmt.Sprintf(didDocTemplate, rpDID.ID, base64.URLEncoding.EncodeToString(bits))
+	rpDIDClaim := fmt.Sprintf(didDocTemplate, rpDID.ID, bits)
 
 	bits, err = issuerDID.JSONBytes()
 	require.NoError(t, err)
 
-	issuerDIDClaim := fmt.Sprintf(didDocTemplate, issuerDID.ID, base64.URLEncoding.EncodeToString(bits))
+	issuerDIDClaim := fmt.Sprintf(didDocTemplate, issuerDID.ID, bits)
 	contents := fmt.Sprintf(
 		userConsentVCTemplate,
-		userDID, userDID, rpDIDClaim, issuerDIDClaim)
+		userDID, userDID, rpDIDClaim, issuerDIDClaim, userDID)
+
+	return parseVC(t, contents)
+}
+
+func newUserConsentVCMissingIssuerDIDDoc(t *testing.T, userDID string, rpDID *did.Doc) *verifiable.Credential {
+	const (
+		userConsentVCTemplate = `{
+	"@context": [
+		"https://www.w3.org/2018/credentials/v1",
+		"https://trustbloc.github.io/context/vc/consent-credential-v1.jsonld"
+	],
+	"type": [
+		"VerifiableCredential",
+		"ConsentCredential"
+	],
+	"id": "http://example.gov/credentials/ff98f978-588f-4eb0-b17b-60c18e1dac2c",
+	"issuanceDate": "2020-03-16T22:37:26.544Z",
+	"issuer": {
+		"id": "%s"
+	},
+	"credentialSubject": {
+		"id": "%s",
+		"rpDIDDoc": %s,
+		"userDID": "%s"
+	}
+}`
+		didDocTemplate = `{
+	"id": "%s",
+	"doc": %s
+}`
+	)
+
+	bits, err := rpDID.JSONBytes()
+	require.NoError(t, err)
+
+	rpDIDClaim := fmt.Sprintf(didDocTemplate, rpDID.ID, bits)
+
+	contents := fmt.Sprintf(
+		userConsentVCTemplate,
+		userDID, userDID, rpDIDClaim, userDID)
 
 	return parseVC(t, contents)
 }
@@ -230,11 +307,11 @@ func newCreditCardStatementVC(t *testing.T) *verifiable.Credential {
 	const template = `{
 	"@context": [
 		"https://www.w3.org/2018/credentials/v1",
-		"https://trustbloc.github.io/context/vc/examples-v1.jsonld"
+		"https://trustbloc.github.io/context/vc/examples-ext-v1.jsonld"
 	],
 	"type": [
 		"VerifiableCredential",
-		"CreditCardStatementCredential"
+		"CreditCardStatement"
 	],
 	"id": "http://example.gov/credentials/ff98f978-588f-4eb0-b17b-60c18e1dac2c",
 	"issuanceDate": "2020-03-16T22:37:26.544Z",
@@ -340,6 +417,8 @@ func newPeerDID(t *testing.T) *did.Doc {
 }
 
 func addLDProof(t *testing.T, vp *verifiable.Presentation) {
+	t.Helper()
+
 	_, secretKey, err := ed25519.GenerateKey(rand.Reader)
 	require.NoError(t, err)
 
@@ -381,8 +460,12 @@ func createTestJSONLDDocumentLoader() *ld.CachingDocumentLoader {
 			filename: "schema.org.jsonld",
 		},
 		{
-			vocab:    "https://trustbloc.github.io/context/vc/examples-v1.jsonld",
-			filename: "trustbloc_example.jsonld",
+			vocab:    "https://trustbloc.github.io/context/vc/consent-credential-v1.jsonld",
+			filename: "consent-credential-v1.jsonld",
+		},
+		{
+			vocab:    "https://trustbloc.github.io/context/vc/examples-ext-v1.jsonld",
+			filename: "examples-ext-v1.jsonld",
 		},
 		{
 			vocab:    "https://trustbloc.github.io/context/vp/presentation-exchange-submission-v1.jsonld",

@@ -2456,11 +2456,13 @@ func toBytes(t *testing.T, v interface{}) []byte {
 	return bits
 }
 
-func marshalDID(t *testing.T, d *did.Doc) []byte {
-	bits, err := d.JSONBytes()
+func parseDIDDoc(t *testing.T, contents []byte) *did.Doc {
+	t.Helper()
+
+	d, err := did.ParseDocument(contents)
 	require.NoError(t, err)
 
-	return bits
+	return d
 }
 
 func marshalVP(t *testing.T, vp adapterutil.JSONMarshaller) []byte {

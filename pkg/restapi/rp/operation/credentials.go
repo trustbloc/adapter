@@ -21,55 +21,62 @@ import (
 
 var errInvalidCredential = errors.New("malformed credential")
 
-func parseWalletResponse(
-	definitions *presentationex.PresentationDefinitions, vpBytes []byte) (*vc.UserConsentCredential, error) {
+func parseWalletResponse(definitions *presentationex.PresentationDefinitions,
+	vpBytes []byte) (*vc.ConsentCredential, *verifiable.Credential, error) {
 	vp, err := verifiable.ParsePresentation(vpBytes)
 	if err != nil {
-		return nil, errors.Wrapf(
+		return nil, nil, errors.Wrapf(
 			errInvalidCredential, fmt.Sprintf("error parsing a verifiable presentation : %s", err))
 	}
 
 	err = evaluatePresentationSubmission(definitions, vp)
 	if err != nil {
-		return nil, errors.Wrapf(errInvalidCredential, "invalid presentation submission : %s", err)
+		return nil, nil, errors.Wrapf(errInvalidCredential, "invalid presentation submission : %s", err)
 	}
 
 	rawCreds, err := vp.MarshalledCredentials()
 	if err != nil {
-		return nil, fmt.Errorf("failed to marshal credentials from vp : %w", err)
+		return nil, nil, fmt.Errorf("failed to marshal credentials from vp : %w", err)
 	}
 
-	var base *verifiable.Credential
+	var orig *verifiable.Credential
 
 	for i := range rawCreds {
 		raw := rawCreds[i]
 
 		cred, parseErr := verifiable.ParseCredential(raw)
 		if parseErr != nil {
-			return nil, fmt.Errorf("failed to parse raw credential %s : %w", string(raw), parseErr)
+			return nil, nil, fmt.Errorf(
+				"%w : failed to parse raw credential %s : %s",
+				errInvalidCredential, string(raw), parseErr)
 		}
 
-		if adapterutil.StringsContains(vc.UserConsentCredentialType, cred.Types) {
-			base = cred
+		if adapterutil.StringsContains(vc.ConsentCredentialType, cred.Types) {
+			orig = cred
 			break
 		}
 
 		logger.Warnf("ignoring credential with unrecognized types: %+v", cred.Types)
 	}
 
-	if base == nil {
-		return nil, errors.Wrapf(
-			errInvalidCredential, "no suitable credential of type %s found", vc.UserConsentCredentialType)
+	if orig == nil {
+		return nil, nil, errors.Wrapf(
+			errInvalidCredential, "no suitable credential of type %s found", vc.ConsentCredentialType)
 	}
 
-	consentVC := &vc.UserConsentCredential{Base: base}
+	consentVC := &vc.ConsentCredential{}
 
-	err = adapterutil.DecodeJSONMarshaller(base, consentVC)
+	err = adapterutil.DecodeJSONMarshaller(orig, consentVC)
 	if err != nil {
-		return nil, fmt.Errorf("unable to decode user consent credential : %w", err)
+		return nil, nil, fmt.Errorf("unable to decode user consent credential : %w", err)
 	}
 
-	return consentVC, nil
+	err = evaluateConsentCredential(consentVC)
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to evaluate credential : %w", err)
+	}
+
+	return consentVC, orig, nil
 }
 
 func parseIssuerResponse(def *presentationex.PresentationDefinitions,
@@ -116,4 +123,12 @@ func evaluatePresentationSubmission(_ *presentationex.PresentationDefinitions, v
 	}
 
 	return adapterutil.DecodeJSONMarshaller(vp, submission)
+}
+
+func evaluateConsentCredential(c *vc.ConsentCredential) error {
+	if c.Subject.IssuerDIDDoc == nil || c.Subject.IssuerDIDDoc.Doc == nil {
+		return fmt.Errorf("%w : consent creddential missing issuer did doc", errInvalidCredential)
+	}
+
+	return nil
 }
