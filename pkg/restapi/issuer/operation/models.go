@@ -29,10 +29,9 @@ type WalletConnect struct {
 
 // txnData contains session data.
 type txnData struct {
-	IssuerID            string                  `json:"issuerID,omitempty"`
-	State               string                  `json:"state,omitempty"`
-	DIDCommInvitation   *didexchange.Invitation `json:"didCommInvitation,omitempty"`
-	SupportedVCContexts []string                `json:"supportedVCContexts,omitempty"`
+	IssuerID          string                  `json:"issuerID,omitempty"`
+	State             string                  `json:"state,omitempty"`
+	DIDCommInvitation *didexchange.Invitation `json:"didCommInvitation,omitempty"`
 }
 
 // CHAPIRequest wallet chapi request.

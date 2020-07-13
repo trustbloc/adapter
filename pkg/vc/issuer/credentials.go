@@ -40,8 +40,12 @@ const (
 )
 
 // CreateManifestCredential creates issuer manifest credential.
-func CreateManifestCredential(supportedContexts []string) ([]byte, error) {
+func CreateManifestCredential(issuerName string, supportedContexts []string) ([]byte, error) {
 	issued := time.Now()
+
+	customFields := make(map[string]interface{})
+
+	customFields["name"] = issuerName
 
 	vc := &verifiable.Credential{
 		Context: []string{
@@ -60,7 +64,8 @@ func CreateManifestCredential(supportedContexts []string) ([]byte, error) {
 		Issuer: verifiable.Issuer{
 			ID: uuid.New().URN(),
 		},
-		Issued: util.NewTime(issued),
+		Issued:       util.NewTime(issued),
+		CustomFields: customFields,
 	}
 
 	return vc.MarshalJSON()

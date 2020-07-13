@@ -618,7 +618,12 @@ func TestCHAPIRequest(t *testing.T) {
 		})
 		require.NoError(t, err)
 
-		txnID, err := c.createTxn(createProfileData("profile1"), uuid.New().String())
+		profile := createProfileData("profile1")
+
+		err = c.profileStore.SaveProfile(profile)
+		require.NoError(t, err)
+
+		txnID, err := c.createTxn(profile, uuid.New().String())
 		require.NoError(t, err)
 
 		getCHAPIRequestHandler := getHandler(t, c, getCHAPIRequestEndpoint)
@@ -664,6 +669,26 @@ func TestCHAPIRequest(t *testing.T) {
 
 		require.Equal(t, http.StatusBadRequest, rr.Code)
 		require.Contains(t, rr.Body.String(), "txn data not found")
+	})
+
+	t.Run("test fetch invitation - profile not found", func(t *testing.T) {
+		c, err := New(&Config{
+			AriesCtx:      getAriesCtx(),
+			StoreProvider: memstore.NewProvider(),
+		})
+		require.NoError(t, err)
+
+		profile := createProfileData("profile1")
+
+		txnID, err := c.createTxn(profile, uuid.New().String())
+		require.NoError(t, err)
+
+		getCHAPIRequestHandler := getHandler(t, c, getCHAPIRequestEndpoint)
+
+		rr := serveHTTP(t, getCHAPIRequestHandler.Handle(), http.MethodGet,
+			getCHAPIRequestEndpoint+"?"+txnIDQueryParam+"="+txnID, nil)
+		require.Equal(t, http.StatusInternalServerError, rr.Code)
+		require.Contains(t, rr.Body.String(), "issuer not found")
 	})
 }
 
