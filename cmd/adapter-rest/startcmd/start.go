@@ -26,6 +26,7 @@ import (
 	"github.com/hyperledger/aries-framework-go/pkg/framework/aries"
 	"github.com/hyperledger/aries-framework-go/pkg/framework/aries/defaults"
 	ariesctx "github.com/hyperledger/aries-framework-go/pkg/framework/context"
+	"github.com/hyperledger/aries-framework-go/pkg/vdri/httpbinding"
 	"github.com/rs/cors"
 	"github.com/spf13/cobra"
 	"github.com/trustbloc/edge-core/pkg/log"
@@ -118,6 +119,11 @@ const (
 	trustblocDomainEnvKey    = "ADAPTER_REST_TRUSTBLOC_DOMAIN"
 	trustblocDomainFlagUsage = "URL to the did:trustbloc consortium's domain." +
 		" Alternatively, this can be set with the following environment variable: " + trustblocDomainEnvKey
+
+	universalResolverURLFlagName      = "universal-resolver-url"
+	universalResolverURLFlagShorthand = "r"
+	universalResolverURLFlagUsage     = "Universal Resolver instance is running on. Format: HostName:Port."
+	universalResolverURLEnvKey        = "ADAPTER_UNIVERSAL_RESOLVER_URL"
 )
 
 // API endpoints.
@@ -144,10 +150,11 @@ type adapterRestParameters struct {
 	staticFiles                 string
 	presentationDefinitionsFile string
 	// TODO assuming same base path for all hydra endpoints for now
-	hydraURL          string
-	mode              string
-	didCommParameters *didCommParameters // didcomm
-	trustblocDomain   string
+	hydraURL             string
+	mode                 string
+	didCommParameters    *didCommParameters // didcomm
+	trustblocDomain      string
+	universalResolverURL string
 }
 
 type server interface {
@@ -241,6 +248,12 @@ func getAdapterRestParameters(cmd *cobra.Command) (*adapterRestParameters, error
 		return nil, err
 	}
 
+	universalResolverURL, err := cmdutils.GetUserSetVarFromString(cmd, universalResolverURLFlagName,
+		universalResolverURLEnvKey, true)
+	if err != nil {
+		return nil, err
+	}
+
 	return &adapterRestParameters{
 		hostURL:                     hostURL,
 		tlsSystemCertPool:           tlsSystemCertPool,
@@ -253,6 +266,7 @@ func getAdapterRestParameters(cmd *cobra.Command) (*adapterRestParameters, error
 		mode:                        mode,
 		didCommParameters:           didCommParameters,
 		trustblocDomain:             trustblocDomain,
+		universalResolverURL:        universalResolverURL,
 	}, nil
 }
 
@@ -321,6 +335,8 @@ func createFlags(startCmd *cobra.Command) {
 	startCmd.Flags().StringP(didCommDBPathFlagName, "", "", didCommDBPathFlagUsage)
 
 	startCmd.Flags().StringP(trustblocDomainFlagName, "", "", trustblocDomainFlagUsage)
+	startCmd.Flags().StringP(universalResolverURLFlagName, universalResolverURLFlagShorthand, "",
+		universalResolverURLFlagUsage)
 }
 
 func startAdapterService(parameters *adapterRestParameters, srv server) error {
@@ -354,7 +370,7 @@ func startAdapterService(parameters *adapterRestParameters, srv server) error {
 			return nil
 		}
 	case issuerMode:
-		err = addIssuerHandlers(parameters, ariesCtx, router)
+		err = addIssuerHandlers(parameters, ariesCtx, router, rootCAs)
 		if err != nil {
 			return nil
 		}
@@ -424,13 +440,20 @@ func addRPHandlers(
 	return nil
 }
 
-func addIssuerHandlers(parameters *adapterRestParameters, ariesCtx ariespai.CtxProvider, router *mux.Router) error {
+func addIssuerHandlers(parameters *adapterRestParameters, ariesCtx ariespai.CtxProvider, router *mux.Router,
+	rootCAs *x509.CertPool) error {
 	// add issuer endpoints
 	issuerService, err := issuer.New(&issuerops.Config{
 		AriesCtx:   ariesCtx,
 		UIEndpoint: uiEndpoint,
 		// TODO https://github.com/trustbloc/edge-adapter/issues/42 use sql store
 		StoreProvider: memstore.NewProvider(),
+		PublicDIDCreator: did.NewTrustblocDIDCreator(
+			parameters.trustblocDomain,
+			parameters.didCommParameters.inboundHostExternal,
+			ariesCtx.KMS(),
+			rootCAs,
+		),
 	})
 
 	if err != nil {
@@ -502,6 +525,11 @@ func initDB(dsn string) (*sql.DB, error) {
 	return dbms, nil
 }
 
+func acceptsDID(method string) bool {
+	// TODO list of allowed DIDs should be configurable
+	return method == "trustbloc"
+}
+
 func createAriesAgent(parameters *adapterRestParameters, tlsConfig *tls.Config) (*ariesctx.Provider, error) {
 	var opts []aries.Option
 
@@ -524,6 +552,16 @@ func createAriesAgent(parameters *adapterRestParameters, tlsConfig *tls.Config) 
 	}
 
 	opts = append(opts, aries.WithOutboundTransports(outbound))
+
+	if parameters.universalResolverURL != "" {
+		universalResolverVDRI, resErr := httpbinding.New(parameters.universalResolverURL,
+			httpbinding.WithAccept(acceptsDID), httpbinding.WithTLSConfig(tlsConfig))
+		if resErr != nil {
+			return nil, fmt.Errorf("failed to create new universal resolver vdri: %w", resErr)
+		}
+
+		opts = append(opts, aries.WithVDRI(universalResolverVDRI))
+	}
 
 	framework, err := aries.New(opts...)
 	if err != nil {

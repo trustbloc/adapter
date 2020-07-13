@@ -250,6 +250,7 @@ func TestStartCmdValidArgs(t *testing.T) {
 		"--" + didCommInboundHostFlagName, randomURL(),
 		"--" + didCommDBPathFlagName, generateTempDir(t),
 		"--" + trustblocDomainFlagName, "http://example.trustbloc.com",
+		"--" + universalResolverURLFlagName, "http://uniresolver.trustbloc.com",
 	}
 	startCmd.SetArgs(args)
 

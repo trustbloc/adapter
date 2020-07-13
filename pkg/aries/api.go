@@ -7,6 +7,7 @@ SPDX-License-Identifier: Apache-2.0
 package aries
 
 import (
+	ariescrypto "github.com/hyperledger/aries-framework-go/pkg/crypto"
 	vdriapi "github.com/hyperledger/aries-framework-go/pkg/framework/aries/api/vdri"
 	"github.com/hyperledger/aries-framework-go/pkg/kms"
 	"github.com/hyperledger/aries-framework-go/pkg/kms/legacykms"
@@ -22,4 +23,6 @@ type CtxProvider interface {
 	TransientStorageProvider() storage.Provider
 	KMS() kms.KeyManager
 	VDRIRegistry() vdriapi.Registry
+	Crypto() ariescrypto.Crypto
+	Signer() legacykms.Signer
 }

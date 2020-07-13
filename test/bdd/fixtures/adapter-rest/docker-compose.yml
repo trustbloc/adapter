@@ -16,6 +16,8 @@ services:
       - ADAPTER_REST_TLS_SYSTEMCERTPOOL=true
       - ADAPTER_REST_DIDCOMM_INBOUND_HOST=0.0.0.0:9071
       - ADAPTER_REST_DIDCOMM_INBOUND_HOST_EXTERNAL=http://issuer.adapter.rest.example.com:9071
+      - ADAPTER_REST_TRUSTBLOC_DOMAIN=${BLOC_DOMAIN}
+      - ADAPTER_UNIVERSAL_RESOLVER_URL=http://did.rest.example.com:8072/1.0/identifiers
     ports:
       - 9070:9070
       - 9071:9071

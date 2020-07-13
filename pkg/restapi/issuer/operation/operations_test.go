@@ -28,10 +28,11 @@ import (
 	presentproofsvc "github.com/hyperledger/aries-framework-go/pkg/didcomm/protocol/presentproof"
 	"github.com/hyperledger/aries-framework-go/pkg/doc/did"
 	"github.com/hyperledger/aries-framework-go/pkg/doc/verifiable"
+	mockcrypto "github.com/hyperledger/aries-framework-go/pkg/mock/crypto"
 	mocksvc "github.com/hyperledger/aries-framework-go/pkg/mock/didcomm/protocol/didexchange"
 	mockroute "github.com/hyperledger/aries-framework-go/pkg/mock/didcomm/protocol/mediator"
-	mockdiddoc "github.com/hyperledger/aries-framework-go/pkg/mock/diddoc"
-	mockkms "github.com/hyperledger/aries-framework-go/pkg/mock/kms/legacykms"
+	mockkms "github.com/hyperledger/aries-framework-go/pkg/mock/kms"
+	mocklegacykms "github.com/hyperledger/aries-framework-go/pkg/mock/kms/legacykms"
 	mockprovider "github.com/hyperledger/aries-framework-go/pkg/mock/provider"
 	mockstore "github.com/hyperledger/aries-framework-go/pkg/mock/storage"
 	mockvdri "github.com/hyperledger/aries-framework-go/pkg/mock/vdri"
@@ -42,6 +43,7 @@ import (
 
 	"github.com/trustbloc/edge-adapter/pkg/aries"
 	mockconn "github.com/trustbloc/edge-adapter/pkg/internal/mock/connection"
+	mockdiddoc "github.com/trustbloc/edge-adapter/pkg/internal/mock/diddoc"
 	"github.com/trustbloc/edge-adapter/pkg/internal/mock/issuecredential"
 	"github.com/trustbloc/edge-adapter/pkg/internal/mock/presentproof"
 	"github.com/trustbloc/edge-adapter/pkg/profile/issuer"
@@ -113,8 +115,9 @@ func TestNew(t *testing.T) {
 
 func TestCreateProfile(t *testing.T) {
 	op, err := New(&Config{
-		AriesCtx:      getAriesCtx(),
-		StoreProvider: memstore.NewProvider(),
+		AriesCtx:         getAriesCtx(),
+		StoreProvider:    memstore.NewProvider(),
+		PublicDIDCreator: &stubPublicDIDCreator{createValue: mockdiddoc.GetMockDIDDoc("did:example:def567")},
 	})
 	require.NoError(t, err)
 
@@ -144,6 +147,25 @@ func TestCreateProfile(t *testing.T) {
 
 		require.Equal(t, http.StatusBadRequest, rr.Code)
 		require.Contains(t, rr.Body.String(), "invalid request")
+	})
+
+	t.Run("create profile - did creation failure", func(t *testing.T) {
+		ops, err := New(&Config{
+			AriesCtx:         getAriesCtx(),
+			StoreProvider:    memstore.NewProvider(),
+			PublicDIDCreator: &stubPublicDIDCreator{createErr: errors.New("did create error")},
+		})
+		require.NoError(t, err)
+
+		vReq := &ProfileDataRequest{}
+
+		vReqBytes, err := json.Marshal(vReq)
+		require.NoError(t, err)
+
+		rr := serveHTTP(t, getHandler(t, ops, endpoint).Handle(), http.MethodPost, endpoint, vReqBytes)
+
+		require.Equal(t, http.StatusInternalServerError, rr.Code)
+		require.Contains(t, rr.Body.String(), "failed to create public did")
 	})
 
 	t.Run("create profile - error", func(t *testing.T) {
@@ -277,7 +299,7 @@ func TestConnectWallet(t *testing.T) {
 				issuecredsvc.Name:       &issuecredential.MockIssueCredentialSvc{},
 				presentproofsvc.Name:    &presentproof.MockPresentProofSvc{},
 			},
-			LegacyKMSValue:       &mockkms.CloseableKMS{CreateKeyErr: errors.New("key generation error")},
+			LegacyKMSValue:       &mocklegacykms.CloseableKMS{CreateKeyErr: errors.New("key generation error")},
 			ServiceEndpointValue: "endpoint",
 		}
 
@@ -753,7 +775,8 @@ func TestDIDCommListeners(t *testing.T) {
 					Type: issuecredsvc.RequestCredentialMsgType,
 					RequestsAttach: []decorator.Attachment{
 						{Data: decorator.AttachmentData{
-							JSON: createConsentCredReq(t, "did:example:xyz123", mockdiddoc.GetMockDIDDoc()),
+							JSON: createConsentCredReq(t, "did:example:xyz123",
+								mockdiddoc.GetMockDIDDoc("did:example:def567")),
 						}},
 					},
 				}),
@@ -783,7 +806,7 @@ func TestDIDCommListeners(t *testing.T) {
 						issuecredsvc.Name:       &issuecredential.MockIssueCredentialSvc{},
 						presentproofsvc.Name:    &presentproof.MockPresentProofSvc{},
 					},
-					LegacyKMSValue:       &mockkms.CloseableKMS{CreateEncryptionKeyValue: "sample-key"},
+					LegacyKMSValue:       &mocklegacykms.CloseableKMS{CreateEncryptionKeyValue: "sample-key"},
 					ServiceEndpointValue: "endpoint",
 					VDRIRegistryValue: &mockvdri.MockVDRIRegistry{
 						CreateErr: errors.New("did create error"),
@@ -937,7 +960,8 @@ func TestDIDCommListeners(t *testing.T) {
 					Type: issuecredsvc.RequestCredentialMsgType,
 					RequestsAttach: []decorator.Attachment{
 						{Data: decorator.AttachmentData{
-							JSON: createConsentCredReq(t, "", mockdiddoc.GetMockDIDDoc()),
+							JSON: createConsentCredReq(t, "",
+								mockdiddoc.GetMockDIDDoc("did:example:def567")),
 						}},
 					},
 				}),
@@ -981,12 +1005,15 @@ func TestDIDCommListeners(t *testing.T) {
 
 			issuerID := uuid.New().String()
 
-			err = c.profileStore.SaveProfile(createProfileData(issuerID))
+			profile := createProfileData(issuerID)
+			profile.PresentationSigningKey = mockdiddoc.GetMockDIDDoc("did:example:def567").PublicKey[0].ID
+
+			err = c.profileStore.SaveProfile(profile)
 			require.NoError(t, err)
 
 			go c.didCommActionListener(actionCh)
 
-			didDocument := mockdiddoc.GetMockDIDDoc()
+			didDocument := mockdiddoc.GetMockDIDDoc("did:example:def567")
 
 			didDocJSON, err := didDocument.JSONBytes()
 			require.NoError(t, err)
@@ -1115,7 +1142,7 @@ func TestDIDCommListeners(t *testing.T) {
 			}
 
 			// consent cred data error
-			didDocument := mockdiddoc.GetMockDIDDoc()
+			didDocument := mockdiddoc.GetMockDIDDoc("did:example:def567")
 
 			didDocJSON, err := didDocument.JSONBytes()
 			require.NoError(t, err)
@@ -1173,7 +1200,7 @@ func TestDIDCommListeners(t *testing.T) {
 				},
 			}, nil, func(err error) {
 				require.NotNil(t, err)
-				require.Contains(t, err.Error(), "handle presentation request : get profile")
+				require.Contains(t, err.Error(), "handle presentation request : fetch issuer profile")
 				done <- struct{}{}
 			})
 
@@ -1236,6 +1263,35 @@ func TestDIDCommListeners(t *testing.T) {
 			case <-time.After(5 * time.Second):
 				require.Fail(t, "tests are not validated due to timeout")
 			}
+
+			// sign error
+			c.httpClient = &mockHTTPClient{
+				respValue: &http.Response{
+					StatusCode: http.StatusOK, Body: ioutil.NopCloser(bytes.NewReader([]byte(prCardVC))),
+				},
+			}
+
+			c.vccrypto = &mockVCCrypto{signVPErr: errors.New("sign error")}
+
+			actionCh <- createProofReqMsg(t, presentproofsvc.RequestPresentation{
+				Type: presentproofsvc.RequestPresentationMsgType,
+				RequestPresentationsAttach: []decorator.Attachment{
+					{Data: decorator.AttachmentData{
+						JSON: vc,
+					}},
+				},
+			}, nil, func(err error) {
+				require.NotNil(t, err)
+				require.Contains(t, err.Error(), "handle presentation request : sign presentation")
+				done <- struct{}{}
+			})
+
+			select {
+			case <-done:
+			case <-time.After(5 * time.Second):
+				require.Fail(t, "tests are not validated due to timeout")
+			}
+
 		})
 	})
 }
@@ -1351,10 +1407,13 @@ func getAriesCtx() aries.CtxProvider {
 			issuecredsvc.Name:       &issuecredential.MockIssueCredentialSvc{},
 			presentproofsvc.Name:    &presentproof.MockPresentProofSvc{},
 		},
-		LegacyKMSValue:       &mockkms.CloseableKMS{CreateEncryptionKeyValue: "sample-key"},
+		LegacyKMSValue:       &mocklegacykms.CloseableKMS{CreateEncryptionKeyValue: "sample-key"},
+		KMSValue:             &mockkms.KeyManager{ImportPrivateKeyErr: fmt.Errorf("error import priv key")},
+		CryptoValue:          &mockcrypto.Crypto{},
 		ServiceEndpointValue: "endpoint",
 		VDRIRegistryValue: &mockvdri.MockVDRIRegistry{
-			CreateValue: mockdiddoc.GetMockDIDDoc(),
+			CreateValue:  mockdiddoc.GetMockDIDDoc("did:example:def567"),
+			ResolveValue: mockdiddoc.GetMockDIDDoc("did:example:def567"),
 		},
 	}
 }
@@ -1488,15 +1547,16 @@ func getTestVP(t *testing.T, inviteeDID, inviterDID, threadID string) []byte { /
 
 func createProfileData(profileID string) *issuer.ProfileData {
 	return &issuer.ProfileData{
-		ID:                  profileID,
-		Name:                "Issuer Profile 1",
-		SupportedVCContexts: []string{"https://w3id.org/citizenship/v3"},
-		URL:                 "http://issuer.example.com",
+		ID:                     profileID,
+		Name:                   "Issuer Profile 1",
+		SupportedVCContexts:    []string{"https://w3id.org/citizenship/v3"},
+		URL:                    "http://issuer.example.com",
+		PresentationSigningKey: "did:example:123xyz#key-1",
 	}
 }
 
 func createConsentCredReq(t *testing.T, userDID string, rpDIDDoc *did.Doc) json.RawMessage {
-	rpDIDDOcBytes, err := mockdiddoc.GetMockDIDDoc().JSONBytes()
+	rpDIDDOcBytes, err := mockdiddoc.GetMockDIDDoc("did:example:def567").JSONBytes()
 	require.NoError(t, err)
 
 	ccReq := ConsentCredentialReq{
@@ -1517,7 +1577,7 @@ func createConsentCredReq(t *testing.T, userDID string, rpDIDDoc *did.Doc) json.
 }
 
 func createConsentCredential(t *testing.T) *verifiable.Credential {
-	didDocument := mockdiddoc.GetMockDIDDoc()
+	didDocument := mockdiddoc.GetMockDIDDoc("did:example:def567")
 
 	didDocJSON, err := didDocument.JSONBytes()
 	require.NoError(t, err)
@@ -1541,7 +1601,8 @@ func createCredentialReqMsg(t *testing.T, msg interface{}, continueFn func(args 
 			Type: issuecredsvc.RequestCredentialMsgType,
 			RequestsAttach: []decorator.Attachment{
 				{Data: decorator.AttachmentData{
-					JSON: createConsentCredReq(t, "did:example:xyz123", mockdiddoc.GetMockDIDDoc()),
+					JSON: createConsentCredReq(t, "did:example:xyz123",
+						mockdiddoc.GetMockDIDDoc("did:example:def567")),
 				}},
 			},
 		}
@@ -1604,4 +1665,28 @@ func (m *mockHTTPClient) Do(req *http.Request) (*http.Response, error) {
 	}
 
 	return m.respValue, nil
+}
+
+type stubPublicDIDCreator struct {
+	createValue *did.Doc
+	createErr   error
+}
+
+func (s *stubPublicDIDCreator) Create() (*did.Doc, error) {
+	return s.createValue, s.createErr
+}
+
+type mockVCCrypto struct {
+	signVCValue *verifiable.Credential
+	signVCErr   error
+	signVPValue *verifiable.Presentation
+	signVPErr   error
+}
+
+func (s *mockVCCrypto) SignCredential(*verifiable.Credential, string) (*verifiable.Credential, error) {
+	return s.signVCValue, s.signVCErr
+}
+
+func (s *mockVCCrypto) SignPresentation(*verifiable.Presentation, string) (*verifiable.Presentation, error) {
+	return s.signVPValue, s.signVPErr
 }

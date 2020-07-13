@@ -32,9 +32,11 @@ import (
 	"github.com/trustbloc/edge-core/pkg/storage"
 
 	"github.com/trustbloc/edge-adapter/pkg/aries"
+	"github.com/trustbloc/edge-adapter/pkg/crypto"
 	"github.com/trustbloc/edge-adapter/pkg/internal/common/support"
 	"github.com/trustbloc/edge-adapter/pkg/profile/issuer"
 	commhttp "github.com/trustbloc/edge-adapter/pkg/restapi/internal/common/http"
+	adaptervc "github.com/trustbloc/edge-adapter/pkg/vc"
 	issuervc "github.com/trustbloc/edge-adapter/pkg/vc/issuer"
 )
 
@@ -79,11 +81,17 @@ type connections interface {
 	GetConnectionRecord(string) (*connection.Record, error)
 }
 
+// PublicDIDCreator creates public DIDs.
+type PublicDIDCreator interface {
+	Create() (*did.Doc, error)
+}
+
 // Config defines configuration for issuer operations.
 type Config struct {
-	AriesCtx      aries.CtxProvider
-	UIEndpoint    string
-	StoreProvider storage.Provider
+	AriesCtx         aries.CtxProvider
+	UIEndpoint       string
+	StoreProvider    storage.Provider
+	PublicDIDCreator PublicDIDCreator
 }
 
 // New returns issuer rest instance.
@@ -125,6 +133,8 @@ func New(config *Config) (*Operation, error) {
 		return nil, fmt.Errorf("failed to initialize connection lookup : %w", err)
 	}
 
+	vccrypto := crypto.New(config.AriesCtx.KMS(), config.AriesCtx.Crypto(), config.AriesCtx.VDRIRegistry())
+
 	op := &Operation{
 		didExClient:        didExClient,
 		issueCredClient:    issueCredClient,
@@ -136,8 +146,10 @@ func New(config *Config) (*Operation, error) {
 		connectionLookup:   connectionLookup,
 		vdriRegistry:       config.AriesCtx.VDRIRegistry(),
 		serviceEndpoint:    config.AriesCtx.ServiceEndpoint(),
+		vccrypto:           vccrypto,
 		// TODO build http client with certs
-		httpClient: &http.Client{},
+		publicDIDCreator: config.PublicDIDCreator,
+		httpClient:       &http.Client{},
 	}
 
 	go op.didCommActionListener(actionCh)
@@ -160,7 +172,9 @@ type Operation struct {
 	tokenStore         storage.Store
 	connectionLookup   connections
 	vdriRegistry       vdri.Registry
+	vccrypto           adaptervc.Crypto
 	serviceEndpoint    string
+	publicDIDCreator   PublicDIDCreator
 	httpClient         httpClient
 }
 
@@ -187,16 +201,25 @@ func (o *Operation) createIssuerProfileHandler(rw http.ResponseWriter, req *http
 		return
 	}
 
-	created := time.Now().UTC()
-	profileData := &issuer.ProfileData{
-		ID:                  data.ID,
-		Name:                data.Name,
-		SupportedVCContexts: data.SupportedVCContexts,
-		URL:                 data.URL,
-		CreatedAt:           &created,
+	newDidDoc, err := o.publicDIDCreator.Create()
+	if err != nil {
+		commhttp.WriteErrorResponse(rw, http.StatusInternalServerError,
+			fmt.Sprintf("failed to create public did : %s", err.Error()))
+
+		return
 	}
 
-	err := o.profileStore.SaveProfile(profileData)
+	created := time.Now().UTC()
+	profileData := &issuer.ProfileData{
+		ID:                     data.ID,
+		Name:                   data.Name,
+		SupportedVCContexts:    data.SupportedVCContexts,
+		URL:                    data.URL,
+		PresentationSigningKey: newDidDoc.Authentication[0].PublicKey.ID,
+		CreatedAt:              &created,
+	}
+
+	err = o.profileStore.SaveProfile(profileData)
 	if err != nil {
 		commhttp.WriteErrorResponse(rw, http.StatusBadRequest,
 			fmt.Sprintf("failed to create profile: %s", err.Error()))
@@ -559,9 +582,19 @@ func (o *Operation) handleRequestPresentation(msg service.DIDCommAction) error {
 		return fmt.Errorf("consent credential handle : %w", err)
 	}
 
-	vp, err := o.generateUserPresentation(consentCredHandle)
+	profile, err := o.profileStore.GetProfile(consentCredHandle.IssuerID)
+	if err != nil {
+		return fmt.Errorf("fetch issuer profile : %w", err)
+	}
+
+	vp, err := o.generateUserPresentation(consentCredHandle, profile.URL)
 	if err != nil {
 		return err
+	}
+
+	vp, err = o.vccrypto.SignPresentation(vp, profile.PresentationSigningKey)
+	if err != nil {
+		return fmt.Errorf("sign presentation : %w", err)
 	}
 
 	msg.Continue(presentproof.WithPresentation(&presentproof.Presentation{
@@ -575,7 +608,7 @@ func (o *Operation) handleRequestPresentation(msg service.DIDCommAction) error {
 	return nil
 }
 
-func (o *Operation) generateUserPresentation(handle *ConsentCredentialHandle) (*verifiable.Presentation, error) {
+func (o *Operation) generateUserPresentation(handle *ConsentCredentialHandle, url string) (*verifiable.Presentation, error) { // nolint: lll
 	vcReq := &IssuerVCReq{Token: handle.Token}
 
 	reqBytes, err := json.Marshal(vcReq)
@@ -583,12 +616,7 @@ func (o *Operation) generateUserPresentation(handle *ConsentCredentialHandle) (*
 		return nil, err
 	}
 
-	profile, err := o.profileStore.GetProfile(handle.IssuerID)
-	if err != nil {
-		return nil, err
-	}
-
-	req, err := http.NewRequest(http.MethodPost, getUserCredentialURL(profile.URL), bytes.NewBuffer(reqBytes))
+	req, err := http.NewRequest(http.MethodPost, getUserCredentialURL(url), bytes.NewBuffer(reqBytes))
 	if err != nil {
 		return nil, err
 	}
