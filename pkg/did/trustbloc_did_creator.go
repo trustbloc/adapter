@@ -73,7 +73,7 @@ func (p *TrustblocDIDCreator) Create() (*did.Doc, error) {
 			Type:     trustblocdid.JWSVerificationKey2020,
 			Encoding: trustblocdid.PublicKeyEncodingJwk,
 			KeyType:  trustblocdid.Ed25519KeyType,
-			Usage:    []string{trustblocdid.KeyUsageAuth},
+			Usage:    []string{trustblocdid.KeyUsageAuth, trustblocdid.KeyUsageAssertion},
 			Value:    keys[0].bits,
 		}),
 		trustblocdid.WithPublicKey(&trustblocdid.PublicKey{

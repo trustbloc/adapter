@@ -841,18 +841,35 @@ func acceptPresentation(piid, presentationName, controllerURL string) error {
 }
 
 func validatePresentation(presentationName, controllerURL string) error {
-	var result verifiablecmd.RecordResult
-	if err := sendHTTP(http.MethodGet, controllerURL+"/verifiable/presentations", nil, &result); err != nil {
-		return err
-	}
+	const (
+		timeoutWait = 10 * time.Second
+		retryDelay  = 500 * time.Millisecond
+	)
 
-	for _, val := range result.Result {
-		if val.Name == presentationName {
-			return nil
+	start := time.Now()
+
+	for {
+		if time.Since(start) > timeoutWait {
+			break
 		}
+
+		var result verifiablecmd.RecordResult
+		if err := sendHTTP(http.MethodGet, controllerURL+"/verifiable/presentations", nil, &result); err != nil {
+			return err
+		}
+
+		for _, val := range result.Result {
+			if val.Name == presentationName {
+				return nil
+			}
+		}
+
+		time.Sleep(retryDelay)
+
+		continue
 	}
 
-	return nil
+	return errors.New("presentation not found")
 }
 
 func actionPIID(endpoint, urlPath string) (string, error) {
