@@ -47,7 +47,7 @@ func NewTrustblocDIDCreator(
 
 // Create a new did:trustbloc DID.
 func (p *TrustblocDIDCreator) Create() (*did.Doc, error) {
-	var keys = [3]struct {
+	var keys = [4]struct {
 		keyID string
 		bits  []byte
 	}{}
@@ -73,7 +73,7 @@ func (p *TrustblocDIDCreator) Create() (*did.Doc, error) {
 			Type:     trustblocdid.JWSVerificationKey2020,
 			Encoding: trustblocdid.PublicKeyEncodingJwk,
 			KeyType:  trustblocdid.Ed25519KeyType,
-			Usage:    []string{trustblocdid.KeyUsageAuth, trustblocdid.KeyUsageAssertion},
+			Purpose:  []string{trustblocdid.KeyPurposeAuth, trustblocdid.KeyPurposeAssertion},
 			Value:    keys[0].bits,
 		}),
 		trustblocdid.WithPublicKey(&trustblocdid.PublicKey{
@@ -83,11 +83,18 @@ func (p *TrustblocDIDCreator) Create() (*did.Doc, error) {
 			Value:    keys[1].bits,
 			Recovery: true,
 		}),
+		trustblocdid.WithPublicKey(&trustblocdid.PublicKey{
+			ID:       keys[2].keyID,
+			Encoding: trustblocdid.PublicKeyEncodingJwk,
+			KeyType:  trustblocdid.Ed25519KeyType,
+			Value:    keys[2].bits,
+			Update:   true,
+		}),
 		trustblocdid.WithService(&did.Service{
-			ID:              keys[2].keyID,
+			ID:              keys[3].keyID,
 			Type:            "did-communication",
 			Priority:        0,
-			RecipientKeys:   []string{base58.Encode(keys[2].bits)},
+			RecipientKeys:   []string{base58.Encode(keys[3].bits)},
 			ServiceEndpoint: p.didcommInboundURL,
 		}),
 	)
