@@ -11,7 +11,7 @@ SPDX-License-Identifier: Apache-2.0
             TODO pretty UI
         -->
 
-        <textarea v-model="presentationRequest"></textarea>
+        <textarea v-model="presentationRequestView"></textarea>
     </div>
 </template>
 
@@ -43,11 +43,12 @@ SPDX-License-Identifier: Apache-2.0
             const redirectURL = this.validatePresentation(webCredential)
             // redirect user
             console.log(`redirecting user to ${redirectURL}`)
-            // TODO add redirection
+            window.location.replace(redirectURL)
         },
         data() {
             return {
-                presentationRequest: null
+                presentationRequest: null,
+                presentationRequestView: null
             }
         },
         methods: {
@@ -56,27 +57,33 @@ SPDX-License-Identifier: Apache-2.0
                 console.info(`using handle: ${handle}`)
                 this.$http.get(`/presentations/create?pd=${handle}`).then(
                     resp => {
-                        this.presentationRequest = JSON.stringify(resp.data, null, 2)
+                        this.presentationRequest = resp.data
+                        this.presentationRequestView = JSON.stringify(resp.data, null, 2)
                         console.log(`exchanged handle=${handle} for a request=${resp}`)
                     },
                     err => {
                         console.error(`failed to retrieve presentation-definitions: ${err}`)
+                        throw err
                     }
                 )
             },
             validatePresentation(presentation) {
-                // TODO show error page if validation fails: https://github.com/trustbloc/edge-adapter/issues/128
                 let redirectURL = ""
-                this.$http.post(`/presentations/handleResponse`).then(
+                const request = {
+                    invID: this.presentationRequest.invitation["@id"],
+                    vp: presentation
+                }
+                this.$http.post(`/presentations/handleResponse`, request).then(
                     resp => {
                         redirectURL = resp.data.redirectURL
                         console.log(`received redirect url: ${redirectURL}`)
                     },
                     err => {
                         console.error(`failed to validate chapi response: ${err}`)
+                        throw err
                     }
                 )
-                console.log(`submitted presentation=${presentation} and got redirectURL=${redirectURL}`)
+                console.log(`submitted presentationHandle=${presentation} and got redirectURL=${redirectURL}`)
                 return redirectURL
             }
         }
