@@ -50,9 +50,10 @@ const (
 
 func TestCreateManifestCredential(t *testing.T) {
 	t.Run("test create manifest credential", func(t *testing.T) {
+		issuerName := "TestIssuer"
 		contexts := []string{"abc", "xyz"}
 
-		vcBytes, err := CreateManifestCredential(contexts)
+		vcBytes, err := CreateManifestCredential(issuerName, contexts)
 		require.NoError(t, err)
 
 		vc, err := verifiable.ParseCredential(vcBytes)
@@ -64,6 +65,9 @@ func TestCreateManifestCredential(t *testing.T) {
 		err = adapterutil.DecodeJSONMarshaller(vc, manifestVC)
 		require.NoError(t, err)
 		require.Equal(t, contexts, manifestVC.Subject.Contexts)
+
+		customFields := vc.CustomFields
+		require.Equal(t, issuerName, customFields["name"])
 	})
 }
 

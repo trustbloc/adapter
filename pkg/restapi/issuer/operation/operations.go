@@ -363,7 +363,15 @@ func (o *Operation) getCHAPIRequestHandler(rw http.ResponseWriter, req *http.Req
 		return
 	}
 
-	manifestVC, err := issuervc.CreateManifestCredential(txnData.SupportedVCContexts)
+	profile, err := o.profileStore.GetProfile(txnData.IssuerID)
+	if err != nil {
+		commhttp.WriteErrorResponse(rw, http.StatusInternalServerError,
+			fmt.Sprintf("issuer not found: %s", err.Error()))
+
+		return
+	}
+
+	manifestVC, err := issuervc.CreateManifestCredential(profile.Name, profile.SupportedVCContexts)
 	if err != nil {
 		commhttp.WriteErrorResponse(rw, http.StatusInternalServerError,
 			fmt.Sprintf("error creating manifest vc : %s", err.Error()))
@@ -412,10 +420,9 @@ func (o *Operation) createTxn(profile *issuer.ProfileData, state string) (string
 
 	// store the txn data
 	data := &txnData{
-		IssuerID:            profile.ID,
-		SupportedVCContexts: profile.SupportedVCContexts,
-		State:               state,
-		DIDCommInvitation:   invitation,
+		IssuerID:          profile.ID,
+		State:             state,
+		DIDCommInvitation: invitation,
 	}
 
 	dataBytes, err := json.Marshal(data)
