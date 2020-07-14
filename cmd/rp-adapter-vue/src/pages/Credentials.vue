@@ -20,7 +20,7 @@ SPDX-License-Identifier: Apache-2.0
         name: 'credentials',
         created: async function() {
             await this.$polyfill.loadOnce()
-            this.getRequestForPresentation()
+            await this.getRequestForPresentation()
             const credentialQuery = {
                 web: {
                     VerifiablePresentation: {
@@ -52,14 +52,14 @@ SPDX-License-Identifier: Apache-2.0
             }
         },
         methods: {
-            getRequestForPresentation() {
+            async getRequestForPresentation() {
                 const handle = this.$route.query.pd
                 console.info(`using handle: ${handle}`)
-                this.$http.get(`/presentations/create?pd=${handle}`).then(
+                await this.$http.get(`/presentations/create?pd=${handle}`).then(
                     resp => {
                         this.presentationRequest = resp.data
                         this.presentationRequestView = JSON.stringify(resp.data, null, 2)
-                        console.log(`exchanged handle=${handle} for a request=${resp}`)
+                        console.log(`exchanged handle=${handle} for a request=${this.presentationRequestView}`)
                     },
                     err => {
                         console.error(`failed to retrieve presentation-definitions: ${err}`)
