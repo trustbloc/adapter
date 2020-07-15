@@ -35,6 +35,7 @@ type ProfileData struct {
 	Name                   string     `json:"name"`
 	URL                    string     `json:"url"`
 	SupportedVCContexts    []string   `json:"supportedVCContexts"`
+	CredentialSigningKey   string     `json:"credentialSigningKey"`
 	PresentationSigningKey string     `json:"presentationSigningKey"`
 	CreatedAt              *time.Time `json:"createdAt"`
 }

@@ -209,12 +209,25 @@ func (o *Operation) createIssuerProfileHandler(rw http.ResponseWriter, req *http
 		return
 	}
 
+	if len(newDidDoc.AssertionMethod) == 0 {
+		commhttp.WriteErrorResponse(rw, http.StatusInternalServerError, "missing assertionMethod in public did")
+
+		return
+	}
+
+	if len(newDidDoc.Authentication) == 0 {
+		commhttp.WriteErrorResponse(rw, http.StatusInternalServerError, "missing authentication in public did")
+
+		return
+	}
+
 	created := time.Now().UTC()
 	profileData := &issuer.ProfileData{
 		ID:                     data.ID,
 		Name:                   data.Name,
 		SupportedVCContexts:    data.SupportedVCContexts,
 		URL:                    data.URL,
+		CredentialSigningKey:   newDidDoc.AssertionMethod[0].PublicKey.ID,
 		PresentationSigningKey: newDidDoc.Authentication[0].PublicKey.ID,
 		CreatedAt:              &created,
 	}
@@ -506,7 +519,7 @@ func (o *Operation) didCommActionListener(ch <-chan service.DIDCommAction) {
 	}
 }
 
-func (o *Operation) handleRequestCredential(msg service.DIDCommAction) error { // nolint: funlen
+func (o *Operation) handleRequestCredential(msg service.DIDCommAction) error { // nolint: funlen, gocyclo
 	connID, err := o.getConnectionIDFromEvent(msg)
 	if err != nil {
 		return fmt.Errorf("connection using DIDs not found : %w", err)
@@ -539,11 +552,21 @@ func (o *Operation) handleRequestCredential(msg service.DIDCommAction) error { /
 		return fmt.Errorf("create connection with rp : %w", err)
 	}
 
-	vc := issuervc.CreateConsentCredential(newDidDoc.ID, docJSON, consentCreReq.RPDIDDoc, consentCreReq.UserDID)
-
 	userConnMap, err := o.getUserConnectionMapping(connID)
 	if err != nil {
 		return fmt.Errorf("get token from the connectionID : %w", err)
+	}
+
+	profile, err := o.profileStore.GetProfile(userConnMap.IssuerID)
+	if err != nil {
+		return fmt.Errorf("fetch issuer profile : %w", err)
+	}
+
+	vc := issuervc.CreateConsentCredential(newDidDoc.ID, docJSON, consentCreReq.RPDIDDoc, consentCreReq.UserDID)
+
+	vc, err = o.vccrypto.SignCredential(vc, profile.CredentialSigningKey)
+	if err != nil {
+		return fmt.Errorf("sign consent credential : %w", err)
 	}
 
 	handle := &ConsentCredentialHandle{
@@ -572,7 +595,7 @@ func (o *Operation) handleRequestCredential(msg service.DIDCommAction) error { /
 
 func (o *Operation) handleRequestPresentation(msg service.DIDCommAction) error {
 	// TODO https://github.com/trustbloc/edge-adapter/issues/139 validate the presentation request
-	consentCred, err := fetchConsentCred(msg)
+	consentCred, err := fetchConsentCred(msg, o.vdriRegistry)
 	if err != nil {
 		return err
 	}
@@ -784,7 +807,7 @@ func fetchConsentCredReq(msg service.DIDCommAction) (*ConsentCredentialReq, erro
 	return consentCreReq, nil
 }
 
-func fetchConsentCred(msg service.DIDCommAction) (*verifiable.Credential, error) {
+func fetchConsentCred(msg service.DIDCommAction, vdriRegistry vdri.Registry) (*verifiable.Credential, error) {
 	credReq := &presentproofsvc.RequestPresentation{}
 
 	err := msg.Message.Decode(credReq)
@@ -801,7 +824,10 @@ func fetchConsentCred(msg service.DIDCommAction) (*verifiable.Credential, error)
 		return nil, fmt.Errorf("no data inside the presentation request attachment : %w", err)
 	}
 
-	vc, err := verifiable.ParseCredential(reqJSON)
+	vc, err := verifiable.ParseCredential(
+		reqJSON,
+		verifiable.WithPublicKeyFetcher(verifiable.NewDIDKeyResolver(vdriRegistry).PublicKeyFetcher()),
+	)
 	if err != nil {
 		return nil, err
 	}
