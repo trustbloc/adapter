@@ -124,7 +124,7 @@ func CreateConsentCredential(did string, docJSON []byte, rpDIDDoc *adaptervc.DID
 			adaptervc.ConsentCredentialType,
 		},
 		Subject: &adaptervc.ConsentCredentialSubject{
-			ID: uuid.New().String(),
+			ID: uuid.New().URN(),
 			IssuerDIDDoc: &adaptervc.DIDDoc{
 				ID:  did,
 				Doc: docJSON,

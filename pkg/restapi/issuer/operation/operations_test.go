@@ -166,6 +166,24 @@ func TestCreateProfile(t *testing.T) {
 
 		require.Equal(t, http.StatusInternalServerError, rr.Code)
 		require.Contains(t, rr.Body.String(), "failed to create public did")
+
+		// missing authentication
+		didDoc := mockdiddoc.GetMockDIDDoc("did:example:123yz")
+		didDoc.Authentication = nil
+		ops.publicDIDCreator = &stubPublicDIDCreator{createValue: didDoc}
+
+		rr = serveHTTP(t, getHandler(t, ops, endpoint).Handle(), http.MethodPost, endpoint, vReqBytes)
+
+		require.Equal(t, http.StatusInternalServerError, rr.Code)
+		require.Contains(t, rr.Body.String(), "missing authentication in public did")
+
+		// missing assertionMethod
+		didDoc.AssertionMethod = nil
+
+		rr = serveHTTP(t, getHandler(t, ops, endpoint).Handle(), http.MethodPost, endpoint, vReqBytes)
+
+		require.Equal(t, http.StatusInternalServerError, rr.Code)
+		require.Contains(t, rr.Body.String(), "missing assertionMethod in public did")
 	})
 
 	t.Run("create profile - error", func(t *testing.T) {
@@ -784,9 +802,17 @@ func TestDIDCommListeners(t *testing.T) {
 				ConnIDByDIDs: connID,
 			}
 
+			issuerID := uuid.New().String()
+
+			profile := createProfileData(issuerID)
+			profile.CredentialSigningKey = mockdiddoc.GetMockDIDDoc("did:example:def567").PublicKey[0].ID
+
+			err = c.profileStore.SaveProfile(profile)
+			require.NoError(t, err)
+
 			err = c.storeUserConnectionMapping(&UserConnectionMapping{
 				ConnectionID: connID,
-				IssuerID:     uuid.New().String(),
+				IssuerID:     issuerID,
 				Token:        uuid.New().String(),
 			})
 			require.NoError(t, err)
@@ -813,7 +839,7 @@ func TestDIDCommListeners(t *testing.T) {
 
 			select {
 			case <-done:
-			case <-time.After(5 * time.Second):
+			case <-time.After(65 * time.Second):
 				require.Fail(t, "tests are not validated due to timeout")
 			}
 		})
@@ -907,10 +933,38 @@ func TestDIDCommListeners(t *testing.T) {
 				require.Fail(t, "tests are not validated due to timeout")
 			}
 
-			// error saving consent cred data
+			// profile not found
+			issuerID := uuid.New().String()
+
 			err = c.storeUserConnectionMapping(&UserConnectionMapping{
 				ConnectionID: connID,
-				IssuerID:     uuid.New().String(),
+				IssuerID:     issuerID,
+				Token:        uuid.New().String(),
+			})
+			require.NoError(t, err)
+
+			actionCh <- createCredentialReqMsg(t, nil, nil, func(err error) {
+				require.NotNil(t, err)
+				require.Contains(t, err.Error(), "handle credential request : fetch issuer profile")
+				done <- struct{}{}
+			})
+
+			select {
+			case <-done:
+			case <-time.After(5 * time.Second):
+				require.Fail(t, "tests are not validated due to timeout")
+			}
+
+			// error saving consent cred data
+			profile := createProfileData(issuerID)
+			profile.CredentialSigningKey = mockdiddoc.GetMockDIDDoc("did:example:def567").PublicKey[0].ID
+
+			err = c.profileStore.SaveProfile(profile)
+			require.NoError(t, err)
+
+			err = c.storeUserConnectionMapping(&UserConnectionMapping{
+				ConnectionID: connID,
+				IssuerID:     issuerID,
 				Token:        uuid.New().String(),
 			})
 			require.NoError(t, err)
@@ -923,6 +977,24 @@ func TestDIDCommListeners(t *testing.T) {
 			actionCh <- createCredentialReqMsg(t, nil, nil, func(err error) {
 				require.NotNil(t, err)
 				require.Contains(t, err.Error(), "handle credential request : store consent credential")
+				done <- struct{}{}
+			})
+
+			select {
+			case <-done:
+			case <-time.After(5 * time.Second):
+				require.Fail(t, "tests are not validated due to timeout")
+			}
+
+			// signing error
+			c.txnStore = &mockstorage.MockStore{
+				Store: make(map[string][]byte),
+			}
+			c.vccrypto = &mockVCCrypto{signVCErr: errors.New("sign error")}
+
+			actionCh <- createCredentialReqMsg(t, nil, nil, func(err error) {
+				require.NotNil(t, err)
+				require.Contains(t, err.Error(), "handle credential request : sign consent credential")
 				done <- struct{}{}
 			})
 

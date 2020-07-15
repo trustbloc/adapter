@@ -36,6 +36,7 @@ import (
 	"github.com/hyperledger/aries-framework-go/pkg/doc/did"
 	"github.com/hyperledger/aries-framework-go/pkg/doc/util"
 	"github.com/hyperledger/aries-framework-go/pkg/doc/verifiable"
+	vdriapi "github.com/hyperledger/aries-framework-go/pkg/framework/aries/api/vdri"
 	"github.com/trustbloc/edge-core/pkg/log"
 	"nhooyr.io/websocket"
 	"nhooyr.io/websocket/wsjson"
@@ -558,7 +559,7 @@ func (a *Steps) fetchCredential(agentID, issuerID string) error { // nolint: fun
 		return fmt.Errorf("[issue-credential] failed to accept credential : %w", err)
 	}
 
-	vc, err := getCredential(credentialName, controllerURL)
+	vc, err := getCredential(credentialName, controllerURL, a.bddContext.VDRI)
 	if err != nil {
 		return err
 	}
@@ -741,7 +742,7 @@ func acceptCredential(piid, credentialName, controllerURL string) error {
 	return nil
 }
 
-func getCredential(credentialName, controllerURL string) (*verifiable.Credential, error) {
+func getCredential(credentialName, controllerURL string, vdri vdriapi.Registry) (*verifiable.Credential, error) {
 	// TODO use listener rather than polling (update once aries bdd-tests are refactored)
 	const (
 		timeoutWait = 10 * time.Second
@@ -778,7 +779,10 @@ func getCredential(credentialName, controllerURL string) (*verifiable.Credential
 			return nil, err
 		}
 
-		vc, err := verifiable.ParseCredential([]byte(getVCResp.VC))
+		vc, err := verifiable.ParseCredential(
+			[]byte(getVCResp.VC),
+			verifiable.WithPublicKeyFetcher(verifiable.NewDIDKeyResolver(vdri).PublicKeyFetcher()),
+		)
 		if err != nil {
 			return nil, err
 		}
