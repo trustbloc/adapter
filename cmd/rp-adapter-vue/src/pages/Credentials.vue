@@ -26,12 +26,12 @@ SPDX-License-Identifier: Apache-2.0
                     VerifiablePresentation: {
                         query: [
                             {
-                                type: "presentationDefinitionQuery",
+                                type: "PresentationDefinitionQuery",
                                 presentationDefinitionQuery: this.presentationRequest.pd
 
                             },
                             {
-                                type: "DIDComm",
+                                type: "DIDConnect",
                                 invitation: this.presentationRequest.invitation
                             }
                         ]
@@ -39,8 +39,11 @@ SPDX-License-Identifier: Apache-2.0
                 }
             }
             const webCredential = await navigator.credentials.get(credentialQuery)
+            if (!webCredential) {
+                console.error("no webcredential received from wallet!")
+            }
             console.log("received from user: " + JSON.stringify(webCredential))
-            const redirectURL = this.validatePresentation(webCredential)
+            const redirectURL = await this.validatePresentation(webCredential)
             // redirect user
             console.log(`redirecting user to ${redirectURL}`)
             window.location.replace(redirectURL)
@@ -67,24 +70,22 @@ SPDX-License-Identifier: Apache-2.0
                     }
                 )
             },
-            validatePresentation(presentation) {
-                let redirectURL = ""
+            async validatePresentation(presentation) {
                 const request = {
                     invID: this.presentationRequest.invitation["@id"],
                     vp: presentation
                 }
-                this.$http.post(`/presentations/handleResponse`, request).then(
+                return this.$http.post(`/presentations/handleResponse`, request).then(
                     resp => {
-                        redirectURL = resp.data.redirectURL
-                        console.log(`received redirect url: ${redirectURL}`)
+                        const redirectURL = resp.data.redirectURL
+                        console.log(`submitted presentationHandle=${presentation} and got redirectURL=${redirectURL}`)
+                        return redirectURL
                     },
                     err => {
                         console.error(`failed to validate chapi response: ${err}`)
                         throw err
                     }
                 )
-                console.log(`submitted presentationHandle=${presentation} and got redirectURL=${redirectURL}`)
-                return redirectURL
             }
         }
     }
