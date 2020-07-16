@@ -18,7 +18,7 @@ import (
 
 func TestNewTrustblocDIDCreator(t *testing.T) {
 	t.Run("returns did creator", func(t *testing.T) {
-		c := NewTrustblocDIDCreator("", "", &stubKeyManager{}, nil)
+		c := NewTrustblocDIDCreator("", "", &mockKeyManager{}, &mockLegacyKeyManager{}, nil)
 		require.NotNil(t, c)
 	})
 }
@@ -28,7 +28,7 @@ func TestTrustblocDIDCreator_Create(t *testing.T) {
 		domain := "http://example.trustbloc.com"
 		expected := newDIDDoc()
 		didcommURL := "http://example.didcomm.com"
-		c := NewTrustblocDIDCreator(domain, didcommURL, &stubKeyManager{}, nil)
+		c := NewTrustblocDIDCreator(domain, didcommURL, &mockKeyManager{}, &mockLegacyKeyManager{}, nil)
 		c.tblocDIDs = &stubTrustblocClient{
 			createFunc: func(d string, options ...trustblocdid.CreateDIDOption) (*did.Doc, error) {
 				require.Equal(t, domain, d)
@@ -42,7 +42,15 @@ func TestTrustblocDIDCreator_Create(t *testing.T) {
 
 	t.Run("error creating keys", func(t *testing.T) {
 		expected := errors.New("test")
-		c := NewTrustblocDIDCreator("", "", &stubKeyManager{createErr: expected}, nil)
+		c := NewTrustblocDIDCreator("", "", &mockKeyManager{createErr: expected}, &mockLegacyKeyManager{}, nil)
+		_, err := c.Create()
+		require.Error(t, err)
+		require.True(t, errors.Is(err, expected))
+	})
+
+	t.Run("error creating didcomm keys", func(t *testing.T) {
+		expected := errors.New("test")
+		c := NewTrustblocDIDCreator("", "", &mockKeyManager{}, &mockLegacyKeyManager{createKeySetErr: expected}, nil)
 		_, err := c.Create()
 		require.Error(t, err)
 		require.True(t, errors.Is(err, expected))
@@ -50,7 +58,7 @@ func TestTrustblocDIDCreator_Create(t *testing.T) {
 
 	t.Run("error exporting public key bytes", func(t *testing.T) {
 		expected := errors.New("test")
-		c := NewTrustblocDIDCreator("", "", &stubKeyManager{exportErr: expected}, nil)
+		c := NewTrustblocDIDCreator("", "", &mockKeyManager{exportErr: expected}, &mockLegacyKeyManager{}, nil)
 		_, err := c.Create()
 		require.Error(t, err)
 		require.True(t, errors.Is(err, expected))
@@ -58,7 +66,7 @@ func TestTrustblocDIDCreator_Create(t *testing.T) {
 
 	t.Run("error creating trustbloc DID", func(t *testing.T) {
 		expected := errors.New("test")
-		c := NewTrustblocDIDCreator("", "", &stubKeyManager{}, nil)
+		c := NewTrustblocDIDCreator("", "", &mockKeyManager{}, &mockLegacyKeyManager{}, nil)
 		c.tblocDIDs = &stubTrustblocClient{
 			createFunc: func(string, ...trustblocdid.CreateDIDOption) (*did.Doc, error) {
 				return nil, expected
@@ -78,17 +86,26 @@ func (s *stubTrustblocClient) CreateDID(domain string, options ...trustblocdid.C
 	return s.createFunc(domain, options...)
 }
 
-type stubKeyManager struct {
+type mockKeyManager struct {
 	createErr error
 	exportErr error
 }
 
-func (s *stubKeyManager) Create(keyType kms.KeyType) (string, interface{}, error) {
+func (s *mockKeyManager) Create(keyType kms.KeyType) (string, interface{}, error) {
 	return uuid.New().String(), nil, s.createErr
 }
 
-func (s *stubKeyManager) ExportPubKeyBytes(s2 string) ([]byte, error) {
+func (s *mockKeyManager) ExportPubKeyBytes(s2 string) ([]byte, error) {
 	return []byte{}, s.exportErr
+}
+
+type mockLegacyKeyManager struct {
+	base58SigPubKey string
+	createKeySetErr error
+}
+
+func (m *mockLegacyKeyManager) CreateKeySet() (string, string, error) {
+	return m.base58SigPubKey, m.base58SigPubKey, m.createKeySetErr
 }
 
 func newDIDDoc() *did.Doc {

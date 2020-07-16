@@ -1202,7 +1202,7 @@ func TestCreatePresentationDefinition(t *testing.T) {
 		c, err := New(&Config{
 			PresentationExProvider: &mockPresentationExProvider{createValue: presDefs},
 			DIDExchClient: &mockdidexchange.MockClient{
-				CreateInvFunc: func(label string) (*didexchange.Invitation, error) {
+				CreateInvWithDIDFunc: func(label, didID string) (*didexchange.Invitation, error) {
 					return &didexchange.Invitation{Invitation: &didexchangesvc.Invitation{
 						ID:    uuid.New().String(),
 						Type:  didexchange.InvitationMsgType,
@@ -1295,7 +1295,7 @@ func TestCreatePresentationDefinition(t *testing.T) {
 		c, err := New(&Config{
 			PresentationExProvider: &mockPresentationExProvider{createValue: presDefs},
 			DIDExchClient: &mockdidexchange.MockClient{
-				CreateInvFunc: func(string) (*didexchange.Invitation, error) {
+				CreateInvWithDIDFunc: func(string, string) (*didexchange.Invitation, error) {
 					return nil, errors.New("test")
 				},
 			},

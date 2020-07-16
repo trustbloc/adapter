@@ -17,7 +17,7 @@ services:
       - ADAPTER_REST_DIDCOMM_INBOUND_HOST=0.0.0.0:9071
       - ADAPTER_REST_DIDCOMM_INBOUND_HOST_EXTERNAL=http://issuer.adapter.rest.example.com:9071
       - ADAPTER_REST_TRUSTBLOC_DOMAIN=${BLOC_DOMAIN}
-      - ADAPTER_UNIVERSAL_RESOLVER_URL=http://did.rest.example.com:8072/1.0/identifiers
+      - ADAPTER_REST_UNIVERSAL_RESOLVER_URL=http://did.rest.example.com:8072/1.0/identifiers
     ports:
       - 9070:9070
       - 9071:9071
@@ -42,6 +42,7 @@ services:
       - ADAPTER_REST_DIDCOMM_INBOUND_HOST_EXTERNAL=http://rp.adapter.rest.example.com:8071
       - ADAPTER_REST_TRUSTBLOC_DOMAIN=${BLOC_DOMAIN}
       - ADAPTER_REST_HYDRA_URL=https://hydra.trustbloc.local:4445
+      - ADAPTER_REST_UNIVERSAL_RESOLVER_URL=http://did.rest.example.com:8072/1.0/identifiers
     ports:
       - 8070:8070
     entrypoint: ""
