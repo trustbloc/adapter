@@ -123,7 +123,7 @@ const (
 	universalResolverURLFlagName      = "universal-resolver-url"
 	universalResolverURLFlagShorthand = "r"
 	universalResolverURLFlagUsage     = "Universal Resolver instance is running on. Format: HostName:Port."
-	universalResolverURLEnvKey        = "ADAPTER_UNIVERSAL_RESOLVER_URL"
+	universalResolverURLEnvKey        = "ADAPTER_REST_UNIVERSAL_RESOLVER_URL"
 )
 
 // API endpoints.
@@ -418,6 +418,7 @@ func addRPHandlers(
 			parameters.trustblocDomain,
 			parameters.didCommParameters.inboundHostExternal,
 			ctx.KMS(),
+			ctx.LegacyKMS(),
 			rootCAs),
 		AriesStorageProvider: ctx,
 		PresentProofClient:   presentProofClient,
@@ -452,6 +453,7 @@ func addIssuerHandlers(parameters *adapterRestParameters, ariesCtx ariespai.CtxP
 			parameters.trustblocDomain,
 			parameters.didCommParameters.inboundHostExternal,
 			ariesCtx.KMS(),
+			ariesCtx.LegacyKMS(),
 			rootCAs,
 		),
 	})

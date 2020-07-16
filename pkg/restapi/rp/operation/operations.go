@@ -708,9 +708,9 @@ func (o *Operation) getPresentationsRequest(rw http.ResponseWriter, req *http.Re
 		return
 	}
 
-	invitation, err := o.didClient.CreateInvitation(cr.rpLabel)
+	invitation, err := o.didClient.CreateInvitationWithDID(cr.rpLabel, cr.rpDID)
 	if err != nil {
-		msg := fmt.Sprintf("failed to create didexchange invitation with DID : %s", err)
+		msg := fmt.Sprintf("failed to create didcomm invitation with DID : %s", err)
 		logger.Errorf(msg)
 		commhttp.WriteErrorResponse(rw, http.StatusInternalServerError, msg)
 
@@ -992,10 +992,15 @@ func (o *Operation) listenForIncomingConnections() {
 func (o *Operation) handleIncomingDIDExchangeRequestAction(action service.DIDCommAction) {
 	invitation := o.peekInvitationData(action.Message.ParentThreadID())
 	if invitation == nil {
-		action.Stop(fmt.Errorf("no such invitation with id %s", action.Message.ParentThreadID()))
+		msg := fmt.Sprintf("no such invitation with id %s", action.Message.ParentThreadID())
+
+		logger.Errorf(msg)
+		action.Stop(errors.New(msg))
 
 		return
 	}
+
+	logger.Debugf("approving didcomm connection from invitation with id: %s", action.Message.ParentThreadID())
 
 	action.Continue(nil)
 }
