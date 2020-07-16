@@ -22,6 +22,7 @@ import (
 	"github.com/gorilla/mux"
 	"github.com/hyperledger/aries-framework-go/pkg/client/didexchange"
 	"github.com/hyperledger/aries-framework-go/pkg/client/presentproof"
+	arieslog "github.com/hyperledger/aries-framework-go/pkg/common/log"
 	arieshttp "github.com/hyperledger/aries-framework-go/pkg/didcomm/transport/http"
 	"github.com/hyperledger/aries-framework-go/pkg/framework/aries"
 	"github.com/hyperledger/aries-framework-go/pkg/framework/aries/defaults"
@@ -124,6 +125,12 @@ const (
 	universalResolverURLFlagShorthand = "r"
 	universalResolverURLFlagUsage     = "Universal Resolver instance is running on. Format: HostName:Port."
 	universalResolverURLEnvKey        = "ADAPTER_REST_UNIVERSAL_RESOLVER_URL"
+
+	logLevelFlagName  = "log-level"
+	logLevelFlagUsage = "Sets the logging level." +
+		" Possible values are [DEBUG, INFO, WARNING, ERROR, CRITICAL] (default is INFO)." +
+		" Alternatively, this can be set with the following environment variable: " + logLevelEnvKey
+	logLevelEnvKey = "ADAPTER_REST_LOGLEVEL"
 )
 
 // API endpoints.
@@ -254,6 +261,18 @@ func getAdapterRestParameters(cmd *cobra.Command) (*adapterRestParameters, error
 		return nil, err
 	}
 
+	logLevel, err := cmdutils.GetUserSetVarFromString(cmd, logLevelFlagName, logLevelEnvKey, true)
+	if err != nil {
+		return nil, err
+	}
+
+	err = setLogLevel(logLevel)
+	if err != nil {
+		return nil, err
+	}
+
+	logger.Infof("logger level set to %s", logLevel)
+
 	return &adapterRestParameters{
 		hostURL:                     hostURL,
 		tlsSystemCertPool:           tlsSystemCertPool,
@@ -268,6 +287,41 @@ func getAdapterRestParameters(cmd *cobra.Command) (*adapterRestParameters, error
 		trustblocDomain:             trustblocDomain,
 		universalResolverURL:        universalResolverURL,
 	}, nil
+}
+
+func setLogLevel(logLevel string) error {
+	if logLevel == "" {
+		logLevel = "INFO"
+	}
+
+	err := setEdgeCoreLogLevel(logLevel)
+	if err != nil {
+		return err
+	}
+
+	return setAriesFrameworkLogLevel(logLevel)
+}
+
+func setEdgeCoreLogLevel(logLevel string) error {
+	level, err := log.ParseLevel(logLevel)
+	if err != nil {
+		return fmt.Errorf("failed to parse log level '%s' : %w", logLevel, err)
+	}
+
+	log.SetLevel("", level)
+
+	return nil
+}
+
+func setAriesFrameworkLogLevel(logLevel string) error {
+	level, err := arieslog.ParseLevel(logLevel)
+	if err != nil {
+		return fmt.Errorf("failed to parse log level '%s' : %w", logLevel, err)
+	}
+
+	arieslog.SetLevel("", level)
+
+	return nil
 }
 
 func getDIDCommParams(cmd *cobra.Command) (*didCommParameters, error) {
@@ -337,6 +391,7 @@ func createFlags(startCmd *cobra.Command) {
 	startCmd.Flags().StringP(trustblocDomainFlagName, "", "", trustblocDomainFlagUsage)
 	startCmd.Flags().StringP(universalResolverURLFlagName, universalResolverURLFlagShorthand, "",
 		universalResolverURLFlagUsage)
+	startCmd.Flags().StringP(logLevelFlagName, "", "INFO", logLevelFlagUsage)
 }
 
 func startAdapterService(parameters *adapterRestParameters, srv server) error {
