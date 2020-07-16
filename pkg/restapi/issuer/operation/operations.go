@@ -196,27 +196,30 @@ func (o *Operation) createIssuerProfileHandler(rw http.ResponseWriter, req *http
 	data := &ProfileDataRequest{}
 
 	if err := json.NewDecoder(req.Body).Decode(&data); err != nil {
-		commhttp.WriteErrorResponse(rw, http.StatusBadRequest, fmt.Sprintf("invalid request: %s", err.Error()))
+		commhttp.WriteErrorResponseWithLog(rw, http.StatusBadRequest,
+			fmt.Sprintf("invalid request: %s", err.Error()), profileEndpoint, logger)
 
 		return
 	}
 
 	newDidDoc, err := o.publicDIDCreator.Create()
 	if err != nil {
-		commhttp.WriteErrorResponse(rw, http.StatusInternalServerError,
-			fmt.Sprintf("failed to create public did : %s", err.Error()))
+		commhttp.WriteErrorResponseWithLog(rw, http.StatusInternalServerError,
+			fmt.Sprintf("failed to create public did : %s", err.Error()), profileEndpoint, logger)
 
 		return
 	}
 
 	if len(newDidDoc.AssertionMethod) == 0 {
-		commhttp.WriteErrorResponse(rw, http.StatusInternalServerError, "missing assertionMethod in public did")
+		commhttp.WriteErrorResponseWithLog(rw, http.StatusInternalServerError,
+			"missing assertionMethod in public did", profileEndpoint, logger)
 
 		return
 	}
 
 	if len(newDidDoc.Authentication) == 0 {
-		commhttp.WriteErrorResponse(rw, http.StatusInternalServerError, "missing authentication in public did")
+		commhttp.WriteErrorResponseWithLog(rw, http.StatusInternalServerError,
+			"missing authentication in public did", profileEndpoint, logger)
 
 		return
 	}
@@ -234,14 +237,14 @@ func (o *Operation) createIssuerProfileHandler(rw http.ResponseWriter, req *http
 
 	err = o.profileStore.SaveProfile(profileData)
 	if err != nil {
-		commhttp.WriteErrorResponse(rw, http.StatusBadRequest,
-			fmt.Sprintf("failed to create profile: %s", err.Error()))
+		commhttp.WriteErrorResponseWithLog(rw, http.StatusBadRequest,
+			fmt.Sprintf("failed to create profile: %s", err.Error()), profileEndpoint, logger)
 
 		return
 	}
 
 	rw.WriteHeader(http.StatusCreated)
-	commhttp.WriteResponse(rw, profileData)
+	commhttp.WriteResponseWithLog(rw, profileData, profileEndpoint, logger)
 }
 
 func (o *Operation) getIssuerProfileHandler(rw http.ResponseWriter, req *http.Request) {
@@ -249,12 +252,13 @@ func (o *Operation) getIssuerProfileHandler(rw http.ResponseWriter, req *http.Re
 
 	profile, err := o.profileStore.GetProfile(profileID)
 	if err != nil {
-		commhttp.WriteErrorResponse(rw, http.StatusBadRequest, err.Error())
+		commhttp.WriteErrorResponseWithLog(rw, http.StatusBadRequest,
+			fmt.Sprintf("id=%s - %s", profileID, err.Error()), getProfileEndpoint, logger)
 
 		return
 	}
 
-	commhttp.WriteResponse(rw, profile)
+	commhttp.WriteResponseWithLog(rw, profile, getProfileEndpoint, logger)
 }
 
 func (o *Operation) walletConnectHandler(rw http.ResponseWriter, req *http.Request) {
@@ -262,14 +266,16 @@ func (o *Operation) walletConnectHandler(rw http.ResponseWriter, req *http.Reque
 
 	profile, err := o.profileStore.GetProfile(profileID)
 	if err != nil {
-		commhttp.WriteErrorResponse(rw, http.StatusBadRequest, err.Error())
+		commhttp.WriteErrorResponseWithLog(rw, http.StatusBadRequest,
+			fmt.Sprintf("id=%s - %s", profileID, err.Error()), walletConnectEndpoint, logger)
 
 		return
 	}
 
 	state := req.URL.Query().Get(stateQueryParam)
 	if state == "" {
-		commhttp.WriteErrorResponse(rw, http.StatusBadRequest, "failed to get state from the url")
+		commhttp.WriteErrorResponseWithLog(rw, http.StatusBadRequest,
+			"failed to get state from the url", walletConnectEndpoint, logger)
 
 		return
 	}
@@ -277,8 +283,8 @@ func (o *Operation) walletConnectHandler(rw http.ResponseWriter, req *http.Reque
 	// store the txn data
 	txnID, err := o.createTxn(profile, state)
 	if err != nil {
-		commhttp.WriteErrorResponse(rw, http.StatusInternalServerError,
-			fmt.Sprintf("failed to create txn : %s", err.Error()))
+		commhttp.WriteErrorResponseWithLog(rw, http.StatusInternalServerError,
+			fmt.Sprintf("failed to create txn : %s", err.Error()), walletConnectEndpoint, logger)
 
 		return
 	}
@@ -291,7 +297,8 @@ func (o *Operation) validateWalletResponseHandler(rw http.ResponseWriter, req *h
 	txnID := req.URL.Query().Get(txnIDQueryParam)
 
 	if txnID == "" {
-		commhttp.WriteErrorResponse(rw, http.StatusBadRequest, "failed to get txnID from the url")
+		commhttp.WriteErrorResponseWithLog(rw, http.StatusBadRequest, "failed to get txnID from the url",
+			validateConnectResponseEndpoint, logger)
 
 		return
 	}
@@ -300,7 +307,8 @@ func (o *Operation) validateWalletResponseHandler(rw http.ResponseWriter, req *h
 	connectResp := &WalletConnect{}
 
 	if err := json.NewDecoder(req.Body).Decode(&connectResp); err != nil {
-		commhttp.WriteErrorResponse(rw, http.StatusBadRequest, fmt.Sprintf("invalid request: %s", err.Error()))
+		commhttp.WriteErrorResponseWithLog(rw, http.StatusBadRequest,
+			fmt.Sprintf("invalid request: %s", err.Error()), validateConnectResponseEndpoint, logger)
 
 		return
 	}
@@ -308,30 +316,33 @@ func (o *Operation) validateWalletResponseHandler(rw http.ResponseWriter, req *h
 	// get txnID data from the storage
 	txnData, err := o.getTxn(txnID)
 	if err != nil {
-		commhttp.WriteErrorResponse(rw, http.StatusBadRequest, fmt.Sprintf("txn data not found: %s", err.Error()))
+		commhttp.WriteErrorResponseWithLog(rw, http.StatusBadRequest,
+			fmt.Sprintf("txn data not found: %s", err.Error()), validateConnectResponseEndpoint, logger)
 
 		return
 	}
 
 	connectData, err := issuervc.ParseWalletResponse(connectResp.Resp)
 	if err != nil {
-		commhttp.WriteErrorResponse(rw, http.StatusBadRequest,
-			fmt.Sprintf("failed to validate presentation: %s", err.Error()))
+		commhttp.WriteErrorResponseWithLog(rw, http.StatusBadRequest,
+			fmt.Sprintf("failed to validate presentation: %s", err.Error()), validateConnectResponseEndpoint, logger)
 
 		return
 	}
 
 	conn, err := o.validateAndGetConnection(connectData)
 	if err != nil {
-		commhttp.WriteErrorResponse(rw, http.StatusBadRequest,
-			fmt.Sprintf("failed to validate DIDComm connection: %s", err.Error()))
+		commhttp.WriteErrorResponseWithLog(rw, http.StatusBadRequest,
+			fmt.Sprintf("failed to validate DIDComm connection: %s", err.Error()),
+			validateConnectResponseEndpoint, logger)
 
 		return
 	}
 
 	profile, err := o.profileStore.GetProfile(txnData.IssuerID)
 	if err != nil {
-		commhttp.WriteErrorResponse(rw, http.StatusBadRequest, fmt.Sprintf("profile not found: %s", err.Error()))
+		commhttp.WriteErrorResponseWithLog(rw, http.StatusBadRequest,
+			fmt.Sprintf("profile not found: %s", err.Error()), validateConnectResponseEndpoint, logger)
 
 		return
 	}
@@ -346,8 +357,9 @@ func (o *Operation) validateWalletResponseHandler(rw http.ResponseWriter, req *h
 
 	err = o.storeUserConnectionMapping(userConnMap)
 	if err != nil {
-		commhttp.WriteErrorResponse(rw, http.StatusInternalServerError,
-			fmt.Sprintf("failed to store user connection mapping: %s", err.Error()))
+		commhttp.WriteErrorResponseWithLog(rw, http.StatusInternalServerError,
+			fmt.Sprintf("failed to store user connection mapping: %s", err.Error()),
+			validateConnectResponseEndpoint, logger)
 
 		return
 	}
@@ -355,7 +367,8 @@ func (o *Operation) validateWalletResponseHandler(rw http.ResponseWriter, req *h
 	redirectURL := fmt.Sprintf(redirectURLFmt, getCallBackURL(profile.URL), txnData.State, token)
 
 	rw.WriteHeader(http.StatusOK)
-	commhttp.WriteResponse(rw, &ValidateConnectResp{RedirectURL: redirectURL})
+	commhttp.WriteResponseWithLog(rw,
+		&ValidateConnectResp{RedirectURL: redirectURL}, validateConnectResponseEndpoint, logger)
 }
 
 func (o *Operation) getCHAPIRequestHandler(rw http.ResponseWriter, req *http.Request) {
@@ -363,7 +376,8 @@ func (o *Operation) getCHAPIRequestHandler(rw http.ResponseWriter, req *http.Req
 	txnID := req.URL.Query().Get(txnIDQueryParam)
 
 	if txnID == "" {
-		commhttp.WriteErrorResponse(rw, http.StatusBadRequest, "failed to get txnID from the url")
+		commhttp.WriteErrorResponseWithLog(rw, http.StatusBadRequest, "failed to get txnID from the url",
+			getCHAPIRequestEndpoint, logger)
 
 		return
 	}
@@ -371,32 +385,33 @@ func (o *Operation) getCHAPIRequestHandler(rw http.ResponseWriter, req *http.Req
 	// get txnID data from the storage
 	txnData, err := o.getTxn(txnID)
 	if err != nil {
-		commhttp.WriteErrorResponse(rw, http.StatusBadRequest, fmt.Sprintf("txn data not found: %s", err.Error()))
+		commhttp.WriteErrorResponseWithLog(rw, http.StatusBadRequest,
+			fmt.Sprintf("txn data not found: %s", err.Error()), getCHAPIRequestEndpoint, logger)
 
 		return
 	}
 
 	profile, err := o.profileStore.GetProfile(txnData.IssuerID)
 	if err != nil {
-		commhttp.WriteErrorResponse(rw, http.StatusInternalServerError,
-			fmt.Sprintf("issuer not found: %s", err.Error()))
+		commhttp.WriteErrorResponseWithLog(rw, http.StatusInternalServerError,
+			fmt.Sprintf("issuer not found: %s", err.Error()), getCHAPIRequestEndpoint, logger)
 
 		return
 	}
 
 	manifestVC, err := issuervc.CreateManifestCredential(profile.Name, profile.SupportedVCContexts)
 	if err != nil {
-		commhttp.WriteErrorResponse(rw, http.StatusInternalServerError,
-			fmt.Sprintf("error creating manifest vc : %s", err.Error()))
+		commhttp.WriteErrorResponseWithLog(rw, http.StatusInternalServerError,
+			fmt.Sprintf("error creating manifest vc : %s", err.Error()), getCHAPIRequestEndpoint, logger)
 
 		return
 	}
 
-	commhttp.WriteResponse(rw, &CHAPIRequest{
+	commhttp.WriteResponseWithLog(rw, &CHAPIRequest{
 		Query:             &CHAPIQuery{Type: DIDConnectCHAPIQueryType},
 		DIDCommInvitation: txnData.DIDCommInvitation,
 		Manifest:          manifestVC,
-	})
+	}, getCHAPIRequestEndpoint, logger)
 }
 
 func (o *Operation) validateAndGetConnection(connectData *issuervc.DIDConnectCredentialSubject) (*connection.Record, error) { // nolint: lll
@@ -499,74 +514,79 @@ func (o *Operation) getUserConnectionMapping(connID string) (*UserConnectionMapp
 
 func (o *Operation) didCommActionListener(ch <-chan service.DIDCommAction) {
 	for msg := range ch {
+		var err error
+
+		var args interface{}
+
 		switch msg.Message.Type() {
 		case issuecredsvc.RequestCredentialMsgType:
-			err := o.handleRequestCredential(msg)
-			if err != nil {
-				logger.Errorf("handle credential request error : %s", err.Error())
-				msg.Stop(fmt.Errorf("handle credential request : %w", err))
-			}
+			args, err = o.handleRequestCredential(msg)
 		case presentproofsvc.RequestPresentationMsgType:
-			err := o.handleRequestPresentation(msg)
-			if err != nil {
-				logger.Errorf("handle presentation request error : %s", err.Error())
-				msg.Stop(fmt.Errorf("handle presentation request : %w", err))
-			}
+			args, err = o.handleRequestPresentation(msg)
 		default:
-			logger.Errorf("handle presentation request error : %s", msg.Message.Type())
-			msg.Stop(fmt.Errorf("unsupported message type : %s", msg.Message.Type()))
+			err = fmt.Errorf("unsupported message type : %s", msg.Message.Type())
+		}
+
+		if err != nil {
+			logger.Errorf("msgType=[%s] id=[%s] errMsg=[%s]", msg.Message.Type(), msg.Message.ID(), err.Error())
+
+			msg.Stop(fmt.Errorf("handle %s : %w", msg.Message.Type(), err))
+		} else {
+			logger.Infof("msgType=[%s] id=[%s] msg=[%s]", msg.Message.Type(), msg.Message.ID(), "success")
+
+			msg.Continue(args)
 		}
 	}
 }
 
-func (o *Operation) handleRequestCredential(msg service.DIDCommAction) error { // nolint: funlen, gocyclo
+func (o *Operation) handleRequestCredential(msg service.DIDCommAction) (interface{}, error) { // nolint: funlen, gocyclo
 	connID, err := o.getConnectionIDFromEvent(msg)
 	if err != nil {
-		return fmt.Errorf("connection using DIDs not found : %w", err)
+		return nil, fmt.Errorf("connection using DIDs not found : %w", err)
 	}
 
 	consentCreReq, err := fetchConsentCredReq(msg)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	newDidDoc, err := o.vdriRegistry.Create("peer", vdri.WithServiceEndpoint(o.serviceEndpoint))
 	if err != nil {
-		return fmt.Errorf("create new issuer did : %w", err)
+		return nil, fmt.Errorf("create new issuer did : %w", err)
 	}
 
 	docJSON, err := newDidDoc.JSONBytes()
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	rpDIDDoc, err := did.ParseDocument(consentCreReq.RPDIDDoc.Doc)
 	if err != nil {
-		return fmt.Errorf("parse rp did doc : %w", err)
+		return nil, fmt.Errorf("parse rp did doc : %w", err)
 	}
 
 	rpDIDDoc.ID = consentCreReq.RPDIDDoc.ID
 
 	_, err = o.didExClient.CreateConnection(newDidDoc.ID, rpDIDDoc)
 	if err != nil {
-		return fmt.Errorf("create connection with rp : %w", err)
+		return nil, fmt.Errorf("create connection with rp : %w", err)
 	}
 
 	userConnMap, err := o.getUserConnectionMapping(connID)
 	if err != nil {
-		return fmt.Errorf("get token from the connectionID : %w", err)
+		return nil, fmt.Errorf("get token from the connectionID : %w", err)
 	}
 
 	profile, err := o.profileStore.GetProfile(userConnMap.IssuerID)
 	if err != nil {
-		return fmt.Errorf("fetch issuer profile : %w", err)
+		return nil, fmt.Errorf("fetch issuer profile : %w", err)
 	}
 
 	vc := issuervc.CreateConsentCredential(newDidDoc.ID, docJSON, consentCreReq.RPDIDDoc, consentCreReq.UserDID)
 
 	vc, err = o.vccrypto.SignCredential(vc, profile.CredentialSigningKey)
 	if err != nil {
-		return fmt.Errorf("sign consent credential : %w", err)
+		return nil, fmt.Errorf("sign consent credential : %w", err)
 	}
 
 	handle := &ConsentCredentialHandle{
@@ -581,61 +601,57 @@ func (o *Operation) handleRequestCredential(msg service.DIDCommAction) error { /
 
 	err = o.storeConsentCredHandle(handle)
 	if err != nil {
-		return fmt.Errorf("store consent credential : %w", err)
+		return nil, fmt.Errorf("store consent credential : %w", err)
 	}
 
-	msg.Continue(issuecredential.WithIssueCredential(&issuecredential.IssueCredential{
+	return issuecredential.WithIssueCredential(&issuecredential.IssueCredential{
 		CredentialsAttach: []decorator.Attachment{
 			{Data: decorator.AttachmentData{JSON: vc}},
 		},
-	}))
-
-	return nil
+	}), nil
 }
 
-func (o *Operation) handleRequestPresentation(msg service.DIDCommAction) error {
+func (o *Operation) handleRequestPresentation(msg service.DIDCommAction) (interface{}, error) {
 	// TODO https://github.com/trustbloc/edge-adapter/issues/139 validate the presentation request
 	consentCred, err := fetchConsentCred(msg, o.vdriRegistry)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	data, err := o.txnStore.Get(consentCred.ID)
 	if err != nil {
-		return fmt.Errorf("consent credential not found : %w", err)
+		return nil, fmt.Errorf("consent credential not found : %w", err)
 	}
 
 	consentCredHandle := &ConsentCredentialHandle{}
 
 	err = json.Unmarshal(data, consentCredHandle)
 	if err != nil {
-		return fmt.Errorf("consent credential handle : %w", err)
+		return nil, fmt.Errorf("consent credential handle : %w", err)
 	}
 
 	profile, err := o.profileStore.GetProfile(consentCredHandle.IssuerID)
 	if err != nil {
-		return fmt.Errorf("fetch issuer profile : %w", err)
+		return nil, fmt.Errorf("fetch issuer profile : %w", err)
 	}
 
 	vp, err := o.generateUserPresentation(consentCredHandle, profile.URL)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	vp, err = o.vccrypto.SignPresentation(vp, profile.PresentationSigningKey)
 	if err != nil {
-		return fmt.Errorf("sign presentation : %w", err)
+		return nil, fmt.Errorf("sign presentation : %w", err)
 	}
 
-	msg.Continue(presentproof.WithPresentation(&presentproof.Presentation{
+	return presentproof.WithPresentation(&presentproof.Presentation{
 		PresentationsAttach: []decorator.Attachment{{
 			Data: decorator.AttachmentData{
 				JSON: vp,
 			},
 		}},
-	}))
-
-	return nil
+	}), nil
 }
 
 func (o *Operation) generateUserPresentation(handle *ConsentCredentialHandle, url string) (*verifiable.Presentation, error) { // nolint: lll
@@ -781,7 +797,8 @@ func fetchConsentCredReq(msg service.DIDCommAction) (*ConsentCredentialReq, erro
 	}
 
 	if len(credReq.RequestsAttach) != 1 {
-		return nil, errors.New("credential request should have one attachment")
+		return nil, fmt.Errorf("credential request should have one attachment, but has %d",
+			len(credReq.RequestsAttach))
 	}
 
 	reqJSON, err := credReq.RequestsAttach[0].Data.Fetch()
