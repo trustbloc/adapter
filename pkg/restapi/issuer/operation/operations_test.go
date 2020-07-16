@@ -878,7 +878,7 @@ func TestDIDCommListeners(t *testing.T) {
 
 			actionCh <- createCredentialReqMsg(t, nil, nil, func(err error) {
 				require.NotNil(t, err)
-				require.Contains(t, err.Error(), "handle credential request : create new issuer did")
+				require.Contains(t, err.Error(), "create new issuer did")
 				done <- struct{}{}
 			})
 
@@ -905,7 +905,7 @@ func TestDIDCommListeners(t *testing.T) {
 			// connection not found
 			actionCh <- createCredentialReqMsg(t, nil, nil, func(err error) {
 				require.NotNil(t, err)
-				require.Contains(t, err.Error(), "handle credential request : connection using DIDs not found")
+				require.Contains(t, err.Error(), "connection using DIDs not found")
 				done <- struct{}{}
 			})
 
@@ -945,7 +945,7 @@ func TestDIDCommListeners(t *testing.T) {
 
 			actionCh <- createCredentialReqMsg(t, nil, nil, func(err error) {
 				require.NotNil(t, err)
-				require.Contains(t, err.Error(), "handle credential request : fetch issuer profile")
+				require.Contains(t, err.Error(), "fetch issuer profile")
 				done <- struct{}{}
 			})
 
@@ -976,7 +976,7 @@ func TestDIDCommListeners(t *testing.T) {
 
 			actionCh <- createCredentialReqMsg(t, nil, nil, func(err error) {
 				require.NotNil(t, err)
-				require.Contains(t, err.Error(), "handle credential request : store consent credential")
+				require.Contains(t, err.Error(), "store consent credential")
 				done <- struct{}{}
 			})
 
@@ -994,7 +994,7 @@ func TestDIDCommListeners(t *testing.T) {
 
 			actionCh <- createCredentialReqMsg(t, nil, nil, func(err error) {
 				require.NotNil(t, err)
-				require.Contains(t, err.Error(), "handle credential request : sign consent credential")
+				require.Contains(t, err.Error(), "sign consent credential")
 				done <- struct{}{}
 			})
 
@@ -1010,7 +1010,7 @@ func TestDIDCommListeners(t *testing.T) {
 			}, nil, func(err error) {
 				require.NotNil(t, err)
 				require.Contains(t, err.Error(),
-					"handle credential request : credential request should have one attachment")
+					"credential request should have one attachment")
 				done <- struct{}{}
 			})
 		})
@@ -1175,7 +1175,7 @@ func TestDIDCommListeners(t *testing.T) {
 			}, nil, func(err error) {
 				require.NotNil(t, err)
 				require.Contains(t, err.Error(),
-					"handle presentation request : presentation request should have one attachment")
+					"presentation request should have one attachment")
 				done <- struct{}{}
 			})
 
@@ -1194,7 +1194,7 @@ func TestDIDCommListeners(t *testing.T) {
 			}, nil, func(err error) {
 				require.NotNil(t, err)
 				require.Contains(t, err.Error(),
-					"handle presentation request : no data inside the presentation request attachment")
+					"no data inside the presentation request attachment")
 				done <- struct{}{}
 			})
 
@@ -1215,7 +1215,7 @@ func TestDIDCommListeners(t *testing.T) {
 			}, nil, func(err error) {
 				require.NotNil(t, err)
 				require.Contains(t, err.Error(),
-					"handle presentation request : decode new credential: embedded proof is not JSON")
+					"decode new credential: embedded proof is not JSON")
 				done <- struct{}{}
 			})
 
@@ -1228,7 +1228,7 @@ func TestDIDCommListeners(t *testing.T) {
 			// consent cred not found
 			actionCh <- createProofReqMsg(t, nil, nil, func(err error) {
 				require.NotNil(t, err)
-				require.Contains(t, err.Error(), "handle presentation request : consent credential not found")
+				require.Contains(t, err.Error(), "consent credential not found")
 				done <- struct{}{}
 			})
 
@@ -1265,7 +1265,7 @@ func TestDIDCommListeners(t *testing.T) {
 				},
 			}, nil, func(err error) {
 				require.NotNil(t, err)
-				require.Contains(t, err.Error(), "handle presentation request : consent credential handle")
+				require.Contains(t, err.Error(), "consent credential handle")
 				done <- struct{}{}
 			})
 
@@ -1297,7 +1297,7 @@ func TestDIDCommListeners(t *testing.T) {
 				},
 			}, nil, func(err error) {
 				require.NotNil(t, err)
-				require.Contains(t, err.Error(), "handle presentation request : fetch issuer profile")
+				require.Contains(t, err.Error(), "fetch issuer profile")
 				done <- struct{}{}
 			})
 
@@ -1325,7 +1325,7 @@ func TestDIDCommListeners(t *testing.T) {
 				},
 			}, nil, func(err error) {
 				require.NotNil(t, err)
-				require.Contains(t, err.Error(), "handle presentation request : http request")
+				require.Contains(t, err.Error(), "http request")
 				done <- struct{}{}
 			})
 
@@ -1351,7 +1351,7 @@ func TestDIDCommListeners(t *testing.T) {
 				},
 			}, nil, func(err error) {
 				require.NotNil(t, err)
-				require.Contains(t, err.Error(), "handle presentation request : parse user data vc")
+				require.Contains(t, err.Error(), "parse user data vc")
 				done <- struct{}{}
 			})
 
@@ -1379,7 +1379,7 @@ func TestDIDCommListeners(t *testing.T) {
 				},
 			}, nil, func(err error) {
 				require.NotNil(t, err)
-				require.Contains(t, err.Error(), "handle presentation request : sign presentation")
+				require.Contains(t, err.Error(), "sign presentation")
 				done <- struct{}{}
 			})
 
