@@ -624,7 +624,7 @@ func (o *Operation) hydraConsentHandler(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	presentationDefinition, err := o.presentationExProvider.Create(consent.GetPayload().RequestedScope)
+	presentationDefinition, err := o.presentationExProvider.Create(removeOIDCScope(consent.GetPayload().RequestedScope))
 	if err != nil {
 		logger.Errorf("failed to create presentation-exchange request: %s", err)
 		commhttp.WriteErrorResponse(
@@ -777,7 +777,7 @@ func (o *Operation) chapiResponseHandler(w http.ResponseWriter, r *http.Request)
 	// TODO save user Consent VC https://github.com/trustbloc/edge-adapter/issues/92
 	// TODO validate the user consent credential (expected rp and user DIDs, etc.)
 
-	customConsentVC, origConsentVC, err := parseWalletResponse(invData.pd, request.VerifiablePresentation)
+	customConsentVC, origConsentVC, err := parseWalletResponse(invData.pd, o.vdriReg, request.VerifiablePresentation)
 	if errors.Is(err, errInvalidCredential) {
 		logger.Warnf("malformed credentials : %s", err)
 		commhttp.WriteErrorResponse(w, http.StatusBadRequest, "malformed credentials")
@@ -1222,4 +1222,16 @@ func (o *Operation) createRPTenant(w http.ResponseWriter, r *http.Request) {
 // TODO add an LD proof that contains the issuer's challenge: https://github.com/trustbloc/edge-adapter/issues/145
 func (o *Operation) toVP(consentVC *verifiable.Credential) (*verifiable.Presentation, error) {
 	return consentVC.Presentation()
+}
+
+func removeOIDCScope(scopes []string) []string {
+	filtered := make([]string, 0)
+
+	for i := range scopes {
+		if scopes[i] != oidc.ScopeOpenID {
+			filtered = append(filtered, scopes[i])
+		}
+	}
+
+	return filtered
 }

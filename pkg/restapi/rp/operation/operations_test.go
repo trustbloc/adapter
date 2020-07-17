@@ -2203,6 +2203,21 @@ func TestCreateRPTenant(t *testing.T) {
 	})
 }
 
+func TestRemoveOIDCScope(t *testing.T) {
+	t.Run("removes oidc scope", func(t *testing.T) {
+		scopes := []string{oidc.ScopeOpenID, uuid.New().String(), uuid.New().String(), uuid.New().String()}
+		result := removeOIDCScope(scopes)
+		require.NotContains(t, result, oidc.ScopeOpenID)
+		for _, scope := range scopes {
+			if scope == oidc.ScopeOpenID {
+				continue
+			}
+
+			require.Contains(t, result, scope)
+		}
+	})
+}
+
 type stubWriter struct {
 }
 

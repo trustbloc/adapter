@@ -38,6 +38,7 @@ SPDX-License-Identifier: Apache-2.0
                     }
                 }
             }
+            console.log("rp-adapter: chapi request: " + JSON.stringify(credentialQuery, undefined, 4))
             const webCredential = await navigator.credentials.get(credentialQuery)
             if (!webCredential) {
                 console.error("no webcredential received from wallet!")
@@ -71,9 +72,12 @@ SPDX-License-Identifier: Apache-2.0
                 )
             },
             async validatePresentation(presentation) {
+                if (!presentation.data) {
+                    throw new Error("user did not submit a proper web credential")
+                }
                 const request = {
                     invID: this.presentationRequest.invitation["@id"],
-                    vp: presentation
+                    vp: presentation.data
                 }
                 return this.$http.post(`/presentations/handleResponse`, request).then(
                     resp => {

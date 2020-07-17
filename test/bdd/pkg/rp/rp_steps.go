@@ -40,7 +40,7 @@ import (
 )
 
 const (
-	rpAdapterURL   = "http://localhost:8070"
+	rpAdapterURL   = "https://localhost:8070"
 	resolverURL    = "http://localhost:8072/1.0/identifiers"
 	hydraAdminURL  = "https://localhost:4445/"
 	hydraPublicURL = "https://localhost:4444/"
@@ -122,12 +122,9 @@ func (s *Steps) createTenant(label string) error {
 		return err
 	}
 
-	resp, err := bddutil.HTTPDo( //nolint:bodyclose
-		http.MethodPost,
-		rpAdapterURL+"/relyingparties",
-		"application/json",
-		"",
-		bytes.NewBuffer(requestBytes))
+	resp, err := (&http.Client{
+		Transport: &http.Transport{TLSClientConfig: s.context.TLSConfig()},
+	}).Post(rpAdapterURL+"/relyingparties", "application/json", bytes.NewReader(requestBytes)) //nolint:bodyclose
 	if err != nil {
 		return fmt.Errorf("failed to send request to create rp tenant : %w", err)
 	}
@@ -306,11 +303,11 @@ func (s *Steps) redirectUserToAdapter(label, scope string) error {
 		return fmt.Errorf("failed to read body of redirect to rp adapter : %w", err)
 	}
 
-	logger.Debugf("response request: %+v", resp.Request)
-	logger.Debugf("received: %s", string(bits))
-
 	if !strings.HasPrefix(resp.Request.URL.String(), rpAdapterURL+"/ui") {
-		return errors.New("rp adapter failed to redirect user to the ui endpoint")
+		return fmt.Errorf(
+			"rp adapter failed to redirect user to the ui endpoint. Request returned in response: %+v. Response body: %s", //nolint:lll
+			resp.Request, string(bits),
+		)
 	}
 
 	handle := resp.Request.URL.Query().Get("pd")

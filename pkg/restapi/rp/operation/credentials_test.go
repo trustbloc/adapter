@@ -17,6 +17,8 @@ import (
 	"testing"
 	"time"
 
+	mockvdri "github.com/hyperledger/aries-framework-go/pkg/mock/vdri"
+
 	"github.com/google/uuid"
 	"github.com/hyperledger/aries-framework-go/pkg/client/presentproof"
 	"github.com/hyperledger/aries-framework-go/pkg/didcomm/protocol/decorator"
@@ -41,7 +43,7 @@ func TestParseWalletResponse(t *testing.T) {
 		issuerDID := newPeerDID(t)
 		origConsentVC := newUserConsentVC(t, userDID.ID, rpDID, issuerDID)
 		vp := newPresentationSubmissionVP(t, origConsentVC)
-		customConsentVC, resultOrigConsentVC, err := parseWalletResponse(nil, marshalVP(t, vp))
+		customConsentVC, resultOrigConsentVC, err := parseWalletResponse(nil, &mockvdri.MockVDRIRegistry{}, marshalVP(t, vp))
 		require.NoError(t, err)
 		require.Equal(t, origConsentVC.Subject, resultOrigConsentVC.Subject)
 		require.NotNil(t, customConsentVC.Subject)
@@ -62,7 +64,7 @@ func TestParseWalletResponse(t *testing.T) {
 			newUniversityDegreeVC(t), // ignored
 			newUserConsentVC(t, newPeerDID(t).ID, newPeerDID(t), newPeerDID(t)),
 		)
-		customConsentVC, origConsentVC, err := parseWalletResponse(nil, marshalVP(t, vp))
+		customConsentVC, origConsentVC, err := parseWalletResponse(nil, &mockvdri.MockVDRIRegistry{}, marshalVP(t, vp))
 		require.NoError(t, err)
 		require.NotNil(t, customConsentVC)
 		require.NotNil(t, origConsentVC)
@@ -72,25 +74,25 @@ func TestParseWalletResponse(t *testing.T) {
 		consentVC := newUserConsentVC(t, newPeerDID(t).ID, newPeerDID(t), newPeerDID(t))
 		vp, err := consentVC.Presentation()
 		require.NoError(t, err)
-		_, _, err = parseWalletResponse(nil, marshalVP(t, vp))
+		_, _, err = parseWalletResponse(nil, &mockvdri.MockVDRIRegistry{}, marshalVP(t, vp))
 		require.True(t, errors.Is(err, errInvalidCredential))
 	})
 
 	t.Run("errInvalidCredential on no credentials", func(t *testing.T) {
 		vp := newPresentationSubmissionVP(t)
-		_, _, err := parseWalletResponse(nil, marshalVP(t, vp))
+		_, _, err := parseWalletResponse(nil, &mockvdri.MockVDRIRegistry{}, marshalVP(t, vp))
 		require.True(t, errors.Is(err, errInvalidCredential))
 	})
 
 	t.Run("errInvalidCredential if issuer's did doc is missing", func(t *testing.T) {
 		vp := newPresentationSubmissionVP(t, newUserConsentVCMissingIssuerDIDDoc(t, newPeerDID(t).ID, newPeerDID(t)))
-		_, _, err := parseWalletResponse(nil, marshalVP(t, vp))
+		_, _, err := parseWalletResponse(nil, &mockvdri.MockVDRIRegistry{}, marshalVP(t, vp))
 		require.True(t, errors.Is(err, errInvalidCredential))
 	})
 
 	t.Run("errInvalidCredential if vc cannot be parsed", func(t *testing.T) {
 		vp := newPresentationSubmissionVPUnparseableVC(t)
-		_, _, err := parseWalletResponse(nil, marshalVP(t, vp))
+		_, _, err := parseWalletResponse(nil, &mockvdri.MockVDRIRegistry{}, marshalVP(t, vp))
 		require.True(t, errors.Is(err, errInvalidCredential))
 	})
 }

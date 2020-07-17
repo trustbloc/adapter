@@ -82,6 +82,16 @@ const (
 		" Alternatively, this can be set with the following environment variable: " + tlsCACertsEnvKey
 	tlsCACertsEnvKey = "ADAPTER_REST_TLS_CACERTS"
 
+	tlsServeCertPathFlagName  = "tls-serve-cert"
+	tlsServeCertPathFlagUsage = "Path to the server certificate to use when serving HTTPS." +
+		" Alternatively, this can be set with the following environment variable: " + tlsServeCertPathEnvKey
+	tlsServeCertPathEnvKey = "ADAPTER_REST_TLS_SERVE_CERT"
+
+	tlsServeKeyPathFlagName  = "tls-serve-key"
+	tlsServeKeyPathFlagUsage = "Path to the private key to use when serving HTTPS." +
+		" Alternatively, this can be set with the following environment variable: " + tlsServeKeyPathFlagEnvKey
+	tlsServeKeyPathFlagEnvKey = "ADAPTER_REST_TLS_SERVE_KEY"
+
 	presentationDefinitionsFlagName  = "presentation-definitions-file"
 	presentationDefinitionsFlagUsage = "Path to presentation definitions file with input_descriptors."
 	presentationDefinitionsEnvKey    = "ADAPTER_REST_PRESENTATION_DEFINITIONS_FILE"
@@ -142,6 +152,13 @@ const (
 	rpMode     = "rp"
 )
 
+type tlsParameters struct {
+	systemCertPool bool
+	caCerts        []string
+	serveCertPath  string
+	serveKeyPath   string
+}
+
 type didCommParameters struct {
 	inboundHostInternal string
 	inboundHostExternal string
@@ -150,8 +167,7 @@ type didCommParameters struct {
 
 type adapterRestParameters struct {
 	hostURL                     string
-	tlsSystemCertPool           bool
-	tlsCACerts                  []string
+	tlsParams                   *tlsParameters
 	dsn                         string
 	oidcProviderURL             string
 	staticFiles                 string
@@ -166,6 +182,7 @@ type adapterRestParameters struct {
 
 type server interface {
 	ListenAndServe(host string, router http.Handler) error
+	ListenAndServeTLS(host, certFile, keyFile string, router http.Handler) error
 }
 
 // HTTPServer represents an actual HTTP server implementation.
@@ -174,6 +191,11 @@ type HTTPServer struct{}
 // ListenAndServe starts the server using the standard Go HTTP server implementation.
 func (s *HTTPServer) ListenAndServe(host string, router http.Handler) error {
 	return http.ListenAndServe(host, router)
+}
+
+// ListenAndServeTLS starts the server using the standard Go HTTPS implementation.
+func (s *HTTPServer) ListenAndServeTLS(host, certFile, keyFile string, router http.Handler) error {
+	return http.ListenAndServeTLS(host, certFile, keyFile, router)
 }
 
 // GetStartCmd returns the Cobra start command.
@@ -208,7 +230,7 @@ func getAdapterRestParameters(cmd *cobra.Command) (*adapterRestParameters, error
 		return nil, err
 	}
 
-	tlsSystemCertPool, tlsCACerts, err := getTLS(cmd)
+	tlsParams, err := getTLS(cmd)
 	if err != nil {
 		return nil, err
 	}
@@ -275,8 +297,7 @@ func getAdapterRestParameters(cmd *cobra.Command) (*adapterRestParameters, error
 
 	return &adapterRestParameters{
 		hostURL:                     hostURL,
-		tlsSystemCertPool:           tlsSystemCertPool,
-		tlsCACerts:                  tlsCACerts,
+		tlsParams:                   tlsParams,
 		dsn:                         dsn,
 		oidcProviderURL:             oidcURL,
 		staticFiles:                 staticFiles,
@@ -349,33 +370,50 @@ func getDIDCommParams(cmd *cobra.Command) (*didCommParameters, error) {
 	}, nil
 }
 
-func getTLS(cmd *cobra.Command) (bool, []string, error) {
+func getTLS(cmd *cobra.Command) (*tlsParameters, error) {
 	tlsSystemCertPoolString, err := cmdutils.GetUserSetVarFromString(cmd, tlsSystemCertPoolFlagName,
 		tlsSystemCertPoolEnvKey, true)
 	if err != nil {
-		return false, nil, err
+		return nil, err
 	}
 
 	tlsSystemCertPool := false
 	if tlsSystemCertPoolString != "" {
 		tlsSystemCertPool, err = strconv.ParseBool(tlsSystemCertPoolString)
 		if err != nil {
-			return false, nil, err
+			return nil, err
 		}
 	}
 
 	tlsCACerts, err := cmdutils.GetUserSetVarFromArrayString(cmd, tlsCACertsFlagName, tlsCACertsEnvKey, true)
 	if err != nil {
-		return false, nil, err
+		return nil, err
 	}
 
-	return tlsSystemCertPool, tlsCACerts, nil
+	tlsServeCertPath, err := cmdutils.GetUserSetVarFromString(cmd, tlsServeCertPathFlagName, tlsServeCertPathEnvKey, true)
+	if err != nil {
+		return nil, err
+	}
+
+	tlsServeKeyPath, err := cmdutils.GetUserSetVarFromString(cmd, tlsServeKeyPathFlagName, tlsServeKeyPathFlagEnvKey, true)
+	if err != nil {
+		return nil, err
+	}
+
+	return &tlsParameters{
+		systemCertPool: tlsSystemCertPool,
+		caCerts:        tlsCACerts,
+		serveCertPath:  tlsServeCertPath,
+		serveKeyPath:   tlsServeKeyPath,
+	}, nil
 }
 
 func createFlags(startCmd *cobra.Command) {
 	startCmd.Flags().StringP(hostURLFlagName, hostURLFlagShorthand, "", hostURLFlagUsage)
 	startCmd.Flags().StringP(tlsSystemCertPoolFlagName, "", "", tlsSystemCertPoolFlagUsage)
 	startCmd.Flags().StringArrayP(tlsCACertsFlagName, "", []string{}, tlsCACertsFlagUsage)
+	startCmd.Flags().StringP(tlsServeCertPathFlagName, "", "", tlsServeCertPathFlagUsage)
+	startCmd.Flags().StringP(tlsServeKeyPathFlagName, "", "", tlsServeKeyPathFlagUsage)
 	startCmd.Flags().StringP(oidcProviderURLFlagName, "", "", oidcProviderURLFlagUsage)
 	startCmd.Flags().StringP(datasourceNameFlagName, "", "", datasourceNameFlagUsage)
 	startCmd.Flags().StringP(staticFilesPathFlagName, "", "", staticFilesPathFlagUsage)
@@ -395,7 +433,7 @@ func createFlags(startCmd *cobra.Command) {
 }
 
 func startAdapterService(parameters *adapterRestParameters, srv server) error {
-	rootCAs, err := tlsutils.GetCertPool(parameters.tlsSystemCertPool, parameters.tlsCACerts)
+	rootCAs, err := tlsutils.GetCertPool(parameters.tlsParams.systemCertPool, parameters.tlsParams.caCerts)
 	if err != nil {
 		return err
 	}
@@ -417,6 +455,8 @@ func startAdapterService(parameters *adapterRestParameters, srv server) error {
 		return err
 	}
 
+	var startServer func() error
+
 	// add endpoints
 	switch parameters.mode {
 	case rpMode:
@@ -424,18 +464,25 @@ func startAdapterService(parameters *adapterRestParameters, srv server) error {
 		if err != nil {
 			return nil
 		}
+
+		startServer = func() error {
+			return srv.ListenAndServeTLS(parameters.hostURL, parameters.tlsParams.serveCertPath,
+				parameters.tlsParams.serveKeyPath, constructCORSHandler(router))
+		}
 	case issuerMode:
 		err = addIssuerHandlers(parameters, ariesCtx, router, rootCAs)
 		if err != nil {
 			return nil
 		}
+
+		startServer = func() error { return srv.ListenAndServe(parameters.hostURL, constructCORSHandler(router)) }
 	default:
 		return fmt.Errorf("invalid mode : %s", parameters.mode)
 	}
 
 	logger.Infof("starting %s adapter rest server on host %s", parameters.mode, parameters.hostURL)
 
-	return srv.ListenAndServe(parameters.hostURL, constructCORSHandler(router))
+	return startServer()
 }
 
 func addRPHandlers(

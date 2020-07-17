@@ -149,6 +149,10 @@ func (s *mockServer) ListenAndServe(host string, handler http.Handler) error {
 	return nil
 }
 
+func (s *mockServer) ListenAndServeTLS(host, certPath, keyPath string, handler http.Handler) error {
+	return nil
+}
+
 func TestListenAndServe(t *testing.T) {
 	var w HTTPServer
 	err := w.ListenAndServe("wronghost", nil)
