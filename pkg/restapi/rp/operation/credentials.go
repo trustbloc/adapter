@@ -11,6 +11,7 @@ import (
 
 	"github.com/hyperledger/aries-framework-go/pkg/client/presentproof"
 	"github.com/hyperledger/aries-framework-go/pkg/doc/verifiable"
+	vdriapi "github.com/hyperledger/aries-framework-go/pkg/framework/aries/api/vdri"
 	"github.com/pkg/errors"
 
 	"github.com/trustbloc/edge-adapter/pkg/internal/common/adapterutil"
@@ -21,7 +22,7 @@ import (
 
 var errInvalidCredential = errors.New("malformed credential")
 
-func parseWalletResponse(definitions *presentationex.PresentationDefinitions,
+func parseWalletResponse(definitions *presentationex.PresentationDefinitions, vdriReg vdriapi.Registry,
 	vpBytes []byte) (*vc.ConsentCredential, *verifiable.Credential, error) {
 	vp, err := verifiable.ParsePresentation(vpBytes)
 	if err != nil {
@@ -44,7 +45,10 @@ func parseWalletResponse(definitions *presentationex.PresentationDefinitions,
 	for i := range rawCreds {
 		raw := rawCreds[i]
 
-		cred, parseErr := verifiable.ParseCredential(raw)
+		cred, parseErr := verifiable.ParseCredential(
+			raw,
+			verifiable.WithPublicKeyFetcher(verifiable.NewDIDKeyResolver(vdriReg).PublicKeyFetcher()),
+		)
 		if parseErr != nil {
 			return nil, nil, fmt.Errorf(
 				"%w : failed to parse raw credential %s : %s",

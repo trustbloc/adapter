@@ -14,6 +14,8 @@ services:
       - ADAPTER_REST_HOST_URL=0.0.0.0:9070
       - ADAPTER_REST_TLS_CACERTS=/etc/tls/ec-cacert.pem
       - ADAPTER_REST_TLS_SYSTEMCERTPOOL=true
+      - ADAPTER_REST_TLS_SERVE_CERT=/etc/tls/ec-pubCert.pem
+      - ADAPTER_REST_TLS_SERVE_KEY=/etc/tls/ec-key.pem
       - ADAPTER_REST_DIDCOMM_INBOUND_HOST=0.0.0.0:9071
       - ADAPTER_REST_DIDCOMM_INBOUND_HOST_EXTERNAL=http://issuer.adapter.rest.example.com:9071
       - ADAPTER_REST_TRUSTBLOC_DOMAIN=${BLOC_DOMAIN}
@@ -35,6 +37,8 @@ services:
       - ADAPTER_REST_HOST_URL=0.0.0.0:8070
       - ADAPTER_REST_TLS_CACERTS=/etc/tls/ec-cacert.pem
       - ADAPTER_REST_TLS_SYSTEMCERTPOOL=true
+      - ADAPTER_REST_TLS_SERVE_CERT=/etc/tls/ec-pubCert.pem
+      - ADAPTER_REST_TLS_SERVE_KEY=/etc/tls/ec-key.pem
       - ADAPTER_REST_DSN=mysql://root:secret@mysql:3306/mysql
       - ADAPTER_REST_OP_URL=http://PUT-SOMETHING-HERE.com
       - ADAPTER_REST_PRESENTATION_DEFINITIONS_FILE=/etc/testdata/presentationdefinitions.json
@@ -67,8 +71,8 @@ services:
     environment:
       - DSN=mysql://root:secret@tcp(mysql:3306)/mysql?max_conns=20&max_idle_conns=4
       - URLS_SELF_ISSUER=https://localhost:4444
-      - URLS_CONSENT=http://localhost:8070/consent
-      - URLS_LOGIN=http://localhost:8070/login
+      - URLS_CONSENT=https://localhost:8070/consent
+      - URLS_LOGIN=https://localhost:8070/login
       - SECRETS_SYSTEM=testSecretsSystem
       - OIDC_SUBJECT_TYPES_SUPPORTED=public
       - OIDC_SUBJECT_TYPE_PAIRWISE_SALT=testSecretsSystem
