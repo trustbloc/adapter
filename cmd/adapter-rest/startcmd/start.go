@@ -475,7 +475,10 @@ func startAdapterService(parameters *adapterRestParameters, srv server) error {
 			return nil
 		}
 
-		startServer = func() error { return srv.ListenAndServe(parameters.hostURL, constructCORSHandler(router)) }
+		startServer = func() error {
+			return srv.ListenAndServeTLS(parameters.hostURL, parameters.tlsParams.serveCertPath,
+				parameters.tlsParams.serveKeyPath, constructCORSHandler(router))
+		}
 	default:
 		return fmt.Errorf("invalid mode : %s", parameters.mode)
 	}

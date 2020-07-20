@@ -13,5 +13,5 @@ Feature: health check
     Then the JSON path "<respKey>" of the response equals "<respKeyVal>"
     Examples:
       | url                                             | respKey       | respKeyVal                                      |
-      | https://localhost:8070/healthcheck               | status        | success                                         |
-      | http://localhost:9070/healthcheck               | status        | success                                         |
+      | https://localhost:8070/healthcheck              | status        | success                                         |
+      | https://localhost:9070/healthcheck              | status        | success                                         |

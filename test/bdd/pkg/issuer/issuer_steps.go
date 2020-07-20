@@ -27,7 +27,7 @@ import (
 )
 
 const (
-	issuerAdapterURL = "http://localhost:9070"
+	issuerAdapterURL = "https://localhost:9070"
 )
 
 // Steps is steps for VC BDD tests.
@@ -73,7 +73,7 @@ func (e *Steps) createProfile(id, name, issuerURL, supportedVCContexts string) e
 	}
 
 	resp, err := bddutil.HTTPDo(http.MethodPost, issuerAdapterURL+"/profile", "", "", //nolint: bodyclose
-		bytes.NewBuffer(requestBytes))
+		bytes.NewBuffer(requestBytes), e.bddContext.TLSConfig())
 
 	if err != nil {
 		return err
@@ -95,7 +95,7 @@ func (e *Steps) createProfile(id, name, issuerURL, supportedVCContexts string) e
 
 func (e *Steps) retrieveProfile(id, name, issuerURL, supportedVCContexts string) error {
 	resp, err := bddutil.HTTPDo(http.MethodGet, //nolint: bodyclose
-		fmt.Sprintf(issuerAdapterURL+"/profile/%s", id), "", "", nil)
+		fmt.Sprintf(issuerAdapterURL+"/profile/%s", id), "", "", nil, e.bddContext.TLSConfig())
 	if err != nil {
 		return err
 	}
@@ -140,7 +140,8 @@ func (e *Steps) walletConnect(issuerID string) error {
 	e.states[issuerID] = state
 
 	resp, err := bddutil.HTTPDo(http.MethodGet, //nolint: bodyclose
-		fmt.Sprintf(issuerAdapterURL+"/%s/connect/wallet?state=%s", issuerID, state), "", "", nil)
+		fmt.Sprintf(issuerAdapterURL+"/%s/connect/wallet?state=%s", issuerID, state), "", "", nil,
+		e.bddContext.TLSConfig())
 	if err != nil {
 		return err
 	}
@@ -159,7 +160,8 @@ func (e *Steps) walletConnect(issuerID string) error {
 
 func (e *Steps) didExchangeRequest(issuerID, agentID string) error {
 	resp, err := bddutil.HTTPDo(http.MethodGet, //nolint: bodyclose
-		issuerAdapterURL+"/issuer/didcomm/chapi/request?txnID="+e.txnIDs[issuerID], "", "", nil)
+		issuerAdapterURL+"/issuer/didcomm/chapi/request?txnID="+e.txnIDs[issuerID], "", "", nil,
+		e.bddContext.TLSConfig())
 	if err != nil {
 		return err
 	}
@@ -195,7 +197,7 @@ func (e *Steps) validateConnectResp(issuerID, agentID, issuerURL string) error {
 	}
 
 	resp, err := bddutil.HTTPDo(http.MethodPost, //nolint: bodyclose
-		validateURL, "", "", bytes.NewBuffer(requestBytes))
+		validateURL, "", "", bytes.NewBuffer(requestBytes), e.bddContext.TLSConfig())
 	if err != nil {
 		return err
 	}

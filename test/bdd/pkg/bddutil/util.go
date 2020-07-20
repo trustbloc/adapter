@@ -8,6 +8,7 @@ package bddutil
 
 import (
 	"bytes"
+	"crypto/tls"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -17,7 +18,7 @@ import (
 )
 
 // HTTPDo util to send http requests.
-func HTTPDo(method, url, contentType, token string, body io.Reader) (*http.Response, error) {
+func HTTPDo(method, url, contentType, token string, body io.Reader, tlsConfig *tls.Config) (*http.Response, error) {
 	req, err := http.NewRequest(method, url, body)
 	if err != nil {
 		return nil, err
@@ -31,7 +32,9 @@ func HTTPDo(method, url, contentType, token string, body io.Reader) (*http.Respo
 		req.Header.Add("Authorization", "Bearer "+token)
 	}
 
-	return http.DefaultClient.Do(req)
+	httpClient := &http.Client{Transport: &http.Transport{TLSClientConfig: tlsConfig}}
+
+	return httpClient.Do(req)
 }
 
 // ExpectedStatusCodeError formats the status code error message.
