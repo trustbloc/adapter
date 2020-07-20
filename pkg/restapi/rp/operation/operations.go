@@ -891,7 +891,7 @@ func (o *Operation) handleIssuerCallback(
 		return
 	}
 
-	rpData, err := mapPresentationSubmissionToRPData(c.submission)
+	rpData, err := o.mapPresentationSubmissionToRPData(c.submission)
 	if err != nil {
 		msg := fmt.Sprintf("failed to map VCs into RP object : %s", err)
 		logger.Errorf(msg)
@@ -930,7 +930,7 @@ func (o *Operation) handleIssuerCallback(
 }
 
 // TODO surely there must be a better way to unmarshal the credentialSubject of a VC into a map????
-func mapPresentationSubmissionToRPData(
+func (o *Operation) mapPresentationSubmissionToRPData(
 	submission *rp2.PresentationSubmissionPresentation) ([]map[string]interface{}, error) {
 	rpdata := make([]map[string]interface{}, 0)
 
@@ -943,9 +943,11 @@ func mapPresentationSubmissionToRPData(
 		return nil, errors.New("expected at least one credentialSubject in VP")
 	}
 
-	cred, err := verifiable.ParseCredential(raw[0])
+	cred, err := verifiable.ParseCredential(
+		raw[0],
+		verifiable.WithPublicKeyFetcher(verifiable.NewDIDKeyResolver(o.vdriReg).PublicKeyFetcher()))
 	if err != nil {
-		return nil, fmt.Errorf("failed to unmarshal ")
+		return nil, fmt.Errorf("failed to unmarshal : %w", err)
 	}
 
 	bits, err := json.Marshal(cred.Subject)
