@@ -1136,13 +1136,16 @@ func TestDIDCommListeners(t *testing.T) {
 			err = c.storeConsentCredHandle(handle)
 			require.NoError(t, err)
 
+			vp, err := vc.Presentation()
+			require.NoError(t, err)
+
 			done := make(chan struct{})
 
 			actionCh <- createProofReqMsg(t, presentproofsvc.RequestPresentation{
 				Type: presentproofsvc.RequestPresentationMsgType,
 				RequestPresentationsAttach: []decorator.Attachment{
 					{Data: decorator.AttachmentData{
-						JSON: vc,
+						JSON: vp,
 					}},
 				},
 			}, func(args interface{}) {
@@ -1209,13 +1212,13 @@ func TestDIDCommListeners(t *testing.T) {
 				Type: presentproofsvc.RequestPresentationMsgType,
 				RequestPresentationsAttach: []decorator.Attachment{
 					{Data: decorator.AttachmentData{
-						JSON: "invalid vc",
+						JSON: "invalid vp",
 					}},
 				},
 			}, nil, func(err error) {
 				require.NotNil(t, err)
 				require.Contains(t, err.Error(),
-					"decode new credential: embedded proof is not JSON")
+					"parse presentation")
 				done <- struct{}{}
 			})
 
@@ -1252,6 +1255,8 @@ func TestDIDCommListeners(t *testing.T) {
 			}
 
 			vc := createConsentCredential(t)
+			vp, err := vc.Presentation()
+			require.NoError(t, err)
 
 			err = c.txnStore.Put(vc.ID, []byte("invalid data"))
 			require.NoError(t, err)
@@ -1260,7 +1265,7 @@ func TestDIDCommListeners(t *testing.T) {
 				Type: presentproofsvc.RequestPresentationMsgType,
 				RequestPresentationsAttach: []decorator.Attachment{
 					{Data: decorator.AttachmentData{
-						JSON: vc,
+						JSON: vp,
 					}},
 				},
 			}, nil, func(err error) {
@@ -1292,7 +1297,7 @@ func TestDIDCommListeners(t *testing.T) {
 				Type: presentproofsvc.RequestPresentationMsgType,
 				RequestPresentationsAttach: []decorator.Attachment{
 					{Data: decorator.AttachmentData{
-						JSON: vc,
+						JSON: vp,
 					}},
 				},
 			}, nil, func(err error) {
@@ -1320,7 +1325,7 @@ func TestDIDCommListeners(t *testing.T) {
 				Type: presentproofsvc.RequestPresentationMsgType,
 				RequestPresentationsAttach: []decorator.Attachment{
 					{Data: decorator.AttachmentData{
-						JSON: vc,
+						JSON: vp,
 					}},
 				},
 			}, nil, func(err error) {
@@ -1335,7 +1340,7 @@ func TestDIDCommListeners(t *testing.T) {
 				require.Fail(t, "tests are not validated due to timeout")
 			}
 
-			// invalid vc data
+			// invalid vp data
 			c.httpClient = &mockHTTPClient{
 				respValue: &http.Response{
 					StatusCode: http.StatusOK, Body: ioutil.NopCloser(bytes.NewReader([]byte("invalid vc json"))),
@@ -1346,12 +1351,38 @@ func TestDIDCommListeners(t *testing.T) {
 				Type: presentproofsvc.RequestPresentationMsgType,
 				RequestPresentationsAttach: []decorator.Attachment{
 					{Data: decorator.AttachmentData{
-						JSON: vc,
+						JSON: vp,
 					}},
 				},
 			}, nil, func(err error) {
 				require.NotNil(t, err)
 				require.Contains(t, err.Error(), "parse user data vc")
+				done <- struct{}{}
+			})
+
+			select {
+			case <-done:
+			case <-time.After(5 * time.Second):
+				require.Fail(t, "tests are not validated due to timeout")
+			}
+
+			// no vc inside vp
+			pres := &verifiable.Presentation{
+				Context: []string{"https://www.w3.org/2018/credentials/v1"},
+				ID:      uuid.New().URN(),
+				Type:    []string{"VerifiablePresentation"},
+			}
+
+			actionCh <- createProofReqMsg(t, presentproofsvc.RequestPresentation{
+				Type: presentproofsvc.RequestPresentationMsgType,
+				RequestPresentationsAttach: []decorator.Attachment{
+					{Data: decorator.AttachmentData{
+						JSON: pres,
+					}},
+				},
+			}, nil, func(err error) {
+				require.NotNil(t, err)
+				require.Contains(t, err.Error(), "request presentation should have one credential, but contains 0")
 				done <- struct{}{}
 			})
 
@@ -1374,7 +1405,7 @@ func TestDIDCommListeners(t *testing.T) {
 				Type: presentproofsvc.RequestPresentationMsgType,
 				RequestPresentationsAttach: []decorator.Attachment{
 					{Data: decorator.AttachmentData{
-						JSON: vc,
+						JSON: vp,
 					}},
 				},
 			}, nil, func(err error) {
@@ -1715,12 +1746,15 @@ func createCredentialReqMsg(t *testing.T, msg interface{}, continueFn func(args 
 
 func createProofReqMsg(t *testing.T, msg interface{}, continueFn func(args interface{}),
 	stopFn func(err error)) service.DIDCommAction {
+	vp, err := createConsentCredential(t).Presentation()
+	require.NoError(t, err)
+
 	if msg == nil {
 		msg = presentproofsvc.RequestPresentation{
 			Type: presentproofsvc.RequestPresentationMsgType,
 			RequestPresentationsAttach: []decorator.Attachment{
 				{Data: decorator.AttachmentData{
-					JSON: createConsentCredential(t),
+					JSON: vp,
 				}},
 			},
 		}

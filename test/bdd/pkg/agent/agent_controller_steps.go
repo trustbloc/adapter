@@ -608,8 +608,13 @@ func (a *Steps) fetchPresentation(agentID, issuerID string) error {
 		return fmt.Errorf("unable to find the the consent credential for agent [%s]", agentID)
 	}
 
+	vp, err := vc.Presentation()
+	if err != nil {
+		return err
+	}
+
 	// send presentation request
-	err := sendPresentationRequest(conn, vc, controllerURL)
+	err = sendPresentationRequest(conn, vp, controllerURL)
 	if err != nil {
 		return err
 	}
@@ -697,7 +702,7 @@ func (a *Steps) AcceptRequestPresentation(agent string, presentation *verifiable
 	return sendHTTP(http.MethodPost, acceptRequestURL, request, &presentproofcmd.AcceptRequestPresentationResponse{})
 }
 
-func sendPresentationRequest(conn *didexchange.Connection, vc *verifiable.Credential, controllerURL string) error {
+func sendPresentationRequest(conn *didexchange.Connection, vp *verifiable.Presentation, controllerURL string) error {
 	req := &presentproofcmd.SendRequestPresentationArgs{
 		MyDID:    conn.MyDID,
 		TheirDID: conn.TheirDID,
@@ -705,7 +710,7 @@ func sendPresentationRequest(conn *didexchange.Connection, vc *verifiable.Creden
 			Type: presentproofsvc.RequestPresentationMsgType,
 			RequestPresentationsAttach: []decorator.Attachment{
 				{Data: decorator.AttachmentData{
-					JSON: vc,
+					JSON: vp,
 				}},
 			},
 		},
