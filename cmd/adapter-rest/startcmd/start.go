@@ -558,6 +558,7 @@ func addIssuerHandlers(parameters *adapterRestParameters, ariesCtx ariespai.CtxP
 			ariesCtx.LegacyKMS(),
 			rootCAs,
 		),
+		TLSConfig: &tls.Config{RootCAs: rootCAs},
 	})
 
 	if err != nil {

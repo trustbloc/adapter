@@ -8,6 +8,7 @@ package operation
 
 import (
 	"bytes"
+	"crypto/tls"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -92,6 +93,7 @@ type Config struct {
 	UIEndpoint       string
 	StoreProvider    storage.Provider
 	PublicDIDCreator PublicDIDCreator
+	TLSConfig        *tls.Config
 }
 
 // New returns issuer rest instance.
@@ -149,7 +151,7 @@ func New(config *Config) (*Operation, error) {
 		vccrypto:           vccrypto,
 		// TODO build http client with certs
 		publicDIDCreator: config.PublicDIDCreator,
-		httpClient:       &http.Client{},
+		httpClient:       &http.Client{Transport: &http.Transport{TLSClientConfig: config.TLSConfig}},
 	}
 
 	go op.didCommActionListener(actionCh)
@@ -672,7 +674,8 @@ func (o *Operation) generateUserPresentation(handle *ConsentCredentialHandle, ur
 		return nil, err
 	}
 
-	vc, err := verifiable.ParseCredential(vcBytes)
+	// TODO https://github.com/trustbloc/edge-adapter/issues/191 enable signature check
+	vc, err := verifiable.ParseCredential(vcBytes, verifiable.WithDisabledProofCheck())
 	if err != nil {
 		return nil, fmt.Errorf("parse user data vc : %w", err)
 	}
@@ -829,11 +832,12 @@ func fetchConsentCred(msg service.DIDCommAction, vdriRegistry vdri.Registry) (*v
 
 	err := msg.Message.Decode(credReq)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("decode presentation request message : %w", err)
 	}
 
 	if len(credReq.RequestPresentationsAttach) != 1 {
-		return nil, errors.New("presentation request should have one attachment")
+		return nil, fmt.Errorf("presentation request should have one attachment, but contains %d",
+			len(credReq.RequestPresentationsAttach))
 	}
 
 	reqJSON, err := credReq.RequestPresentationsAttach[0].Data.Fetch()
@@ -841,12 +845,30 @@ func fetchConsentCred(msg service.DIDCommAction, vdriRegistry vdri.Registry) (*v
 		return nil, fmt.Errorf("no data inside the presentation request attachment : %w", err)
 	}
 
-	vc, err := verifiable.ParseCredential(
+	vp, err := verifiable.ParsePresentation(
 		reqJSON,
+		verifiable.WithDisabledPresentationProofCheck(),
+	)
+	if err != nil {
+		return nil, fmt.Errorf("parse presentation : %w", err)
+	}
+
+	if len(vp.Credentials()) != 1 {
+		return nil, fmt.Errorf("request presentation should have one credential, but contains %d",
+			len(vp.Credentials()))
+	}
+
+	vcBytes, err := json.Marshal(vp.Credentials()[0])
+	if err != nil {
+		return nil, fmt.Errorf("marshal credential : %w", err)
+	}
+
+	vc, err := verifiable.ParseCredential(
+		vcBytes,
 		verifiable.WithPublicKeyFetcher(verifiable.NewDIDKeyResolver(vdriRegistry).PublicKeyFetcher()),
 	)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("parse credential : %w", err)
 	}
 
 	return vc, nil
