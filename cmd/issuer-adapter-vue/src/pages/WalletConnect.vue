@@ -5,16 +5,22 @@ SPDX-License-Identifier: Apache-2.0
 -->
 
 <template>
-    <div class="vertical-center">
-        <h1>Connect Wallet to the Issuer (DIDComm)</h1>
+    <div class="text-center">
 
-        <button v-on:click="connectWallet" v-if="!connectWalletSuccess">Connect Wallet</button>
+        <br/>
+        <h2 class="blue bg-aqua text-black">Connect Wallet to the Issuer (DIDComm)</h2>
+        <br/>
 
-        <p v-if="connectWalletSuccess" style="color:green;">Wallet Connected Successfully. <a :href="redirectURL">Click Here</a> to return to Issuer Page.</p>
+        <button class="bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded-full"
+                v-on:click="connectWallet" v-if="!connectWalletSuccess">Connect Wallet
+        </button>
+
+        <p v-if="connectWalletSuccess">Wallet Connected Successfully.
+            <a style="color:green;" :href="redirectURL">Click
+                Here</a>
+            to return to Issuer Page.
+        </p>
         <p style="color:red;">{{ connectWalletErr }}</p>
-
-        <br/>
-        <br/>
 
     </div>
 </template>
@@ -26,7 +32,7 @@ SPDX-License-Identifier: Apache-2.0
             return {
                 connectWalletSuccess: false,
                 connectWalletErr: null,
-                redirectURL : null,
+                redirectURL: null,
             }
         },
         methods: {
@@ -93,9 +99,3 @@ SPDX-License-Identifier: Apache-2.0
         }
     }
 </script>
-
-<style scoped>
-    div {
-        text-align: center;
-    }
-</style>
