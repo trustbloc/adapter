@@ -5,13 +5,20 @@ SPDX-License-Identifier: Apache-2.0
 -->
 
 <template>
-    <div class="hello">
-        <h1>Please provide credentials</h1>
-        <!--
-            TODO pretty UI
-        -->
-
-        <textarea v-model="presentationRequestView"></textarea>
+    <div>
+        <div class="pt-10">
+            <br/>The <strong>Relying Party Adapter</strong> requests credentials and creates a <strong>DIDComm connection</strong> with
+            the <strong>User's Wallet </strong>on behalf of the Relying Party.
+            <br/>The Wallet may provide the credentials directly as a Holder, or it may provide an <strong>AuthorizationCredential</strong>
+            the Adapter can use to fetch the user's credentials at the
+            <br/>location specified within.
+            <br/>
+            <br/>
+            <br/>
+            <br/>
+            <br/>
+            <br/>
+        </div>
     </div>
 </template>
 
@@ -51,8 +58,7 @@ SPDX-License-Identifier: Apache-2.0
         },
         data() {
             return {
-                presentationRequest: null,
-                presentationRequestView: null
+                presentationRequest: null
             }
         },
         methods: {
@@ -62,8 +68,6 @@ SPDX-License-Identifier: Apache-2.0
                 await this.$http.get(`/presentations/create?pd=${handle}`).then(
                     resp => {
                         this.presentationRequest = resp.data
-                        this.presentationRequestView = JSON.stringify(resp.data, null, 2)
-                        console.log(`exchanged handle=${handle} for a request=${this.presentationRequestView}`)
                     },
                     err => {
                         console.error(`failed to retrieve presentation-definitions: ${err}`)
@@ -72,7 +76,7 @@ SPDX-License-Identifier: Apache-2.0
                 )
             },
             async validatePresentation(presentation) {
-                if (!presentation.data) {
+                if (!presentation || !presentation.data) {
                     throw new Error("user did not submit a proper web credential")
                 }
                 const request = {

@@ -5,21 +5,13 @@ SPDX-License-Identifier: Apache-2.0
 */
 
 <template>
-  <footer class="footer"  style="background-color: white">
-    <div class="container">
-      <a href="https://github.com/trustbloc/edge-adapter" target="_blank">
-        &copy; SecureKey Technologies and the TrustBloc Contributors
-      </a>
-    </div>
+  <footer class="footer relative align-middle">
+    <a href="https://github.com/trustbloc/edge-adapter" target="_blank">
+      &copy; SecureKey Technologies and the TrustBloc Contributors
+    </a>
   </footer>
 </template>
+
 <script>
-export default {};
+  export default {};
 </script>
-<style scoped>
-  .footer {
-    position: relative;
-    height: 100px;
-    martin-top: -100px;
-  }
-</style>
