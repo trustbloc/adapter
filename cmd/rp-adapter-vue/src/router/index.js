@@ -25,7 +25,13 @@ const routes = [
     {
         path: '*',
         name: 'NotFound',
-        component: NotFound
+        component: Layout,
+        children: [
+            {
+                path: "*",
+                component: NotFound
+            }
+        ]
     }
 ];
 export default routes;

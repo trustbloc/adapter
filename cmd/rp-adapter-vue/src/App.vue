@@ -5,7 +5,7 @@ SPDX-License-Identifier: Apache-2.0
 -->
 
 <template>
-  <div>
+  <div class="mx-auto bg-center bg">
     <router-view></router-view>
   </div>
 </template>
@@ -13,3 +13,9 @@ SPDX-License-Identifier: Apache-2.0
 <script>
   export default {};
 </script>
+
+<style scoped>
+  .bg {
+    background-image: repeating-linear-gradient(90deg, white 0%, #8be9fd 100%);
+  }
+</style>
