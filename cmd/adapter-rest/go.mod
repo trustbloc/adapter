@@ -11,7 +11,7 @@ require (
 	github.com/go-sql-driver/mysql v1.5.0
 	github.com/google/uuid v1.1.1
 	github.com/gorilla/mux v1.7.4
-	github.com/hyperledger/aries-framework-go v0.1.4-0.20200708140159-459bb2161e10
+	github.com/hyperledger/aries-framework-go v0.1.4-0.20200724143028-ea4069806833
 	github.com/phayes/freeport v0.0.0-20180830031419-95f893ade6f2
 	github.com/rs/cors v1.7.0
 	github.com/spf13/cobra v1.0.0

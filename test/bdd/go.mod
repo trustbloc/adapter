@@ -13,7 +13,7 @@ require (
 	github.com/fsouza/go-dockerclient v1.6.5
 	github.com/google/uuid v1.1.1
 	github.com/gorilla/mux v1.7.4
-	github.com/hyperledger/aries-framework-go v0.1.4-0.20200708140159-459bb2161e10
+	github.com/hyperledger/aries-framework-go v0.1.4-0.20200724143028-ea4069806833
 	github.com/ory/hydra-client-go v1.4.10
 	github.com/piprate/json-gold v0.3.0
 	github.com/pkg/errors v0.9.1

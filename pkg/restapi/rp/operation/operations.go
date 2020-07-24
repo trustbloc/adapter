@@ -116,7 +116,7 @@ type PublicDIDCreator interface {
 // AriesContextProvider is the dependency interface for the connection.Recorder.
 type AriesContextProvider interface {
 	StorageProvider() ariesstorage.Provider
-	TransientStorageProvider() ariesstorage.Provider
+	ProtocolStateStorageProvider() ariesstorage.Provider
 	VDRIRegistry() vdri.Registry
 }
 

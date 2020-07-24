@@ -27,8 +27,8 @@ import (
 func TestNew(t *testing.T) {
 	t.Run("test new - success", func(t *testing.T) {
 		ariesCtx := &mockprovider.Provider{
-			TransientStorageProviderValue: mockstore.NewMockStoreProvider(),
-			StorageProviderValue:          mockstore.NewMockStoreProvider(),
+			ProtocolStateStorageProviderValue: mockstore.NewMockStoreProvider(),
+			StorageProviderValue:              mockstore.NewMockStoreProvider(),
 			ServiceMap: map[string]interface{}{
 				didexchange.DIDExchange: &mocksvc.MockDIDExchangeSvc{},
 				mediator.Coordination:   &mockroute.MockMediatorSvc{},

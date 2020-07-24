@@ -20,7 +20,7 @@ type CtxProvider interface {
 	LegacyKMS() legacykms.KeyManager
 	ServiceEndpoint() string
 	StorageProvider() storage.Provider
-	TransientStorageProvider() storage.Provider
+	ProtocolStateStorageProvider() storage.Provider
 	KMS() kms.KeyManager
 	VDRIRegistry() vdriapi.Registry
 	Crypto() ariescrypto.Crypto
