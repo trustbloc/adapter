@@ -9,7 +9,7 @@ go 1.14
 require (
 	github.com/cenkalti/backoff v2.2.1+incompatible
 	github.com/gorilla/mux v1.7.4
-	github.com/hyperledger/aries-framework-go v0.1.4-0.20200724143028-ea4069806833
+	github.com/hyperledger/aries-framework-go v0.1.4-0.20200810205248-004a72c5f148
 	github.com/rs/cors v1.7.0
 	github.com/spf13/cobra v1.0.0
 	github.com/stretchr/testify v1.5.1

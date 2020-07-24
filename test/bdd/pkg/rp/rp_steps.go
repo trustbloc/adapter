@@ -516,17 +516,19 @@ func (s *Steps) walletCreatesAuthorizationCredential(wallet, tenant, issuer stri
 }
 
 func (s *Steps) issuerRepliesWithUserData(issuer, tenant string) error {
-	vc, err := newCreditCardStatementVC()
+	conn, err := s.controller.GetConnectionBetweenAgents(issuer, tenant)
 	if err != nil {
-		return fmt.Errorf("failed to create credit card statement vc : %w", err)
+		return fmt.Errorf("'%s' failed to fetch a didcomm connection record with '%s': %w", issuer, tenant, err)
 	}
 
-	bits, err := json.Marshal(vc.Subject)
+	unverifiableVC := newUnverifiableCreditCardStatementVC(conn.MyDID)
+
+	bits, err := json.Marshal(unverifiableVC.Subject)
 	if err != nil {
 		return fmt.Errorf(`"%s" failed to marshal credential subject : %w`, issuer, err)
 	}
 
-	expected := make([]map[string]interface{}, 0)
+	expected := make(map[string]interface{}, 0)
 
 	err = json.Unmarshal(bits, &expected)
 	if err != nil {
@@ -535,16 +537,21 @@ func (s *Steps) issuerRepliesWithUserData(issuer, tenant string) error {
 
 	tenantCtx := s.tenantCtx[tenant]
 
-	tenantCtx.expectedUserData = expected[0]["stmt"]
+	tenantCtx.expectedUserData = expected["stmt"]
 
-	vp, err := newVerifiablePresentation(vc)
+	verifiableVC, err := s.controller.SignCredential(issuer, conn.MyDID, unverifiableVC)
 	if err != nil {
-		return fmt.Errorf("failed to create verifiable presentation : %w", err)
+		return fmt.Errorf("'%s' failed to sign the user data credential: %w", issuer, err)
+	}
+
+	vp, err := s.controller.GeneratePresentation(issuer, conn.MyDID, verifiableVC)
+	if err != nil {
+		return fmt.Errorf("'%s' failed to generate the user data vp: %w", issuer, err)
 	}
 
 	err = s.controller.AcceptRequestPresentation(issuer, vp)
 	if err != nil {
-		return fmt.Errorf("%s failed to accept request-presentation : %w", issuer, err)
+		return fmt.Errorf("'%s' failed to accept request-presentation : %w", issuer, err)
 	}
 
 	return nil

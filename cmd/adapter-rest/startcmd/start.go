@@ -548,7 +548,7 @@ func addRPHandlers(
 			ctx.KMS(),
 			ctx.LegacyKMS(),
 			rootCAs),
-		AriesStorageProvider: ctx,
+		AriesContextProvider: ctx,
 		PresentProofClient:   presentProofClient,
 	})
 	if err != nil {

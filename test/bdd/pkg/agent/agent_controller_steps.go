@@ -12,6 +12,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/hyperledger/aries-framework-go/pkg/doc/signature/suite/ed25519signature2018"
 	"io/ioutil"
 	"net/http"
 	"strings"
@@ -71,6 +72,10 @@ const (
 	vdriOperationID = "/vdri"
 	vdriDIDPath     = vdriOperationID + "/did"
 	resolveDIDPath  = vdriDIDPath + "/resolve/%s"
+
+	verifiableOperationID    = "/verifiable"
+	signCredentialPath       = verifiableOperationID + "/signcredential"
+	generatePresentationPath = verifiableOperationID + ""
 )
 
 var logger = log.New("edge-adapter/tests")
@@ -330,7 +335,7 @@ func (a *Steps) getConnection(agentID, connectionID string) (*didexchange.Connec
 	return response.Result, nil
 }
 
-// GetConnectionBetweenAgents returns a didcomm connection record between the two agents, if one exists.
+// GetConnectionBetweenAgents returns a didcomm connection record that agentA has with agentB, if one exists.
 func (a *Steps) GetConnectionBetweenAgents(agentA, agentB string) (*didexchange.Connection, error) {
 	destination, ok := a.ControllerURLs[agentA]
 	if !ok {
@@ -594,6 +599,78 @@ func (a *Steps) AcceptRequestPresentation(agent string, presentation *verifiable
 	acceptRequestURL := fmt.Sprintf(destination+acceptRequestPresentation, piid)
 
 	return sendHTTP(http.MethodPost, acceptRequestURL, request, &presentproofcmd.AcceptRequestPresentationResponse{})
+}
+
+func (a *Steps) SignCredential(agent, signingDID string, cred *verifiable.Credential) (*verifiable.Credential, error) {
+	destination := a.ControllerURLs[agent]
+
+	inputBits, err := json.Marshal(cred)
+	if err != nil {
+		return nil, fmt.Errorf("'%s' failed to marshal credential: %w", agent, err)
+	}
+
+	request, err := json.Marshal(&verifiablecmd.SignCredentialRequest{
+		Credential: inputBits,
+		DID:        signingDID,
+		ProofOptions: nil,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("'%s' failed to marshal SignCredential request: %w", agent, err)
+	}
+
+	response := &verifiablecmd.SignCredentialResponse{}
+
+	err = sendHTTP(http.MethodPost, destination+signCredentialPath, request, response)
+	if err != nil {
+		return nil, fmt.Errorf("'%s' failed to sign credential: %w", agent, err)
+	}
+
+	output, err := verifiable.ParseUnverifiedCredential(response.VerifiableCredential)
+	if err != nil {
+		return nil, fmt.Errorf("'%s' failed to parse their own signed credential: %w", agent, err)
+	}
+
+	return output, nil
+}
+
+func (a *Steps) GeneratePresentation(agent string, signingDID string, vcs ...*verifiable.Credential) (*verifiable.Presentation, error) {
+	destinationURL := a.ControllerURLs[agent]
+
+	rawCreds := make([]json.RawMessage, len(vcs))
+
+	for i := range vcs {
+		rawCred, err := json.Marshal(vcs[i])
+		if err != nil {
+			return nil, fmt.Errorf("'%s' failed to marshal a credential while generating a presentation: %w", agent, err)
+		}
+
+		rawCreds[i] = rawCred
+	}
+
+	request, err := json.Marshal(&verifiablecmd.PresentationRequest{
+		VerifiableCredentials: rawCreds,
+		DID:                   signingDID,
+		ProofOptions: &verifiablecmd.ProofOptions{
+			SignatureType: ed25519signature2018.SignatureType,
+		},
+	})
+	if err != nil {
+		return nil, fmt.Errorf("'%s' failed to marshal generate presentation request: %w", agent, err)
+	}
+
+	response := &verifiablecmd.Presentation{}
+
+	err = sendHTTP(http.MethodPost, destinationURL+generatePresentationPath, request, response)
+	if err != nil {
+		return nil, fmt.Errorf("'%s' failed to generate their own presentation: %w", agent, err)
+	}
+
+	vp, err := verifiable.ParseUnverifiedPresentation(response.VerifiablePresentation)
+	if err != nil {
+		return nil, fmt.Errorf("'%s' failed to parse their own presentation: %w", agent, err)
+	}
+
+	return vp, nil
 }
 
 func sendPresentationRequest(conn *didexchange.Connection, vp *verifiable.Presentation, controllerURL string) error {

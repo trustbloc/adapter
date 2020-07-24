@@ -9,6 +9,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/hyperledger/aries-framework-go/pkg/doc/util"
+
 	"github.com/google/uuid"
 	"github.com/hyperledger/aries-framework-go/pkg/doc/did"
 	"github.com/hyperledger/aries-framework-go/pkg/doc/signature/jsonld"
@@ -109,49 +111,49 @@ func newUserAuthorizationVC(subjectDID string, rpDID, issuerDID *did.Doc) (*veri
 	return verifiable.ParseCredential([]byte(contents), verifiable.WithJSONLDDocumentLoader(testDocumentLoader))
 }
 
-func newCreditCardStatementVC() (*verifiable.Credential, error) {
-	const template = `{
-	"@context": [
-		"https://www.w3.org/2018/credentials/v1",
-		"https://trustbloc.github.io/context/vc/examples-ext-v1.jsonld"
-	],
-	"type": [
-		"VerifiableCredential",
-		"CreditCardStatement"
-	],
-	"id": "http://example.gov/credentials/ff98f978-588f-4eb0-b17b-60c18e1dac2c",
-	"issuanceDate": "2020-03-16T22:37:26.544Z",
-	"issuer": {
-		"id": "did:peer:issuer"
-	},
-	"credentialSubject": {
-		"id": "did:peer:user",
-		"stmt": {
-			"description": "June 2020 Credit Card Statement",
-			"url": "http://acmebank.com/invoice.pdf",
-			"accountId": "xxxx-xxxx-xxxx-1234",
-			"customer": {
-				"@type": "Person",
-				"name": "Jane Doe"
+func newUnverifiableCreditCardStatementVC(issuerDID string) *verifiable.Credential {
+	return &verifiable.Credential{
+		Context: []string{
+			"https://www.w3.org/2018/credentials/v1",
+			"https://trustbloc.github.io/context/vc/examples-ext-v1.jsonld",
+		},
+		Types: []string{
+			"VerifiableCredential",
+			"CreditCardStatement",
+		},
+		ID: fmt.Sprintf("http://example.gov/credentials/%s", uuid.New().String()),
+		Issuer: verifiable.Issuer{
+			ID: issuerDID,
+		},
+		Issued: &util.TimeWithTrailingZeroMsec{Time: time.Now()},
+		Subject: &verifiable.Subject{
+			ID: "did:peer:bdd_tests_example_123",
+			CustomFields: map[string]interface{}{
+				"stmt": map[string]interface{}{
+					"description": "June 2020 Credit Card Statement",
+					"url":         "http://acmebank.com/invoice.pdf",
+					"accountId":   "xxxx-xxxx-xxxx-1234",
+					"customer": map[string]string{
+						"@type": "Person",
+						"name":  "Jane Doe",
+					},
+					"paymentDueDate": "2020-06-30T12:00:00",
+					"minimumPaymentDue": map[string]interface{}{
+						"@type":         "PriceSpecification",
+						"price":         15.00,
+						"priceCurrency": "CAD",
+					},
+					"totalPaymentDue": map[string]interface{}{
+						"@type":         "PriceSpecification",
+						"price":         200.00,
+						"priceCurrency": "CAD",
+					},
+					"billingPeriod": "P30D",
+					"paymentStatus": "http://schema.org/PaymentDue",
+				},
 			},
-			"paymentDueDate": "2020-06-30T12:00:00",
-			"minimumPaymentDue": {
-				"@type": "PriceSpecification",
-				"price": 15.00,
-				"priceCurrency": "CAD"
-			},
-			"totalPaymentDue": {
-				"@type": "PriceSpecification",
-				"price": 200.00,
-				"priceCurrency": "CAD"
-			},
-			"billingPeriod": "P30D",
-			"paymentStatus": "http://schema.org/PaymentDue"			
-		}
+		},
 	}
-}`
-
-	return verifiable.ParseCredential([]byte(template), verifiable.WithJSONLDDocumentLoader(testDocumentLoader))
 }
 
 func addLDProof(vp *verifiable.Presentation) error {

@@ -30,6 +30,7 @@ import (
 	"github.com/hyperledger/aries-framework-go/pkg/doc/did"
 	"github.com/hyperledger/aries-framework-go/pkg/doc/verifiable"
 	"github.com/hyperledger/aries-framework-go/pkg/framework/aries/api/vdri"
+	"github.com/hyperledger/aries-framework-go/pkg/kms/legacykms"
 	ariesstorage "github.com/hyperledger/aries-framework-go/pkg/storage"
 	"github.com/hyperledger/aries-framework-go/pkg/store/connection"
 	"github.com/ory/hydra-client-go/client/admin"
@@ -37,6 +38,7 @@ import (
 	"github.com/trustbloc/edge-core/pkg/log"
 	"github.com/trustbloc/edge-core/pkg/storage"
 
+	"github.com/trustbloc/edge-adapter/pkg/crypto"
 	"github.com/trustbloc/edge-adapter/pkg/db/rp"
 	"github.com/trustbloc/edge-adapter/pkg/internal/common/support"
 	"github.com/trustbloc/edge-adapter/pkg/presentationex"
@@ -124,6 +126,7 @@ type AriesContextProvider interface {
 	StorageProvider() ariesstorage.Provider
 	ProtocolStateStorageProvider() ariesstorage.Provider
 	VDRIRegistry() vdri.Registry
+	Signer() legacykms.Signer
 }
 
 // Storage config.
@@ -177,8 +180,9 @@ func New(config *Config) (*Operation, error) {
 		ppClient:               config.PresentProofClient,
 		ppActions:              make(chan service.DIDCommAction),
 		issuerCallbackTimeout:  defaultTimeout,
-		vdriReg:                config.AriesStorageProvider.VDRIRegistry(),
+		vdriReg:                config.AriesContextProvider.VDRIRegistry(),
 		walletResponseCtx:      make(map[string]*walletResponseCtx),
+		legacySigner:           config.AriesContextProvider.Signer(),
 	}
 
 	err := o.didClient.RegisterActionEvent(o.didActions)
@@ -196,7 +200,7 @@ func New(config *Config) (*Operation, error) {
 		return nil, fmt.Errorf("failed to open relying party store : %w", err)
 	}
 
-	o.connections, err = connection.NewRecorder(config.AriesStorageProvider)
+	o.connections, err = connection.NewRecorder(config.AriesContextProvider)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create a connection recorder : %w", err)
 	}
@@ -230,7 +234,7 @@ type Config struct {
 	OOBClient              OOBClient
 	DIDExchClient          DIDClient
 	PublicDIDCreator       PublicDIDCreator
-	AriesStorageProvider   AriesContextProvider
+	AriesContextProvider   AriesContextProvider
 	PresentProofClient     PresentProofClient
 	Storage                *Storage
 }
@@ -261,6 +265,7 @@ type Operation struct {
 	transientStore         storage.Store
 	walletResponseCtx      map[string]*walletResponseCtx
 	walletResponseCtxLock  sync.Mutex
+	legacySigner           legacykms.Signer
 }
 
 // GetRESTHandlers get all controller API handler available for this service.
@@ -776,7 +781,7 @@ func (o *Operation) chapiResponseHandler(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	vp, err := o.toVP(origConsentVC)
+	vp, err := o.toVP(origConsentVC, crCtx.RPPairwiseDID)
 	if err != nil {
 		msg := fmt.Sprintf("failed to convert user consent VC to a verifiable presentation : %s", err)
 		logger.Errorf(msg)
@@ -829,8 +834,8 @@ func (o *Operation) chapiResponseHandler(w http.ResponseWriter, r *http.Request)
 
 	start := time.Now()
 
-	// TODO the transient invitationData should be after the CHAPI response is processed but the edge-coge Store API
-	//  is missing a Delete() method: https://github.com/trustbloc/edge-core/issues/45
+	// TODO the transient data should be deleted after the CHAPI response is processed but the edge-core
+	//  Store API is missing a Delete() method: https://github.com/trustbloc/edge-core/issues/45
 
 	select {
 	case c := <-callback:
@@ -1065,9 +1070,9 @@ func (o *Operation) handleIssuerPresentationMsg(msg service.DIDCommMsg) error {
 
 	logger.Debugf("handling present-proof message: %+v", presentation)
 
-	presentationSubmissionVP, err := parseIssuerResponse(ctx.consentRequestCtx.PD, presentation)
+	presentationSubmissionVP, err := parseIssuerResponse(o.vdriReg, ctx.consentRequestCtx.PD, presentation)
 	if err != nil {
-		err = fmt.Errorf("failed to parse verifiable presentation : %w", err)
+		err = fmt.Errorf("failed to parse remote verifiable presentation : %w", err)
 		notifyIssuerResponseError(err, ctx.issuerResponseStatus)
 
 		return err
@@ -1179,8 +1184,23 @@ func (o *Operation) createRPTenant(w http.ResponseWriter, r *http.Request) {
 }
 
 // TODO add an LD proof that contains the issuer's challenge: https://github.com/trustbloc/edge-adapter/issues/145
-func (o *Operation) toVP(consentVC *verifiable.Credential) (*verifiable.Presentation, error) {
-	return consentVC.Presentation()
+func (o *Operation) toVP(consentVC *verifiable.Credential, rpTenantDID string) (*verifiable.Presentation, error) {
+	vp, err := consentVC.Presentation()
+	if err != nil {
+		return nil, fmt.Errorf("failed to convert consent VC to VP : %w", err)
+	}
+
+	rpTenantDIDDoc, err := o.vdriReg.Resolve(rpTenantDID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to resolve rp tenant DID %s: %w", rpTenantDID, err)
+	}
+
+	signedVP, err := crypto.NewLegacy(o.legacySigner, o.vdriReg).SignPresentation(vp, rpTenantDIDDoc)
+	if err != nil {
+		return nil, fmt.Errorf("failed to sign consent VC verifiable presentation : %w", err)
+	}
+
+	return signedVP, nil
 }
 
 func removeOIDCScope(scopes []string) []string {

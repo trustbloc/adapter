@@ -864,7 +864,7 @@ func fetchAuthorizationCred(msg service.DIDCommAction, vdriRegistry vdri.Registr
 
 	vp, err := verifiable.ParsePresentation(
 		reqJSON,
-		verifiable.WithDisabledPresentationProofCheck(),
+		verifiable.WithPresDisabledProofCheck(),
 	)
 	if err != nil {
 		return nil, fmt.Errorf("parse presentation : %w", err)

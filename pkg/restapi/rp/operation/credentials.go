@@ -8,7 +8,6 @@ package operation
 
 import (
 	"fmt"
-
 	"github.com/hyperledger/aries-framework-go/pkg/client/presentproof"
 	"github.com/hyperledger/aries-framework-go/pkg/doc/verifiable"
 	vdriapi "github.com/hyperledger/aries-framework-go/pkg/framework/aries/api/vdri"
@@ -22,9 +21,12 @@ import (
 
 var errInvalidCredential = errors.New("malformed credential")
 
+
 func parseWalletResponse(definitions *presentationex.PresentationDefinitions, vdriReg vdriapi.Registry,
 	vpBytes []byte) (*vc.AuthorizationCredential, *verifiable.Credential, error) {
-	vp, err := verifiable.ParsePresentation(vpBytes)
+	vp, err := verifiable.ParsePresentation(
+		vpBytes,
+		verifiable.WithPresPublicKeyFetcher(verifiable.NewDIDKeyResolver(vdriReg).PublicKeyFetcher()))
 	if err != nil {
 		return nil, nil, errors.Wrapf(
 			errInvalidCredential, fmt.Sprintf("error parsing a verifiable presentation : %s", err))
@@ -45,9 +47,11 @@ func parseWalletResponse(definitions *presentationex.PresentationDefinitions, vd
 	for i := range rawCreds {
 		raw := rawCreds[i]
 
+		// TODO disabled proof check because right now authz creds are signed by the (as-yet unknown) issuer
 		cred, parseErr := verifiable.ParseCredential(
 			raw,
 			verifiable.WithPublicKeyFetcher(verifiable.NewDIDKeyResolver(vdriReg).PublicKeyFetcher()),
+			verifiable.WithDisabledProofCheck(),
 		)
 		if parseErr != nil {
 			return nil, nil, fmt.Errorf(
@@ -83,7 +87,7 @@ func parseWalletResponse(definitions *presentationex.PresentationDefinitions, vd
 	return authorizationVC, orig, nil
 }
 
-func parseIssuerResponse(def *presentationex.PresentationDefinitions,
+func parseIssuerResponse(vdriReg vdriapi.Registry, def *presentationex.PresentationDefinitions,
 	pres *presentproof.Presentation) (*rp.PresentationSubmissionPresentation, error) {
 	if len(pres.PresentationsAttach) == 0 {
 		return nil, fmt.Errorf("%w : expected at least 1 attachment but got 0", errInvalidCredential)
@@ -96,10 +100,12 @@ func parseIssuerResponse(def *presentationex.PresentationDefinitions,
 		return nil, fmt.Errorf("failed to fetch contents of attachment with id %s : %w", attachment.ID, err)
 	}
 
-	vp, err := verifiable.ParsePresentation(vpBytes)
+	vp, err := verifiable.ParsePresentation(
+		vpBytes,
+		verifiable.WithPresPublicKeyFetcher(verifiable.NewDIDKeyResolver(vdriReg).PublicKeyFetcher()))
 	if err != nil {
 		return nil,
-			errors.Wrapf(errInvalidCredential, fmt.Sprintf("failed to parse a verifiable presentation : %s", err))
+			errors.Wrapf(errInvalidCredential, fmt.Sprintf("failed to parse verifiable presentation : %s", err))
 	}
 
 	err = evaluatePresentationSubmission(def, vp)

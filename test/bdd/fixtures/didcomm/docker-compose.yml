@@ -18,6 +18,7 @@ services:
       - ARIESD_DB_PATH=${WALLET_AGENT_DB_PATH}
       - ARIESD_DEFAULT_LABEL=aries-wallet
       - ARIESD_HTTP_RESOLVER=trustbloc@http://did.rest.example.com:8072/1.0/identifiers
+      - ARIESD_LOG_LEVEL=debug
     ports:
       - ${WALLET_AGENT_INBOUND_PORT}:${WALLET_AGENT_INBOUND_PORT}
       - ${WALLET_AGENT_API_PORT}:${WALLET_AGENT_API_PORT}

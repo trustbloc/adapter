@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	vdriapi "github.com/hyperledger/aries-framework-go/pkg/framework/aries/api/vdri"
+	"github.com/hyperledger/aries-framework-go/pkg/kms/legacykms"
 	ariesmockstorage "github.com/hyperledger/aries-framework-go/pkg/mock/storage"
 	ariesstorage "github.com/hyperledger/aries-framework-go/pkg/storage"
 	"github.com/stretchr/testify/require"
@@ -27,7 +28,7 @@ func TestController_New(t *testing.T) {
 				Persistent: memstore.NewProvider(),
 				Transient:  memstore.NewProvider(),
 			},
-			AriesStorageProvider: &mockAriesContextProvider{},
+			AriesContextProvider: &mockAriesContextProvider{},
 			PresentProofClient:   &mockpresentproof.MockClient{},
 		})
 		require.NoError(t, err)
@@ -42,6 +43,7 @@ type mockAriesContextProvider struct {
 	store   ariesstorage.Provider
 	tstore  ariesstorage.Provider
 	vdriReg vdriapi.Registry
+	signer  legacykms.Signer
 }
 
 func (m *mockAriesContextProvider) StorageProvider() ariesstorage.Provider {
@@ -62,4 +64,8 @@ func (m *mockAriesContextProvider) ProtocolStateStorageProvider() ariesstorage.P
 
 func (m *mockAriesContextProvider) VDRIRegistry() vdriapi.Registry {
 	return m.vdriReg
+}
+
+func (m *mockAriesContextProvider) Signer() legacykms.Signer {
+	return m.signer
 }
