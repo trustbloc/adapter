@@ -309,8 +309,8 @@ func TestConnectWallet(t *testing.T) {
 
 	t.Run("test connect wallet - failed to create invitation", func(t *testing.T) {
 		ariesCtx := &mockprovider.Provider{
-			TransientStorageProviderValue: mockstore.NewMockStoreProvider(),
-			StorageProviderValue:          mockstore.NewMockStoreProvider(),
+			ProtocolStateStorageProviderValue: mockstore.NewMockStoreProvider(),
+			StorageProviderValue:              mockstore.NewMockStoreProvider(),
 			ServiceMap: map[string]interface{}{
 				didexchange.DIDExchange: &mocksvc.MockDIDExchangeSvc{},
 				mediator.Coordination:   &mockroute.MockMediatorSvc{},
@@ -849,8 +849,8 @@ func TestDIDCommListeners(t *testing.T) {
 
 			c, err := New(&Config{
 				AriesCtx: &mockprovider.Provider{
-					TransientStorageProviderValue: mockstore.NewMockStoreProvider(),
-					StorageProviderValue:          mockstore.NewMockStoreProvider(),
+					ProtocolStateStorageProviderValue: mockstore.NewMockStoreProvider(),
+					StorageProviderValue:              mockstore.NewMockStoreProvider(),
 					ServiceMap: map[string]interface{}{
 						didexchange.DIDExchange: &mocksvc.MockDIDExchangeSvc{},
 						mediator.Coordination:   &mockroute.MockMediatorSvc{},
@@ -1527,8 +1527,8 @@ func TestGetConnectionIDFromEvent(t *testing.T) {
 
 func getAriesCtx() aries.CtxProvider {
 	return &mockprovider.Provider{
-		TransientStorageProviderValue: mockstore.NewMockStoreProvider(),
-		StorageProviderValue:          mockstore.NewMockStoreProvider(),
+		ProtocolStateStorageProviderValue: mockstore.NewMockStoreProvider(),
+		StorageProviderValue:              mockstore.NewMockStoreProvider(),
 		ServiceMap: map[string]interface{}{
 			didexchange.DIDExchange: &mocksvc.MockDIDExchangeSvc{},
 			mediator.Coordination:   &mockroute.MockMediatorSvc{},

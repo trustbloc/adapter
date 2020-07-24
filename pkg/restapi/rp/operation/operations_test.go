@@ -2452,7 +2452,7 @@ func (m *mockAriesContextProvider) StorageProvider() ariesstorage.Provider {
 	return ariesmockstorage.NewMockStoreProvider()
 }
 
-func (m *mockAriesContextProvider) TransientStorageProvider() ariesstorage.Provider {
+func (m *mockAriesContextProvider) ProtocolStateStorageProvider() ariesstorage.Provider {
 	if m.tstore != nil {
 		return m.tstore
 	}

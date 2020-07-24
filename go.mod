@@ -10,7 +10,7 @@ require (
 	github.com/coreos/go-oidc v2.2.1+incompatible
 	github.com/google/uuid v1.1.1
 	github.com/gorilla/mux v1.7.4
-	github.com/hyperledger/aries-framework-go v0.1.4-0.20200708140159-459bb2161e10
+	github.com/hyperledger/aries-framework-go v0.1.4-0.20200724143028-ea4069806833
 	github.com/kr/text v0.2.0 // indirect
 	github.com/mr-tron/base58 v1.1.3
 	github.com/niemeyer/pretty v0.0.0-20200227124842-a10e7caefd8e // indirect
