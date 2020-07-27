@@ -8,6 +8,14 @@
 
 # edge-adapter
 
+The TrustBloc edge adapter acts as an intermediary between RP/Issuer components to support [DIDComm](https://github.com/hyperledger/aries-rfcs/tree/master/concepts/0005-didcomm) 
+operations. The edge-adapter uses the capabilities provided by [Hyperledger Aries Framework Go](https://github.com/hyperledger/aries-framework-go) 
+such as DIDComm, [W3C Verifiable Credentials(VC)](https://w3c.github.io/vc-data-model/), [W3C Decentralized Identifiers(DIDs)](https://w3c.github.io/did-core/), etc.
+
+The edge adapter contains following components.
+- [Issuer Adapter](./docs/issuer/README.md)
+- Relaying Party (RP) Adapter 
+
 ## Contributing
 Thank you for your interest in contributing. Please see our [community contribution guidelines](https://github.com/trustbloc/community/blob/master/CONTRIBUTING.md) for more information.
 
