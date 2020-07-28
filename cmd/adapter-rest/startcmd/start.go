@@ -9,7 +9,6 @@ package startcmd
 import (
 	"crypto/tls"
 	"crypto/x509"
-	"database/sql"
 	"errors"
 	"fmt"
 	"net/http"
@@ -31,10 +30,11 @@ import (
 	"github.com/rs/cors"
 	"github.com/spf13/cobra"
 	"github.com/trustbloc/edge-core/pkg/log"
+	"github.com/trustbloc/edge-core/pkg/storage"
 	"github.com/trustbloc/edge-core/pkg/storage/memstore"
+	"github.com/trustbloc/edge-core/pkg/storage/mysql"
 	cmdutils "github.com/trustbloc/edge-core/pkg/utils/cmd"
 	tlsutils "github.com/trustbloc/edge-core/pkg/utils/tls"
-	"github.com/xo/dburl"
 
 	ariespai "github.com/trustbloc/edge-adapter/pkg/aries"
 	"github.com/trustbloc/edge-adapter/pkg/did"
@@ -56,9 +56,11 @@ const (
 	hostURLEnvKey        = "ADAPTER_REST_HOST_URL"
 
 	datasourceNameFlagName  = "dsn"
-	datasourceNameFlagUsage = "Datasource Name with credentials if required," +
-		" eg. mysql://root:secret@localhost:3306/adapter" +
-		"Alternatively, this can be set with the following environment variable: " + datasourceNameEnvKey
+	datasourceNameFlagUsage = "Datasource Name with credentials if required." +
+		" Format must be <driver>:[//]<driver-specific-dsn>." +
+		" Examples: 'mysql://root:secret@tcp(localhost:3306)/adapter', 'mem://test'." +
+		" Supported drivers are [mem, mysql]." +
+		" Alternatively, this can be set with the following environment variable: " + datasourceNameEnvKey
 	datasourceNameEnvKey = "ADAPTER_REST_DSN"
 
 	oidcProviderURLFlagName  = "op-url"
@@ -152,6 +154,21 @@ const (
 	rpMode     = "rp"
 )
 
+const (
+	rpAdapterStorePrefix     = "rpadapter"
+	issuerAdapterStorePrefix = "issueradapter"
+)
+
+// nolint:gochecknoglobals
+var supportedEdgeStorageProviders = map[string]func(string, string) (storage.Provider, error){
+	"mysql": func(dsn, prefix string) (storage.Provider, error) {
+		return mysql.NewProvider(dsn, mysql.WithDBPrefix(prefix))
+	},
+	"mem": func(_, _ string) (storage.Provider, error) { // nolint:unparam
+		return memstore.NewProvider(), nil
+	},
+}
+
 type tlsParameters struct {
 	systemCertPool bool
 	caCerts        []string
@@ -235,7 +252,7 @@ func getAdapterRestParameters(cmd *cobra.Command) (*adapterRestParameters, error
 		return nil, err
 	}
 
-	dsn, err := cmdutils.GetUserSetVarFromString(cmd, datasourceNameFlagName, datasourceNameEnvKey, true)
+	dsn, err := cmdutils.GetUserSetVarFromString(cmd, datasourceNameFlagName, datasourceNameEnvKey, false)
 	if err != nil {
 		return nil, err
 	}
@@ -455,29 +472,17 @@ func startAdapterService(parameters *adapterRestParameters, srv server) error {
 		return err
 	}
 
-	var startServer func() error
-
 	// add endpoints
 	switch parameters.mode {
 	case rpMode:
 		err = addRPHandlers(parameters, ariesCtx, router, rootCAs)
 		if err != nil {
-			return nil
-		}
-
-		startServer = func() error {
-			return srv.ListenAndServeTLS(parameters.hostURL, parameters.tlsParams.serveCertPath,
-				parameters.tlsParams.serveKeyPath, constructCORSHandler(router))
+			return fmt.Errorf("failed to add rp-adapter handlers : %w", err)
 		}
 	case issuerMode:
 		err = addIssuerHandlers(parameters, ariesCtx, router, rootCAs)
 		if err != nil {
-			return nil
-		}
-
-		startServer = func() error {
-			return srv.ListenAndServeTLS(parameters.hostURL, parameters.tlsParams.serveCertPath,
-				parameters.tlsParams.serveKeyPath, constructCORSHandler(router))
+			return fmt.Errorf("failed to add issuer-adapter handlers : %w", err)
 		}
 	default:
 		return fmt.Errorf("invalid mode : %s", parameters.mode)
@@ -485,7 +490,11 @@ func startAdapterService(parameters *adapterRestParameters, srv server) error {
 
 	logger.Infof("starting %s adapter rest server on host %s", parameters.mode, parameters.hostURL)
 
-	return startServer()
+	return srv.ListenAndServeTLS(
+		parameters.hostURL,
+		parameters.tlsParams.serveCertPath,
+		parameters.tlsParams.serveKeyPath,
+		constructCORSHandler(router))
 }
 
 func addRPHandlers(
@@ -510,6 +519,11 @@ func addRPHandlers(
 		return err
 	}
 
+	store, err := initEdgeStore(parameters.dsn, rpAdapterStorePrefix)
+	if err != nil {
+		return fmt.Errorf("failed to init storage provider : %w", err)
+	}
+
 	// TODO init OIDC stuff in iteration 2 - https://github.com/trustbloc/edge-adapter/issues/24
 
 	// add rp endpoints
@@ -518,7 +532,7 @@ func addRPHandlers(
 		Hydra:                  hydra.NewClient(hydraURL, rootCAs),
 		UIEndpoint:             uiEndpoint,
 		DIDExchClient:          didClient,
-		Store:                  memstore.NewProvider(),
+		Store:                  store,
 		PublicDIDCreator: did.NewTrustblocDIDCreator(
 			parameters.trustblocDomain,
 			parameters.didCommParameters.inboundHostExternal,
@@ -548,12 +562,16 @@ func addRPHandlers(
 
 func addIssuerHandlers(parameters *adapterRestParameters, ariesCtx ariespai.CtxProvider, router *mux.Router,
 	rootCAs *x509.CertPool) error {
+	store, err := initEdgeStore(parameters.dsn, issuerAdapterStorePrefix)
+	if err != nil {
+		return fmt.Errorf("failed to init storage provider : %w", err)
+	}
+
 	// add issuer endpoints
 	issuerService, err := issuer.New(&issuerops.Config{
-		AriesCtx:   ariesCtx,
-		UIEndpoint: uiEndpoint,
-		// TODO https://github.com/trustbloc/edge-adapter/issues/42 use sql store
-		StoreProvider: memstore.NewProvider(),
+		AriesCtx:      ariesCtx,
+		UIEndpoint:    uiEndpoint,
+		StoreProvider: store,
 		PublicDIDCreator: did.NewTrustblocDIDCreator(
 			parameters.trustblocDomain,
 			parameters.didCommParameters.inboundHostExternal,
@@ -604,33 +622,47 @@ func constructCORSHandler(handler http.Handler) http.Handler {
 	).Handler(handler)
 }
 
-//nolint:deadcode,unused
-func initDB(dsn string) (*sql.DB, error) {
+func initEdgeStore(dbURL, prefix string) (storage.Provider, error) {
 	const (
 		sleep      = 1 * time.Second
 		numRetries = 30
+		urlParts   = 2
 	)
 
-	var dbms *sql.DB
+	parsed := strings.SplitN(dbURL, ":", urlParts)
+
+	if len(parsed) != urlParts {
+		return nil, fmt.Errorf("invalid dbURL %s", dbURL)
+	}
+
+	driver := parsed[0]
+	dsn := strings.TrimPrefix(parsed[1], "//")
+
+	providerFunc, supported := supportedEdgeStorageProviders[driver]
+	if !supported {
+		return nil, fmt.Errorf("unsupported storage driver: %s", driver)
+	}
+
+	var store storage.Provider
 
 	err := backoff.RetryNotify(
 		func() error {
 			var openErr error
-			dbms, openErr = dburl.Open(dsn)
+			store, openErr = providerFunc(dsn, prefix)
 			return openErr
 		},
 		backoff.WithMaxRetries(backoff.NewConstantBackOff(sleep), numRetries),
 		func(retryErr error, t time.Duration) {
 			logger.Warnf(
-				"failed to connect to database, will sleep for %d before trying again : %s\n",
+				"failed to connect to storage, will sleep for %s before trying again : %s\n",
 				t, retryErr)
 		},
 	)
 	if err != nil {
-		return nil, fmt.Errorf("failed to connect to database at %s : %w", dsn, err)
+		return nil, fmt.Errorf("failed to connect to storage at %s : %w", dsn, err)
 	}
 
-	return dbms, nil
+	return store, nil
 }
 
 func acceptsDID(method string) bool {

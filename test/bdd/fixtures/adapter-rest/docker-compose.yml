@@ -20,6 +20,7 @@ services:
       - ADAPTER_REST_DIDCOMM_INBOUND_HOST_EXTERNAL=http://issuer.adapter.rest.example.com:9071
       - ADAPTER_REST_TRUSTBLOC_DOMAIN=${BLOC_DOMAIN}
       - ADAPTER_REST_UNIVERSAL_RESOLVER_URL=http://did.rest.example.com:8072/1.0/identifiers
+      - ADAPTER_REST_DSN=mysql://issueradapter:issueradapter-secret-pw@tcp(mysql:3306)/
     ports:
       - 9070:9070
       - 9071:9071
@@ -39,7 +40,7 @@ services:
       - ADAPTER_REST_TLS_SYSTEMCERTPOOL=true
       - ADAPTER_REST_TLS_SERVE_CERT=/etc/tls/ec-pubCert.pem
       - ADAPTER_REST_TLS_SERVE_KEY=/etc/tls/ec-key.pem
-      - ADAPTER_REST_DSN=mysql://root:secret@mysql:3306/mysql
+      - ADAPTER_REST_DSN=mysql://rpadapter:rpadapter-secret-pw@tcp(mysql:3306)/
       - ADAPTER_REST_OP_URL=http://PUT-SOMETHING-HERE.com
       - ADAPTER_REST_PRESENTATION_DEFINITIONS_FILE=/etc/testdata/presentationdefinitions.json
       - ADAPTER_REST_DIDCOMM_INBOUND_HOST=0.0.0.0:8071
@@ -69,7 +70,7 @@ services:
     command:  /bin/sh -c "hydra migrate sql --read-from-env --yes; hydra serve all"
     entrypoint: ""
     environment:
-      - DSN=mysql://root:secret@tcp(mysql:3306)/mysql?max_conns=20&max_idle_conns=4
+      - DSN=mysql://rpadapterhydra:rpadapterhydra-secret-pw@tcp(mysql:3306)/rpadapterhydra?max_conns=20&max_idle_conns=4
       - URLS_SELF_ISSUER=https://localhost:4444
       - URLS_CONSENT=https://localhost:8070/consent
       - URLS_LOGIN=https://localhost:8070/login
@@ -92,11 +93,11 @@ services:
     restart: always
     command: --default-authentication-plugin=mysql_native_password
     environment:
-      MYSQL_USER: user
-      MYSQL_PASSWORD: secret
       MYSQL_ROOT_PASSWORD: secret
     logging:
       driver: "none"
+    volumes:
+      - ./mysql-config:/docker-entrypoint-initdb.d
     networks:
       - bdd_net
 

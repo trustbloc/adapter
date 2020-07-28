@@ -15,7 +15,7 @@ import (
 )
 
 const (
-	storeName = "relyingparty"
+	storeName = "relyingparties"
 )
 
 // Store is the RP Adapter's store.

@@ -17,7 +17,7 @@ require (
 	github.com/spf13/cobra v1.0.0
 	github.com/stretchr/testify v1.5.1
 	github.com/trustbloc/edge-adapter v0.0.0-00010101000000-000000000000
-	github.com/trustbloc/edge-core v0.1.4-0.20200709143857-e104bb29f6c6
+	github.com/trustbloc/edge-core v0.1.4-0.20200728153544-0323395713e0
 	github.com/xo/dburl v0.0.0-20200124232849-e9ec94f52bc3
 )
 
