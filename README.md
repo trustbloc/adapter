@@ -14,7 +14,7 @@ such as DIDComm, [W3C Verifiable Credentials(VC)](https://w3c.github.io/vc-data-
 
 The edge adapter contains following components.
 - [Issuer Adapter](./docs/issuer/README.md)
-- Relaying Party (RP) Adapter 
+- [Relying Party (RP) Adapter](./docs/rp/README.md) 
 
 ## Contributing
 Thank you for your interest in contributing. Please see our [community contribution guidelines](https://github.com/trustbloc/community/blob/master/CONTRIBUTING.md) for more information.
