@@ -40,5 +40,5 @@ func New(inputDescriptorsFile string) (*Provider, error) {
 // Create presentation exchange request.
 func (p *Provider) Create(scopes []string) (*PresentationDefinitions, error) {
 	return &PresentationDefinitions{SubmissionRequirements: []SubmissionRequirements{
-		{Rule: Rule{Type: RuleTypeAll, From: scopes}}}, InputDescriptors: p.inputDescriptors}, nil
+		{Rule: RuleTypeAll, From: scopes}}, InputDescriptors: p.inputDescriptors}, nil
 }

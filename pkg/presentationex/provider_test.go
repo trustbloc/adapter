@@ -111,8 +111,8 @@ func TestProvider_Create(t *testing.T) {
 		require.NotNil(t, presentationDefinitions)
 
 		require.Equal(t, 1, len(presentationDefinitions.SubmissionRequirements))
-		require.Equal(t, 2, len(presentationDefinitions.SubmissionRequirements[0].Rule.From))
-		require.Equal(t, "scope1", presentationDefinitions.SubmissionRequirements[0].Rule.From[0])
-		require.Equal(t, "scope2", presentationDefinitions.SubmissionRequirements[0].Rule.From[1])
+		require.Equal(t, 2, len(presentationDefinitions.SubmissionRequirements[0].From))
+		require.Equal(t, "scope1", presentationDefinitions.SubmissionRequirements[0].From[0])
+		require.Equal(t, "scope2", presentationDefinitions.SubmissionRequirements[0].From[1])
 	})
 }
