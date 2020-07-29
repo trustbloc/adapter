@@ -13,16 +13,11 @@ type PresentationDefinitions struct {
 
 // SubmissionRequirements submission requirements.
 type SubmissionRequirements struct {
-	Name    string `json:"name,omitempty"`
-	Purpose string `json:"purpose,omitempty"`
-	Rule    Rule   `json:"rule,omitempty"`
-}
-
-// Rule submission requirement rule.
-type Rule struct {
-	Type  string   `json:"type,omitempty"`
-	Count int      `json:"count,omitempty"`
-	From  []string `json:"from,omitempty"`
+	Name    string   `json:"name,omitempty"`
+	Purpose string   `json:"purpose,omitempty"`
+	Rule    string   `json:"rule,omitempty"`
+	Count   int      `json:"count,omitempty"`
+	From    []string `json:"from,omitempty"`
 }
 
 // InputDescriptors input descriptors.
