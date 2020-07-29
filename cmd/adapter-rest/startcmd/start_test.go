@@ -6,26 +6,16 @@ SPDX-License-Identifier: Apache-2.0
 package startcmd
 
 import (
-	"database/sql"
 	"fmt"
 	"io/ioutil"
 	"net"
 	"net/http"
 	"net/url"
 	"os"
-	"os/exec"
-	"strings"
 	"testing"
-	"time"
 
-	"github.com/cenkalti/backoff"
-
-	"github.com/google/uuid"
-	"github.com/phayes/freeport"
 	"github.com/spf13/cobra"
 	"github.com/stretchr/testify/require"
-
-	_ "github.com/go-sql-driver/mysql"
 )
 
 // nolint: gochecknoglobals
@@ -71,77 +61,6 @@ var inputDescriptors = `{
   }
 ]
 }`
-
-//nolint:gochecknoglobals,unused
-var containerName = "edgeadapter_start_tests_" + strings.ReplaceAll(uuid.New().String(), "-", "")
-
-//nolint:gochecknoglobals
-var containerPort int
-
-//nolint:unused
-func startMySQL() error {
-	var err error
-
-	containerPort, err = freeport.GetFreePort()
-	if err != nil {
-		return fmt.Errorf("failed to obtain a port from the os : %w", err)
-	}
-
-	//nolint:gosec
-	err = exec.Command("docker", "run",
-		"--name", containerName,
-		"-e", "MYSQL_ROOT_PASSWORD=secret",
-		"-e", "MYSQL_DATABASE=edgeadapter",
-		"-d",
-		"-p", fmt.Sprintf("%d:3306", containerPort),
-		"mysql:8.0.20").Run()
-	if err != nil {
-		return fmt.Errorf("failed to start mysql : %w", err)
-	}
-
-	db, err := sql.Open("mysql", fmt.Sprintf("root:secret@tcp(localhost:%d)/edgeadapter", containerPort))
-	if err != nil {
-		return fmt.Errorf("failed to start mysql : %w", err)
-	}
-
-	err = backoff.Retry(
-		db.Ping,
-		backoff.WithMaxRetries(backoff.NewConstantBackOff(500*time.Millisecond), 40),
-	)
-	if err != nil {
-		return fmt.Errorf("failed to ping mysql : %w", err)
-	}
-
-	return nil
-}
-
-//nolint:unused
-func stopMySQL() error {
-	//nolint:gosec
-	err := exec.Command("docker", "stop", containerName).Run()
-	if err != nil {
-		return fmt.Errorf("failed to stop mysql : %w", err)
-	}
-
-	return nil
-}
-
-//nolint:deadcode,unused
-func testMain(m *testing.M) {
-	err := startMySQL()
-	if err != nil {
-		panic(err)
-	}
-
-	code := m.Run()
-
-	err = stopMySQL()
-	if err != nil {
-		panic(fmt.Errorf("failed to stop mysql : %w", err))
-	}
-
-	os.Exit(code)
-}
 
 type mockServer struct{}
 
@@ -209,7 +128,7 @@ func TestStartCmdWithMissingArg(t *testing.T) {
 		args := []string{
 			"--" + modeFlagName, rpMode,
 			"--" + hostURLFlagName, "localhost:8080",
-			"--" + datasourceNameFlagName, fmt.Sprintf("mysql://root:secret@localhost:%d/edgeadapter", containerPort),
+			"--" + datasourceNameFlagName, "mem://tests",
 		}
 		startCmd.SetArgs(args)
 
@@ -250,7 +169,7 @@ func TestStartCmdValidArgs(t *testing.T) {
 		"--" + modeFlagName, rpMode,
 		"--" + hostURLFlagName, "localhost:8080",
 		"--" + presentationDefinitionsFlagName, file.Name(),
-		"--" + datasourceNameFlagName, fmt.Sprintf("mysql://root:secret@localhost:%d/edgeadapter", containerPort),
+		"--" + datasourceNameFlagName, "mem://tests",
 		"--" + didCommInboundHostFlagName, randomURL(),
 		"--" + didCommDBPathFlagName, generateTempDir(t),
 		"--" + trustblocDomainFlagName, "http://example.trustbloc.com",
@@ -276,6 +195,7 @@ func TestStartCmdValidArgsEnvVar(t *testing.T) {
 		"--" + modeFlagName, "rp",
 		"--" + didCommInboundHostFlagName, randomURL(),
 		"--" + didCommDBPathFlagName, generateTempDir(t),
+		"--" + datasourceNameFlagName, "mem://test",
 	}
 	startCmd.SetArgs(args)
 
@@ -285,6 +205,60 @@ func TestStartCmdValidArgsEnvVar(t *testing.T) {
 
 	err = startCmd.Execute()
 	require.NoError(t, err)
+}
+
+func TestStartCmdDatasourceURL(t *testing.T) {
+	t.Run("unsupported driver", func(t *testing.T) {
+		file, err := ioutil.TempFile("", "*.json")
+		require.NoError(t, err)
+
+		_, err = file.WriteString(inputDescriptors)
+		require.NoError(t, err)
+
+		defer func() { require.NoError(t, os.Remove(file.Name())) }()
+
+		startCmd := GetStartCmd(&mockServer{})
+		args := []string{
+			"--" + modeFlagName, "rp",
+			"--" + didCommInboundHostFlagName, randomURL(),
+			"--" + didCommDBPathFlagName, generateTempDir(t),
+			"--" + datasourceNameFlagName, "unsupported://test",
+		}
+		startCmd.SetArgs(args)
+
+		setEnvVars(t, file.Name())
+
+		defer unsetEnvVars(t)
+
+		err = startCmd.Execute()
+		require.Error(t, err)
+	})
+
+	t.Run("invalid db url format", func(t *testing.T) {
+		file, err := ioutil.TempFile("", "*.json")
+		require.NoError(t, err)
+
+		_, err = file.WriteString(inputDescriptors)
+		require.NoError(t, err)
+
+		defer func() { require.NoError(t, os.Remove(file.Name())) }()
+
+		startCmd := GetStartCmd(&mockServer{})
+		args := []string{
+			"--" + modeFlagName, "rp",
+			"--" + didCommInboundHostFlagName, randomURL(),
+			"--" + didCommDBPathFlagName, generateTempDir(t),
+			"--" + datasourceNameFlagName, "invalid",
+		}
+		startCmd.SetArgs(args)
+
+		setEnvVars(t, file.Name())
+
+		defer unsetEnvVars(t)
+
+		err = startCmd.Execute()
+		require.Error(t, err)
+	})
 }
 
 func TestStartCmdDIDComm(t *testing.T) {
@@ -298,6 +272,7 @@ func TestStartCmdDIDComm(t *testing.T) {
 			"--" + hostURLFlagName, "localhost:8080",
 			"--" + didCommInboundHostFlagName, randomURL(),
 			"--" + didCommDBPathFlagName, path,
+			"--" + datasourceNameFlagName, "mem://test",
 		}
 		startCmd.SetArgs(args)
 
@@ -314,6 +289,7 @@ func TestStartCmdDIDComm(t *testing.T) {
 			"--" + modeFlagName, issuerMode,
 			"--" + hostURLFlagName, "localhost:8080",
 			"--" + didCommDBPathFlagName, path,
+			"--" + datasourceNameFlagName, "mem://test",
 		}
 		startCmd.SetArgs(args)
 
@@ -329,6 +305,7 @@ func TestStartCmdDIDComm(t *testing.T) {
 			"--" + modeFlagName, issuerMode,
 			"--" + hostURLFlagName, "localhost:8080",
 			"--" + didCommInboundHostFlagName, randomURL(),
+			"--" + datasourceNameFlagName, "mem://test",
 		}
 		startCmd.SetArgs(args)
 
@@ -359,6 +336,7 @@ func TestAdapterModes(t *testing.T) {
 			"--" + presentationDefinitionsFlagName, file.Name(),
 			"--" + didCommInboundHostFlagName, randomURL(),
 			"--" + didCommDBPathFlagName, generateTempDir(t),
+			"--" + datasourceNameFlagName, "mem://test",
 		}
 		startCmd.SetArgs(args)
 
@@ -378,6 +356,7 @@ func TestAdapterModes(t *testing.T) {
 			"--" + hostURLFlagName, "localhost:8080",
 			"--" + didCommInboundHostFlagName, testInboundHostURL,
 			"--" + didCommDBPathFlagName, path,
+			"--" + datasourceNameFlagName, "mem://test",
 		}
 		startCmd.SetArgs(args)
 
@@ -393,6 +372,7 @@ func TestAdapterModes(t *testing.T) {
 			"--" + hostURLFlagName, "localhost:8080",
 			"--" + didCommInboundHostFlagName, randomURL(),
 			"--" + didCommDBPathFlagName, generateTempDir(t),
+			"--" + datasourceNameFlagName, "mem://test",
 		}
 		startCmd.SetArgs(args)
 

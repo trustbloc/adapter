@@ -19,7 +19,7 @@ require (
 	github.com/pkg/errors v0.9.1
 	github.com/sirupsen/logrus v1.6.0
 	github.com/stretchr/testify v1.5.1
-	github.com/trustbloc/edge-core v0.1.4-0.20200709143857-e104bb29f6c6
+	github.com/trustbloc/edge-core v0.1.4-0.20200728153544-0323395713e0
 	github.com/trustbloc/trustbloc-did-method v0.1.4-0.20200709150904-54a502143328
 	google.golang.org/appengine v1.6.5 // indirect
 	gopkg.in/check.v1 v1.0.0-20200227125254-8fa46927fb4f // indirect
