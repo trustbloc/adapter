@@ -3,7 +3,7 @@
 Issuer adapter acts on behalf of Issuer to perform DIDComm related use cases.
 
 ## 1 Issuer Integration 
-### 1.1 Create Profile API - HPP POST /profile
+### 1.1 Create Profile API - HTTP POST /profile
 
 Creates a new Issuer profile with Adapter.
 
