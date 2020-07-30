@@ -38,41 +38,43 @@ var testDocumentLoader = createTestJSONLDDocumentLoader()
 
 func TestParseWalletResponse(t *testing.T) {
 	t.Run("valid response", func(t *testing.T) {
-		userDID := newPeerDID(t)
+		subjectDID := newPeerDID(t)
 		rpDID := newPeerDID(t)
 		issuerDID := newPeerDID(t)
-		origConsentVC := newUserConsentVC(t, userDID.ID, rpDID, issuerDID)
-		vp := newPresentationSubmissionVP(t, origConsentVC)
-		customConsentVC, resultOrigConsentVC, err := parseWalletResponse(nil, &mockvdri.MockVDRIRegistry{}, marshalVP(t, vp))
+		origAuthorizationVC := newUserAuthorizationVC(t, subjectDID.ID, rpDID, issuerDID)
+		vp := newPresentationSubmissionVP(t, origAuthorizationVC)
+		customAuthorizationVC, resultOrigAuthorizationVC, err := parseWalletResponse(nil,
+			&mockvdri.MockVDRIRegistry{}, marshalVP(t, vp))
 		require.NoError(t, err)
-		require.Equal(t, origConsentVC.Subject, resultOrigConsentVC.Subject)
-		require.NotNil(t, customConsentVC.Subject)
+		require.Equal(t, origAuthorizationVC.Subject, resultOrigAuthorizationVC.Subject)
+		require.NotNil(t, customAuthorizationVC.Subject)
 		// check user's DID
-		require.Equal(t, userDID.ID, customConsentVC.Subject.ID)
+		require.Equal(t, subjectDID.ID, customAuthorizationVC.Subject.ID)
 		// check issuer's DID
-		require.NotNil(t, customConsentVC.Subject.IssuerDIDDoc)
-		require.Equal(t, issuerDID.ID, customConsentVC.Subject.IssuerDIDDoc.ID)
-		require.Equal(t, issuerDID.ID, parseDIDDoc(t, customConsentVC.Subject.IssuerDIDDoc.Doc).ID)
+		require.NotNil(t, customAuthorizationVC.Subject.IssuerDIDDoc)
+		require.Equal(t, issuerDID.ID, customAuthorizationVC.Subject.IssuerDIDDoc.ID)
+		require.Equal(t, issuerDID.ID, parseDIDDoc(t, customAuthorizationVC.Subject.IssuerDIDDoc.Doc).ID)
 		// check rp's DID
-		require.NotNil(t, customConsentVC.Subject.RPDIDDoc)
-		require.Equal(t, rpDID.ID, customConsentVC.Subject.RPDIDDoc.ID)
-		require.Equal(t, rpDID.ID, parseDIDDoc(t, customConsentVC.Subject.RPDIDDoc.Doc).ID)
+		require.NotNil(t, customAuthorizationVC.Subject.RPDIDDoc)
+		require.Equal(t, rpDID.ID, customAuthorizationVC.Subject.RPDIDDoc.ID)
+		require.Equal(t, rpDID.ID, parseDIDDoc(t, customAuthorizationVC.Subject.RPDIDDoc.Doc).ID)
 	})
 
 	t.Run("ignores credentials not of the expected type", func(t *testing.T) {
 		vp := newPresentationSubmissionVP(t,
 			newUniversityDegreeVC(t), // ignored
-			newUserConsentVC(t, newPeerDID(t).ID, newPeerDID(t), newPeerDID(t)),
+			newUserAuthorizationVC(t, newPeerDID(t).ID, newPeerDID(t), newPeerDID(t)),
 		)
-		customConsentVC, origConsentVC, err := parseWalletResponse(nil, &mockvdri.MockVDRIRegistry{}, marshalVP(t, vp))
+		customAuthorizationVC, origAuthorizationVC, err := parseWalletResponse(nil,
+			&mockvdri.MockVDRIRegistry{}, marshalVP(t, vp))
 		require.NoError(t, err)
-		require.NotNil(t, customConsentVC)
-		require.NotNil(t, origConsentVC)
+		require.NotNil(t, customAuthorizationVC)
+		require.NotNil(t, origAuthorizationVC)
 	})
 
 	t.Run("errInvalidCredential if vp cannot be parsed", func(t *testing.T) {
-		consentVC := newUserConsentVC(t, newPeerDID(t).ID, newPeerDID(t), newPeerDID(t))
-		vp, err := consentVC.Presentation()
+		authorizationVC := newUserAuthorizationVC(t, newPeerDID(t).ID, newPeerDID(t), newPeerDID(t))
+		vp, err := authorizationVC.Presentation()
 		require.NoError(t, err)
 		_, _, err = parseWalletResponse(nil, &mockvdri.MockVDRIRegistry{}, marshalVP(t, vp))
 		require.True(t, errors.Is(err, errInvalidCredential))
@@ -85,7 +87,7 @@ func TestParseWalletResponse(t *testing.T) {
 	})
 
 	t.Run("errInvalidCredential if issuer's did doc is missing", func(t *testing.T) {
-		vp := newPresentationSubmissionVP(t, newUserConsentVCMissingIssuerDIDDoc(t, newPeerDID(t).ID, newPeerDID(t)))
+		vp := newPresentationSubmissionVP(t, newUserAuthorizationVCMissingIssuerDIDDoc(t, newPeerDID(t).ID, newPeerDID(t)))
 		_, _, err := parseWalletResponse(nil, &mockvdri.MockVDRIRegistry{}, marshalVP(t, vp))
 		require.True(t, errors.Is(err, errInvalidCredential))
 	})
@@ -220,16 +222,16 @@ func newPresentationSubmissionVPUnparseableVC(t *testing.T) *verifiable.Presenta
 	return vp
 }
 
-func newUserConsentVC(t *testing.T, userDID string, rpDID, issuerDID *did.Doc) *verifiable.Credential {
+func newUserAuthorizationVC(t *testing.T, subjectDID string, rpDID, issuerDID *did.Doc) *verifiable.Credential {
 	const (
-		userConsentVCTemplate = `{
+		userAuthorizationVCTemplate = `{
 	"@context": [
 		"https://www.w3.org/2018/credentials/v1",
-		"https://trustbloc.github.io/context/vc/consent-credential-v1.jsonld"
+		"https://trustbloc.github.io/context/vc/authorization-credential-v1.jsonld"
 	],
 	"type": [
 		"VerifiableCredential",
-		"ConsentCredential"
+		"AuthorizationCredential"
 	],
 	"id": "http://example.gov/credentials/ff98f978-588f-4eb0-b17b-60c18e1dac2c",
 	"issuanceDate": "2020-03-16T22:37:26.544Z",
@@ -238,9 +240,9 @@ func newUserConsentVC(t *testing.T, userDID string, rpDID, issuerDID *did.Doc) *
 	},
 	"credentialSubject": {
 		"id": "%s",
-		"rpDIDDoc": %s,
+		"requestingPartyDIDDoc": %s,
 		"issuerDIDDoc": %s,
-		"userDID": "%s"
+		"subjectDID": "%s"
 	}
 }`
 		didDocTemplate = `{
@@ -259,22 +261,22 @@ func newUserConsentVC(t *testing.T, userDID string, rpDID, issuerDID *did.Doc) *
 
 	issuerDIDClaim := fmt.Sprintf(didDocTemplate, issuerDID.ID, bits)
 	contents := fmt.Sprintf(
-		userConsentVCTemplate,
-		userDID, userDID, rpDIDClaim, issuerDIDClaim, userDID)
+		userAuthorizationVCTemplate,
+		subjectDID, subjectDID, rpDIDClaim, issuerDIDClaim, subjectDID)
 
 	return parseVC(t, contents)
 }
 
-func newUserConsentVCMissingIssuerDIDDoc(t *testing.T, userDID string, rpDID *did.Doc) *verifiable.Credential {
+func newUserAuthorizationVCMissingIssuerDIDDoc(t *testing.T, subjectDID string, rpDID *did.Doc) *verifiable.Credential {
 	const (
-		userConsentVCTemplate = `{
+		userAuthorizationVCTemplate = `{
 	"@context": [
 		"https://www.w3.org/2018/credentials/v1",
-		"https://trustbloc.github.io/context/vc/consent-credential-v1.jsonld"
+		"https://trustbloc.github.io/context/vc/authorization-credential-v1.jsonld"
 	],
 	"type": [
 		"VerifiableCredential",
-		"ConsentCredential"
+		"AuthorizationCredential"
 	],
 	"id": "http://example.gov/credentials/ff98f978-588f-4eb0-b17b-60c18e1dac2c",
 	"issuanceDate": "2020-03-16T22:37:26.544Z",
@@ -283,8 +285,8 @@ func newUserConsentVCMissingIssuerDIDDoc(t *testing.T, userDID string, rpDID *di
 	},
 	"credentialSubject": {
 		"id": "%s",
-		"rpDIDDoc": %s,
-		"userDID": "%s"
+		"requestingPartyDIDDoc": %s,
+		"subjectDID": "%s"
 	}
 }`
 		didDocTemplate = `{
@@ -299,8 +301,8 @@ func newUserConsentVCMissingIssuerDIDDoc(t *testing.T, userDID string, rpDID *di
 	rpDIDClaim := fmt.Sprintf(didDocTemplate, rpDID.ID, bits)
 
 	contents := fmt.Sprintf(
-		userConsentVCTemplate,
-		userDID, userDID, rpDIDClaim, userDID)
+		userAuthorizationVCTemplate,
+		subjectDID, subjectDID, rpDIDClaim, subjectDID)
 
 	return parseVC(t, contents)
 }
@@ -462,8 +464,8 @@ func createTestJSONLDDocumentLoader() *ld.CachingDocumentLoader {
 			filename: "schema.org.jsonld",
 		},
 		{
-			vocab:    "https://trustbloc.github.io/context/vc/consent-credential-v1.jsonld",
-			filename: "consent-credential-v1.jsonld",
+			vocab:    "https://trustbloc.github.io/context/vc/authorization-credential-v1.jsonld",
+			filename: "authorization-credential-v1.jsonld",
 		},
 		{
 			vocab:    "https://trustbloc.github.io/context/vc/examples-ext-v1.jsonld",

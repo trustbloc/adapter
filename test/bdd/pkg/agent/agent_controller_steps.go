@@ -112,8 +112,7 @@ func (a *Steps) RegisterSteps(s *godog.Suite) {
 }
 
 // ValidateAgentConnection checks if the controller agent is running.
-func (a *Steps) ValidateAgentConnection(agentID, inboundHost,
-	inboundPort, controllerURL string) error {
+func (a *Steps) ValidateAgentConnection(agentID, inboundHost, inboundPort, controllerURL string) error {
 	if err := a.checkAgentIsRunning(agentID, controllerURL); err != nil {
 		return err
 	}
@@ -514,8 +513,8 @@ func (a *Steps) fetchCredential(agentID, issuerID string) error { // nolint: fun
 		return err
 	}
 
-	ccReq := &issuerops.ConsentCredentialReq{
-		UserDID: conn.MyDID,
+	ccReq := &issuerops.AuthorizationCredentialReq{
+		SubjectDID: conn.MyDID,
 		RPDIDDoc: &adaptervc.DIDDoc{
 			ID:  didDocument.ID,
 			Doc: didDocJSON,
@@ -564,19 +563,19 @@ func (a *Steps) fetchCredential(agentID, issuerID string) error { // nolint: fun
 		return err
 	}
 
-	consentData, err := validateAndGetConsentCredential(vc, ccReq)
+	authorizationData, err := validateAndGetAuthorizationCredential(vc, ccReq)
 	if err != nil {
-		return fmt.Errorf("[issue-credential] failed to validate consent credential : %w", err)
+		return fmt.Errorf("[issue-credential] failed to validate authorization credential : %w", err)
 	}
 
-	issuerDIDDoc, err := did.ParseDocument(consentData.IssuerDIDDoc.Doc)
+	issuerDIDDoc, err := did.ParseDocument(authorizationData.IssuerDIDDoc.Doc)
 	if err != nil {
 		return err
 	}
 
-	issuerDIDDoc.ID = consentData.IssuerDIDDoc.ID
+	issuerDIDDoc.ID = authorizationData.IssuerDIDDoc.ID
 
-	connID, err := a.CreateConnection(agentID, consentData.RPDIDDoc.ID, uuid.New().String(), issuerDIDDoc)
+	connID, err := a.CreateConnection(agentID, authorizationData.RPDIDDoc.ID, uuid.New().String(), issuerDIDDoc)
 	if err != nil {
 		return err
 	}
@@ -605,7 +604,7 @@ func (a *Steps) fetchPresentation(agentID, issuerID string) error {
 
 	vc, ok := a.credentials[agentID]
 	if !ok {
-		return fmt.Errorf("unable to find the the consent credential for agent [%s]", agentID)
+		return fmt.Errorf("unable to find the the authorization credential for agent [%s]", agentID)
 	}
 
 	vp, err := vc.Presentation()
@@ -798,37 +797,37 @@ func getCredential(credentialName, controllerURL string, vdri vdriapi.Registry) 
 	return nil, fmt.Errorf("failed to validate credential: not found")
 }
 
-func validateAndGetConsentCredential(vc *verifiable.Credential,
-	ccReq *issuerops.ConsentCredentialReq) (*adaptervc.ConsentCredentialSubject, error) {
-	if !bddutil.StringsContains(adaptervc.ConsentCredentialType, vc.Types) {
-		return nil, fmt.Errorf("missing vc type : %s", adaptervc.ConsentCredentialType)
+func validateAndGetAuthorizationCredential(vc *verifiable.Credential,
+	ccReq *issuerops.AuthorizationCredentialReq) (*adaptervc.AuthorizationCredentialSubject, error) {
+	if !bddutil.StringsContains(adaptervc.AuthorizationCredentialType, vc.Types) {
+		return nil, fmt.Errorf("missing vc type : %s", adaptervc.AuthorizationCredentialType)
 	}
 
-	consentVC := &struct {
-		Subject *adaptervc.ConsentCredentialSubject `json:"credentialSubject"`
+	authorizationVC := &struct {
+		Subject *adaptervc.AuthorizationCredentialSubject `json:"credentialSubject"`
 	}{}
 
-	err := bddutil.DecodeJSONMarshaller(vc, &consentVC)
+	err := bddutil.DecodeJSONMarshaller(vc, &authorizationVC)
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse credential : %s", err.Error())
 	}
 
-	if consentVC.Subject.UserDID != ccReq.UserDID {
-		return nil, fmt.Errorf("unexpected user did consent credential : expected=%s actual=%s", ccReq.UserDID,
-			consentVC.Subject.UserDID)
+	if authorizationVC.Subject.SubjectDID != ccReq.SubjectDID {
+		return nil, fmt.Errorf("unexpected user did authorization credential : expected=%s actual=%s", ccReq.SubjectDID,
+			authorizationVC.Subject.SubjectDID)
 	}
 
-	_, err = did.ParseDocument(consentVC.Subject.IssuerDIDDoc.Doc)
+	_, err = did.ParseDocument(authorizationVC.Subject.IssuerDIDDoc.Doc)
 	if err != nil {
 		return nil, fmt.Errorf("invalid did document : %w", err)
 	}
 
-	if strings.Split(consentVC.Subject.IssuerDIDDoc.ID, ":")[1] != "peer" {
+	if strings.Split(authorizationVC.Subject.IssuerDIDDoc.ID, ":")[1] != "peer" {
 		return nil, fmt.Errorf("unexpected did method : expected=%s actual=%s", "peer",
-			strings.Split(consentVC.Subject.IssuerDIDDoc.ID, ":")[1])
+			strings.Split(authorizationVC.Subject.IssuerDIDDoc.ID, ":")[1])
 	}
 
-	return consentVC.Subject, nil
+	return authorizationVC.Subject, nil
 }
 
 func acceptPresentation(piid, presentationName, controllerURL string) error {

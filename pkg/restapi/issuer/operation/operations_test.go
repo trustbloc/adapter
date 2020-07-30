@@ -826,7 +826,7 @@ func TestDIDCommListeners(t *testing.T) {
 					Type: issuecredsvc.RequestCredentialMsgType,
 					RequestsAttach: []decorator.Attachment{
 						{Data: decorator.AttachmentData{
-							JSON: createConsentCredReq(t, "did:example:xyz123",
+							JSON: createAuthorizationCredReq(t, "did:example:xyz123",
 								mockdiddoc.GetMockDIDDoc("did:example:def567")),
 						}},
 					},
@@ -955,7 +955,7 @@ func TestDIDCommListeners(t *testing.T) {
 				require.Fail(t, "tests are not validated due to timeout")
 			}
 
-			// error saving consent cred data
+			// error saving authorization cred data
 			profile := createProfileData(issuerID)
 			profile.CredentialSigningKey = mockdiddoc.GetMockDIDDoc("did:example:def567").PublicKey[0].ID
 
@@ -976,7 +976,7 @@ func TestDIDCommListeners(t *testing.T) {
 
 			actionCh <- createCredentialReqMsg(t, nil, nil, func(err error) {
 				require.NotNil(t, err)
-				require.Contains(t, err.Error(), "store consent credential")
+				require.Contains(t, err.Error(), "store authorization credential")
 				done <- struct{}{}
 			})
 
@@ -994,7 +994,7 @@ func TestDIDCommListeners(t *testing.T) {
 
 			actionCh <- createCredentialReqMsg(t, nil, nil, func(err error) {
 				require.NotNil(t, err)
-				require.Contains(t, err.Error(), "sign consent credential")
+				require.Contains(t, err.Error(), "sign authorization credential")
 				done <- struct{}{}
 			})
 
@@ -1016,7 +1016,7 @@ func TestDIDCommListeners(t *testing.T) {
 		})
 
 		t.Run("test request issue cred - request validation", func(t *testing.T) {
-			cc, err := fetchConsentCredReq(service.DIDCommAction{
+			cc, err := fetchAuthorizationCreReq(service.DIDCommAction{
 				Message: service.NewDIDCommMsgMap(issuecredsvc.RequestCredential{
 					Type: issuecredsvc.RequestCredentialMsgType,
 				}),
@@ -1025,7 +1025,7 @@ func TestDIDCommListeners(t *testing.T) {
 			require.Contains(t, err.Error(), "credential request should have one attachment")
 			require.Nil(t, cc)
 
-			cc, err = fetchConsentCredReq(service.DIDCommAction{
+			cc, err = fetchAuthorizationCreReq(service.DIDCommAction{
 				Message: service.NewDIDCommMsgMap(issuecredsvc.RequestCredential{
 					Type: issuecredsvc.RequestCredentialMsgType,
 					RequestsAttach: []decorator.Attachment{
@@ -1037,7 +1037,7 @@ func TestDIDCommListeners(t *testing.T) {
 			require.Contains(t, err.Error(), "no data inside the credential request attachment")
 			require.Nil(t, cc)
 
-			cc, err = fetchConsentCredReq(service.DIDCommAction{
+			cc, err = fetchAuthorizationCreReq(service.DIDCommAction{
 				Message: service.NewDIDCommMsgMap(issuecredsvc.RequestCredential{
 					Type: issuecredsvc.RequestCredentialMsgType,
 					RequestsAttach: []decorator.Attachment{
@@ -1051,35 +1051,35 @@ func TestDIDCommListeners(t *testing.T) {
 			require.Contains(t, err.Error(), "invalid json data in credential request")
 			require.Nil(t, cc)
 
-			// consent cred does't contain userDID
-			cc, err = fetchConsentCredReq(service.DIDCommAction{
+			// authorization cred does't contain subjectDID
+			cc, err = fetchAuthorizationCreReq(service.DIDCommAction{
 				Message: service.NewDIDCommMsgMap(issuecredsvc.RequestCredential{
 					Type: issuecredsvc.RequestCredentialMsgType,
 					RequestsAttach: []decorator.Attachment{
 						{Data: decorator.AttachmentData{
-							JSON: createConsentCredReq(t, "",
+							JSON: createAuthorizationCredReq(t, "",
 								mockdiddoc.GetMockDIDDoc("did:example:def567")),
 						}},
 					},
 				}),
 			})
 			require.Error(t, err)
-			require.Contains(t, err.Error(), "user did is missing in consent cred request")
+			require.Contains(t, err.Error(), "subject did is missing in authorization cred request")
 			require.Nil(t, cc)
 
-			// consent cred does't contain rpDIDDoc
-			cc, err = fetchConsentCredReq(service.DIDCommAction{
+			// authorization cred does't contain rpDIDDoc
+			cc, err = fetchAuthorizationCreReq(service.DIDCommAction{
 				Message: service.NewDIDCommMsgMap(issuecredsvc.RequestCredential{
 					Type: issuecredsvc.RequestCredentialMsgType,
 					RequestsAttach: []decorator.Attachment{
 						{Data: decorator.AttachmentData{
-							JSON: createConsentCredReq(t, "did:example:123", nil),
+							JSON: createAuthorizationCredReq(t, "did:example:123", nil),
 						}},
 					},
 				}),
 			})
 			require.Error(t, err)
-			require.Contains(t, err.Error(), "rp did data is missing in consent cred request")
+			require.Contains(t, err.Error(), "rp did data is missing in authorization cred request")
 			require.Nil(t, cc)
 		})
 	})
@@ -1115,25 +1115,25 @@ func TestDIDCommListeners(t *testing.T) {
 			didDocJSON, err := didDocument.JSONBytes()
 			require.NoError(t, err)
 
-			userDID := "did:example:abc789"
+			subjectDID := "did:example:abc789"
 
 			rpDIDDoc := &adaptervc.DIDDoc{
 				ID:  didDocument.ID,
 				Doc: didDocJSON,
 			}
 
-			vc := createConsentCredential(t)
+			vc := createAuthorizationCredential(t)
 
-			handle := &ConsentCredentialHandle{
-				ID:        vc.ID,
-				IssuerDID: didDocument.ID,
-				UserDID:   userDID,
-				RPDID:     rpDIDDoc.ID,
-				Token:     uuid.New().String(),
-				IssuerID:  issuerID,
+			handle := &AuthorizationCredentialHandle{
+				ID:         vc.ID,
+				IssuerDID:  didDocument.ID,
+				SubjectDID: subjectDID,
+				RPDID:      rpDIDDoc.ID,
+				Token:      uuid.New().String(),
+				IssuerID:   issuerID,
 			}
 
-			err = c.storeConsentCredHandle(handle)
+			err = c.storeAuthorizationCredHandle(handle)
 			require.NoError(t, err)
 
 			vp, err := vc.Presentation()
@@ -1188,7 +1188,7 @@ func TestDIDCommListeners(t *testing.T) {
 				require.Fail(t, "tests are not validated due to timeout")
 			}
 
-			// request doesn't have consent cred
+			// request doesn't have authorization cred
 			actionCh <- createProofReqMsg(t, presentproofsvc.RequestPresentation{
 				Type: presentproofsvc.RequestPresentationMsgType,
 				RequestPresentationsAttach: []decorator.Attachment{
@@ -1207,7 +1207,7 @@ func TestDIDCommListeners(t *testing.T) {
 				require.Fail(t, "tests are not validated due to timeout")
 			}
 
-			// invalid consent cred
+			// invalid authorization cred
 			actionCh <- createProofReqMsg(t, presentproofsvc.RequestPresentation{
 				Type: presentproofsvc.RequestPresentationMsgType,
 				RequestPresentationsAttach: []decorator.Attachment{
@@ -1228,10 +1228,10 @@ func TestDIDCommListeners(t *testing.T) {
 				require.Fail(t, "tests are not validated due to timeout")
 			}
 
-			// consent cred not found
+			// authorization cred not found
 			actionCh <- createProofReqMsg(t, nil, nil, func(err error) {
 				require.NotNil(t, err)
-				require.Contains(t, err.Error(), "consent credential not found")
+				require.Contains(t, err.Error(), "authorization credential not found")
 				done <- struct{}{}
 			})
 
@@ -1241,20 +1241,20 @@ func TestDIDCommListeners(t *testing.T) {
 				require.Fail(t, "tests are not validated due to timeout")
 			}
 
-			// consent cred data error
+			// authorization cred data error
 			didDocument := mockdiddoc.GetMockDIDDoc("did:example:def567")
 
 			didDocJSON, err := didDocument.JSONBytes()
 			require.NoError(t, err)
 
-			userDID := "did:example:abc789"
+			subjectDID := "did:example:abc789"
 
 			rpDIDDoc := &adaptervc.DIDDoc{
 				ID:  didDocument.ID,
 				Doc: didDocJSON,
 			}
 
-			vc := createConsentCredential(t)
+			vc := createAuthorizationCredential(t)
 			vp, err := vc.Presentation()
 			require.NoError(t, err)
 
@@ -1270,7 +1270,7 @@ func TestDIDCommListeners(t *testing.T) {
 				},
 			}, nil, func(err error) {
 				require.NotNil(t, err)
-				require.Contains(t, err.Error(), "consent credential handle")
+				require.Contains(t, err.Error(), "authorization credential handle")
 				done <- struct{}{}
 			})
 
@@ -1281,16 +1281,16 @@ func TestDIDCommListeners(t *testing.T) {
 			}
 
 			// issuer doesnt exists
-			handle := &ConsentCredentialHandle{
-				ID:        vc.ID,
-				IssuerDID: didDocument.ID,
-				UserDID:   userDID,
-				RPDID:     rpDIDDoc.ID,
-				Token:     uuid.New().String(),
-				IssuerID:  uuid.New().String(),
+			handle := &AuthorizationCredentialHandle{
+				ID:         vc.ID,
+				IssuerDID:  didDocument.ID,
+				SubjectDID: subjectDID,
+				RPDID:      rpDIDDoc.ID,
+				Token:      uuid.New().String(),
+				IssuerID:   uuid.New().String(),
 			}
 
-			err = c.storeConsentCredHandle(handle)
+			err = c.storeAuthorizationCredHandle(handle)
 			require.NoError(t, err)
 
 			actionCh <- createProofReqMsg(t, presentproofsvc.RequestPresentation{
@@ -1315,7 +1315,7 @@ func TestDIDCommListeners(t *testing.T) {
 			// http request fails
 			issuerID := uuid.New().String()
 			handle.IssuerID = issuerID
-			err = c.storeConsentCredHandle(handle)
+			err = c.storeAuthorizationCredHandle(handle)
 			require.NoError(t, err)
 
 			err = c.profileStore.SaveProfile(createProfileData(issuerID))
@@ -1683,12 +1683,12 @@ func createProfileData(profileID string) *issuer.ProfileData {
 	}
 }
 
-func createConsentCredReq(t *testing.T, userDID string, rpDIDDoc *did.Doc) json.RawMessage {
+func createAuthorizationCredReq(t *testing.T, subjectDID string, rpDIDDoc *did.Doc) json.RawMessage {
 	rpDIDDOcBytes, err := mockdiddoc.GetMockDIDDoc("did:example:def567").JSONBytes()
 	require.NoError(t, err)
 
-	ccReq := ConsentCredentialReq{
-		UserDID: userDID,
+	ccReq := AuthorizationCredentialReq{
+		SubjectDID: subjectDID,
 	}
 
 	if rpDIDDoc != nil {
@@ -1704,20 +1704,20 @@ func createConsentCredReq(t *testing.T, userDID string, rpDIDDoc *did.Doc) json.
 	return ccReqBytes
 }
 
-func createConsentCredential(t *testing.T) *verifiable.Credential {
+func createAuthorizationCredential(t *testing.T) *verifiable.Credential {
 	didDocument := mockdiddoc.GetMockDIDDoc("did:example:def567")
 
 	didDocJSON, err := didDocument.JSONBytes()
 	require.NoError(t, err)
 
-	userDID := "did:example:abc789"
+	subjectDID := "did:example:abc789"
 
 	rpDIDDoc := &adaptervc.DIDDoc{
 		ID:  didDocument.ID,
 		Doc: didDocJSON,
 	}
 
-	vc := issuervc.CreateConsentCredential(didDocument.ID, didDocJSON, rpDIDDoc, userDID)
+	vc := issuervc.CreateAuthorizationCredential(didDocument.ID, didDocJSON, rpDIDDoc, subjectDID)
 
 	return vc
 }
@@ -1729,7 +1729,7 @@ func createCredentialReqMsg(t *testing.T, msg interface{}, continueFn func(args 
 			Type: issuecredsvc.RequestCredentialMsgType,
 			RequestsAttach: []decorator.Attachment{
 				{Data: decorator.AttachmentData{
-					JSON: createConsentCredReq(t, "did:example:xyz123",
+					JSON: createAuthorizationCredReq(t, "did:example:xyz123",
 						mockdiddoc.GetMockDIDDoc("did:example:def567")),
 				}},
 			},
@@ -1746,7 +1746,7 @@ func createCredentialReqMsg(t *testing.T, msg interface{}, continueFn func(args 
 
 func createProofReqMsg(t *testing.T, msg interface{}, continueFn func(args interface{}),
 	stopFn func(err error)) service.DIDCommAction {
-	vp, err := createConsentCredential(t).Presentation()
+	vp, err := createAuthorizationCredential(t).Presentation()
 	require.NoError(t, err)
 
 	if msg == nil {

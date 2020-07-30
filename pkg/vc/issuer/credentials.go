@@ -34,9 +34,9 @@ const (
 
 	// jsonld contexts
 	// TODO - should be configurable
-	issuerManifestContext       = "https://trustbloc.github.io/context/vc/issuer-manifest-credential-v1.jsonld"
-	consentCredentialContext    = "https://trustbloc.github.io/context/vc/consent-credential-v1.jsonld"
-	verifiableCredentialContext = "https://www.w3.org/2018/credentials/v1"
+	issuerManifestContext          = "https://trustbloc.github.io/context/vc/issuer-manifest-credential-v1.jsonld"
+	authorizationCredentialContext = "https://trustbloc.github.io/context/vc/authorization-credential-v1.jsonld"
+	verifiableCredentialContext    = "https://www.w3.org/2018/credentials/v1"
 )
 
 // CreateManifestCredential creates issuer manifest credential.
@@ -108,29 +108,29 @@ func ParseWalletResponse(vpBytes []byte) (*DIDConnectCredentialSubject, error) {
 	return didConnectVC.Subject, nil
 }
 
-// CreateConsentCredential creates consent credential.
-func CreateConsentCredential(did string, docJSON []byte, rpDIDDoc *adaptervc.DIDDoc,
-	userDID string) *verifiable.Credential {
+// CreateAuthorizationCredential creates authorization credential.
+func CreateAuthorizationCredential(did string, docJSON []byte, rpDIDDoc *adaptervc.DIDDoc,
+	subjectDID string) *verifiable.Credential {
 	issued := time.Now()
 
 	vc := &verifiable.Credential{
 		Context: []string{
 			verifiableCredentialContext,
-			consentCredentialContext,
+			authorizationCredentialContext,
 		},
 		ID: uuid.New().URN(),
 		Types: []string{
 			VerifiableCredential,
-			adaptervc.ConsentCredentialType,
+			adaptervc.AuthorizationCredentialType,
 		},
-		Subject: &adaptervc.ConsentCredentialSubject{
+		Subject: &adaptervc.AuthorizationCredentialSubject{
 			ID: uuid.New().URN(),
 			IssuerDIDDoc: &adaptervc.DIDDoc{
 				ID:  did,
 				Doc: docJSON,
 			},
-			RPDIDDoc: rpDIDDoc,
-			UserDID:  userDID,
+			RPDIDDoc:   rpDIDDoc,
+			SubjectDID: subjectDID,
 		},
 		Issuer: verifiable.Issuer{
 			ID: uuid.New().URN(),
