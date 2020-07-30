@@ -143,32 +143,32 @@ func TestParseWalletResponse(t *testing.T) {
 	})
 }
 
-func TestCreateConsentCredential(t *testing.T) {
+func TestCreateAuthorizationCredential(t *testing.T) {
 	t.Run("test create didcomm init credential", func(t *testing.T) {
 		didDocument := mockdiddoc.GetMockDIDDoc()
 
 		didDocJSON, err := didDocument.JSONBytes()
 		require.NoError(t, err)
 
-		userDID := "did:example:abc789"
+		subjectDID := "did:example:abc789"
 
 		rpDIDDoc := &adaptervc.DIDDoc{
 			ID:  didDocument.ID,
 			Doc: didDocJSON,
 		}
 
-		vc := CreateConsentCredential(didDocument.ID, didDocJSON, rpDIDDoc, userDID)
-		require.True(t, adapterutil.StringsContains(adaptervc.ConsentCredentialType, vc.Types))
+		vc := CreateAuthorizationCredential(didDocument.ID, didDocJSON, rpDIDDoc, subjectDID)
+		require.True(t, adapterutil.StringsContains(adaptervc.AuthorizationCredentialType, vc.Types))
 
-		consentVC := &adaptervc.ConsentCredential{}
+		authorizationVC := &adaptervc.AuthorizationCredential{}
 
-		err = adapterutil.DecodeJSONMarshaller(vc, consentVC)
+		err = adapterutil.DecodeJSONMarshaller(vc, authorizationVC)
 		require.NoError(t, err)
-		require.Equal(t, didDocument.ID, consentVC.Subject.IssuerDIDDoc.ID)
-		require.Equal(t, string(didDocJSON), string(consentVC.Subject.IssuerDIDDoc.Doc))
-		require.Equal(t, rpDIDDoc.ID, consentVC.Subject.RPDIDDoc.ID)
-		require.Equal(t, string(didDocJSON), string(consentVC.Subject.RPDIDDoc.Doc))
-		require.Equal(t, userDID, consentVC.Subject.UserDID)
+		require.Equal(t, didDocument.ID, authorizationVC.Subject.IssuerDIDDoc.ID)
+		require.Equal(t, string(didDocJSON), string(authorizationVC.Subject.IssuerDIDDoc.Doc))
+		require.Equal(t, rpDIDDoc.ID, authorizationVC.Subject.RPDIDDoc.ID)
+		require.Equal(t, string(didDocJSON), string(authorizationVC.Subject.RPDIDDoc.Doc))
+		require.Equal(t, subjectDID, authorizationVC.Subject.SubjectDID)
 	})
 }
 

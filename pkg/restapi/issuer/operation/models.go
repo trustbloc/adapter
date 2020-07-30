@@ -51,17 +51,17 @@ type ValidateConnectResp struct {
 	RedirectURL string `json:"redirectURL,omitempty"`
 }
 
-// ConsentCredentialReq consent credential request from wallet.
-type ConsentCredentialReq struct {
-	UserDID  string            `json:"userDID,omitempty"`
-	RPDIDDoc *adaptervc.DIDDoc `json:"rpDIDDoc,omitempty"`
+// AuthorizationCredentialReq authorization credential request from wallet.
+type AuthorizationCredentialReq struct {
+	SubjectDID string            `json:"subjectDID,omitempty"`
+	RPDIDDoc   *adaptervc.DIDDoc `json:"requestingPartyDIDDoc,omitempty"`
 }
 
-// ConsentCredentialHandle stores consent credential related data.
-type ConsentCredentialHandle struct {
+// AuthorizationCredentialHandle stores authorization credential related data.
+type AuthorizationCredentialHandle struct {
 	ID               string `json:"id,omitempty"`
 	IssuerDID        string `json:"issuerDID,omitempty"`
-	UserDID          string `json:"userDID,omitempty"`
+	SubjectDID       string `json:"subjectDID,omitempty"`
 	RPDID            string `json:"rpDID,omitempty"`
 	UserConnectionID string `json:"userConnectionID,omitempty"`
 	RPConnectionID   string `json:"rpConnectionID,omitempty"`

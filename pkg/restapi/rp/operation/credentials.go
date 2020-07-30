@@ -23,7 +23,7 @@ import (
 var errInvalidCredential = errors.New("malformed credential")
 
 func parseWalletResponse(definitions *presentationex.PresentationDefinitions, vdriReg vdriapi.Registry,
-	vpBytes []byte) (*vc.ConsentCredential, *verifiable.Credential, error) {
+	vpBytes []byte) (*vc.AuthorizationCredential, *verifiable.Credential, error) {
 	vp, err := verifiable.ParsePresentation(vpBytes)
 	if err != nil {
 		return nil, nil, errors.Wrapf(
@@ -55,7 +55,7 @@ func parseWalletResponse(definitions *presentationex.PresentationDefinitions, vd
 				errInvalidCredential, string(raw), parseErr)
 		}
 
-		if adapterutil.StringsContains(vc.ConsentCredentialType, cred.Types) {
+		if adapterutil.StringsContains(vc.AuthorizationCredentialType, cred.Types) {
 			orig = cred
 			break
 		}
@@ -65,22 +65,22 @@ func parseWalletResponse(definitions *presentationex.PresentationDefinitions, vd
 
 	if orig == nil {
 		return nil, nil, errors.Wrapf(
-			errInvalidCredential, "no suitable credential of type %s found", vc.ConsentCredentialType)
+			errInvalidCredential, "no suitable credential of type %s found", vc.AuthorizationCredentialType)
 	}
 
-	consentVC := &vc.ConsentCredential{}
+	authorizationVC := &vc.AuthorizationCredential{}
 
-	err = adapterutil.DecodeJSONMarshaller(orig, consentVC)
+	err = adapterutil.DecodeJSONMarshaller(orig, authorizationVC)
 	if err != nil {
-		return nil, nil, fmt.Errorf("unable to decode user consent credential : %w", err)
+		return nil, nil, fmt.Errorf("unable to decode user authorization credential : %w", err)
 	}
 
-	err = evaluateConsentCredential(consentVC)
+	err = evaluateAuthorizationCredential(authorizationVC)
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to evaluate credential : %w", err)
 	}
 
-	return consentVC, orig, nil
+	return authorizationVC, orig, nil
 }
 
 func parseIssuerResponse(def *presentationex.PresentationDefinitions,
@@ -129,9 +129,9 @@ func evaluatePresentationSubmission(_ *presentationex.PresentationDefinitions, v
 	return adapterutil.DecodeJSONMarshaller(vp, submission)
 }
 
-func evaluateConsentCredential(c *vc.ConsentCredential) error {
+func evaluateAuthorizationCredential(c *vc.AuthorizationCredential) error {
 	if c.Subject.IssuerDIDDoc == nil || c.Subject.IssuerDIDDoc.Doc == nil {
-		return fmt.Errorf("%w : consent creddential missing issuer did doc", errInvalidCredential)
+		return fmt.Errorf("%w : authorization creddential missing issuer did doc", errInvalidCredential)
 	}
 
 	return nil

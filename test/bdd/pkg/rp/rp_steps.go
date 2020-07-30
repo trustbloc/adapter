@@ -100,7 +100,7 @@ func (s *Steps) RegisterSteps(g *godog.Suite) {
 	g.Step(`^"([^"]*)" connects with the RP adapter "([^"]*)"$`, s.validateConnection)
 	g.Step(`^"([^"]*)" and "([^"]*)" have a didcomm connection$`, s.connectAgents)
 	g.Step(`^an rp tenant with label "([^"]*)" that requests the "([^"]*)" scope from the "([^"]*)"`, s.didexchangeFlow)
-	g.Step(`^the "([^"]*)" provides a consent credential via CHAPI that contains the DIDs of rp "([^"]*)" and issuer "([^"]*)"$`, s.walletRespondsWithConsentCredential) //nolint:lll
+	g.Step(`^the "([^"]*)" provides a authorization credential via CHAPI that contains the DIDs of rp "([^"]*)" and issuer "([^"]*)"$`, s.walletRespondsWithAuthorizationCredential) //nolint:lll
 	g.Step(`^"([^"]*)" responds to "([^"]*)" with the user's data$`, s.issuerRepliesWithUserData)
 	g.Step(`^the user is redirected to the rp tenant "([^"]*)"$`, s.userRedirectBackToTenant)
 	g.Step(`^the rp tenant "([^"]*)" retrieves the user data from the rp adapter$`, s.rpTenantRetrievesUserData)
@@ -431,8 +431,8 @@ func (s *Steps) didexchangeFlow(tenantID, scope, walletID string) error {
 	return s.validateConnection(walletID, tenantID)
 }
 
-func (s *Steps) walletRespondsWithConsentCredential(wallet, tenant, issuer string) error {
-	submissionVP, err := s.walletCreatesConsentCredential(wallet, tenant, issuer)
+func (s *Steps) walletRespondsWithAuthorizationCredential(wallet, tenant, issuer string) error {
+	submissionVP, err := s.walletCreatesAuthorizationCredential(wallet, tenant, issuer)
 	if err != nil {
 		return fmt.Errorf("failed to create presentation submission VP : %w", err)
 	}
@@ -484,7 +484,7 @@ func (s *Steps) walletRespondsWithConsentCredential(wallet, tenant, issuer strin
 	return nil
 }
 
-func (s *Steps) walletCreatesConsentCredential(wallet, tenant, issuer string) (*verifiable.Presentation, error) {
+func (s *Steps) walletCreatesAuthorizationCredential(wallet, tenant, issuer string) (*verifiable.Presentation, error) {
 	walletTenantConn, err := s.controller.GetConnectionBetweenAgents(wallet, tenant)
 	if err != nil {
 		return nil, err
@@ -512,14 +512,14 @@ func (s *Steps) walletCreatesConsentCredential(wallet, tenant, issuer string) (*
 		return nil, fmt.Errorf("%s failed to create a connection to %s : %w", issuer, tenant, err)
 	}
 
-	userDID := walletTenantConn.MyDID
+	subjectDID := walletTenantConn.MyDID
 
-	userConsentVC, err := newUserConsentVC(userDID, rpDID, issuerDID)
+	userAuthorizationVC, err := newUserAuthorizationVC(subjectDID, rpDID, issuerDID)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create user consent credential : %w", err)
+		return nil, fmt.Errorf("failed to create user authorization credential : %w", err)
 	}
 
-	submissionVP, err := newVerifiablePresentation(userConsentVC)
+	submissionVP, err := newVerifiablePresentation(userAuthorizationVC)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create presentation submission VP : %w", err)
 	}

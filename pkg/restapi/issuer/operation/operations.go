@@ -546,7 +546,7 @@ func (o *Operation) handleRequestCredential(msg service.DIDCommAction) (interfac
 		return nil, fmt.Errorf("connection using DIDs not found : %w", err)
 	}
 
-	consentCreReq, err := fetchConsentCredReq(msg)
+	authorizationCreReq, err := fetchAuthorizationCreReq(msg)
 	if err != nil {
 		return nil, err
 	}
@@ -561,12 +561,12 @@ func (o *Operation) handleRequestCredential(msg service.DIDCommAction) (interfac
 		return nil, err
 	}
 
-	rpDIDDoc, err := did.ParseDocument(consentCreReq.RPDIDDoc.Doc)
+	rpDIDDoc, err := did.ParseDocument(authorizationCreReq.RPDIDDoc.Doc)
 	if err != nil {
 		return nil, fmt.Errorf("parse rp did doc : %w", err)
 	}
 
-	rpDIDDoc.ID = consentCreReq.RPDIDDoc.ID
+	rpDIDDoc.ID = authorizationCreReq.RPDIDDoc.ID
 
 	_, err = o.didExClient.CreateConnection(newDidDoc.ID, rpDIDDoc)
 	if err != nil {
@@ -583,26 +583,27 @@ func (o *Operation) handleRequestCredential(msg service.DIDCommAction) (interfac
 		return nil, fmt.Errorf("fetch issuer profile : %w", err)
 	}
 
-	vc := issuervc.CreateConsentCredential(newDidDoc.ID, docJSON, consentCreReq.RPDIDDoc, consentCreReq.UserDID)
+	vc := issuervc.CreateAuthorizationCredential(newDidDoc.ID, docJSON, authorizationCreReq.RPDIDDoc,
+		authorizationCreReq.SubjectDID)
 
 	vc, err = o.vccrypto.SignCredential(vc, profile.CredentialSigningKey)
 	if err != nil {
-		return nil, fmt.Errorf("sign consent credential : %w", err)
+		return nil, fmt.Errorf("sign authorization credential : %w", err)
 	}
 
-	handle := &ConsentCredentialHandle{
+	handle := &AuthorizationCredentialHandle{
 		ID:               vc.ID,
 		IssuerDID:        newDidDoc.ID,
-		UserDID:          consentCreReq.UserDID,
-		RPDID:            consentCreReq.RPDIDDoc.ID,
+		SubjectDID:       authorizationCreReq.SubjectDID,
+		RPDID:            authorizationCreReq.RPDIDDoc.ID,
 		UserConnectionID: connID,
 		Token:            userConnMap.Token,
 		IssuerID:         userConnMap.IssuerID,
 	}
 
-	err = o.storeConsentCredHandle(handle)
+	err = o.storeAuthorizationCredHandle(handle)
 	if err != nil {
-		return nil, fmt.Errorf("store consent credential : %w", err)
+		return nil, fmt.Errorf("store authorization credential : %w", err)
 	}
 
 	return issuecredential.WithIssueCredential(&issuecredential.IssueCredential{
@@ -613,29 +614,29 @@ func (o *Operation) handleRequestCredential(msg service.DIDCommAction) (interfac
 }
 
 func (o *Operation) handleRequestPresentation(msg service.DIDCommAction) (interface{}, error) {
-	consentCred, err := fetchConsentCred(msg, o.vdriRegistry)
+	authorizationCred, err := fetchAuthorizationCred(msg, o.vdriRegistry)
 	if err != nil {
 		return nil, err
 	}
 
-	data, err := o.txnStore.Get(consentCred.ID)
+	data, err := o.txnStore.Get(authorizationCred.ID)
 	if err != nil {
-		return nil, fmt.Errorf("consent credential not found : %w", err)
+		return nil, fmt.Errorf("authorization credential not found : %w", err)
 	}
 
-	consentCredHandle := &ConsentCredentialHandle{}
+	authorizationCredHandle := &AuthorizationCredentialHandle{}
 
-	err = json.Unmarshal(data, consentCredHandle)
+	err = json.Unmarshal(data, authorizationCredHandle)
 	if err != nil {
-		return nil, fmt.Errorf("consent credential handle : %w", err)
+		return nil, fmt.Errorf("authorization credential handle : %w", err)
 	}
 
-	profile, err := o.profileStore.GetProfile(consentCredHandle.IssuerID)
+	profile, err := o.profileStore.GetProfile(authorizationCredHandle.IssuerID)
 	if err != nil {
 		return nil, fmt.Errorf("fetch issuer profile : %w", err)
 	}
 
-	vp, err := o.generateUserPresentation(consentCredHandle, profile.URL)
+	vp, err := o.generateUserPresentation(authorizationCredHandle, profile.URL)
 	if err != nil {
 		return nil, err
 	}
@@ -654,7 +655,7 @@ func (o *Operation) handleRequestPresentation(msg service.DIDCommAction) (interf
 	}), nil
 }
 
-func (o *Operation) generateUserPresentation(handle *ConsentCredentialHandle, url string) (*verifiable.Presentation, error) { // nolint: lll
+func (o *Operation) generateUserPresentation(handle *AuthorizationCredentialHandle, url string) (*verifiable.Presentation, error) { // nolint: lll
 	vcReq := &IssuerVCReq{Token: handle.Token}
 
 	reqBytes, err := json.Marshal(vcReq)
@@ -700,7 +701,7 @@ func (o *Operation) getConnectionIDFromEvent(msg service.DIDCommAction) (string,
 	return connID, nil
 }
 
-func (o *Operation) storeConsentCredHandle(handle *ConsentCredentialHandle) error {
+func (o *Operation) storeAuthorizationCredHandle(handle *AuthorizationCredentialHandle) error {
 	dataBytes, err := json.Marshal(handle)
 	if err != nil {
 		return err
@@ -789,7 +790,7 @@ func getTokenStore(prov storage.Provider) (storage.Store, error) {
 	return txnStore, nil
 }
 
-func fetchConsentCredReq(msg service.DIDCommAction) (*ConsentCredentialReq, error) {
+func fetchAuthorizationCreReq(msg service.DIDCommAction) (*AuthorizationCredentialReq, error) {
 	credReq := &issuecredsvc.RequestCredential{}
 
 	err := msg.Message.Decode(credReq)
@@ -807,25 +808,26 @@ func fetchConsentCredReq(msg service.DIDCommAction) (*ConsentCredentialReq, erro
 		return nil, fmt.Errorf("no data inside the credential request attachment : %w", err)
 	}
 
-	consentCreReq := &ConsentCredentialReq{}
+	authorizationCreReq := &AuthorizationCredentialReq{}
 
-	err = json.Unmarshal(reqJSON, consentCreReq)
+	err = json.Unmarshal(reqJSON, authorizationCreReq)
 	if err != nil {
 		return nil, fmt.Errorf("invalid json data in credential request : %w", err)
 	}
 
-	if consentCreReq.UserDID == "" {
-		return nil, errors.New("user did is missing in consent cred request")
+	if authorizationCreReq.SubjectDID == "" {
+		return nil, errors.New("subject did is missing in authorization cred request")
 	}
 
-	if consentCreReq.RPDIDDoc == nil || consentCreReq.RPDIDDoc.ID == "" || consentCreReq.RPDIDDoc.Doc == nil {
-		return nil, errors.New("rp did data is missing in consent cred request")
+	if authorizationCreReq.RPDIDDoc == nil || authorizationCreReq.RPDIDDoc.ID == "" ||
+		authorizationCreReq.RPDIDDoc.Doc == nil {
+		return nil, errors.New("rp did data is missing in authorization cred request")
 	}
 
-	return consentCreReq, nil
+	return authorizationCreReq, nil
 }
 
-func fetchConsentCred(msg service.DIDCommAction, vdriRegistry vdri.Registry) (*verifiable.Credential, error) {
+func fetchAuthorizationCred(msg service.DIDCommAction, vdriRegistry vdri.Registry) (*verifiable.Credential, error) {
 	credReq := &presentproofsvc.RequestPresentation{}
 
 	err := msg.Message.Decode(credReq)

@@ -1331,7 +1331,7 @@ func TestCHAPIResponseHandler(t *testing.T) {
 		userPeerDID := newDID(t).String()
 		thid := uuid.New().String()
 		var issuerResponse chan<- service.DIDCommAction = nil
-		vp := newPresentationSubmissionVP(t, newUserConsentVC(t, userPeerDID, rpPeerDID, issuerPeerDID))
+		vp := newPresentationSubmissionVP(t, newUserAuthorizationVC(t, userPeerDID, rpPeerDID, issuerPeerDID))
 		presDef := &presentationex.PresentationDefinitions{}
 		redirectURL := "http://hydra.example.com/accept"
 		requestPresentationSent := make(chan struct{})
@@ -1500,7 +1500,7 @@ func TestCHAPIResponseHandler(t *testing.T) {
 		invalid.Service = nil
 		invalid.PublicKey = nil
 
-		vp := newPresentationSubmissionVP(t, newUserConsentVC(t, newPeerDID(t).ID, rpPeerDID, invalid))
+		vp := newPresentationSubmissionVP(t, newUserAuthorizationVC(t, newPeerDID(t).ID, rpPeerDID, invalid))
 
 		c, err := New(&Config{
 			DIDExchClient:        &mockdidexchange.MockClient{},
@@ -1525,7 +1525,7 @@ func TestCHAPIResponseHandler(t *testing.T) {
 		invitationID := uuid.New().String()
 		rpPublicDID := newDID(t).String()
 		rpPeerDID := newPeerDID(t)
-		vp := newPresentationSubmissionVP(t, newUserConsentVC(t, newPeerDID(t).ID, rpPeerDID, newPeerDID(t)))
+		vp := newPresentationSubmissionVP(t, newUserAuthorizationVC(t, newPeerDID(t).ID, rpPeerDID, newPeerDID(t)))
 
 		c, err := New(&Config{
 			DIDExchClient: &mockdidexchange.MockClient{
@@ -1558,7 +1558,7 @@ func TestCHAPIResponseHandler(t *testing.T) {
 		invitationID := uuid.New().String()
 		rpPublicDID := newDID(t).String()
 		rpPeerDID := newPeerDID(t)
-		vp := newPresentationSubmissionVP(t, newUserConsentVC(t, newPeerDID(t).ID, rpPeerDID, newPeerDID(t)))
+		vp := newPresentationSubmissionVP(t, newUserAuthorizationVC(t, newPeerDID(t).ID, rpPeerDID, newPeerDID(t)))
 
 		c, err := New(&Config{
 			DIDExchClient:        &mockdidexchange.MockClient{},
@@ -1590,7 +1590,7 @@ func TestCHAPIResponseHandler(t *testing.T) {
 		issuerPeerDID := newPeerDID(t)
 		userPeerDID := newDID(t).String()
 		thid := uuid.New().String()
-		vp := newPresentationSubmissionVP(t, newUserConsentVC(t, userPeerDID, rpPeerDID, issuerPeerDID))
+		vp := newPresentationSubmissionVP(t, newUserAuthorizationVC(t, userPeerDID, rpPeerDID, issuerPeerDID))
 		presDef := &presentationex.PresentationDefinitions{}
 
 		c, err := New(&Config{
