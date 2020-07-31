@@ -63,6 +63,8 @@ const (
 	// TODO define present-proof V2 formats for did uris, presentation_definition, presentation_submission,
 	//  and consentVC: https://github.com/trustbloc/edge-adapter/issues/106
 	consentVCAttachmentFormat = "trustbloc/UserConsentVerifiableCredential@0.1.0"
+
+	transientStoreName = "rpadapter_trx"
 )
 
 var logger = log.New("edge-adapter/rp-operations")
@@ -120,31 +122,35 @@ type AriesContextProvider interface {
 	VDRIRegistry() vdri.Registry
 }
 
-type consentRequest struct {
-	pd      *presentationex.PresentationDefinitions
-	cr      *admin.GetConsentRequestOK
-	rpDID   string
-	rpLabel string
+// Storage config.
+type Storage struct {
+	Persistent storage.Provider
+	Transient  storage.Provider
 }
 
-type invitationData struct {
-	id          string
-	userDID     string
-	rpPublicDID string
-	rpPeerDID   string
-	pd          *presentationex.PresentationDefinitions
-	cr          *admin.GetConsentRequestOK
+// context active in the consent phase all the way up to sending the CHAPI request.
+type consentRequestCtx struct {
+	InvitationID  string
+	PD            *presentationex.PresentationDefinitions
+	CR            *admin.GetConsentRequestOK
+	UserDID       string
+	RPPublicDID   string
+	RPPairwiseDID string
+	RPLabel       string
 }
 
-// used to map present-proof theadID to invitationData.id.
-type thidInvitationData struct {
-	threadID         string
-	invitationDataID string
+// context shared between routine that receives CHAPI response from the wallet and routine that receives
+// the issuer's present-proof response.
+type walletResponseCtx struct {
+	threadID             string
+	consentRequestCtx    *consentRequestCtx
+	issuerResponseStatus chan *issuerResponseStatus
 }
 
 type issuerResponseStatus struct {
-	err        error
-	submission *rp2.PresentationSubmissionPresentation
+	err               error
+	submission        *rp2.PresentationSubmissionPresentation
+	walletResponseCtx *walletResponseCtx
 }
 
 // New returns CreateCredential instance.
@@ -153,25 +159,21 @@ func New(config *Config) (*Operation, error) {
 	const defaultTimeout = 5 * time.Second
 
 	o := &Operation{
-		presentationExProvider:  config.PresentationExProvider,
-		hydra:                   config.Hydra,
-		oidc:                    config.OIDC,
-		oauth2Config:            config.OAuth2Config,
-		oidcStates:              make(map[string]*models.LoginRequest),
-		consentRequests:         make(map[string]*consentRequest),
-		uiEndpoint:              config.UIEndpoint,
-		didClient:               config.DIDExchClient,
-		didActions:              make(chan service.DIDCommAction),
-		didStateMsgs:            make(chan service.StateMsg),
-		transientInvitationData: make(map[string]*invitationData),
-		publicDIDCreator:        config.PublicDIDCreator,
-		ppClient:                config.PresentProofClient,
-		ppActions:               make(chan service.DIDCommAction),
-		thidInvitationDataMap:   make(map[string]*thidInvitationData),
-		issuerCallbacks:         make(map[string]chan *issuerResponseStatus),
-		issuerCallbacksLock:     &sync.Mutex{},
-		issuerCallbackTimeout:   defaultTimeout,
-		vdriReg:                 config.AriesStorageProvider.VDRIRegistry(),
+		presentationExProvider: config.PresentationExProvider,
+		hydra:                  config.Hydra,
+		oidc:                   config.OIDC,
+		oauth2Config:           config.OAuth2Config,
+		oidcStates:             make(map[string]*models.LoginRequest),
+		uiEndpoint:             config.UIEndpoint,
+		didClient:              config.DIDExchClient,
+		didActions:             make(chan service.DIDCommAction),
+		didStateMsgs:           make(chan service.StateMsg),
+		publicDIDCreator:       config.PublicDIDCreator,
+		ppClient:               config.PresentProofClient,
+		ppActions:              make(chan service.DIDCommAction),
+		issuerCallbackTimeout:  defaultTimeout,
+		vdriReg:                config.AriesStorageProvider.VDRIRegistry(),
+		walletResponseCtx:      make(map[string]*walletResponseCtx),
 	}
 
 	err := o.didClient.RegisterActionEvent(o.didActions)
@@ -184,7 +186,7 @@ func New(config *Config) (*Operation, error) {
 		return nil, fmt.Errorf("failed to register listener for state msgs on didexchange client : %w", err)
 	}
 
-	o.rpStore, err = rp.New(config.Store)
+	o.rpStore, err = rp.New(config.Storage.Persistent)
 	if err != nil {
 		return nil, fmt.Errorf("failed to open relying party store : %w", err)
 	}
@@ -197,6 +199,11 @@ func New(config *Config) (*Operation, error) {
 	err = o.ppClient.RegisterActionEvent(o.ppActions)
 	if err != nil {
 		return nil, fmt.Errorf("failed to register listener for action events on present proof client : %w", err)
+	}
+
+	o.transientStore, err = transientStore(config.Storage.Transient)
+	if err != nil {
+		return nil, fmt.Errorf("failed to open transient store : %w", err)
 	}
 
 	go o.listenForIncomingConnections()
@@ -216,10 +223,10 @@ type Config struct {
 	OAuth2Config           OAuth2Config
 	UIEndpoint             string
 	DIDExchClient          DIDClient
-	Store                  storage.Provider
 	PublicDIDCreator       PublicDIDCreator
 	AriesStorageProvider   AriesContextProvider
 	PresentProofClient     PresentProofClient
+	Storage                *Storage
 }
 
 // TODO implement an eviction strategy for Operation.oidcStates and OIDC.consentRequests
@@ -227,31 +234,26 @@ type Config struct {
 
 // Operation defines handlers for rp operations.
 type Operation struct {
-	presentationExProvider  presentationExProvider
-	hydra                   Hydra
-	oidc                    func(string, context.Context) (*oidc.IDToken, error)
-	oauth2Config            OAuth2Config
-	oidcStates              map[string]*models.LoginRequest
-	oidcStateLock           sync.Mutex
-	consentRequests         map[string]*consentRequest
-	presDefsLock            sync.Mutex
-	uiEndpoint              string
-	didClient               DIDClient
-	didActions              chan service.DIDCommAction
-	didStateMsgs            chan service.StateMsg
-	invLock                 sync.RWMutex
-	transientInvitationData map[string]*invitationData
-	rpStore                 *rp.Store
-	publicDIDCreator        PublicDIDCreator
-	connections             *connection.Recorder
-	ppClient                PresentProofClient
-	ppActions               chan service.DIDCommAction
-	thidInvitationDataMap   map[string]*thidInvitationData
-	thidInvDataLock         sync.Mutex
-	issuerCallbacks         map[string]chan *issuerResponseStatus
-	issuerCallbacksLock     sync.Locker
-	issuerCallbackTimeout   time.Duration
-	vdriReg                 vdri.Registry
+	presentationExProvider presentationExProvider
+	hydra                  Hydra
+	oidc                   func(string, context.Context) (*oidc.IDToken, error)
+	oauth2Config           OAuth2Config
+	oidcStates             map[string]*models.LoginRequest
+	oidcStateLock          sync.Mutex
+	uiEndpoint             string
+	didClient              DIDClient
+	didActions             chan service.DIDCommAction
+	didStateMsgs           chan service.StateMsg
+	rpStore                *rp.Store
+	publicDIDCreator       PublicDIDCreator
+	connections            *connection.Recorder
+	ppClient               PresentProofClient
+	ppActions              chan service.DIDCommAction
+	issuerCallbackTimeout  time.Duration
+	vdriReg                vdri.Registry
+	transientStore         storage.Store
+	walletResponseCtx      map[string]*walletResponseCtx
+	walletResponseCtxLock  sync.Mutex
 }
 
 // GetRESTHandlers get all controller API handler available for this service.
@@ -429,75 +431,21 @@ func (o *Operation) getAndUnsetLoginRequest(state string) *models.LoginRequest {
 	return r
 }
 
-func (o *Operation) setConsentRequest(handle string, r *consentRequest) {
-	o.presDefsLock.Lock()
-	defer o.presDefsLock.Unlock()
+func (o *Operation) setWalletResponseContext(thid string, ctx *walletResponseCtx) {
+	o.walletResponseCtxLock.Lock()
+	defer o.walletResponseCtxLock.Unlock()
 
-	o.consentRequests[handle] = r
+	o.walletResponseCtx[thid] = ctx
 }
 
-func (o *Operation) getAndUnsetConsentRequest(handle string) *consentRequest {
-	o.presDefsLock.Lock()
-	defer o.presDefsLock.Unlock()
+func (o *Operation) getAndUnsetWalletResponseContext(thid string) *walletResponseCtx {
+	o.walletResponseCtxLock.Lock()
+	defer o.walletResponseCtxLock.Unlock()
 
-	r := o.consentRequests[handle]
-	delete(o.consentRequests, handle)
+	ctx := o.walletResponseCtx[thid]
+	delete(o.walletResponseCtx, thid)
 
-	return r
-}
-
-func (o *Operation) setInvitationData(i *invitationData) {
-	o.invLock.Lock()
-	defer o.invLock.Unlock()
-
-	o.transientInvitationData[i.id] = i
-}
-
-func (o *Operation) getAndUnsetInvitationData(id string) *invitationData {
-	o.invLock.Lock()
-	defer o.invLock.Unlock()
-
-	i := o.transientInvitationData[id]
-	delete(o.transientInvitationData, id)
-
-	return i
-}
-
-func (o *Operation) peekInvitationData(id string) *invitationData {
-	o.invLock.Lock()
-	defer o.invLock.Unlock()
-
-	return o.transientInvitationData[id]
-}
-
-func (o *Operation) setThidInvitationData(d *thidInvitationData) {
-	o.thidInvDataLock.Lock()
-	defer o.thidInvDataLock.Unlock()
-
-	o.thidInvitationDataMap[d.threadID] = d
-}
-
-func (o *Operation) getAndUnsetThidInvitationData(thid string) *thidInvitationData {
-	o.thidInvDataLock.Lock()
-	defer o.thidInvDataLock.Unlock()
-
-	return o.thidInvitationDataMap[thid]
-}
-
-func (o *Operation) setIssuerCallbackCh(thid string, c chan *issuerResponseStatus) {
-	o.issuerCallbacksLock.Lock()
-	defer o.issuerCallbacksLock.Unlock()
-
-	o.issuerCallbacks[thid] = c
-}
-
-func (o *Operation) getAndUnsetIssuerCallbackCh(thid string) (chan *issuerResponseStatus, bool) {
-	o.issuerCallbacksLock.Lock()
-	defer o.issuerCallbacksLock.Unlock()
-
-	ch, ok := o.issuerCallbacks[thid]
-
-	return ch, ok
+	return ctx
 }
 
 func acceptLoginAndRedirectToHydra(
@@ -595,13 +543,12 @@ func (o *Operation) saveUserAndRequest(login *models.LoginRequest, sub string) e
 }
 
 // Hydra redirects the user here in the consent phase.
-func (o *Operation) hydraConsentHandler(w http.ResponseWriter, r *http.Request) {
+func (o *Operation) hydraConsentHandler(w http.ResponseWriter, r *http.Request) { // nolint:funlen
 	logger.Debugf("hydraConsentHandler request: " + r.URL.String())
 
 	challenge := r.URL.Query().Get("consent_challenge")
 	if challenge == "" {
-		logger.Warnf("missing consent_challenge")
-		commhttp.WriteErrorResponse(w, http.StatusBadRequest, invalidRequestErrMsg)
+		handleError(w, http.StatusBadRequest, "missing consent_challenge")
 
 		return
 	}
@@ -611,9 +558,8 @@ func (o *Operation) hydraConsentHandler(w http.ResponseWriter, r *http.Request) 
 
 	consent, err := o.hydra.GetConsentRequest(req)
 	if err != nil {
-		logger.Errorf("failed to get fetch consent request from hydra : %s", err)
-		commhttp.WriteErrorResponse(
-			w, http.StatusInternalServerError, fmt.Sprintf("failed to contact hydra : %s", err))
+		handleError(w, http.StatusInternalServerError,
+			fmt.Sprintf("failed to get fetch consent request from hydra : %s", err))
 
 		return
 	}
@@ -626,31 +572,34 @@ func (o *Operation) hydraConsentHandler(w http.ResponseWriter, r *http.Request) 
 
 	presentationDefinition, err := o.presentationExProvider.Create(removeOIDCScope(consent.GetPayload().RequestedScope))
 	if err != nil {
-		logger.Errorf("failed to create presentation-exchange request: %s", err)
-		commhttp.WriteErrorResponse(
-			w, http.StatusInternalServerError, fmt.Sprintf("failed to create the presentation definition : %s", err))
+		handleError(w, http.StatusInternalServerError,
+			fmt.Sprintf("failed to create the presentation definition : %s", err))
 
 		return
 	}
 
 	conn, err := o.rpStore.GetUserConnection(consent.GetPayload().Client.ClientID, consent.GetPayload().Subject)
 	if err != nil {
-		msg := fmt.Sprintf(
+		handleError(w, http.StatusInternalServerError, fmt.Sprintf(
 			"failed to fetch rp-user connection for clientID=%s userSub=%s : %s",
-			consent.GetPayload().Client.ClientID, consent.GetPayload().Subject, err)
-		logger.Errorf(msg)
-		commhttp.WriteErrorResponse(w, http.StatusInternalServerError, msg)
+			consent.GetPayload().Client.ClientID, consent.GetPayload().Subject, err))
 
 		return
 	}
 
 	handle := url.QueryEscape(uuid.New().String())
-	o.setConsentRequest(handle, &consentRequest{
-		cr:      consent,
-		pd:      presentationDefinition,
-		rpDID:   conn.RP.PublicDID,
-		rpLabel: conn.RP.Label,
+
+	err = newTransientStorage(o.transientStore).Put(handle, &consentRequestCtx{
+		CR:          consent,
+		PD:          presentationDefinition,
+		RPPublicDID: conn.RP.PublicDID,
+		RPLabel:     conn.RP.Label,
 	})
+	if err != nil {
+		handleError(w, http.StatusInternalServerError, fmt.Sprintf("failed to write to transient storage : %s", err))
+
+		return
+	}
 
 	redirectURL := fmt.Sprintf("%s?pd=%s", o.uiEndpoint, handle)
 
@@ -667,9 +616,8 @@ func (o *Operation) skipConsentScreen(w http.ResponseWriter, r *http.Request, co
 
 	accepted, err := o.hydra.AcceptConsentRequest(params)
 	if err != nil {
-		logger.Errorf("failed to accept consent request at hydra: %s", err)
-		commhttp.WriteErrorResponse(
-			w, http.StatusInternalServerError, fmt.Sprintf("hydra failed to accept consent request : %s", err))
+		handleError(w, http.StatusInternalServerError,
+			fmt.Sprintf("hydra failed to accept consent request at hydra: %s", err))
 
 		return
 	}
@@ -679,69 +627,72 @@ func (o *Operation) skipConsentScreen(w http.ResponseWriter, r *http.Request, co
 }
 
 // Frontend requests to create presentation definition.
-func (o *Operation) getPresentationsRequest(rw http.ResponseWriter, req *http.Request) {
-	logger.Debugf("getPresentationsRequest request: %s", req.URL.String())
+func (o *Operation) getPresentationsRequest(w http.ResponseWriter, r *http.Request) {
+	logger.Debugf("getPresentationsRequest request: %s", r.URL.String())
 
 	// get the request
-	handle := req.URL.Query().Get("pd")
+	handle := r.URL.Query().Get("pd")
 	if handle == "" {
-		logger.Warnf("missing handle for presentation definition")
-		commhttp.WriteErrorResponse(rw, http.StatusBadRequest, invalidRequestErrMsg)
+		handleError(w, http.StatusBadRequest, "missing handle for presentation definition")
 
 		return
 	}
 
-	cr := o.getAndUnsetConsentRequest(handle)
-	if cr == nil {
-		logger.Warnf("unrecognized handle for presentation definition: %s", handle)
-		commhttp.WriteErrorResponse(rw, http.StatusBadRequest, invalidRequestErrMsg)
+	cr, err := newTransientStorage(o.transientStore).GetConsentRequest(handle)
+	if err != nil {
+		handleError(w, http.StatusBadRequest,
+			fmt.Sprintf("unrecognized handle for presentation definition: %s", handle))
 
 		return
 	}
 
-	err := o.saveConsentRequest(cr)
+	err = o.updateUserConnection(cr)
 	if err != nil {
 		logger.Errorf("failed to save consent request: %s", err)
 		commhttp.WriteErrorResponse(
-			rw, http.StatusInternalServerError, fmt.Sprintf("failed to save consent request : %s", err))
+			w, http.StatusInternalServerError, fmt.Sprintf("failed to save consent request : %s", err))
 
 		return
 	}
 
-	invitation, err := o.didClient.CreateInvitationWithDID(cr.rpLabel, cr.rpDID)
+	invitation, err := o.didClient.CreateInvitationWithDID(cr.RPLabel, cr.RPPublicDID)
 	if err != nil {
-		msg := fmt.Sprintf("failed to create didcomm invitation with DID : %s", err)
-		logger.Errorf(msg)
-		commhttp.WriteErrorResponse(rw, http.StatusInternalServerError, msg)
+		handleError(w, http.StatusInternalServerError,
+			fmt.Sprintf("failed to create didcomm invitation with DID : %s", err))
 
 		return
 	}
 
-	o.setInvitationData(&invitationData{
-		id:          invitation.ID,
-		rpPublicDID: cr.rpDID,
-		pd:          cr.pd,
-		cr:          cr.cr,
-	})
+	cr.InvitationID = invitation.ID
+
+	// TODO delete old mapping handle -> consentRequestCtx
+	//  edge-core store API is missing a Delete() method: https://github.com/trustbloc/edge-core/issues/45
+	err = newTransientStorage(o.transientStore).Put(invitation.ID, cr)
+	if err != nil {
+		handleError(w, http.StatusInternalServerError,
+			fmt.Sprintf("failed to update consentRequestCtx in transient store : %s", err))
+
+		return
+	}
 
 	response := &GetPresentationRequestResponse{
-		PD:  cr.pd,
+		PD:  cr.PD,
 		Inv: invitation,
 	}
 
-	rw.WriteHeader(http.StatusOK)
-	commhttp.WriteResponse(rw, response)
+	w.WriteHeader(http.StatusOK)
+	commhttp.WriteResponse(w, response)
 
 	logger.Debugf("wrote response: %+v", response)
 }
 
-func (o *Operation) saveConsentRequest(r *consentRequest) error {
-	conn, err := o.rpStore.GetUserConnection(r.cr.GetPayload().Client.ClientID, r.cr.GetPayload().Subject)
+func (o *Operation) updateUserConnection(r *consentRequestCtx) error {
+	conn, err := o.rpStore.GetUserConnection(r.CR.GetPayload().Client.ClientID, r.CR.GetPayload().Subject)
 	if err != nil {
 		return fmt.Errorf("failed to fetch rp-user connection : %w", err)
 	}
 
-	conn.Request.PD = r.pd
+	conn.Request.PD = r.PD
 
 	err = o.rpStore.SaveUserConnection(conn)
 	if err != nil {
@@ -767,9 +718,14 @@ func (o *Operation) chapiResponseHandler(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	invData := o.peekInvitationData(request.InvitationID)
-	if invData == nil {
-		commhttp.WriteErrorResponse(w, http.StatusBadRequest, "stale or invalid invitation ID")
+	crCtx, err := newTransientStorage(o.transientStore).GetConsentRequest(request.InvitationID)
+	if errors.Is(err, storage.ErrValueNotFound) {
+		handleError(w, http.StatusBadRequest, "stale or invalid invitation ID")
+	}
+
+	if err != nil {
+		handleError(w, http.StatusInternalServerError,
+			fmt.Sprintf("failed to read from the transient store : %s", err))
 
 		return
 	}
@@ -777,18 +733,15 @@ func (o *Operation) chapiResponseHandler(w http.ResponseWriter, r *http.Request)
 	// TODO save user Consent VC https://github.com/trustbloc/edge-adapter/issues/92
 	// TODO validate the user consent credential (expected rp and user DIDs, etc.)
 
-	customConsentVC, origConsentVC, err := parseWalletResponse(invData.pd, o.vdriReg, request.VerifiablePresentation)
+	customConsentVC, origConsentVC, err := parseWalletResponse(crCtx.PD, o.vdriReg, request.VerifiablePresentation)
 	if errors.Is(err, errInvalidCredential) {
-		logger.Warnf("malformed credentials : %s", err)
-		commhttp.WriteErrorResponse(w, http.StatusBadRequest, "malformed credentials")
+		handleError(w, http.StatusBadRequest, "malformed credentials")
 
 		return
 	}
 
 	if err != nil {
-		msg := fmt.Sprintf("failed to parse custom credentials : %s", err)
-		logger.Errorf(msg)
-		commhttp.WriteErrorResponse(w, http.StatusInternalServerError, msg)
+		handleError(w, http.StatusInternalServerError, fmt.Sprintf("failed to parse custom credentials : %s", err))
 
 		return
 	}
@@ -803,7 +756,7 @@ func (o *Operation) chapiResponseHandler(w http.ResponseWriter, r *http.Request)
 	}
 
 	// TODO Issuer's label on the connection record https://github.com/trustbloc/edge-adapter/issues/93
-	_, err = o.didClient.CreateConnection(invData.rpPeerDID, issuerDID)
+	_, err = o.didClient.CreateConnection(crCtx.RPPairwiseDID, issuerDID)
 	if err != nil {
 		msg := fmt.Sprintf("failed to create didcomm connection : %s", err)
 		logger.Errorf(msg)
@@ -844,7 +797,7 @@ func (o *Operation) chapiResponseHandler(w http.ResponseWriter, r *http.Request)
 				Base64: base64.StdEncoding.EncodeToString(consentVCBits),
 			},
 		}},
-	}, invData.rpPeerDID, issuerDID.ID)
+	}, crCtx.RPPairwiseDID, issuerDID.ID)
 	if err != nil {
 		msg := fmt.Sprintf("failed to send request-presentation : %s", err)
 		logger.Errorf(msg)
@@ -857,55 +810,53 @@ func (o *Operation) chapiResponseHandler(w http.ResponseWriter, r *http.Request)
 
 	callback := make(chan *issuerResponseStatus)
 
-	o.setIssuerCallbackCh(thid, callback)
-
-	o.setThidInvitationData(&thidInvitationData{
-		threadID:         thid,
-		invitationDataID: invData.id,
+	o.setWalletResponseContext(thid, &walletResponseCtx{
+		threadID:             thid,
+		consentRequestCtx:    crCtx,
+		issuerResponseStatus: callback,
 	})
 
 	start := time.Now()
 
+	// TODO the transient invitationData should be after the CHAPI response is processed but the edge-coge Store API
+	//  is missing a Delete() method: https://github.com/trustbloc/edge-core/issues/45
+
 	select {
 	case c := <-callback:
 		logger.Infof("got response from issuer in %s", time.Since(start))
-		o.handleIssuerCallback(w, r, invData, c)
+		o.handleIssuerCallback(w, r, c)
 	case <-time.After(o.issuerCallbackTimeout):
-		msg := "timeout waiting for credentials"
-		logger.Errorf(msg)
-		commhttp.WriteErrorResponse(w, http.StatusGatewayTimeout, msg)
+		handleError(w, http.StatusGatewayTimeout, "timeout waiting for credentials")
 	}
 }
 
-func (o *Operation) handleIssuerCallback(
-	w http.ResponseWriter, r *http.Request, invData *invitationData, c *issuerResponseStatus) {
+func (o *Operation) handleIssuerCallback(w http.ResponseWriter, r *http.Request, c *issuerResponseStatus) {
 	if errors.Is(c.err, errInvalidCredential) {
-		commhttp.WriteErrorResponse(w, http.StatusBadRequest, "received invalid credentials from the issuer")
+		handleError(w, http.StatusBadRequest, "received invalid credentials from the issuer")
 
 		return
 	}
 
 	if c.err != nil {
-		commhttp.WriteErrorResponse(w, http.StatusInternalServerError, "failed to validate credentials")
+		handleError(w, http.StatusInternalServerError, "failed to validate credentials")
 
 		return
 	}
 
 	rpData, err := o.mapPresentationSubmissionToRPData(c.submission)
 	if err != nil {
-		msg := fmt.Sprintf("failed to map VCs into RP object : %s", err)
-		logger.Errorf(msg)
-		commhttp.WriteErrorResponse(w, http.StatusInternalServerError, msg)
+		handleError(w, http.StatusInternalServerError, fmt.Sprintf("failed to map VCs into RP object : %s", err))
 
 		return
 	}
 
+	// TODO support selective disclosure
 	accept := &admin.AcceptConsentRequestParams{}
 	accept.SetContext(r.Context())
-	accept.SetConsentChallenge(invData.cr.Payload.Challenge)
+	accept.SetConsentChallenge(c.walletResponseCtx.consentRequestCtx.CR.Payload.Challenge)
 	accept.SetBody(&models.AcceptConsentRequest{
-		GrantAccessTokenAudience: invData.cr.Payload.RequestedAccessTokenAudience,
-		GrantScope:               invData.cr.Payload.RequestedScope, // TODO support selective disclosure
+		GrantAccessTokenAudience: c.walletResponseCtx.consentRequestCtx.CR.Payload.RequestedAccessTokenAudience,
+		GrantScope:               c.walletResponseCtx.consentRequestCtx.CR.Payload.RequestedScope,
 		HandledAt:                models.NullTime(time.Now()),
 		Remember:                 true, // TODO support user choice whether consent should be remembered
 		Session: &models.ConsentRequestSession{
@@ -915,9 +866,7 @@ func (o *Operation) handleIssuerCallback(
 
 	resp, err := o.hydra.AcceptConsentRequest(accept)
 	if err != nil {
-		msg := fmt.Sprintf("failed to accept consent request at hydra : %s", err)
-		logger.Errorf(msg)
-		commhttp.WriteErrorResponse(w, http.StatusBadGateway, msg)
+		handleError(w, http.StatusBadGateway, fmt.Sprintf("failed to accept consent request at hydra : %s", err))
 
 		return
 	}
@@ -992,12 +941,20 @@ func (o *Operation) listenForIncomingConnections() {
 // We accept incoming did-exchange requests on the following conditions if the request
 // has a parent invitation ID found in our transient store.
 func (o *Operation) handleIncomingDIDExchangeRequestAction(action service.DIDCommAction) {
-	invitation := o.peekInvitationData(action.Message.ParentThreadID())
-	if invitation == nil {
-		msg := fmt.Sprintf("no such invitation with id %s", action.Message.ParentThreadID())
+	_, err := newTransientStorage(o.transientStore).GetConsentRequest(action.Message.ParentThreadID())
+	if errors.Is(err, storage.ErrValueNotFound) {
+		msg := fmt.Sprintf("no such context for id %s", action.Message.ParentThreadID())
 
 		logger.Errorf(msg)
 		action.Stop(errors.New(msg))
+
+		return
+	}
+
+	if err != nil {
+		logger.Errorf(
+			"failed to fetch consentRequestCtx from transient storage while processing didexchange request pthid %s: %w",
+			action.Message.ParentThreadID(), err)
 
 		return
 	}
@@ -1028,9 +985,9 @@ func (o *Operation) listenForConnectionCompleteEvents() {
 			"received connection complete event for invitationID=%s connectionID=%s",
 			event.InvitationID(), event.ConnectionID())
 
-		invData := o.peekInvitationData(event.InvitationID())
-		if invData == nil {
-			logger.Warnf("invalid or stale invitation ID: %s", event.InvitationID())
+		crCtx, err := newTransientStorage(o.transientStore).GetConsentRequest(event.InvitationID())
+		if err != nil {
+			logger.Warnf("unable to fetch consentRquestCtx data transient storage: %s", err)
 
 			continue
 		}
@@ -1042,10 +999,13 @@ func (o *Operation) listenForConnectionCompleteEvents() {
 			continue
 		}
 
-		invData.rpPeerDID = record.MyDID
-		invData.userDID = record.TheirDID
+		crCtx.RPPairwiseDID = record.MyDID
+		crCtx.UserDID = record.TheirDID
 
-		o.setInvitationData(invData)
+		err = newTransientStorage(o.transientStore).Put(crCtx.InvitationID, crCtx)
+		if err != nil {
+			logger.Errorf("failed to update invitation data in transient storage : %s", err)
+		}
 	}
 }
 
@@ -1077,25 +1037,9 @@ func (o *Operation) handleIssuerPresentationMsg(msg service.DIDCommMsg) error {
 		return fmt.Errorf("failed to extract threadID from didcomm msg : %w", err)
 	}
 
-	responseChan, found := o.getAndUnsetIssuerCallbackCh(thid)
-	if !found {
-		return fmt.Errorf("no callback channel registered for threadID=%s", thid)
-	}
-
-	data := o.getAndUnsetThidInvitationData(thid)
-	if data == nil {
-		err = fmt.Errorf("ignoring present-proof response for invalid threadID=%s", thid)
-		notifyIssuerResponseError(err, responseChan)
-
-		return err
-	}
-
-	invData := o.getAndUnsetInvitationData(data.invitationDataID)
-	if invData == nil {
-		err = fmt.Errorf("expecting invitationData for thid %s but none was found", thid)
-		notifyIssuerResponseError(err, responseChan)
-
-		return err
+	ctx := o.getAndUnsetWalletResponseContext(thid)
+	if ctx == nil {
+		return fmt.Errorf("ignoring present-proof response for invalid threadID=%s", thid)
 	}
 
 	presentation := &presentproof.Presentation{}
@@ -1103,24 +1047,24 @@ func (o *Operation) handleIssuerPresentationMsg(msg service.DIDCommMsg) error {
 	err = msg.Decode(presentation)
 	if err != nil {
 		err = fmt.Errorf("failed to decode present-proof message : %w", err)
-		notifyIssuerResponseError(err, responseChan)
+		notifyIssuerResponseError(err, ctx.issuerResponseStatus)
 
 		return err
 	}
 
 	logger.Debugf("handling present-proof message: %+v", presentation)
 
-	presentationSubmissionVP, err := parseIssuerResponse(invData.pd, presentation)
+	presentationSubmissionVP, err := parseIssuerResponse(ctx.consentRequestCtx.PD, presentation)
 	if err != nil {
 		err = fmt.Errorf("failed to parse verifiable presentation : %w", err)
-		notifyIssuerResponseError(err, responseChan)
+		notifyIssuerResponseError(err, ctx.issuerResponseStatus)
 
 		return err
 	}
 
 	logger.Debugf("received presentation_submission : %+v", presentationSubmissionVP)
 
-	notifyIssuerResponse(presentationSubmissionVP, responseChan)
+	notifyIssuerResponse(presentationSubmissionVP, ctx.issuerResponseStatus, ctx)
 
 	return nil
 }
@@ -1131,9 +1075,11 @@ func notifyIssuerResponseError(err error, c chan *issuerResponseStatus) {
 	}
 }
 
-func notifyIssuerResponse(p *rp2.PresentationSubmissionPresentation, c chan *issuerResponseStatus) {
+func notifyIssuerResponse(p *rp2.PresentationSubmissionPresentation,
+	c chan *issuerResponseStatus, ctx *walletResponseCtx) {
 	c <- &issuerResponseStatus{
-		submission: p,
+		submission:        p,
+		walletResponseCtx: ctx,
 	}
 }
 
@@ -1236,4 +1182,18 @@ func removeOIDCScope(scopes []string) []string {
 	}
 
 	return filtered
+}
+
+func transientStore(p storage.Provider) (storage.Store, error) {
+	err := p.CreateStore(transientStoreName)
+	if err != nil && !errors.Is(err, storage.ErrDuplicateStore) {
+		return nil, fmt.Errorf("failed to create transient store : %w", err)
+	}
+
+	return p.OpenStore(transientStoreName)
+}
+
+func handleError(w http.ResponseWriter, statusCode int, msg string) {
+	logger.Errorf(msg)
+	commhttp.WriteErrorResponse(w, statusCode, msg)
 }

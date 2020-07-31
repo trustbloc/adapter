@@ -22,8 +22,11 @@ import (
 func TestController_New(t *testing.T) {
 	t.Run("test success", func(t *testing.T) {
 		controller, err := New(&operation.Config{
-			DIDExchClient:        &didexchange.MockClient{},
-			Store:                memstore.NewProvider(),
+			DIDExchClient: &didexchange.MockClient{},
+			Storage: &operation.Storage{
+				Persistent: memstore.NewProvider(),
+				Transient:  memstore.NewProvider(),
+			},
 			AriesStorageProvider: &mockAriesContextProvider{},
 			PresentProofClient:   &mockpresentproof.MockClient{},
 		})

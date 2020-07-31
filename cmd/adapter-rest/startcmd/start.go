@@ -155,8 +155,9 @@ const (
 )
 
 const (
-	rpAdapterStorePrefix     = "rpadapter"
-	issuerAdapterStorePrefix = "issueradapter"
+	rpAdapterPersistentStorePrefix = "rpadapter"
+	rpAdapterTransientStorePrefix  = "rpadapter_txn"
+	issuerAdapterStorePrefix       = "issueradapter"
 )
 
 // nolint:gochecknoglobals
@@ -519,9 +520,9 @@ func addRPHandlers(
 		return err
 	}
 
-	store, err := initEdgeStore(parameters.dsn, rpAdapterStorePrefix)
+	store, tStore, err := initRPAdapterEdgeStores(parameters.dsn)
 	if err != nil {
-		return fmt.Errorf("failed to init storage provider : %w", err)
+		return fmt.Errorf("failed to init edge storage: %w", err)
 	}
 
 	// TODO init OIDC stuff in iteration 2 - https://github.com/trustbloc/edge-adapter/issues/24
@@ -532,7 +533,7 @@ func addRPHandlers(
 		Hydra:                  hydra.NewClient(hydraURL, rootCAs),
 		UIEndpoint:             uiEndpoint,
 		DIDExchClient:          didClient,
-		Store:                  store,
+		Storage:                &rpops.Storage{Persistent: store, Transient: tStore},
 		PublicDIDCreator: did.NewTrustblocDIDCreator(
 			parameters.trustblocDomain,
 			parameters.didCommParameters.inboundHostExternal,
@@ -620,6 +621,20 @@ func constructCORSHandler(handler http.Handler) http.Handler {
 			AllowedHeaders: []string{"Origin", "Accept", "Content-Type", "X-Requested-With", "Authorization"},
 		},
 	).Handler(handler)
+}
+
+func initRPAdapterEdgeStores(dbURL string) (persistent, transient storage.Provider, err error) {
+	persistent, err = initEdgeStore(dbURL, rpAdapterPersistentStorePrefix)
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to init edge persistent storage: %w", err)
+	}
+
+	transient, err = initEdgeStore(dbURL, rpAdapterTransientStorePrefix)
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to init edge transient storage: %w", err)
+	}
+
+	return persistent, transient, nil
 }
 
 func initEdgeStore(dbURL, prefix string) (storage.Provider, error) {
