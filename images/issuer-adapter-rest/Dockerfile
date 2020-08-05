@@ -4,29 +4,14 @@
 # SPDX-License-Identifier: Apache-2.0
 #
 
-ARG GO_VER
 ARG ALPINE_VER
 
-FROM golang:${GO_VER}-alpine${ALPINE_VER} as golang
-RUN apk add --no-cache \
-	gcc \
-	musl-dev \
-	git \
-	libtool \
-	bash \
-	npm \
-	make;
-ADD . src/github.com/trustbloc/edge-adapter
-WORKDIR src/github.com/trustbloc/edge-adapter
-ENV EXECUTABLES go git
+FROM docker.pkg.github.com/trustbloc/edge-adapter/adapter-rest-base:latest as base
 
-FROM golang as edge-adapter
-RUN make issuer-adapter-vue adapter-rest
-
-FROM alpine:${ALPINE_VER} as base
-COPY --from=edge-adapter /go/src/github.com/trustbloc/edge-adapter/.build/bin/adapter-rest /usr/local/bin
-COPY --from=edge-adapter /go/src/github.com/trustbloc/edge-adapter/.build/bin/issuer-adapter-vue /usr/local/static/issuer-adapter-vue/
-ENV ADAPTER_REST_STATIC_FILES=/usr/local/static/issuer-adapter-vue
+FROM alpine:${ALPINE_VER}
+COPY --from=base /go/src/github.com/trustbloc/edge-adapter/.build/bin/adapter-rest /usr/local/bin
+COPY .build/bin/issuer-adapter-vue /usr/local/static/issuer-adapter-vue/
+ENV ADAPTER_REST_STATIC_FILES=/usr/local/static/issuer-adapter-vue/
 ENV ADAPTER_REST_MODE=issuer
 
 # set up nsswitch.conf for Go's "netgo" implementation

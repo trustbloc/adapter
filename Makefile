@@ -6,12 +6,13 @@ ADAPTER_REST_PATH=cmd/adapter-rest
 
 # Namespace for the agent images
 DOCKER_OUTPUT_NS   ?= docker.pkg.github.com
+ADAPTER_REST_BASE_IMAGE_NAME ?= trustbloc/edge-adapter/adapter-rest-base
 ISSUER_ADAPTER_REST_IMAGE_NAME   ?= trustbloc/edge-adapter/issuer-adapter-rest
 RP_ADAPTER_REST_IMAGE_NAME   ?= trustbloc/edge-adapter/rp-adapter-rest
 MOCK_ISSUER_IMAGE_NAME ?= mock-issuer
 
 # Tool commands (overridable)
-ALPINE_VER ?= 3.11
+ALPINE_VER ?= 3.12
 GO_VER ?= 1.14
 GOBIN_PATH=$(abspath .)/.build/bin
 
@@ -52,18 +53,23 @@ adapter-rest:
 	@GO111MODULE=off GOBIN=$(GOBIN_PATH) go get github.com/myitcv/gobin
 	@cd ${ADAPTER_REST_PATH} && $(GOBIN_PATH)/gobin -run github.com/gobuffalo/packr/v2/packr2@v2.8.0 build -o ../../.build/bin/adapter-rest main.go
 
-.PHONY: issuer-adapter-rest-docker
-issuer-adapter-rest-docker:
-	@echo "Building issuer adapter rest docker image"
-	@docker build -f ./images/issuer-adapter-rest/Dockerfile --no-cache -t $(DOCKER_OUTPUT_NS)/$(ISSUER_ADAPTER_REST_IMAGE_NAME):latest \
+.PHONY: adapter-rest-docker-base
+adapter-rest-docker-base:
+	@echo "Building adapter rest docker base image"
+	@docker build -f ./images/adapter-rest-base/Dockerfile --no-cache -t $(DOCKER_OUTPUT_NS)/$(ADAPTER_REST_BASE_IMAGE_NAME):latest \
 	--build-arg GO_VER=$(GO_VER) \
 	--build-arg ALPINE_VER=$(ALPINE_VER) .
 
+.PHONY: issuer-adapter-rest-docker
+issuer-adapter-rest-docker: adapter-rest-docker-base issuer-adapter-vue
+	@echo "Building issuer adapter rest docker image"
+	@docker build -f ./images/issuer-adapter-rest/Dockerfile --no-cache -t $(DOCKER_OUTPUT_NS)/$(ISSUER_ADAPTER_REST_IMAGE_NAME):latest \
+	--build-arg ALPINE_VER=$(ALPINE_VER) .
+
 .PHONY: rp-adapter-rest-docker
-rp-adapter-rest-docker:
+rp-adapter-rest-docker: adapter-rest-docker-base rp-adapter-vue
 	@echo "Building rp adapter rest docker image"
 	@docker build -f ./images/rp-adapter-rest/Dockerfile --no-cache -t $(DOCKER_OUTPUT_NS)/$(RP_ADAPTER_REST_IMAGE_NAME):latest \
-	--build-arg GO_VER=$(GO_VER) \
 	--build-arg ALPINE_VER=$(ALPINE_VER) .
 
 .PHONY: unit-test
