@@ -25,6 +25,7 @@ import (
 	"github.com/hyperledger/aries-framework-go/pkg/didcomm/protocol/didexchange"
 	issuecredsvc "github.com/hyperledger/aries-framework-go/pkg/didcomm/protocol/issuecredential"
 	"github.com/hyperledger/aries-framework-go/pkg/didcomm/protocol/mediator"
+	outofbandsvc "github.com/hyperledger/aries-framework-go/pkg/didcomm/protocol/outofband"
 	presentproofsvc "github.com/hyperledger/aries-framework-go/pkg/didcomm/protocol/presentproof"
 	"github.com/hyperledger/aries-framework-go/pkg/doc/did"
 	"github.com/hyperledger/aries-framework-go/pkg/doc/verifiable"
@@ -45,6 +46,7 @@ import (
 	mockconn "github.com/trustbloc/edge-adapter/pkg/internal/mock/connection"
 	mockdiddoc "github.com/trustbloc/edge-adapter/pkg/internal/mock/diddoc"
 	"github.com/trustbloc/edge-adapter/pkg/internal/mock/issuecredential"
+	mockoutofband "github.com/trustbloc/edge-adapter/pkg/internal/mock/outofband"
 	"github.com/trustbloc/edge-adapter/pkg/internal/mock/presentproof"
 	"github.com/trustbloc/edge-adapter/pkg/profile/issuer"
 	adaptervc "github.com/trustbloc/edge-adapter/pkg/vc"
@@ -71,7 +73,7 @@ func TestNew(t *testing.T) {
 		c, err := New(&Config{AriesCtx: &mockprovider.Provider{}})
 		require.Nil(t, c)
 		require.Error(t, err)
-		require.Contains(t, err.Error(), "failed to create aries did exchange client")
+		require.Contains(t, err.Error(), "failed to create aries outofband client")
 	})
 
 	t.Run("test new - store fail", func(t *testing.T) {
@@ -316,6 +318,7 @@ func TestConnectWallet(t *testing.T) {
 				mediator.Coordination:   &mockroute.MockMediatorSvc{},
 				issuecredsvc.Name:       &issuecredential.MockIssueCredentialSvc{},
 				presentproofsvc.Name:    &presentproof.MockPresentProofSvc{},
+				outofbandsvc.Name:       &mockoutofband.MockService{},
 			},
 			LegacyKMSValue:       &mocklegacykms.CloseableKMS{CreateKeyErr: errors.New("key generation error")},
 			ServiceEndpointValue: "endpoint",
@@ -655,7 +658,7 @@ func TestCHAPIRequest(t *testing.T) {
 		err = json.Unmarshal(rr.Body.Bytes(), &chapiReq)
 		require.NoError(t, err)
 		require.Equal(t, DIDConnectCHAPIQueryType, chapiReq.Query.Type)
-		require.Equal(t, "https://didcomm.org/didexchange/1.0/invitation", chapiReq.DIDCommInvitation.Type)
+		require.Equal(t, "https://didcomm.org/oob-invitation/1.0/invitation", chapiReq.DIDCommInvitation.Type)
 	})
 
 	t.Run("test fetch invitation - no txnID in the url query", func(t *testing.T) {
@@ -856,6 +859,7 @@ func TestDIDCommListeners(t *testing.T) {
 						mediator.Coordination:   &mockroute.MockMediatorSvc{},
 						issuecredsvc.Name:       &issuecredential.MockIssueCredentialSvc{},
 						presentproofsvc.Name:    &presentproof.MockPresentProofSvc{},
+						outofbandsvc.Name:       &mockoutofband.MockService{},
 					},
 					LegacyKMSValue:       &mocklegacykms.CloseableKMS{CreateEncryptionKeyValue: "sample-key"},
 					ServiceEndpointValue: "endpoint",
@@ -1534,6 +1538,7 @@ func getAriesCtx() aries.CtxProvider {
 			mediator.Coordination:   &mockroute.MockMediatorSvc{},
 			issuecredsvc.Name:       &issuecredential.MockIssueCredentialSvc{},
 			presentproofsvc.Name:    &presentproof.MockPresentProofSvc{},
+			outofbandsvc.Name:       &mockoutofband.MockService{},
 		},
 		LegacyKMSValue:       &mocklegacykms.CloseableKMS{CreateEncryptionKeyValue: "sample-key"},
 		KMSValue:             &mockkms.KeyManager{ImportPrivateKeyErr: fmt.Errorf("error import priv key")},

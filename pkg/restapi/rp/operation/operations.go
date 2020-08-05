@@ -21,6 +21,7 @@ import (
 	"github.com/coreos/go-oidc"
 	"github.com/google/uuid"
 	"github.com/hyperledger/aries-framework-go/pkg/client/didexchange"
+	"github.com/hyperledger/aries-framework-go/pkg/client/outofband"
 	"github.com/hyperledger/aries-framework-go/pkg/client/presentproof"
 	"github.com/hyperledger/aries-framework-go/pkg/didcomm/common/service"
 	"github.com/hyperledger/aries-framework-go/pkg/didcomm/protocol/decorator"
@@ -95,12 +96,15 @@ type OAuth2Config interface {
 	AuthCodeURL(string) string
 }
 
+// OOBClient is the aries framework OutOfBand client.
+type OOBClient interface {
+	CreateInvitation([]string, ...outofband.MessageOption) (*outofband.Invitation, error)
+}
+
 // DIDClient is the didexchange Client.
 type DIDClient interface {
 	RegisterActionEvent(chan<- service.DIDCommAction) error
 	RegisterMsgEvent(chan<- service.StateMsg) error
-	CreateInvitationWithDID(string, string) (*didexchange.Invitation, error)
-	CreateInvitation(string) (*didexchange.Invitation, error)
 	CreateConnection(string, *did.Doc, ...didexchange.ConnectionOption) (string, error)
 }
 
@@ -165,6 +169,7 @@ func New(config *Config) (*Operation, error) {
 		oauth2Config:           config.OAuth2Config,
 		oidcStates:             make(map[string]*models.LoginRequest),
 		uiEndpoint:             config.UIEndpoint,
+		oobClient:              config.OOBClient,
 		didClient:              config.DIDExchClient,
 		didActions:             make(chan service.DIDCommAction),
 		didStateMsgs:           make(chan service.StateMsg),
@@ -222,6 +227,7 @@ type Config struct {
 	OIDC                   func(string, context.Context) (*oidc.IDToken, error)
 	OAuth2Config           OAuth2Config
 	UIEndpoint             string
+	OOBClient              OOBClient
 	DIDExchClient          DIDClient
 	PublicDIDCreator       PublicDIDCreator
 	AriesStorageProvider   AriesContextProvider
@@ -241,6 +247,7 @@ type Operation struct {
 	oidcStates             map[string]*models.LoginRequest
 	oidcStateLock          sync.Mutex
 	uiEndpoint             string
+	oobClient              OOBClient
 	didClient              DIDClient
 	didActions             chan service.DIDCommAction
 	didStateMsgs           chan service.StateMsg
@@ -655,7 +662,11 @@ func (o *Operation) getPresentationsRequest(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
-	invitation, err := o.didClient.CreateInvitationWithDID(cr.RPLabel, cr.RPPublicDID)
+	invitation, err := o.oobClient.CreateInvitation(
+		[]string{didexchangesvc.PIURI},
+		outofband.WithLabel(cr.RPLabel),
+		outofband.WithServices(cr.RPPublicDID),
+	)
 	if err != nil {
 		handleError(w, http.StatusInternalServerError,
 			fmt.Sprintf("failed to create didcomm invitation with DID : %s", err))

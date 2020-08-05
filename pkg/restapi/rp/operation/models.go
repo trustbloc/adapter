@@ -9,7 +9,7 @@ package operation
 import (
 	"encoding/json"
 
-	"github.com/hyperledger/aries-framework-go/pkg/client/didexchange"
+	"github.com/hyperledger/aries-framework-go/pkg/client/outofband"
 
 	"github.com/trustbloc/edge-adapter/pkg/presentationex"
 )
@@ -17,7 +17,7 @@ import (
 // GetPresentationRequestResponse API response of getPresentationRequest.
 type GetPresentationRequestResponse struct {
 	PD  *presentationex.PresentationDefinitions `json:"pd"`
-	Inv *didexchange.Invitation                 `json:"invitation"`
+	Inv *outofband.Invitation                   `json:"invitation"`
 }
 
 // CreateRPTenantRequest API request body to register an RP tenant.

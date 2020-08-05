@@ -20,6 +20,7 @@ import (
 	"github.com/gorilla/mux"
 	"github.com/hyperledger/aries-framework-go/pkg/client/didexchange"
 	"github.com/hyperledger/aries-framework-go/pkg/client/issuecredential"
+	"github.com/hyperledger/aries-framework-go/pkg/client/outofband"
 	"github.com/hyperledger/aries-framework-go/pkg/client/presentproof"
 	"github.com/hyperledger/aries-framework-go/pkg/didcomm/common/service"
 	"github.com/hyperledger/aries-framework-go/pkg/didcomm/protocol/decorator"
@@ -97,7 +98,12 @@ type Config struct {
 }
 
 // New returns issuer rest instance.
-func New(config *Config) (*Operation, error) {
+func New(config *Config) (*Operation, error) { // nolint:funlen
+	oobClient, err := outofbandClient(config.AriesCtx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create aries outofband client : %w", err)
+	}
+
 	didExClient, err := didExchangeClient(config.AriesCtx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create aries did exchange client : %s", err)
@@ -138,6 +144,7 @@ func New(config *Config) (*Operation, error) {
 	vccrypto := crypto.New(config.AriesCtx.KMS(), config.AriesCtx.Crypto(), config.AriesCtx.VDRIRegistry())
 
 	op := &Operation{
+		oobClient:          oobClient,
 		didExClient:        didExClient,
 		issueCredClient:    issueCredClient,
 		presentProofClient: presentProofClient,
@@ -164,6 +171,7 @@ type httpClient interface {
 
 // Operation defines handlers for rp operations.
 type Operation struct {
+	oobClient          *outofband.Client
 	didExClient        *didexchange.Client
 	issueCredClient    *issuecredential.Client
 	presentProofClient *presentproof.Client
@@ -440,7 +448,7 @@ func (o *Operation) validateAndGetConnection(connectData *issuervc.DIDConnectCre
 }
 
 func (o *Operation) createTxn(profile *issuer.ProfileData, state string) (string, error) {
-	invitation, err := o.didExClient.CreateInvitation("issuer")
+	invitation, err := o.oobClient.CreateInvitation(nil, outofband.WithLabel("issuer"))
 	if err != nil {
 		return "", fmt.Errorf("failed to create invitation : %w", err)
 	}
@@ -713,6 +721,15 @@ func (o *Operation) storeAuthorizationCredHandle(handle *AuthorizationCredential
 	}
 
 	return nil
+}
+
+func outofbandClient(ariesCtx outofband.Provider) (*outofband.Client, error) {
+	c, err := outofband.New(ariesCtx)
+	if err != nil {
+		return nil, err
+	}
+
+	return c, err
 }
 
 func didExchangeClient(ariesCtx aries.CtxProvider) (*didexchange.Client, error) {

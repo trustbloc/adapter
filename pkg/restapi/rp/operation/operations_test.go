@@ -21,6 +21,7 @@ import (
 	"github.com/coreos/go-oidc"
 	"github.com/google/uuid"
 	"github.com/hyperledger/aries-framework-go/pkg/client/didexchange"
+	"github.com/hyperledger/aries-framework-go/pkg/client/outofband"
 	"github.com/hyperledger/aries-framework-go/pkg/client/presentproof"
 	"github.com/hyperledger/aries-framework-go/pkg/didcomm/common/service"
 	"github.com/hyperledger/aries-framework-go/pkg/didcomm/protocol/decorator"
@@ -42,6 +43,7 @@ import (
 	"github.com/trustbloc/edge-adapter/pkg/db/rp"
 	"github.com/trustbloc/edge-adapter/pkg/internal/common/adapterutil"
 	mockdidexchange "github.com/trustbloc/edge-adapter/pkg/internal/mock/didexchange"
+	mockoutofband "github.com/trustbloc/edge-adapter/pkg/internal/mock/outofband"
 	mockpresentproof "github.com/trustbloc/edge-adapter/pkg/internal/mock/presentproof"
 	"github.com/trustbloc/edge-adapter/pkg/presentationex"
 	rp2 "github.com/trustbloc/edge-adapter/pkg/vc/rp"
@@ -1297,6 +1299,15 @@ func TestGetPresentationsRequest(t *testing.T) {
 
 		c, err := New(&Config{
 			PresentationExProvider: &mockPresentationExProvider{createValue: presDefs},
+			OOBClient: &mockoutofband.MockClient{
+				CreateInvVal: &outofband.Invitation{
+					ID:        uuid.New().String(),
+					Type:      outofband.InvitationMsgType,
+					Label:     "test-label",
+					Service:   []interface{}{rpPublicDID.String()},
+					Protocols: []string{didexchangesvc.PIURI},
+				},
+			},
 			DIDExchClient: &mockdidexchange.MockClient{
 				CreateInvWithDIDFunc: func(label, didID string) (*didexchange.Invitation, error) {
 					return &didexchange.Invitation{Invitation: &didexchangesvc.Invitation{
@@ -1336,7 +1347,9 @@ func TestGetPresentationsRequest(t *testing.T) {
 		require.NoError(t, json.Unmarshal(r.Body.Bytes(), &resp))
 
 		require.Equal(t, presDefs, resp.PD)
-		require.Equal(t, rpPublicDID.String(), resp.Inv.DID)
+		require.NotNil(t, resp.Inv)
+		require.Len(t, resp.Inv.Service, 1)
+		require.Equal(t, rpPublicDID.String(), resp.Inv.Service[0])
 	})
 
 	t.Run("bad request if handle is invalid", func(t *testing.T) {
@@ -1386,15 +1399,14 @@ func TestGetPresentationsRequest(t *testing.T) {
 
 		c, err := New(&Config{
 			PresentationExProvider: &mockPresentationExProvider{createValue: presDefs},
-			DIDExchClient: &mockdidexchange.MockClient{
-				CreateInvWithDIDFunc: func(string, string) (*didexchange.Invitation, error) {
-					return nil, errors.New("test")
-				},
+			OOBClient: &mockoutofband.MockClient{
+				CreateInvErr: errors.New("test"),
 			},
 			Storage: &Storage{
 				Persistent: store,
 				Transient:  memstore.NewProvider(),
 			},
+			DIDExchClient:        &mockdidexchange.MockClient{},
 			AriesStorageProvider: &mockAriesContextProvider{},
 			PresentProofClient:   &mockpresentproof.MockClient{},
 		})
@@ -1521,11 +1533,8 @@ func TestGetPresentationsRequest(t *testing.T) {
 
 		c, err := New(&Config{
 			PresentationExProvider: &mockPresentationExProvider{},
-			DIDExchClient: &mockdidexchange.MockClient{
-				CreateInvWithDIDFunc: func(string, string) (*didexchange.Invitation, error) {
-					return &didexchange.Invitation{Invitation: &didexchangesvc.Invitation{}}, nil
-				},
-			},
+			OOBClient:              &mockoutofband.MockClient{CreateInvVal: &outofband.Invitation{}},
+			DIDExchClient:          &mockdidexchange.MockClient{},
 			Storage: &Storage{
 				Persistent: store,
 				Transient: &mockstorage.Provider{

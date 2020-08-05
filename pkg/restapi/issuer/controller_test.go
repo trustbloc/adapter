@@ -11,6 +11,7 @@ import (
 	"github.com/hyperledger/aries-framework-go/pkg/didcomm/protocol/didexchange"
 	issuecredsvc "github.com/hyperledger/aries-framework-go/pkg/didcomm/protocol/issuecredential"
 	"github.com/hyperledger/aries-framework-go/pkg/didcomm/protocol/mediator"
+	outofbandsvc "github.com/hyperledger/aries-framework-go/pkg/didcomm/protocol/outofband"
 	presentproofsvc "github.com/hyperledger/aries-framework-go/pkg/didcomm/protocol/presentproof"
 	mocksvc "github.com/hyperledger/aries-framework-go/pkg/mock/didcomm/protocol/didexchange"
 	mockroute "github.com/hyperledger/aries-framework-go/pkg/mock/didcomm/protocol/mediator"
@@ -20,6 +21,7 @@ import (
 	"github.com/trustbloc/edge-core/pkg/storage/memstore"
 
 	"github.com/trustbloc/edge-adapter/pkg/internal/mock/issuecredential"
+	"github.com/trustbloc/edge-adapter/pkg/internal/mock/outofband"
 	"github.com/trustbloc/edge-adapter/pkg/internal/mock/presentproof"
 	"github.com/trustbloc/edge-adapter/pkg/restapi/issuer/operation"
 )
@@ -34,6 +36,7 @@ func TestNew(t *testing.T) {
 				mediator.Coordination:   &mockroute.MockMediatorSvc{},
 				issuecredsvc.Name:       &issuecredential.MockIssueCredentialSvc{},
 				presentproofsvc.Name:    &presentproof.MockPresentProofSvc{},
+				outofbandsvc.Name:       &outofband.MockService{},
 			},
 		}
 
@@ -55,6 +58,6 @@ func TestNew(t *testing.T) {
 		controller, err := New(&operation.Config{AriesCtx: ariesCtx})
 		require.Nil(t, controller)
 		require.Error(t, err)
-		require.Contains(t, err.Error(), "failed to create aries did exchange client")
+		require.Contains(t, err.Error(), "failed to create aries outofband client")
 	})
 }

@@ -20,6 +20,7 @@ import (
 	"github.com/cenkalti/backoff"
 	"github.com/gorilla/mux"
 	"github.com/hyperledger/aries-framework-go/pkg/client/didexchange"
+	"github.com/hyperledger/aries-framework-go/pkg/client/outofband"
 	"github.com/hyperledger/aries-framework-go/pkg/client/presentproof"
 	arieslog "github.com/hyperledger/aries-framework-go/pkg/common/log"
 	arieshttp "github.com/hyperledger/aries-framework-go/pkg/didcomm/transport/http"
@@ -498,6 +499,7 @@ func startAdapterService(parameters *adapterRestParameters, srv server) error {
 		constructCORSHandler(router))
 }
 
+// nolint:funlen
 func addRPHandlers(
 	parameters *adapterRestParameters, ctx ariespai.CtxProvider, router *mux.Router, rootCAs *x509.CertPool) error {
 	presentationExProvider, err := presentationex.New(parameters.presentationDefinitionsFile)
@@ -508,6 +510,11 @@ func addRPHandlers(
 	hydraURL, err := url.Parse(parameters.hydraURL)
 	if err != nil {
 		return err
+	}
+
+	oobClient, err := outofband.New(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to initialize outofband client : %w", err)
 	}
 
 	didClient, err := didexchange.New(ctx)
@@ -532,6 +539,7 @@ func addRPHandlers(
 		PresentationExProvider: presentationExProvider,
 		Hydra:                  hydra.NewClient(hydraURL, rootCAs),
 		UIEndpoint:             uiEndpoint,
+		OOBClient:              oobClient,
 		DIDExchClient:          didClient,
 		Storage:                &rpops.Storage{Persistent: store, Transient: tStore},
 		PublicDIDCreator: did.NewTrustblocDIDCreator(

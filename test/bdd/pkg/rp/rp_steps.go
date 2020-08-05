@@ -25,6 +25,7 @@ import (
 	"github.com/coreos/go-oidc"
 	"github.com/cucumber/godog"
 	"github.com/google/uuid"
+	"github.com/hyperledger/aries-framework-go/pkg/client/outofband"
 	"github.com/hyperledger/aries-framework-go/pkg/doc/verifiable"
 	"github.com/ory/hydra-client-go/client"
 	"github.com/ory/hydra-client-go/client/admin"
@@ -96,7 +97,7 @@ func (s *Steps) RegisterSteps(g *godog.Suite) {
 	g.Step(`^a registered rp tenant with label "([^"]*)"$`, s.registerTenantFlow)
 	g.Step(`^the rp tenant "([^"]*)" redirects the user to the rp adapter with scope "([^"]*)"$`, s.redirectUserToAdapter)
 	g.Step(`the rp adapter "([^"]*)" submits a CHAPI request to "([^"]*)" with presentation-definitions and a didcomm invitation to connect`, s.sendCHAPIRequestToWallet) //nolint:lll
-	g.Step(`^"([^"]*)" accepts the didcomm invitation$`, s.walletAcceptsDIDCommInvitation)
+	g.Step(`^"([^"]*)" accepts the didcomm invitation from "([^"]*)"$`, s.walletAcceptsDIDCommInvitation)
 	g.Step(`^"([^"]*)" connects with the RP adapter "([^"]*)"$`, s.validateConnection)
 	g.Step(`^"([^"]*)" and "([^"]*)" have a didcomm connection$`, s.connectAgents)
 	g.Step(`^an rp tenant with label "([^"]*)" that requests the "([^"]*)" scope from the "([^"]*)"`, s.didexchangeFlow)
@@ -325,15 +326,6 @@ func (s *Steps) redirectUserToAdapter(label, scope string) error {
 }
 
 func (s *Steps) sendCHAPIRequestToWallet(tenantID, walletID string) error {
-	err := s.fetchCHAPIRequest(tenantID, walletID)
-	if err != nil {
-		return fmt.Errorf("failed to send chapi request to wallet : %w", err)
-	}
-
-	return s.submitDIDCommInvitationToWallet(tenantID, walletID)
-}
-
-func (s *Steps) fetchCHAPIRequest(tenantID, walletID string) error {
 	tenant := s.tenantCtx[tenantID]
 
 	//nolint:bodyclose
@@ -362,24 +354,22 @@ func (s *Steps) fetchCHAPIRequest(tenantID, walletID string) error {
 	return nil
 }
 
-func (s *Steps) submitDIDCommInvitationToWallet(tenantID, walletID string) error {
-	inv := s.context.Store[bddutil.GetDIDConnectRequestKey(tenantID, walletID)]
+func (s *Steps) walletAcceptsDIDCommInvitation(walletID, tenantID string) error {
+	marshalled := s.context.Store[bddutil.GetDIDConnectRequestKey(tenantID, walletID)]
 
-	connID, err := s.controller.ReceiveInvitation(walletID, inv)
+	inv := &outofband.Invitation{}
+
+	err := json.Unmarshal([]byte(marshalled), inv)
 	if err != nil {
-		return fmt.Errorf("%s failed to receive invitation from %s : %w", walletID, tenantID, err)
+		return fmt.Errorf("failed to unmarshal oob invitation from bdd test store : %w", err)
+	}
+
+	connID, err := s.controller.AcceptOOBInvitation(walletID, inv, walletID)
+	if err != nil {
+		return fmt.Errorf("%s failed to accept invitation from %s : %w", walletID, tenantID, err)
 	}
 
 	s.tenantCtx[tenantID].walletConnID = connID
-
-	return nil
-}
-
-func (s *Steps) walletAcceptsDIDCommInvitation(walletID string) error {
-	err := s.controller.ApproveInvitation(walletID)
-	if err != nil {
-		return fmt.Errorf("%s failed to approve the invitation : %w", walletID, err)
-	}
 
 	return nil
 }
@@ -423,7 +413,7 @@ func (s *Steps) didexchangeFlow(tenantID, scope, walletID string) error {
 		return err
 	}
 
-	err = s.walletAcceptsDIDCommInvitation(walletID)
+	err = s.walletAcceptsDIDCommInvitation(walletID, tenantID)
 	if err != nil {
 		return err
 	}
@@ -495,9 +485,7 @@ func (s *Steps) walletCreatesAuthorizationCredential(wallet, tenant, issuer stri
 		return nil, fmt.Errorf("%s failed to resolve %s's DID %s : %w", wallet, tenant, walletTenantConn.TheirDID, err)
 	}
 
-	// TODO using "issuer-adapter" as the issuer's ID because that is the default label set for
-	//  mock issuer in its configuration.
-	walletIssuerConn, err := s.controller.GetConnectionBetweenAgents(wallet, "issuer-adapter")
+	walletIssuerConn, err := s.controller.GetConnectionBetweenAgents(wallet, issuer)
 	if err != nil {
 		return nil, err
 	}

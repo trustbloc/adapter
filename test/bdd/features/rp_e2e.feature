@@ -16,12 +16,12 @@ Feature: RP Adapter
     Then the trustbloc DID of the tenant with label "test-tenant" is resolvable
     And the client ID of the tenant with label "test-tenant" is registered at hydra
 
-  Scenario: did-exchange with the web wallet
-    Given a registered rp tenant with label "didexchange"
-    When the rp tenant "didexchange" redirects the user to the rp adapter with scope "CreditCardStatement"
-    And the rp adapter "didexchange" submits a CHAPI request to "Mock Wallet" with presentation-definitions and a didcomm invitation to connect
-    And "Mock Wallet" accepts the didcomm invitation
-    Then "Mock Wallet" connects with the RP adapter "didexchange"
+  Scenario: Establishment of didcomm connection with the web wallet
+    Given a registered rp tenant with label "didcommconnection"
+    When the rp tenant "didcommconnection" redirects the user to the rp adapter with scope "CreditCardStatement"
+    And the rp adapter "didcommconnection" submits a CHAPI request to "Mock Wallet" with presentation-definitions and a didcomm invitation to connect
+    And "Mock Wallet" accepts the didcomm invitation from "didcommconnection"
+    Then "Mock Wallet" connects with the RP adapter "didcommconnection"
 
   Scenario: Returns data from the user's issuer adapter to the relying party with the user's consent
     Given "Mock Issuer Adapter" and "Mock Wallet" have a didcomm connection

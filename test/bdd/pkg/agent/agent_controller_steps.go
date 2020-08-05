@@ -8,14 +8,12 @@ package agent
 
 import (
 	"bytes"
-	goctx "context"
 	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io/ioutil"
 	"net/http"
-	"net/url"
 	"strings"
 	"time"
 
@@ -24,9 +22,11 @@ import (
 	"github.com/google/uuid"
 	"github.com/hyperledger/aries-framework-go/pkg/client/didexchange"
 	issuecredclient "github.com/hyperledger/aries-framework-go/pkg/client/issuecredential"
+	"github.com/hyperledger/aries-framework-go/pkg/client/outofband"
 	"github.com/hyperledger/aries-framework-go/pkg/client/presentproof"
 	didexcmd "github.com/hyperledger/aries-framework-go/pkg/controller/command/didexchange"
 	issuecredcmd "github.com/hyperledger/aries-framework-go/pkg/controller/command/issuecredential"
+	oobcmd "github.com/hyperledger/aries-framework-go/pkg/controller/command/outofband"
 	presentproofcmd "github.com/hyperledger/aries-framework-go/pkg/controller/command/presentproof"
 	vdricmd "github.com/hyperledger/aries-framework-go/pkg/controller/command/vdri"
 	verifiablecmd "github.com/hyperledger/aries-framework-go/pkg/controller/command/verifiable"
@@ -38,8 +38,6 @@ import (
 	"github.com/hyperledger/aries-framework-go/pkg/doc/verifiable"
 	vdriapi "github.com/hyperledger/aries-framework-go/pkg/framework/aries/api/vdri"
 	"github.com/trustbloc/edge-core/pkg/log"
-	"nhooyr.io/websocket"
-	"nhooyr.io/websocket/wsjson"
 
 	issuerops "github.com/trustbloc/edge-adapter/pkg/restapi/issuer/operation"
 	adaptervc "github.com/trustbloc/edge-adapter/pkg/vc"
@@ -50,14 +48,14 @@ import (
 
 const (
 	completedState = "completed"
-	timeoutWS      = 3 * time.Second
 
-	connOperationID       = "/connections"
-	receiveInvitationPath = connOperationID + "/receive-invitation"
-	createInvitationPath  = connOperationID + "/create-invitation"
-	acceptInvitationPath  = connOperationID + "/%s/accept-invitation"
-	connectionsByIDPath   = connOperationID + "/{id}"
-	createConnectionPath  = connOperationID + "/create"
+	oobOperationID   = "/outofband"
+	acceptOOBInvPath = oobOperationID + "/accept-invitation"
+	createOOBInvPath = oobOperationID + "/create-invitation"
+
+	connOperationID      = "/connections"
+	connectionsByIDPath  = connOperationID + "/{id}"
+	createConnectionPath = connOperationID + "/create"
 
 	issueCredOperationID = "/issuecredential"
 	sendCredRequest      = issueCredOperationID + "/send-request"
@@ -82,7 +80,6 @@ type Steps struct {
 	bddContext         *context.BDDContext
 	ControllerURLs     map[string]string
 	WebhookURLs        map[string]string
-	webSocketConns     map[string]*websocket.Conn
 	adapterConnections map[string]*didexchange.Connection
 	credentials        map[string]*verifiable.Credential
 }
@@ -93,7 +90,6 @@ func NewSteps(ctx *context.BDDContext) *Steps {
 		bddContext:         ctx,
 		ControllerURLs:     make(map[string]string),
 		WebhookURLs:        make(map[string]string),
-		webSocketConns:     make(map[string]*websocket.Conn),
 		adapterConnections: make(map[string]*didexchange.Connection),
 		credentials:        make(map[string]*verifiable.Credential),
 	}
@@ -104,7 +100,7 @@ func (a *Steps) RegisterSteps(s *godog.Suite) {
 	s.Step(`^"([^"]*)" agent is running on "([^"]*)" port "([^"]*)" with controller "([^"]*)"$`,
 		a.ValidateAgentConnection)
 	s.Step(`^"([^"]*)" validates the supportedVCContexts "([^"]*)" in connect request from Issuer adapter \("([^"]*)"\) and responds within "([^"]*)" seconds$`, // nolint: lll
-		a.handleDIDConnectRequest)
+		a.handleDIDCommConnectRequest)
 	s.Step(`^"([^"]*)" sends request credential message and receives credential from the issuer \("([^"]*)"\)$`,
 		a.fetchCredential)
 	s.Step(`^"([^"]*)" sends present proof request message and receives presentation from the issuer \("([^"]*)"\)$`,
@@ -140,24 +136,6 @@ func (a *Steps) checkAgentIsRunning(agentID, controllerURL string) error {
 
 	a.ControllerURLs[agentID] = controllerURL
 
-	// create and register websocket connection for notifications
-	u, err := url.Parse(controllerURL)
-	if err != nil {
-		return fmt.Errorf("invalid controller URL [%s]", controllerURL)
-	}
-
-	wsURL := fmt.Sprintf("ws://%s%s/ws", u.Host, u.Path)
-
-	ctx, cancel := goctx.WithTimeout(goctx.Background(), timeoutWS)
-	defer cancel()
-
-	conn, _, err := websocket.Dial(ctx, wsURL, nil) //nolint:bodyclose
-	if err != nil {
-		return fmt.Errorf("failed to dial connection from '%s' : %w", wsURL, err)
-	}
-
-	a.webSocketConns[agentID] = conn
-
 	return nil
 }
 
@@ -179,7 +157,7 @@ func (a *Steps) healthCheck(endpoint string) error {
 	return errors.New("url scheme is not supported for url = " + endpoint)
 }
 
-func (a *Steps) handleDIDConnectRequest(agentID, supportedVCContexts, issuerID string, timeout int) error { // nolint: funlen,lll
+func (a *Steps) handleDIDCommConnectRequest(agentID, supportedVCContexts, issuerID string, timeout int) error {
 	// Mock CHAPI request from Issuer
 	didConnReq := a.bddContext.Store[bddutil.GetDIDConnectRequestKey(issuerID, agentID)]
 
@@ -195,17 +173,7 @@ func (a *Steps) handleDIDConnectRequest(agentID, supportedVCContexts, issuerID s
 		return fmt.Errorf("failed to parse credential : %s", err.Error())
 	}
 
-	invitationBytes, err := json.Marshal(request.DIDCommInvitation)
-	if err != nil {
-		return err
-	}
-
-	connectionID, err := a.ReceiveInvitation(agentID, string(invitationBytes))
-	if err != nil {
-		return err
-	}
-
-	err = a.ApproveInvitation(agentID)
+	connectionID, err := a.AcceptOOBInvitation(agentID, request.DIDCommInvitation, issuerID)
 	if err != nil {
 		return err
 	}
@@ -269,29 +237,19 @@ func (a *Steps) ValidateConnection(agentID, connID string) (*didexchange.Connect
 
 // Connect establishes a didcomm connection between the two agents.
 func (a *Steps) Connect(inviter, invitee string) error {
-	agentAInv, err := a.createInvitation(inviter)
+	inv, err := a.createInvitation(inviter)
 	if err != nil {
 		return fmt.Errorf("%s failed to create invitation for %s : %w", inviter, invitee, err)
 	}
 
-	bits, err := json.Marshal(agentAInv)
+	inviteeConnID, err := a.AcceptOOBInvitation(invitee, inv, invitee)
 	if err != nil {
-		return fmt.Errorf("failed to marshal invitation : %w", err)
-	}
-
-	agentBConnID, err := a.ReceiveInvitation(invitee, string(bits))
-	if err != nil {
-		return fmt.Errorf("%s failed to receive invitation from %s : %w", invitee, inviter, err)
-	}
-
-	err = a.ApproveInvitation(invitee)
-	if err != nil {
-		return fmt.Errorf("%s failed to approve invitation from %s: %w", invitee, inviter, err)
+		return fmt.Errorf("%s failed to accept outofband invitation from %s: %w", invitee, inviter, err)
 	}
 
 	return backoff.RetryNotify(
 		func() error {
-			_, err = a.ValidateConnection(invitee, agentBConnID)
+			_, err = a.ValidateConnection(invitee, inviteeConnID)
 			return err
 		},
 		backoff.WithMaxRetries(backoff.NewConstantBackOff(time.Second), 3),
@@ -303,15 +261,20 @@ func (a *Steps) Connect(inviter, invitee string) error {
 	)
 }
 
-func (a *Steps) createInvitation(agent string) (*didexchange.Invitation, error) {
+func (a *Steps) createInvitation(agent string) (*outofband.Invitation, error) {
 	destination, ok := a.ControllerURLs[agent]
 	if !ok {
 		return nil, fmt.Errorf("unable to find controller URL registered for agent [%s]", agent)
 	}
 
-	var resp didexcmd.CreateInvitationResponse
+	request, err := json.Marshal(&oobcmd.CreateInvitationArgs{Label: agent})
+	if err != nil {
+		return nil, fmt.Errorf("'%s'failed to create an outofband invitation : %w", agent, err)
+	}
 
-	err := sendHTTP(http.MethodPost, destination+createInvitationPath, nil, &resp)
+	var resp oobcmd.CreateInvitationResponse
+
+	err = sendHTTP(http.MethodPost, destination+createOOBInvPath, request, &resp)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create invitation, cause : %s", err)
 	}
@@ -319,65 +282,33 @@ func (a *Steps) createInvitation(agent string) (*didexchange.Invitation, error) 
 	return resp.Invitation, nil
 }
 
-// ReceiveInvitation will make the agent accept the given invitation.
-func (a *Steps) ReceiveInvitation(agentID, invitation string) (string, error) {
+// AcceptOOBInvitation makes agentID accept the invitation, returning the connection ID.
+func (a *Steps) AcceptOOBInvitation(agentID string, invitation *outofband.Invitation, label string) (string, error) {
 	destination, ok := a.ControllerURLs[agentID]
 	if !ok {
 		return "", fmt.Errorf("unable to find controller URL registered for agent [%s]", agentID)
 	}
 
-	// call controller
-	var result didexcmd.ReceiveInvitationResponse
-
-	err := sendHTTP(http.MethodPost, destination+receiveInvitationPath, []byte(invitation), &result)
+	request, err := json.Marshal(&oobcmd.AcceptInvitationArgs{
+		Invitation: invitation,
+		MyLabel:    label,
+	})
 	if err != nil {
-		logger.Errorf("Failed to perform receive invitation, cause : %s", err)
-		return "", err
+		return "", fmt.Errorf("'%s' failed to marshal oob accept invitation args : %w", agentID, err)
 	}
 
-	// validate payload
+	var result oobcmd.AcceptInvitationResponse
+
+	err = sendHTTP(http.MethodPost, destination+acceptOOBInvPath, request, &result)
+	if err != nil {
+		return "", fmt.Errorf("'%s' failed to accept oob invitation : %w", agentID, err)
+	}
+
 	if result.ConnectionID == "" {
-		return "", fmt.Errorf("failed to get valid payload from receive invitation call for agent [%s]", agentID)
+		return "", fmt.Errorf("'%s' failed to get valid payload from accept oob invitation", agentID)
 	}
 
 	return result.ConnectionID, nil
-}
-
-// ApproveInvitation will make the agent approve any outstanding invitations.
-func (a *Steps) ApproveInvitation(agentID string) error {
-	connectionID, err := a.pullEventsFromWebSocket(agentID, "invited")
-	if err != nil {
-		return fmt.Errorf("approve exchange invitation : %w", err)
-	}
-
-	var response didexcmd.AcceptInvitationResponse
-
-	err = a.performApprove(agentID, connectionID, acceptInvitationPath, &response)
-	if err != nil {
-		return err
-	}
-
-	if response.ConnectionID == "" {
-		return fmt.Errorf("failed to perform approve invitation, invalid response")
-	}
-
-	return nil
-}
-
-func (a *Steps) performApprove(agentID, connectionID, operationPath string, response interface{}) error {
-	controllerURL, ok := a.ControllerURLs[agentID]
-	if !ok {
-		return fmt.Errorf("unable to find contoller URL for agent [%s]", controllerURL)
-	}
-
-	path := controllerURL + fmt.Sprintf(operationPath, connectionID)
-
-	err := sendHTTP(http.MethodPost, path, nil, &response)
-	if err != nil {
-		return fmt.Errorf("failed to perform approve request : %w", err)
-	}
-
-	return nil
 }
 
 func (a *Steps) getConnection(agentID, connectionID string) (*didexchange.Connection, error) {
@@ -454,42 +385,6 @@ func (a *Steps) CreateConnection(agent, myDID, label string, theirDID *did.Doc) 
 	}
 
 	return resp.ID, nil
-}
-
-func (a *Steps) pullEventsFromWebSocket(agentID, state string) (string, error) {
-	conn, ok := a.webSocketConns[agentID]
-	if !ok {
-		return "", fmt.Errorf("unable to get websocket conn for agent [%s]", agentID)
-	}
-
-	ctx, cancel := goctx.WithTimeout(goctx.Background(), timeoutWS)
-	defer cancel()
-
-	var incoming struct {
-		ID      string `json:"id"`
-		Topic   string `json:"topic"`
-		Message struct {
-			StateID    string
-			Properties map[string]string
-			Type       string
-		} `json:"message"`
-	}
-
-	for {
-		err := wsjson.Read(ctx, conn, &incoming)
-		if err != nil {
-			return "", fmt.Errorf("failed to get topics for agent '%s' : %w", agentID, err)
-		}
-
-		if incoming.Topic == "didexchange_states" && incoming.Message.Type == "post_state" {
-			if strings.EqualFold(state, incoming.Message.StateID) {
-				logger.Debugf("Able to find webhook topic with expected state[%s] for agent[%s] and connection[%s]",
-					incoming.Message.StateID, agentID, incoming.Message.Properties["connectionID"])
-
-				return incoming.Message.Properties["connectionID"], nil
-			}
-		}
-	}
 }
 
 func (a *Steps) fetchCredential(agentID, issuerID string) error { // nolint: funlen, gocyclo
