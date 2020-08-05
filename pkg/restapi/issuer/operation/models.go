@@ -9,7 +9,7 @@ package operation
 import (
 	"encoding/json"
 
-	"github.com/hyperledger/aries-framework-go/pkg/client/didexchange"
+	"github.com/hyperledger/aries-framework-go/pkg/client/outofband"
 
 	adaptervc "github.com/trustbloc/edge-adapter/pkg/vc"
 )
@@ -29,16 +29,16 @@ type WalletConnect struct {
 
 // txnData contains session data.
 type txnData struct {
-	IssuerID          string                  `json:"issuerID,omitempty"`
-	State             string                  `json:"state,omitempty"`
-	DIDCommInvitation *didexchange.Invitation `json:"didCommInvitation,omitempty"`
+	IssuerID          string                `json:"issuerID,omitempty"`
+	State             string                `json:"state,omitempty"`
+	DIDCommInvitation *outofband.Invitation `json:"didCommInvitation,omitempty"`
 }
 
 // CHAPIRequest wallet chapi request.
 type CHAPIRequest struct {
-	Query             *CHAPIQuery             `json:"query,omitempty"`
-	DIDCommInvitation *didexchange.Invitation `json:"invitation,omitempty"`
-	Manifest          json.RawMessage         `json:"manifest,omitempty"`
+	Query             *CHAPIQuery           `json:"query,omitempty"`
+	DIDCommInvitation *outofband.Invitation `json:"invitation,omitempty"`
+	Manifest          json.RawMessage       `json:"manifest,omitempty"`
 }
 
 // CHAPIQuery chapi query type data.

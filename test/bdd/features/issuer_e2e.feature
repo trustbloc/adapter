@@ -13,7 +13,7 @@ Feature: Issuer Adapter e2e
     And   Retrieved profile with id "<profileID>" contains name "<profileName>", issuerURL "<issuerURL>" and supportedVCContexts "<supportedVCContexts>"
     Given "Wallet" agent is running on "localhost" port "9081" with controller "http://localhost:9082"
     Then  Issuer adapter shows the wallet connect UI when the issuer "<profileID>" wants to connect to the wallet
-    And   Issuer adapter ("<profileID>") creates DIDExchange request for "Wallet"
+    And   Issuer adapter ("<profileID>") creates DIDComm connection invitation for "Wallet"
     ## Mocking CHAPI flow here
     Then  "Wallet" validates the supportedVCContexts "<supportedVCContexts>" in connect request from Issuer adapter ("<profileID>") and responds within "5" seconds
     And   Issuer adapter ("<profileID>") validates response from "Wallet" and redirects to "<issuerURL>"

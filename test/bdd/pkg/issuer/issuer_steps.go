@@ -54,7 +54,8 @@ func (e *Steps) RegisterSteps(s *godog.Suite) {
 		e.retrieveProfile)
 	s.Step(`^Issuer adapter shows the wallet connect UI when the issuer "([^"]*)" wants to connect to the wallet$`,
 		e.walletConnect)
-	s.Step(`^Issuer adapter \("([^"]*)"\) creates DIDExchange request for "([^"]*)"$`, e.didExchangeRequest)
+	s.Step(`^Issuer adapter \("([^"]*)"\) creates DIDComm connection invitation for "([^"]*)"$`,
+		e.didcommConnectionInvitation)
 	s.Step(`^Issuer adapter \("([^"]*)"\) validates response from "([^"]*)" and redirects to "([^"]*)"$`,
 		e.validateConnectResp)
 }
@@ -158,7 +159,7 @@ func (e *Steps) walletConnect(issuerID string) error {
 	return nil
 }
 
-func (e *Steps) didExchangeRequest(issuerID, agentID string) error {
+func (e *Steps) didcommConnectionInvitation(issuerID, agentID string) error {
 	resp, err := bddutil.HTTPDo(http.MethodGet, //nolint: bodyclose
 		issuerAdapterURL+"/issuer/didcomm/chapi/request?txnID="+e.txnIDs[issuerID], "", "", nil,
 		e.bddContext.TLSConfig())
