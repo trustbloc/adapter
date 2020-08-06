@@ -23,7 +23,6 @@ require (
 	github.com/trustbloc/edge-core v0.1.4-0.20200728153544-0323395713e0
 	github.com/trustbloc/trustbloc-did-method v0.1.4-0.20200709150904-54a502143328
 	golang.org/x/oauth2 v0.0.0-20190604053449-0f29369cfe45
-	nhooyr.io/websocket v1.8.3
 )
 
 replace github.com/trustbloc/edge-adapter => ../..
