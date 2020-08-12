@@ -94,13 +94,15 @@ func (s *Steps) RegisterSteps(g *godog.Suite) {
 	g.Step(`^a request is sent to create an RP tenant with label "([^"]*)"$`, s.createTenant)
 	g.Step(`^the trustbloc DID of the tenant with label "([^"]*)" is resolvable$`, s.resolveDID)
 	g.Step(`^the client ID of the tenant with label "([^"]*)" is registered at hydra$`, s.lookupClientID)
-	g.Step(`^a registered rp tenant with label "([^"]*)"$`, s.registerTenantFlow)
+	g.Step(`^the client ID of the tenant with label "([^"]*)" and scopes "([^"]*)" is registered at hydra$`, s.lookupClientID) //nolint:lll
+	g.Step(`^a request is sent to create an RP tenant with label "([^"]*)" and scopes "([^"]*)"$`, s.registerTenantFlow)
+	g.Step(`^a registered rp tenant with label "([^"]*)" and scopes "([^"]*)"$`, s.registerTenantFlow)
 	g.Step(`^the rp tenant "([^"]*)" redirects the user to the rp adapter with scope "([^"]*)"$`, s.redirectUserToAdapter)
 	g.Step(`the rp adapter "([^"]*)" submits a CHAPI request to "([^"]*)" with presentation-definitions and a didcomm invitation to connect`, s.sendCHAPIRequestToWallet) //nolint:lll
 	g.Step(`^"([^"]*)" accepts the didcomm invitation from "([^"]*)"$`, s.walletAcceptsDIDCommInvitation)
 	g.Step(`^"([^"]*)" connects with the RP adapter "([^"]*)"$`, s.validateConnection)
 	g.Step(`^"([^"]*)" and "([^"]*)" have a didcomm connection$`, s.connectAgents)
-	g.Step(`^an rp tenant with label "([^"]*)" that requests the "([^"]*)" scope from the "([^"]*)"`, s.didexchangeFlow)
+	g.Step(`^an rp tenant with label "([^"]*)" and scopes "([^"]*)" that requests the "([^"]*)" scope from the "([^"]*)"`, s.didexchangeFlow)                                        //nolint:lll
 	g.Step(`^the "([^"]*)" provides a authorization credential via CHAPI that contains the DIDs of rp "([^"]*)" and issuer "([^"]*)"$`, s.walletRespondsWithAuthorizationCredential) //nolint:lll
 	g.Step(`^"([^"]*)" responds to "([^"]*)" with the user's data$`, s.issuerRepliesWithUserData)
 	g.Step(`^the user is redirected to the rp tenant "([^"]*)"$`, s.userRedirectBackToTenant)
@@ -111,13 +113,15 @@ func (s *Steps) registerAgentController(agentID, inboundHost, inboundPort, contr
 	return s.controller.ValidateAgentConnection(agentID, inboundHost, inboundPort, controllerURL)
 }
 
-func (s *Steps) createTenant(label string) error {
+func (s *Steps) createTenant(label, scopesStr string) error {
 	callbackServer := httptest.NewServer(s)
 	callbackURL := callbackServer.URL + "/" + label
+	scopes := strings.Split(scopesStr, ",")
 
 	requestBytes, err := json.Marshal(&operation.CreateRPTenantRequest{
 		Label:    label,
 		Callback: callbackURL,
+		Scopes:   scopes,
 	})
 	if err != nil {
 		return err
@@ -248,8 +252,8 @@ func validateTenantRegistration(expected *tenantContext, result *models.OAuth2Cl
 	return nil
 }
 
-func (s *Steps) registerTenantFlow(label string) error {
-	err := s.createTenant(label)
+func (s *Steps) registerTenantFlow(label, scopesStr string) error {
+	err := s.createTenant(label, scopesStr)
 	if err != nil {
 		return err
 	}
@@ -397,8 +401,8 @@ func (s *Steps) connectAgents(agentA, agentB string) error {
 	return s.controller.Connect(agentA, agentB)
 }
 
-func (s *Steps) didexchangeFlow(tenantID, scope, walletID string) error {
-	err := s.registerTenantFlow(tenantID)
+func (s *Steps) didexchangeFlow(tenantID, scopesStr, scope, walletID string) error {
+	err := s.registerTenantFlow(tenantID, scopesStr)
 	if err != nil {
 		return err
 	}

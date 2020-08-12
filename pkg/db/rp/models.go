@@ -13,6 +13,7 @@ type Tenant struct {
 	ClientID  string
 	PublicDID string
 	Label     string
+	Scopes    []string
 }
 
 // UserConnection describes a connection a relying party has with a user.

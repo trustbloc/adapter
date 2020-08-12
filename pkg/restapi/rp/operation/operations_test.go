@@ -49,6 +49,10 @@ import (
 	rp2 "github.com/trustbloc/edge-adapter/pkg/vc/rp"
 )
 
+const (
+	creditCardStatementScope = "CreditCardStatement"
+)
+
 func TestNew(t *testing.T) {
 	t.Run("registers for didcomm events", func(t *testing.T) {
 		registeredDIDExchActions := false
@@ -2222,6 +2226,7 @@ func TestCreateRPTenant(t *testing.T) {
 			ClientID:  uuid.New().String(),
 			PublicDID: newDID(t).String(),
 			Label:     "test label",
+			Scopes:    []string{creditCardStatementScope},
 		}
 		clientSecret := uuid.New().String()
 
@@ -2236,14 +2241,14 @@ func TestCreateRPTenant(t *testing.T) {
 			Hydra: &stubHydra{
 				createOauth2ClientFunc: func(params *admin.CreateOAuth2ClientParams) (*admin.CreateOAuth2ClientCreated, error) {
 					require.Contains(t, strings.Split(params.Body.Scope, " "), oidc.ScopeOpenID)
-					require.Contains(t, strings.Split(params.Body.Scope, " "), "CreditCardStatement")
+					require.Contains(t, strings.Split(params.Body.Scope, " "), creditCardStatementScope)
 					require.Contains(t, params.Body.RedirectUris, callback)
 					return &admin.CreateOAuth2ClientCreated{
 						Payload: &models.OAuth2Client{
 							ClientID:     expected.ClientID,
 							ClientSecret: clientSecret,
 							RequestUris:  []string{callback},
-							Scope:        strings.Join([]string{oidc.ScopeOpenID, "CreditCardStatement"}, " "),
+							Scope:        strings.Join([]string{oidc.ScopeOpenID, creditCardStatementScope}, " "),
 						},
 					}, nil
 				},
@@ -2257,6 +2262,7 @@ func TestCreateRPTenant(t *testing.T) {
 		o.createRPTenant(w, newCreateRPRequest(t, &CreateRPTenantRequest{
 			Label:    expected.Label,
 			Callback: callback,
+			Scopes:   []string{creditCardStatementScope},
 		}))
 		require.Equal(t, http.StatusCreated, w.Code)
 		response := &CreateRPTenantResponse{}
@@ -2264,6 +2270,7 @@ func TestCreateRPTenant(t *testing.T) {
 		require.NoError(t, err)
 		require.Equal(t, expected.ClientID, response.ClientID)
 		require.Equal(t, expected.PublicDID, response.PublicDID)
+		require.Equal(t, expected.Scopes, response.Scopes)
 		require.Equal(t, clientSecret, response.ClientSecret)
 
 		rpStore, err := rp.New(store)
@@ -2285,6 +2292,10 @@ func TestCreateRPTenant(t *testing.T) {
 			{desc: "missing callback url", request: newCreateRPRequest(t, &CreateRPTenantRequest{
 				Label:    "test",
 				Callback: "",
+			})},
+			{desc: "missing scopes", request: newCreateRPRequest(t, &CreateRPTenantRequest{
+				Label:    "test",
+				Callback: "http://example/.com",
 			})},
 		}
 
@@ -2341,6 +2352,7 @@ func TestCreateRPTenant(t *testing.T) {
 		o.createRPTenant(w, newCreateRPRequest(t, &CreateRPTenantRequest{
 			Label:    existing.Label,
 			Callback: "http://test.com",
+			Scopes:   []string{creditCardStatementScope},
 		}))
 		require.Equal(t, http.StatusInternalServerError, w.Code)
 	})
@@ -2369,6 +2381,7 @@ func TestCreateRPTenant(t *testing.T) {
 		o.createRPTenant(w, newCreateRPRequest(t, &CreateRPTenantRequest{
 			Label:    "test",
 			Callback: "http://test.com",
+			Scopes:   []string{creditCardStatementScope},
 		}))
 		require.Equal(t, http.StatusInternalServerError, w.Code)
 	})
@@ -2399,6 +2412,7 @@ func TestCreateRPTenant(t *testing.T) {
 		o.createRPTenant(w, newCreateRPRequest(t, &CreateRPTenantRequest{
 			Label:    "test",
 			Callback: "http://test.com",
+			Scopes:   []string{creditCardStatementScope},
 		}))
 		require.Equal(t, http.StatusInternalServerError, w.Code)
 	})
@@ -2425,6 +2439,7 @@ func TestCreateRPTenant(t *testing.T) {
 		o.createRPTenant(w, newCreateRPRequest(t, &CreateRPTenantRequest{
 			Label:    "test",
 			Callback: "http://test.com",
+			Scopes:   []string{creditCardStatementScope},
 		}))
 		require.Equal(t, http.StatusInternalServerError, w.Code)
 	})
@@ -2455,6 +2470,7 @@ func TestCreateRPTenant(t *testing.T) {
 		o.createRPTenant(w, newCreateRPRequest(t, &CreateRPTenantRequest{
 			Label:    "test",
 			Callback: "http://test.com",
+			Scopes:   []string{creditCardStatementScope},
 		}))
 		require.Equal(t, http.StatusInternalServerError, w.Code)
 	})

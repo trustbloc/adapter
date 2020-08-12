@@ -1120,11 +1120,17 @@ func (o *Operation) createRPTenant(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if len(request.Scopes) == 0 {
+		commhttp.WriteErrorResponse(w, http.StatusBadRequest, "missing scopes")
+
+		return
+	}
+
 	req := admin.NewCreateOAuth2ClientParams()
 	req.SetBody(&models.OAuth2Client{
 		GrantTypes:    []string{"authorization_code", "refresh_token"},
 		ResponseTypes: []string{"code", "id_token"},
-		Scope:         strings.Join([]string{oidc.ScopeOpenID, "CreditCardStatement"}, " "),
+		Scope:         strings.Join(append(request.Scopes, oidc.ScopeOpenID), " "),
 		RedirectUris:  []string{request.Callback},
 	})
 
@@ -1161,6 +1167,7 @@ func (o *Operation) createRPTenant(w http.ResponseWriter, r *http.Request) {
 		ClientID:  created.Payload.ClientID,
 		PublicDID: publicDID.ID,
 		Label:     request.Label,
+		Scopes:    request.Scopes,
 	})
 	if err != nil {
 		msg := fmt.Sprintf("failed to save relying party : %s", err)
@@ -1175,6 +1182,7 @@ func (o *Operation) createRPTenant(w http.ResponseWriter, r *http.Request) {
 		ClientID:     created.Payload.ClientID,
 		ClientSecret: created.Payload.ClientSecret,
 		PublicDID:    publicDID.ID,
+		Scopes:       request.Scopes,
 	})
 }
 
