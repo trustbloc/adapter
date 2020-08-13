@@ -45,7 +45,7 @@ import (
 	mockdidexchange "github.com/trustbloc/edge-adapter/pkg/internal/mock/didexchange"
 	mockoutofband "github.com/trustbloc/edge-adapter/pkg/internal/mock/outofband"
 	mockpresentproof "github.com/trustbloc/edge-adapter/pkg/internal/mock/presentproof"
-	"github.com/trustbloc/edge-adapter/pkg/presentationex"
+	"github.com/trustbloc/edge-adapter/pkg/presexch"
 	rp2 "github.com/trustbloc/edge-adapter/pkg/vc/rp"
 )
 
@@ -1114,7 +1114,7 @@ func TestHydraConsentHandler(t *testing.T) {
 					}}, nil
 				}},
 				PresentationExProvider: &mockPresentationExProvider{
-					createValue: &presentationex.PresentationDefinitions{},
+					createValue: &presexch.PresentationDefinitions{},
 				},
 				DIDExchClient:        &mockdidexchange.MockClient{},
 				Storage:              memStorage(),
@@ -1291,8 +1291,8 @@ func TestGetPresentationsRequest(t *testing.T) {
 		rpClientID := uuid.New().String()
 		rpPublicDID := newDID(t)
 		handle := uuid.New().String()
-		presDefs := &presentationex.PresentationDefinitions{
-			InputDescriptors: []presentationex.InputDescriptors{{ID: uuid.New().String()}},
+		presDefs := &presexch.PresentationDefinitions{
+			InputDescriptors: []*presexch.InputDescriptor{{ID: uuid.New().String()}},
 		}
 		store := mockStore()
 		saveUserConn(t, store, &rp.UserConnection{
@@ -1391,8 +1391,8 @@ func TestGetPresentationsRequest(t *testing.T) {
 		rpClientID := uuid.New().String()
 		rpPublicDID := newDID(t)
 		handle := uuid.New().String()
-		presDefs := &presentationex.PresentationDefinitions{
-			InputDescriptors: []presentationex.InputDescriptors{{ID: uuid.New().String()}},
+		presDefs := &presexch.PresentationDefinitions{
+			InputDescriptors: []*presexch.InputDescriptor{{ID: uuid.New().String()}},
 		}
 		store := mockStore()
 		saveUserConn(t, store, &rp.UserConnection{
@@ -1454,8 +1454,8 @@ func TestGetPresentationsRequest(t *testing.T) {
 		require.NoError(t, err)
 
 		storePut(t, c.transientStore, handle, &consentRequestCtx{
-			PD: &presentationex.PresentationDefinitions{
-				InputDescriptors: []presentationex.InputDescriptors{{ID: uuid.New().String()}},
+			PD: &presexch.PresentationDefinitions{
+				InputDescriptors: []*presexch.InputDescriptor{{ID: uuid.New().String()}},
 			},
 			CR: &admin.GetConsentRequestOK{
 				Payload: &models.ConsentRequest{
@@ -1496,8 +1496,8 @@ func TestGetPresentationsRequest(t *testing.T) {
 					Store: &mockstorage.MockStore{
 						Store: map[string][]byte{
 							handle: toBytes(t, &consentRequestCtx{
-								PD: &presentationex.PresentationDefinitions{
-									InputDescriptors: []presentationex.InputDescriptors{{ID: uuid.New().String()}},
+								PD: &presexch.PresentationDefinitions{
+									InputDescriptors: []*presexch.InputDescriptor{{ID: uuid.New().String()}},
 								},
 								CR: &admin.GetConsentRequestOK{
 									Payload: &models.ConsentRequest{
@@ -1545,8 +1545,8 @@ func TestGetPresentationsRequest(t *testing.T) {
 					Store: &mockstorage.MockStore{
 						Store: map[string][]byte{
 							handle: toBytes(t, &consentRequestCtx{
-								PD: &presentationex.PresentationDefinitions{
-									InputDescriptors: []presentationex.InputDescriptors{{ID: uuid.New().String()}},
+								PD: &presexch.PresentationDefinitions{
+									InputDescriptors: []*presexch.InputDescriptor{{ID: uuid.New().String()}},
 								},
 								CR: &admin.GetConsentRequestOK{
 									Payload: &models.ConsentRequest{
@@ -1584,7 +1584,7 @@ func TestCHAPIResponseHandler(t *testing.T) {
 		thid := uuid.New().String()
 		var issuerResponse chan<- service.DIDCommAction = nil
 		vp := newPresentationSubmissionVP(t, newUserAuthorizationVC(t, userPeerDID, rpPeerDID, issuerPeerDID))
-		presDef := &presentationex.PresentationDefinitions{}
+		presDef := &presexch.PresentationDefinitions{}
 		redirectURL := "http://hydra.example.com/accept"
 		requestPresentationSent := make(chan struct{})
 		acceptedAtHydra := make(chan struct{})
@@ -1839,7 +1839,7 @@ func TestCHAPIResponseHandler(t *testing.T) {
 		userPeerDID := newDID(t).String()
 		thid := uuid.New().String()
 		vp := newPresentationSubmissionVP(t, newUserAuthorizationVC(t, userPeerDID, rpPeerDID, issuerPeerDID))
-		presDef := &presentationex.PresentationDefinitions{}
+		presDef := &presexch.PresentationDefinitions{}
 
 		c, err := New(&Config{
 			DIDExchClient:        &mockdidexchange.MockClient{},
@@ -1980,7 +1980,7 @@ func TestHandleIssuerPresentationMsg(t *testing.T) {
 
 		o.setWalletResponseContext(thid, &walletResponseCtx{
 			threadID:             thid,
-			consentRequestCtx:    &consentRequestCtx{PD: &presentationex.PresentationDefinitions{}},
+			consentRequestCtx:    &consentRequestCtx{PD: &presexch.PresentationDefinitions{}},
 			issuerResponseStatus: callback,
 		})
 
@@ -2040,7 +2040,7 @@ func TestHandleIssuerPresentationMsg(t *testing.T) {
 
 		o.setWalletResponseContext(thid, &walletResponseCtx{
 			threadID:             thid,
-			consentRequestCtx:    &consentRequestCtx{PD: &presentationex.PresentationDefinitions{}},
+			consentRequestCtx:    &consentRequestCtx{PD: &presexch.PresentationDefinitions{}},
 			issuerResponseStatus: callback,
 		})
 
@@ -2080,7 +2080,7 @@ func TestHandleIssuerPresentationMsg(t *testing.T) {
 
 		o.setWalletResponseContext(thid, &walletResponseCtx{
 			threadID:             thid,
-			consentRequestCtx:    &consentRequestCtx{PD: &presentationex.PresentationDefinitions{}},
+			consentRequestCtx:    &consentRequestCtx{PD: &presexch.PresentationDefinitions{}},
 			issuerResponseStatus: callback,
 		})
 
@@ -2116,7 +2116,7 @@ func TestHandleIssuerPresentationMsg(t *testing.T) {
 
 		o.setWalletResponseContext(thid, &walletResponseCtx{
 			threadID:             thid,
-			consentRequestCtx:    &consentRequestCtx{PD: &presentationex.PresentationDefinitions{}},
+			consentRequestCtx:    &consentRequestCtx{PD: &presexch.PresentationDefinitions{}},
 			issuerResponseStatus: callback,
 		})
 
@@ -2157,7 +2157,7 @@ func TestHandleIssuerPresentationMsg(t *testing.T) {
 
 		o.setWalletResponseContext(thid, &walletResponseCtx{
 			threadID:             thid,
-			consentRequestCtx:    &consentRequestCtx{PD: &presentationex.PresentationDefinitions{}},
+			consentRequestCtx:    &consentRequestCtx{PD: &presexch.PresentationDefinitions{}},
 			issuerResponseStatus: make(chan *issuerResponseStatus, 2),
 		})
 
@@ -2179,7 +2179,7 @@ func TestHandleIssuerPresentationMsg(t *testing.T) {
 
 		o.setWalletResponseContext(thid, &walletResponseCtx{
 			threadID:             thid,
-			consentRequestCtx:    &consentRequestCtx{PD: &presentationex.PresentationDefinitions{}},
+			consentRequestCtx:    &consentRequestCtx{PD: &presexch.PresentationDefinitions{}},
 			issuerResponseStatus: callback,
 		})
 
@@ -2499,11 +2499,11 @@ func (s *stubWriter) Write(p []byte) (n int, err error) {
 }
 
 type mockPresentationExProvider struct {
-	createValue *presentationex.PresentationDefinitions
+	createValue *presexch.PresentationDefinitions
 	createErr   error
 }
 
-func (m *mockPresentationExProvider) Create(scopes []string) (*presentationex.PresentationDefinitions, error) {
+func (m *mockPresentationExProvider) Create(scopes []string) (*presexch.PresentationDefinitions, error) {
 	return m.createValue, m.createErr
 }
 
@@ -2589,8 +2589,8 @@ func (s *stubOAuth2Config) AuthCodeURL(_ string) string {
 
 func mockPresentationDefinitionsProvider() presentationExProvider {
 	return &mockPresentationExProvider{
-		createValue: &presentationex.PresentationDefinitions{
-			InputDescriptors: []presentationex.InputDescriptors{{ID: "1"}},
+		createValue: &presexch.PresentationDefinitions{
+			InputDescriptors: []*presexch.InputDescriptor{{ID: "1"}},
 		},
 	}
 }
@@ -2783,13 +2783,13 @@ func (d *didexchangeEvent) All() map[string]interface{} {
 }
 
 func checkPresentationDefinitionAttachment(
-	t *testing.T, presDef *presentationex.PresentationDefinitions, request *presentproof.RequestPresentation) {
+	t *testing.T, presDef *presexch.PresentationDefinitions, request *presentproof.RequestPresentation) {
 	require.Len(t, request.RequestPresentationsAttach, 1)
 
 	bits, err := request.RequestPresentationsAttach[0].Data.Fetch()
 	require.NoError(t, err)
 
-	result := &presentationex.PresentationDefinitions{}
+	result := &presexch.PresentationDefinitions{}
 
 	err = json.NewDecoder(bytes.NewReader(bits)).Decode(result)
 	require.NoError(t, err)

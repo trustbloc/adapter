@@ -12,7 +12,10 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"strings"
 	"testing"
+
+	"github.com/google/uuid"
 
 	"github.com/spf13/cobra"
 	"github.com/stretchr/testify/require"
@@ -20,46 +23,13 @@ import (
 
 // nolint: gochecknoglobals
 var inputDescriptors = `{
- "input_descriptors": [
-  {
-    "id": "banking_input_1",
-    "group": ["A"],
+  "CreditCardStatement": {
     "schema": {
-      "uri": "https://bank-standards.com/customer.json",
+      "uri": "https://trustbloc.github.io/context/vc/examples-ext-v1.jsonld",
       "name": "Bank Account Information",
       "purpose": "We need your bank and account information."
-    },
-    "constraints": {
-      "fields": [
-        {
-          "path": ["$.issuer", "$.vc.issuer", "$.iss"],
-          "purpose": "The credential must be from one of the specified issuers",
-          "filter": {
-            "type": "string",
-            "pattern": "did:example:123|did:example:456"
-          }
-        },
-        { 
-          "path": ["$.credentialSubject.account[*].id", "$.vc.credentialSubject.account[*].id"],
-          "purpose": "We need your bank account number for processing purposes",
-          "filter": {
-            "type": "string",
-            "minLength": 10,
-            "maxLength": 12
-          }
-        },
-        {
-          "path": ["$.credentialSubject.account[*].route", "$.vc.credentialSubject.account[*].route"],
-          "purpose": "You must have an account with a German, US, or Japanese bank account",
-          "filter": {
-            "type": "string",
-            "pattern": "^DE|^US|^JP"
-          }
-        }
-      ]
     }
   }
-]
 }`
 
 type mockServer struct{}
@@ -139,6 +109,74 @@ func TestStartCmdWithMissingArg(t *testing.T) {
 			"Neither presentation-definitions-file (command line flag) nor "+
 				"ADAPTER_REST_PRESENTATION_DEFINITIONS_FILE (environment variable) have been set.",
 			err.Error())
+	})
+
+	t.Run("missing presentation-exchange arg", func(t *testing.T) {
+		startCmd := GetStartCmd(&mockServer{})
+
+		args := []string{
+			"--" + modeFlagName, rpMode,
+			"--" + hostURLFlagName, "localhost:8080",
+			"--" + datasourceNameFlagName, "mem://tests",
+			"--" + datasourceTimeoutFlagName, "30",
+			"--" + didCommInboundHostFlagName, randomURL(),
+			"--" + didCommDBPathFlagName, generateTempDir(t),
+			"--" + trustblocDomainFlagName, "http://example.trustbloc.com",
+			"--" + universalResolverURLFlagName, "http://uniresolver.trustbloc.com",
+		}
+		startCmd.SetArgs(args)
+
+		err := startCmd.Execute()
+		require.Error(t, err)
+	})
+
+	t.Run("malformed presentation-exchange config file", func(t *testing.T) {
+		startCmd := GetStartCmd(&mockServer{})
+
+		file, err := ioutil.TempFile("", "*.json")
+		require.NoError(t, err)
+
+		defer func() { require.NoError(t, os.Remove(file.Name())) }()
+
+		args := []string{
+			"--" + modeFlagName, rpMode,
+			"--" + hostURLFlagName, "localhost:8080",
+			"--" + presentationDefinitionsFlagName, file.Name(),
+			"--" + datasourceNameFlagName, "mem://tests",
+			"--" + datasourceTimeoutFlagName, "30",
+			"--" + didCommInboundHostFlagName, randomURL(),
+			"--" + didCommDBPathFlagName, generateTempDir(t),
+			"--" + trustblocDomainFlagName, "http://example.trustbloc.com",
+			"--" + universalResolverURLFlagName, "http://uniresolver.trustbloc.com",
+		}
+		startCmd.SetArgs(args)
+
+		err = startCmd.Execute()
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "failed unmarshal to input descriptors")
+	})
+
+	t.Run("nonexistent presentation-exchange config file", func(t *testing.T) {
+		startCmd := GetStartCmd(&mockServer{})
+
+		file := strings.ReplaceAll(uuid.New().String(), "-", "")
+
+		args := []string{
+			"--" + modeFlagName, rpMode,
+			"--" + hostURLFlagName, "localhost:8080",
+			"--" + presentationDefinitionsFlagName, file,
+			"--" + datasourceNameFlagName, "mem://tests",
+			"--" + datasourceTimeoutFlagName, "30",
+			"--" + didCommInboundHostFlagName, randomURL(),
+			"--" + didCommDBPathFlagName, generateTempDir(t),
+			"--" + trustblocDomainFlagName, "http://example.trustbloc.com",
+			"--" + universalResolverURLFlagName, "http://uniresolver.trustbloc.com",
+		}
+		startCmd.SetArgs(args)
+
+		err := startCmd.Execute()
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "no such file or directory")
 	})
 }
 

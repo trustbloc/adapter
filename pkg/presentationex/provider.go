@@ -8,37 +8,52 @@ package presentationex
 import (
 	"encoding/json"
 	"fmt"
+	"io"
 	"io/ioutil"
-)
 
-const (
-	// RuleTypeAll rule type all.
-	RuleTypeAll = "all"
+	"github.com/google/uuid"
+
+	"github.com/trustbloc/edge-adapter/pkg/presexch"
 )
 
 // Provider provide presentation exchange ops.
 type Provider struct {
-	inputDescriptors []InputDescriptors
+	inputDescriptors map[string]*presexch.InputDescriptor
 }
 
 // New return new provider for presentation exchange.
-func New(inputDescriptorsFile string) (*Provider, error) {
-	data, err := ioutil.ReadFile(inputDescriptorsFile) //nolint: gosec
-	if err != nil {
-		return nil, fmt.Errorf("failed to read input descriptors file '%s' : %w", inputDescriptorsFile, err)
+func New(inputDescriptorsFile io.Reader) (*Provider, error) {
+	p := &Provider{
+		inputDescriptors: make(map[string]*presexch.InputDescriptor),
 	}
 
-	var presentationDefinitions PresentationDefinitions
+	data, err := ioutil.ReadAll(inputDescriptorsFile)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read input descriptors file: %w", err)
+	}
 
-	if err := json.Unmarshal(data, &presentationDefinitions); err != nil {
+	if err := json.Unmarshal(data, &p.inputDescriptors); err != nil {
 		return nil, fmt.Errorf("failed unmarshal to input descriptors %w", err)
 	}
 
-	return &Provider{inputDescriptors: presentationDefinitions.InputDescriptors}, nil
+	return p, nil
 }
 
 // Create presentation exchange request.
-func (p *Provider) Create(scopes []string) (*PresentationDefinitions, error) {
-	return &PresentationDefinitions{SubmissionRequirements: []SubmissionRequirements{
-		{Rule: RuleTypeAll, From: scopes}}, InputDescriptors: p.inputDescriptors}, nil
+func (p *Provider) Create(scopes []string) (*presexch.PresentationDefinitions, error) {
+	defs := &presexch.PresentationDefinitions{
+		InputDescriptors: make([]*presexch.InputDescriptor, 0),
+	}
+
+	for _, scope := range scopes {
+		def, found := p.inputDescriptors[scope]
+		if !found {
+			return nil, fmt.Errorf("scope [%s] not supported", scope)
+		}
+
+		def.ID = uuid.New().String()
+		defs.InputDescriptors = append(defs.InputDescriptors, def)
+	}
+
+	return defs, nil
 }

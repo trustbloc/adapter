@@ -9,17 +9,12 @@ package rp
 import (
 	"github.com/hyperledger/aries-framework-go/pkg/doc/verifiable"
 
-	"github.com/trustbloc/edge-adapter/pkg/presentationex"
-)
-
-const (
-	// PresentationSubmissionPresentationType is the PresentationSubmissionPresentation's JSON-LD type.
-	PresentationSubmissionPresentationType = "PresentationSubmission"
+	"github.com/trustbloc/edge-adapter/pkg/presexch"
 )
 
 // PresentationSubmissionPresentation is the PresentationSubmission VerifiablePresentation.
 // https://identity.foundation/presentation-exchange/#presentation-submission.
 type PresentationSubmissionPresentation struct {
-	Base                   *verifiable.Presentation               `json:"-"`
-	PresentationSubmission *presentationex.PresentationSubmission `json:"presentation_submission,omitempty"`
+	Base                   *verifiable.Presentation         `json:"-"`
+	PresentationSubmission *presexch.PresentationSubmission `json:"presentation_submission,omitempty"`
 }

@@ -15,14 +15,14 @@ import (
 	"github.com/pkg/errors"
 
 	"github.com/trustbloc/edge-adapter/pkg/internal/common/adapterutil"
-	"github.com/trustbloc/edge-adapter/pkg/presentationex"
+	"github.com/trustbloc/edge-adapter/pkg/presexch"
 	"github.com/trustbloc/edge-adapter/pkg/vc"
 	"github.com/trustbloc/edge-adapter/pkg/vc/rp"
 )
 
 var errInvalidCredential = errors.New("malformed credential")
 
-func parseWalletResponse(definitions *presentationex.PresentationDefinitions, vdriReg vdriapi.Registry,
+func parseWalletResponse(definitions *presexch.PresentationDefinitions, vdriReg vdriapi.Registry,
 	vpBytes []byte) (*vc.AuthorizationCredential, *verifiable.Credential, error) {
 	vp, err := verifiable.ParsePresentation(vpBytes)
 	if err != nil {
@@ -83,7 +83,7 @@ func parseWalletResponse(definitions *presentationex.PresentationDefinitions, vd
 	return authorizationVC, orig, nil
 }
 
-func parseIssuerResponse(def *presentationex.PresentationDefinitions,
+func parseIssuerResponse(def *presexch.PresentationDefinitions,
 	pres *presentproof.Presentation) (*rp.PresentationSubmissionPresentation, error) {
 	if len(pres.PresentationsAttach) == 0 {
 		return nil, fmt.Errorf("%w : expected at least 1 attachment but got 0", errInvalidCredential)
@@ -121,7 +121,7 @@ func parseIssuerResponse(def *presentationex.PresentationDefinitions,
 
 // TODO validate presentation_submission against presentation_definitions
 //  https://github.com/trustbloc/edge-adapter/issues/108
-func evaluatePresentationSubmission(_ *presentationex.PresentationDefinitions, vp *verifiable.Presentation) error {
+func evaluatePresentationSubmission(_ *presexch.PresentationDefinitions, vp *verifiable.Presentation) error {
 	submission := &rp.PresentationSubmissionPresentation{
 		Base: vp,
 	}

@@ -13,6 +13,8 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
@@ -559,7 +561,7 @@ func startAdapterService(parameters *adapterRestParameters, srv server) error {
 // nolint:funlen
 func addRPHandlers(
 	parameters *adapterRestParameters, ctx ariespai.CtxProvider, router *mux.Router, rootCAs *x509.CertPool) error {
-	presentationExProvider, err := presentationex.New(parameters.presentationDefinitionsFile)
+	presentationExProvider, err := getPresentationExchangeProvider(parameters.presentationDefinitionsFile)
 	if err != nil {
 		return err
 	}
@@ -799,4 +801,25 @@ func createAriesAgent(parameters *adapterRestParameters, tlsConfig *tls.Config) 
 	}
 
 	return ctx, nil
+}
+
+func getPresentationExchangeProvider(configFile string) (*presentationex.Provider, error) {
+	reader, err := os.Open(filepath.Clean(configFile))
+	if err != nil {
+		return nil, fmt.Errorf("failed to open %s: %w", configFile, err)
+	}
+
+	defer func() {
+		closeErr := reader.Close()
+		if closeErr != nil {
+			logger.Warnf("failed to close %s: %w", configFile, closeErr)
+		}
+	}()
+
+	p, err := presentationex.New(reader)
+	if err != nil {
+		return nil, fmt.Errorf("failed to init presentation-exchange provider: %w", err)
+	}
+
+	return p, nil
 }
