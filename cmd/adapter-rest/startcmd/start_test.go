@@ -129,6 +129,7 @@ func TestStartCmdWithMissingArg(t *testing.T) {
 			"--" + modeFlagName, rpMode,
 			"--" + hostURLFlagName, "localhost:8080",
 			"--" + datasourceNameFlagName, "mem://tests",
+			"--" + datasourceTimeoutFlagName, "30",
 		}
 		startCmd.SetArgs(args)
 
@@ -170,6 +171,7 @@ func TestStartCmdValidArgs(t *testing.T) {
 		"--" + hostURLFlagName, "localhost:8080",
 		"--" + presentationDefinitionsFlagName, file.Name(),
 		"--" + datasourceNameFlagName, "mem://tests",
+		"--" + datasourceTimeoutFlagName, "30",
 		"--" + didCommInboundHostFlagName, randomURL(),
 		"--" + didCommDBPathFlagName, generateTempDir(t),
 		"--" + trustblocDomainFlagName, "http://example.trustbloc.com",
@@ -196,6 +198,7 @@ func TestStartCmdValidArgsEnvVar(t *testing.T) {
 		"--" + didCommInboundHostFlagName, randomURL(),
 		"--" + didCommDBPathFlagName, generateTempDir(t),
 		"--" + datasourceNameFlagName, "mem://test",
+		"--" + datasourceTimeoutFlagName, "30",
 	}
 	startCmd.SetArgs(args)
 
@@ -249,6 +252,33 @@ func TestStartCmdDatasourceURL(t *testing.T) {
 			"--" + didCommInboundHostFlagName, randomURL(),
 			"--" + didCommDBPathFlagName, generateTempDir(t),
 			"--" + datasourceNameFlagName, "invalid",
+			"--" + datasourceTimeoutFlagName, "30",
+		}
+		startCmd.SetArgs(args)
+
+		setEnvVars(t, file.Name())
+
+		defer unsetEnvVars(t)
+
+		err = startCmd.Execute()
+		require.Error(t, err)
+	})
+
+	t.Run("missing db timeout flag", func(t *testing.T) {
+		file, err := ioutil.TempFile("", "*.json")
+		require.NoError(t, err)
+
+		_, err = file.WriteString(inputDescriptors)
+		require.NoError(t, err)
+
+		defer func() { require.NoError(t, os.Remove(file.Name())) }()
+
+		startCmd := GetStartCmd(&mockServer{})
+		args := []string{
+			"--" + modeFlagName, "rp",
+			"--" + didCommInboundHostFlagName, randomURL(),
+			"--" + didCommDBPathFlagName, generateTempDir(t),
+			"--" + datasourceNameFlagName, "mem://test",
 		}
 		startCmd.SetArgs(args)
 
@@ -273,6 +303,7 @@ func TestStartCmdDIDComm(t *testing.T) {
 			"--" + didCommInboundHostFlagName, randomURL(),
 			"--" + didCommDBPathFlagName, path,
 			"--" + datasourceNameFlagName, "mem://test",
+			"--" + datasourceTimeoutFlagName, "30",
 		}
 		startCmd.SetArgs(args)
 
@@ -290,6 +321,7 @@ func TestStartCmdDIDComm(t *testing.T) {
 			"--" + hostURLFlagName, "localhost:8080",
 			"--" + didCommDBPathFlagName, path,
 			"--" + datasourceNameFlagName, "mem://test",
+			"--" + datasourceTimeoutFlagName, "30",
 		}
 		startCmd.SetArgs(args)
 
@@ -306,6 +338,7 @@ func TestStartCmdDIDComm(t *testing.T) {
 			"--" + hostURLFlagName, "localhost:8080",
 			"--" + didCommInboundHostFlagName, randomURL(),
 			"--" + datasourceNameFlagName, "mem://test",
+			"--" + datasourceTimeoutFlagName, "30",
 		}
 		startCmd.SetArgs(args)
 
@@ -337,6 +370,7 @@ func TestAdapterModes(t *testing.T) {
 			"--" + didCommInboundHostFlagName, randomURL(),
 			"--" + didCommDBPathFlagName, generateTempDir(t),
 			"--" + datasourceNameFlagName, "mem://test",
+			"--" + datasourceTimeoutFlagName, "30",
 		}
 		startCmd.SetArgs(args)
 
@@ -357,6 +391,7 @@ func TestAdapterModes(t *testing.T) {
 			"--" + didCommInboundHostFlagName, testInboundHostURL,
 			"--" + didCommDBPathFlagName, path,
 			"--" + datasourceNameFlagName, "mem://test",
+			"--" + datasourceTimeoutFlagName, "30",
 		}
 		startCmd.SetArgs(args)
 
@@ -373,6 +408,7 @@ func TestAdapterModes(t *testing.T) {
 			"--" + didCommInboundHostFlagName, randomURL(),
 			"--" + didCommDBPathFlagName, generateTempDir(t),
 			"--" + datasourceNameFlagName, "mem://test",
+			"--" + datasourceTimeoutFlagName, "30",
 		}
 		startCmd.SetArgs(args)
 

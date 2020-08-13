@@ -64,6 +64,13 @@ const (
 		" Alternatively, this can be set with the following environment variable: " + datasourceNameEnvKey
 	datasourceNameEnvKey = "ADAPTER_REST_DSN"
 
+	datasourceTimeoutFlagName  = "dsn-timeout"
+	datasourceTimeoutFlagUsage = "Total time in seconds to wait until the datasource is available before giving up." +
+		" Default: " + string(datasourceTimeoutDefault) + " seconds." +
+		" Alternatively, this can be set with the following environment variable: " + datasourceTimeoutEnvKey
+	datasourceTimeoutEnvKey  = "ADAPTER_REST_DSN_TIMEOUT"
+	datasourceTimeoutDefault = 30
+
 	oidcProviderURLFlagName  = "op-url"
 	oidcProviderURLFlagUsage = "URL for the OIDC provider." +
 		"Alternatively, this can be set with the following environment variable: " + oidcProviderEnvKey
@@ -184,10 +191,15 @@ type didCommParameters struct {
 	dbPath              string
 }
 
+type dsnParams struct {
+	dsn     string
+	timeout uint64
+}
+
 type adapterRestParameters struct {
 	hostURL                     string
 	tlsParams                   *tlsParameters
-	dsn                         string
+	dsnParams                   *dsnParams
 	oidcProviderURL             string
 	staticFiles                 string
 	presentationDefinitionsFile string
@@ -254,7 +266,7 @@ func getAdapterRestParameters(cmd *cobra.Command) (*adapterRestParameters, error
 		return nil, err
 	}
 
-	dsn, err := cmdutils.GetUserSetVarFromString(cmd, datasourceNameFlagName, datasourceNameEnvKey, false)
+	dsnParams, err := getDsnParams(cmd)
 	if err != nil {
 		return nil, err
 	}
@@ -317,7 +329,7 @@ func getAdapterRestParameters(cmd *cobra.Command) (*adapterRestParameters, error
 	return &adapterRestParameters{
 		hostURL:                     hostURL,
 		tlsParams:                   tlsParams,
-		dsn:                         dsn,
+		dsnParams:                   dsnParams,
 		oidcProviderURL:             oidcURL,
 		staticFiles:                 staticFiles,
 		presentationDefinitionsFile: presentationDefinitionsFile,
@@ -362,6 +374,36 @@ func setAriesFrameworkLogLevel(logLevel string) error {
 	arieslog.SetLevel("", level)
 
 	return nil
+}
+
+func getDsnParams(cmd *cobra.Command) (*dsnParams, error) {
+	params := &dsnParams{}
+
+	var err error
+
+	params.dsn, err = cmdutils.GetUserSetVarFromString(cmd, datasourceNameFlagName, datasourceNameEnvKey, false)
+	if err != nil {
+		return nil, fmt.Errorf("failed to configure dsn: %w", err)
+	}
+
+	// TODO GetUserSetVarFromString logic should be revised: https://github.com/trustbloc/edge-core/issues/50
+	timeout, err := cmdutils.GetUserSetVarFromString(cmd, datasourceTimeoutFlagName, datasourceTimeoutEnvKey, true)
+	if err != nil && !strings.Contains(err.Error(), "value is empty") {
+		return nil, fmt.Errorf("failed to configure dsn timeout: %w", err)
+	}
+
+	if timeout == "" {
+		timeout = string(datasourceTimeoutDefault)
+	}
+
+	t, err := strconv.Atoi(timeout)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse dsn timeout %s: %w", timeout, err)
+	}
+
+	params.timeout = uint64(t)
+
+	return params, nil
 }
 
 func getDIDCommParams(cmd *cobra.Command) (*didCommParameters, error) {
@@ -435,6 +477,7 @@ func createFlags(startCmd *cobra.Command) {
 	startCmd.Flags().StringP(tlsServeKeyPathFlagName, "", "", tlsServeKeyPathFlagUsage)
 	startCmd.Flags().StringP(oidcProviderURLFlagName, "", "", oidcProviderURLFlagUsage)
 	startCmd.Flags().StringP(datasourceNameFlagName, "", "", datasourceNameFlagUsage)
+	startCmd.Flags().StringP(datasourceTimeoutFlagName, "", "", datasourceTimeoutFlagUsage)
 	startCmd.Flags().StringP(staticFilesPathFlagName, "", "", staticFilesPathFlagUsage)
 	startCmd.Flags().StringP(presentationDefinitionsFlagName, "", "", presentationDefinitionsFlagUsage)
 	startCmd.Flags().StringP(hydraURLFlagName, "", "", hydraURLFlagUsage)
@@ -527,7 +570,7 @@ func addRPHandlers(
 		return err
 	}
 
-	store, tStore, err := initRPAdapterEdgeStores(parameters.dsn)
+	store, tStore, err := initRPAdapterEdgeStores(parameters.dsnParams.dsn, parameters.dsnParams.timeout)
 	if err != nil {
 		return fmt.Errorf("failed to init edge storage: %w", err)
 	}
@@ -571,7 +614,7 @@ func addRPHandlers(
 
 func addIssuerHandlers(parameters *adapterRestParameters, ariesCtx ariespai.CtxProvider, router *mux.Router,
 	rootCAs *x509.CertPool) error {
-	store, err := initEdgeStore(parameters.dsn, issuerAdapterStorePrefix)
+	store, err := initEdgeStore(parameters.dsnParams.dsn, parameters.dsnParams.timeout, issuerAdapterStorePrefix)
 	if err != nil {
 		return fmt.Errorf("failed to init storage provider : %w", err)
 	}
@@ -631,13 +674,13 @@ func constructCORSHandler(handler http.Handler) http.Handler {
 	).Handler(handler)
 }
 
-func initRPAdapterEdgeStores(dbURL string) (persistent, transient storage.Provider, err error) {
-	persistent, err = initEdgeStore(dbURL, rpAdapterPersistentStorePrefix)
+func initRPAdapterEdgeStores(dbURL string, timeout uint64) (persistent, transient storage.Provider, err error) {
+	persistent, err = initEdgeStore(dbURL, timeout, rpAdapterPersistentStorePrefix)
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to init edge persistent storage: %w", err)
 	}
 
-	transient, err = initEdgeStore(dbURL, rpAdapterTransientStorePrefix)
+	transient, err = initEdgeStore(dbURL, timeout, rpAdapterTransientStorePrefix)
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to init edge transient storage: %w", err)
 	}
@@ -645,12 +688,17 @@ func initRPAdapterEdgeStores(dbURL string) (persistent, transient storage.Provid
 	return persistent, transient, nil
 }
 
-func initEdgeStore(dbURL, prefix string) (storage.Provider, error) {
+func initEdgeStore(dbURL string, timeout uint64, prefix string) (storage.Provider, error) {
 	const (
-		sleep      = 1 * time.Second
-		numRetries = 30
-		urlParts   = 2
+		sleep    = 1 * time.Second
+		urlParts = 2
 	)
+
+	numRetries := uint64(datasourceTimeoutDefault)
+
+	if timeout != 0 {
+		numRetries = timeout
+	}
 
 	parsed := strings.SplitN(dbURL, ":", urlParts)
 
