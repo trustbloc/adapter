@@ -39,7 +39,7 @@ import (
 
 	"github.com/trustbloc/edge-adapter/pkg/db/rp"
 	"github.com/trustbloc/edge-adapter/pkg/internal/common/support"
-	"github.com/trustbloc/edge-adapter/pkg/presentationex"
+	"github.com/trustbloc/edge-adapter/pkg/presexch"
 	commhttp "github.com/trustbloc/edge-adapter/pkg/restapi/internal/common/http"
 	rp2 "github.com/trustbloc/edge-adapter/pkg/vc/rp"
 )
@@ -78,7 +78,7 @@ type Handler interface {
 }
 
 type presentationExProvider interface {
-	Create(scopes []string) (*presentationex.PresentationDefinitions, error)
+	Create(scopes []string) (*presexch.PresentationDefinitions, error)
 }
 
 // Hydra is the client used to interface with the Hydra service.
@@ -135,7 +135,7 @@ type Storage struct {
 // context active in the consent phase all the way up to sending the CHAPI request.
 type consentRequestCtx struct {
 	InvitationID  string
-	PD            *presentationex.PresentationDefinitions
+	PD            *presexch.PresentationDefinitions
 	CR            *admin.GetConsentRequestOK
 	UserDID       string
 	RPPublicDID   string

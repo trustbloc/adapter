@@ -6,113 +6,104 @@ SPDX-License-Identifier: Apache-2.0
 package presentationex
 
 import (
-	"io/ioutil"
-	"os"
+	"bytes"
+	"encoding/json"
+	"errors"
+	"io"
 	"testing"
 
+	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
-)
 
-// nolint: gochecknoglobals
-var inputDescriptors = `{
- "input_descriptors": [
-  {
-    "id": "banking_input_1",
-    "group": ["A"],
-    "schema": {
-      "uri": "https://bank-standards.com/customer.json",
-      "name": "Bank Account Information",
-      "purpose": "We need your bank and account information."
-    },
-    "constraints": {
-      "fields": [
-        {
-          "path": ["$.issuer", "$.vc.issuer", "$.iss"],
-          "purpose": "The credential must be from one of the specified issuers",
-          "filter": {
-            "type": "string",
-            "pattern": "did:example:123|did:example:456"
-          }
-        },
-        { 
-          "path": ["$.credentialSubject.account[*].id", "$.vc.credentialSubject.account[*].id"],
-          "purpose": "We need your bank account number for processing purposes",
-          "filter": {
-            "type": "string",
-            "minLength": 10,
-            "maxLength": 12
-          }
-        },
-        {
-          "path": ["$.credentialSubject.account[*].route", "$.vc.credentialSubject.account[*].route"],
-          "purpose": "You must have an account with a German, US, or Japanese bank account",
-          "filter": {
-            "type": "string",
-            "pattern": "^DE|^US|^JP"
-          }
-        }
-      ]
-    }
-  }
-]
-}`
+	"github.com/trustbloc/edge-adapter/pkg/presexch"
+)
 
 func TestProvider_New(t *testing.T) {
 	t.Run("test success", func(t *testing.T) {
-		file, err := ioutil.TempFile("", "*.json")
-		require.NoError(t, err)
-
-		_, err = file.WriteString(inputDescriptors)
-		require.NoError(t, err)
-
-		defer func() { require.NoError(t, os.Remove(file.Name())) }()
-
-		p, err := New(file.Name())
+		p, err := New(reader(t, map[string]*presexch.InputDescriptor{}))
 		require.NoError(t, err)
 		require.NotNil(t, p)
 	})
 
 	t.Run("test failed to read input descriptors file", func(t *testing.T) {
-		p, err := New("")
+		_, err := New(&mockReader{err: errors.New("test")})
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "failed to read input descriptors file")
-		require.Nil(t, p)
 	})
 
 	t.Run("test failed unmarshal to input descriptors", func(t *testing.T) {
-		file, err := ioutil.TempFile("", "*.json")
-		require.NoError(t, err)
-
-		defer func() { require.NoError(t, os.Remove(file.Name())) }()
-
-		p, err := New(file.Name())
+		_, err := New(bytes.NewReader([]byte("{")))
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "failed unmarshal to input descriptors")
-		require.Nil(t, p)
 	})
 }
 
 func TestProvider_Create(t *testing.T) {
 	t.Run("test success", func(t *testing.T) {
-		file, err := ioutil.TempFile("", "*.json")
+		scopes := []string{"CreditCardStatement", "Address", "CreditScore", "Email"}
+		expected := map[string]*presexch.InputDescriptor{}
+
+		for _, scope := range scopes {
+			expected[scope] = &presexch.InputDescriptor{
+				Schema: &presexch.Schema{
+					Name:    uuid.New().String(),
+					Purpose: uuid.New().String(),
+					URI:     uuid.New().String(),
+				},
+			}
+		}
+
+		p, err := New(reader(t, expected))
 		require.NoError(t, err)
 
-		_, err = file.WriteString(inputDescriptors)
+		actual, err := p.Create(scopes)
 		require.NoError(t, err)
+		require.NotNil(t, actual)
+		require.Len(t, actual.InputDescriptors, len(expected))
 
-		defer func() { require.NoError(t, os.Remove(file.Name())) }()
-
-		p, err := New(file.Name())
-		require.NoError(t, err)
-		require.NotNil(t, p)
-
-		presentationDefinitions, err := p.Create([]string{"scope1", "scope2"})
-		require.NoError(t, err)
-		require.NotNil(t, presentationDefinitions)
-
-		require.Equal(t, 1, len(presentationDefinitions.SubmissionRequirements))
-		require.Equal(t, 2, len(presentationDefinitions.SubmissionRequirements[0].From))
-		require.Equal(t, "scope1", presentationDefinitions.SubmissionRequirements[0].From[0])
-		require.Equal(t, "scope2", presentationDefinitions.SubmissionRequirements[0].From[1])
+		for _, e := range expected {
+			d := descriptor(t, e.Schema.URI, actual.InputDescriptors)
+			require.Equal(t, e.Schema, d.Schema)
+			require.NotEmpty(t, d.ID)
+		}
 	})
+
+	t.Run("invalid scope", func(t *testing.T) {
+		p, err := New(reader(t, map[string]*presexch.InputDescriptor{
+			"CreditCardStatement": {
+				Schema: &presexch.Schema{},
+			},
+		}))
+		require.NoError(t, err)
+
+		_, err = p.Create([]string{"INVALID"})
+		require.Error(t, err)
+	})
+}
+
+func reader(t *testing.T, jsn interface{}) io.Reader {
+	bits, err := json.Marshal(jsn)
+	require.NoError(t, err)
+
+	return bytes.NewReader(bits)
+}
+
+type mockReader struct {
+	err error
+}
+
+func (m *mockReader) Read([]byte) (int, error) {
+	return 0, m.err
+}
+
+func descriptor(t *testing.T, uri string, descriptors []*presexch.InputDescriptor) *presexch.InputDescriptor {
+	for i := range descriptors {
+		if descriptors[i].Schema.URI == uri {
+			return descriptors[i]
+		}
+	}
+
+	require.Fail(t, "no descriptor found for schema uri %s", uri)
+
+	return nil
 }

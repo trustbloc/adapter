@@ -11,13 +11,13 @@ import (
 
 	"github.com/hyperledger/aries-framework-go/pkg/client/outofband"
 
-	"github.com/trustbloc/edge-adapter/pkg/presentationex"
+	"github.com/trustbloc/edge-adapter/pkg/presexch"
 )
 
 // GetPresentationRequestResponse API response of getPresentationRequest.
 type GetPresentationRequestResponse struct {
-	PD  *presentationex.PresentationDefinitions `json:"pd"`
-	Inv *outofband.Invitation                   `json:"invitation"`
+	PD  *presexch.PresentationDefinitions `json:"pd"`
+	Inv *outofband.Invitation             `json:"invitation"`
 }
 
 // CreateRPTenantRequest API request body to register an RP tenant.

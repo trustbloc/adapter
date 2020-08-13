@@ -8,6 +8,7 @@ go 1.14
 
 require (
 	github.com/cenkalti/backoff v2.2.1+incompatible
+	github.com/google/uuid v1.1.1
 	github.com/gorilla/mux v1.7.4
 	github.com/hyperledger/aries-framework-go v0.1.4-0.20200724143028-ea4069806833
 	github.com/rs/cors v1.7.0
