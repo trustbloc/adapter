@@ -20,8 +20,6 @@ import (
 )
 
 const (
-	// VerifiableCredential vc type.
-	VerifiableCredential = "VerifiableCredential"
 
 	// VerifiablePresentation vp type.
 	VerifiablePresentation = "VerifiablePresentation"
@@ -36,7 +34,6 @@ const (
 	// TODO - should be configurable
 	issuerManifestContext          = "https://trustbloc.github.io/context/vc/issuer-manifest-credential-v1.jsonld"
 	authorizationCredentialContext = "https://trustbloc.github.io/context/vc/authorization-credential-v1.jsonld"
-	verifiableCredentialContext    = "https://www.w3.org/2018/credentials/v1"
 )
 
 // CreateManifestCredential creates issuer manifest credential.
@@ -49,12 +46,12 @@ func CreateManifestCredential(issuerName string, supportedContexts []string) ([]
 
 	vc := &verifiable.Credential{
 		Context: []string{
-			verifiableCredentialContext,
+			adaptervc.VerifiableCredentialContext,
 			issuerManifestContext,
 		},
 		ID: uuid.New().URN(),
 		Types: []string{
-			VerifiableCredential,
+			adaptervc.VerifiableCredential,
 			ManifestCredentialType,
 		},
 		Subject: &ManifestCredentialSubject{
@@ -115,12 +112,12 @@ func CreateAuthorizationCredential(did string, docJSON []byte, rpDIDDoc *adapter
 
 	vc := &verifiable.Credential{
 		Context: []string{
-			verifiableCredentialContext,
+			adaptervc.VerifiableCredentialContext,
 			authorizationCredentialContext,
 		},
 		ID: uuid.New().URN(),
 		Types: []string{
-			VerifiableCredential,
+			adaptervc.VerifiableCredential,
 			adaptervc.AuthorizationCredentialType,
 		},
 		Subject: &adaptervc.AuthorizationCredentialSubject{

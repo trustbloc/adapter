@@ -27,6 +27,7 @@ import (
 	issuecredsvc "github.com/hyperledger/aries-framework-go/pkg/didcomm/protocol/issuecredential"
 	presentproofsvc "github.com/hyperledger/aries-framework-go/pkg/didcomm/protocol/presentproof"
 	"github.com/hyperledger/aries-framework-go/pkg/doc/did"
+	"github.com/hyperledger/aries-framework-go/pkg/doc/util"
 	"github.com/hyperledger/aries-framework-go/pkg/doc/verifiable"
 	"github.com/hyperledger/aries-framework-go/pkg/framework/aries/api/vdri"
 	"github.com/hyperledger/aries-framework-go/pkg/store/connection"
@@ -644,7 +645,7 @@ func (o *Operation) handleRequestPresentation(msg service.DIDCommAction) (interf
 		return nil, fmt.Errorf("fetch issuer profile : %w", err)
 	}
 
-	vp, err := o.generateUserPresentation(authorizationCredHandle, profile.URL)
+	vp, err := o.generateUserPresentation(authorizationCredHandle, profile)
 	if err != nil {
 		return nil, err
 	}
@@ -663,28 +664,55 @@ func (o *Operation) handleRequestPresentation(msg service.DIDCommAction) (interf
 	}), nil
 }
 
-func (o *Operation) generateUserPresentation(handle *AuthorizationCredentialHandle, url string) (*verifiable.Presentation, error) { // nolint: lll
-	vcReq := &IssuerVCReq{Token: handle.Token}
+func (o *Operation) generateUserPresentation(handle *AuthorizationCredentialHandle, profile *issuer.ProfileData) (*verifiable.Presentation, error) { // nolint: lll
+	dataReq := &UserDataReq{Token: handle.Token}
 
-	reqBytes, err := json.Marshal(vcReq)
+	reqBytes, err := json.Marshal(dataReq)
 	if err != nil {
 		return nil, err
 	}
 
-	req, err := http.NewRequest(http.MethodPost, getUserCredentialURL(url), bytes.NewBuffer(reqBytes))
+	req, err := http.NewRequest(http.MethodPost, getUserDataURL(profile.URL), bytes.NewBuffer(reqBytes))
+
 	if err != nil {
 		return nil, err
 	}
 
-	vcBytes, err := sendHTTPRequest(req, o.httpClient, http.StatusOK, "")
+	dataBytes, err := sendHTTPRequest(req, o.httpClient, http.StatusOK, "")
 	if err != nil {
 		return nil, err
 	}
 
-	// TODO https://github.com/trustbloc/edge-adapter/issues/191 enable signature check
-	vc, err := verifiable.ParseCredential(vcBytes, verifiable.WithDisabledProofCheck())
+	resp := &UserDataRes{}
+
+	err = json.Unmarshal(dataBytes, resp)
 	if err != nil {
-		return nil, fmt.Errorf("parse user data vc : %w", err)
+		return nil, fmt.Errorf("unmarshal issuer resp : %w", err)
+	}
+
+	credSubData, err := unmarshalSubject(resp.Data)
+	if err != nil {
+		return nil, fmt.Errorf("unmarshal issuer resp : %w", err)
+	}
+
+	cred := &verifiable.Credential{}
+	cred.Context = []string{adaptervc.VerifiableCredentialContext}
+	cred.Subject = credSubData
+	cred.Types = []string{adaptervc.VerifiableCredential}
+	cred.Issued = util.NewTime(time.Now().UTC())
+	cred.Issuer.ID = profile.URL
+	cred.Issuer.CustomFields = make(verifiable.CustomFields)
+	cred.Issuer.CustomFields["name"] = profile.Name
+	cred.ID = uuid.New().URN()
+
+	if resp.Metadata != nil {
+		cred.Context = append(cred.Context, resp.Metadata.Contexts...)
+		cred.Types = append(cred.Types, resp.Metadata.Scopes...)
+	}
+
+	vc, err := o.vccrypto.SignCredential(cred, profile.CredentialSigningKey)
+	if err != nil {
+		return nil, fmt.Errorf("sign vc : %w", err)
 	}
 
 	return issuervc.CreatePresentation(vc)
@@ -913,8 +941,8 @@ func getCallBackURL(issuerURL string) string {
 	return fmt.Sprintf("%s/cb", issuerURL)
 }
 
-func getUserCredentialURL(issuerURL string) string {
-	return fmt.Sprintf("%s/credential", issuerURL)
+func getUserDataURL(issuerURL string) string {
+	return fmt.Sprintf("%s/data", issuerURL)
 }
 
 func sendHTTPRequest(req *http.Request, client httpClient, status int, bearerToken string) ([]byte, error) {
@@ -944,4 +972,15 @@ func sendHTTPRequest(req *http.Request, client httpClient, status int, bearerTok
 	}
 
 	return ioutil.ReadAll(resp.Body)
+}
+
+func unmarshalSubject(data []byte) (map[string]interface{}, error) {
+	var subject map[string]interface{}
+
+	err := json.Unmarshal(data, &subject)
+	if err != nil {
+		return nil, fmt.Errorf("unmarshal user data")
+	}
+
+	return subject, nil
 }

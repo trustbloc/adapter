@@ -1100,7 +1100,7 @@ func TestDIDCommListeners(t *testing.T) {
 
 			c.httpClient = &mockHTTPClient{
 				respValue: &http.Response{
-					StatusCode: http.StatusOK, Body: ioutil.NopCloser(bytes.NewReader([]byte(prCardVC))),
+					StatusCode: http.StatusOK, Body: ioutil.NopCloser(bytes.NewReader([]byte(prCardData))),
 				},
 			}
 
@@ -1108,6 +1108,7 @@ func TestDIDCommListeners(t *testing.T) {
 
 			profile := createProfileData(issuerID)
 			profile.PresentationSigningKey = mockdiddoc.GetMockDIDDoc("did:example:def567").PublicKey[0].ID
+			profile.CredentialSigningKey = mockdiddoc.GetMockDIDDoc("did:example:def567").PublicKey[0].ID
 
 			err = c.profileStore.SaveProfile(profile)
 			require.NoError(t, err)
@@ -1316,7 +1317,7 @@ func TestDIDCommListeners(t *testing.T) {
 				require.Fail(t, "tests are not validated due to timeout")
 			}
 
-			// http request fails
+			// set up issuer/handle data
 			issuerID := uuid.New().String()
 			handle.IssuerID = issuerID
 			err = c.storeAuthorizationCredHandle(handle)
@@ -1324,51 +1325,6 @@ func TestDIDCommListeners(t *testing.T) {
 
 			err = c.profileStore.SaveProfile(createProfileData(issuerID))
 			require.NoError(t, err)
-
-			actionCh <- createProofReqMsg(t, presentproofsvc.RequestPresentation{
-				Type: presentproofsvc.RequestPresentationMsgType,
-				RequestPresentationsAttach: []decorator.Attachment{
-					{Data: decorator.AttachmentData{
-						JSON: vp,
-					}},
-				},
-			}, nil, func(err error) {
-				require.NotNil(t, err)
-				require.Contains(t, err.Error(), "http request")
-				done <- struct{}{}
-			})
-
-			select {
-			case <-done:
-			case <-time.After(5 * time.Second):
-				require.Fail(t, "tests are not validated due to timeout")
-			}
-
-			// invalid vp data
-			c.httpClient = &mockHTTPClient{
-				respValue: &http.Response{
-					StatusCode: http.StatusOK, Body: ioutil.NopCloser(bytes.NewReader([]byte("invalid vc json"))),
-				},
-			}
-
-			actionCh <- createProofReqMsg(t, presentproofsvc.RequestPresentation{
-				Type: presentproofsvc.RequestPresentationMsgType,
-				RequestPresentationsAttach: []decorator.Attachment{
-					{Data: decorator.AttachmentData{
-						JSON: vp,
-					}},
-				},
-			}, nil, func(err error) {
-				require.NotNil(t, err)
-				require.Contains(t, err.Error(), "parse user data vc")
-				done <- struct{}{}
-			})
-
-			select {
-			case <-done:
-			case <-time.After(5 * time.Second):
-				require.Fail(t, "tests are not validated due to timeout")
-			}
 
 			// no vc inside vp
 			pres := &verifiable.Presentation{
@@ -1399,7 +1355,7 @@ func TestDIDCommListeners(t *testing.T) {
 			// sign error
 			c.httpClient = &mockHTTPClient{
 				respValue: &http.Response{
-					StatusCode: http.StatusOK, Body: ioutil.NopCloser(bytes.NewReader([]byte(prCardVC))),
+					StatusCode: http.StatusOK, Body: ioutil.NopCloser(bytes.NewReader([]byte(prCardData))),
 				},
 			}
 
@@ -1423,7 +1379,137 @@ func TestDIDCommListeners(t *testing.T) {
 			case <-time.After(5 * time.Second):
 				require.Fail(t, "tests are not validated due to timeout")
 			}
+		})
 
+		t.Run("test request presentation - issuer user data fetch failures", func(t *testing.T) {
+			actionCh := make(chan service.DIDCommAction, 1)
+
+			c, err := New(&Config{
+				AriesCtx:      getAriesCtx(),
+				StoreProvider: memstore.NewProvider(),
+			})
+			require.NoError(t, err)
+
+			go c.didCommActionListener(actionCh)
+
+			done := make(chan struct{})
+
+			vc := createAuthorizationCredential(t)
+			vp, err := vc.Presentation()
+			require.NoError(t, err)
+
+			issuerID := uuid.New().String()
+			err = c.profileStore.SaveProfile(createProfileData(issuerID))
+			require.NoError(t, err)
+
+			handle := &AuthorizationCredentialHandle{
+				ID:       vc.ID,
+				Token:    uuid.New().String(),
+				IssuerID: issuerID,
+			}
+			err = c.storeAuthorizationCredHandle(handle)
+			require.NoError(t, err)
+
+			// http request fails
+			actionCh <- createProofReqMsg(t, presentproofsvc.RequestPresentation{
+				Type: presentproofsvc.RequestPresentationMsgType,
+				RequestPresentationsAttach: []decorator.Attachment{
+					{Data: decorator.AttachmentData{
+						JSON: vp,
+					}},
+				},
+			}, nil, func(err error) {
+				require.NotNil(t, err)
+				require.Contains(t, err.Error(), "http request")
+				done <- struct{}{}
+			})
+
+			select {
+			case <-done:
+			case <-time.After(5 * time.Second):
+				require.Fail(t, "tests are not validated due to timeout")
+			}
+
+			// invalid user data resp
+			c.httpClient = &mockHTTPClient{
+				respValue: &http.Response{
+					StatusCode: http.StatusOK, Body: ioutil.NopCloser(bytes.NewReader([]byte("invalid data json"))),
+				},
+			}
+
+			actionCh <- createProofReqMsg(t, presentproofsvc.RequestPresentation{
+				Type: presentproofsvc.RequestPresentationMsgType,
+				RequestPresentationsAttach: []decorator.Attachment{
+					{Data: decorator.AttachmentData{
+						JSON: vp,
+					}},
+				},
+			}, nil, func(err error) {
+				require.NotNil(t, err)
+				require.Contains(t, err.Error(), "unmarshal issuer resp")
+				done <- struct{}{}
+			})
+
+			select {
+			case <-done:
+			case <-time.After(5 * time.Second):
+				require.Fail(t, "tests are not validated due to timeout")
+			}
+
+			// invalid user data
+			c.httpClient = &mockHTTPClient{
+				respValue: &http.Response{
+					StatusCode: http.StatusOK, Body: ioutil.NopCloser(bytes.NewReader([]byte(`{
+	  					"data": "abc"
+					}`))),
+				},
+			}
+
+			actionCh <- createProofReqMsg(t, presentproofsvc.RequestPresentation{
+				Type: presentproofsvc.RequestPresentationMsgType,
+				RequestPresentationsAttach: []decorator.Attachment{
+					{Data: decorator.AttachmentData{
+						JSON: vp,
+					}},
+				},
+			}, nil, func(err error) {
+				require.NotNil(t, err)
+				require.Contains(t, err.Error(), "unmarshal user data")
+				done <- struct{}{}
+			})
+
+			select {
+			case <-done:
+			case <-time.After(5 * time.Second):
+				require.Fail(t, "tests are not validated due to timeout")
+			}
+
+			// sign error
+			c.httpClient = &mockHTTPClient{
+				respValue: &http.Response{
+					StatusCode: http.StatusOK, Body: ioutil.NopCloser(bytes.NewReader([]byte(prCardData))),
+				},
+			}
+			c.vccrypto = &mockVCCrypto{signVCErr: errors.New("sign error")}
+
+			actionCh <- createProofReqMsg(t, presentproofsvc.RequestPresentation{
+				Type: presentproofsvc.RequestPresentationMsgType,
+				RequestPresentationsAttach: []decorator.Attachment{
+					{Data: decorator.AttachmentData{
+						JSON: vp,
+					}},
+				},
+			}, nil, func(err error) {
+				require.NotNil(t, err)
+				require.Contains(t, err.Error(), "sign vc")
+				done <- struct{}{}
+			})
+
+			select {
+			case <-done:
+			case <-time.After(5 * time.Second):
+				require.Fail(t, "tests are not validated due to timeout")
+			}
 		})
 	})
 }
@@ -1625,27 +1711,9 @@ const (
 	   "issuanceDate":"2010-01-01T19:23:24Z"
 	}`
 
-	prCardVC = `{
-	  "@context": [
-		"https://www.w3.org/2018/credentials/v1",
-		"https://w3id.org/citizenship/v1"
-	  ],
-	  "id": "https://issuer.oidp.uscis.gov/credentials/83627465",
-	  "type": [
-		"VerifiableCredential",
-		"PermanentResidentCard"
-	  ],
-	  "name": "Permanent Resident Card",
-	  "description": "Permanent Resident Card",
-	  "issuer": "did:example:28394728934792387",
-	  "issuanceDate": "2019-12-03T12:19:52Z",
-	  "expirationDate": "2029-12-03T12:19:52Z",
-	  "credentialSubject": {
-		"id": "did:example:b34ca6cd37bbf23",
-		"type": [
-		  "PermanentResident",
-		  "Person"
-		],
+	prCardData = `{
+	  "data": {
+		"id": "http://example.com/b34ca6cd37bbf23",
 		"givenName": "JOHN",
 		"familyName": "SMITH",
 		"gender": "Male",
@@ -1656,7 +1724,11 @@ const (
 		"commuterClassification": "C1",
 		"birthCountry": "Bahamas",
 		"birthDate": "1958-07-17"
-	  }
+	  },
+	   "metadata":{
+		  "contexts":["https://w3id.org/citizenship/v1"],
+		  "types":["PermanentResidentCard"]
+	   }
 	}
 	`
 )
