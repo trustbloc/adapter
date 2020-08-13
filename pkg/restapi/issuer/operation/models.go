@@ -76,7 +76,19 @@ type UserConnectionMapping struct {
 	Token        string `json:"token,omitempty"`
 }
 
-// IssuerVCReq request to issuer for user data.
-type IssuerVCReq struct {
+// UserDataReq request to issuer for the user data.
+type UserDataReq struct {
 	Token string `json:"token,omitempty"`
+}
+
+// UserDataRes response from the issuer for user data.
+type UserDataRes struct {
+	Data     json.RawMessage `json:"data,omitempty"`
+	Metadata *UserMetadata   `json:"metadata,omitempty"`
+}
+
+// UserMetadata contains metadata associated with user data.
+type UserMetadata struct {
+	Contexts []string `json:"contexts,omitempty"`
+	Scopes   []string `json:"scopes,omitempty"`
 }
