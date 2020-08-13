@@ -151,6 +151,10 @@ const (
 		" Possible values are [DEBUG, INFO, WARNING, ERROR, CRITICAL] (default is INFO)." +
 		" Alternatively, this can be set with the following environment variable: " + logLevelEnvKey
 	logLevelEnvKey = "ADAPTER_REST_LOGLEVEL"
+
+	governanceVCSURLFlagName  = "governance-vcs-url"
+	governanceVCSURLFlagUsage = "Governance VCS instance is running on. Format: HostName:Port."
+	governanceVCSURLEnvKey    = "ADAPTER_REST_GOVERNANCE_VCS_URL"
 )
 
 // API endpoints.
@@ -209,6 +213,7 @@ type adapterRestParameters struct {
 	didCommParameters    *didCommParameters // didcomm
 	trustblocDomain      string
 	universalResolverURL string
+	governanceVCSURL     string
 }
 
 type server interface {
@@ -319,6 +324,12 @@ func getAdapterRestParameters(cmd *cobra.Command) (*adapterRestParameters, error
 		return nil, err
 	}
 
+	governanceVCSURL, err := cmdutils.GetUserSetVarFromString(cmd, governanceVCSURLFlagName,
+		governanceVCSURLEnvKey, true)
+	if err != nil {
+		return nil, err
+	}
+
 	err = setLogLevel(logLevel)
 	if err != nil {
 		return nil, err
@@ -338,6 +349,7 @@ func getAdapterRestParameters(cmd *cobra.Command) (*adapterRestParameters, error
 		didCommParameters:           didCommParameters,
 		trustblocDomain:             trustblocDomain,
 		universalResolverURL:        universalResolverURL,
+		governanceVCSURL:            governanceVCSURL,
 	}, nil
 }
 
@@ -492,6 +504,8 @@ func createFlags(startCmd *cobra.Command) {
 	startCmd.Flags().StringP(universalResolverURLFlagName, universalResolverURLFlagShorthand, "",
 		universalResolverURLFlagUsage)
 	startCmd.Flags().StringP(logLevelFlagName, "", "INFO", logLevelFlagUsage)
+	startCmd.Flags().StringP(governanceVCSURLFlagName, "", "",
+		governanceVCSURLFlagUsage)
 }
 
 func startAdapterService(parameters *adapterRestParameters, srv server) error {
