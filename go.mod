@@ -7,6 +7,8 @@ module github.com/trustbloc/edge-adapter
 go 1.14
 
 require (
+	github.com/PaesslerAG/gval v1.0.1
+	github.com/PaesslerAG/jsonpath v0.1.1
 	github.com/coreos/go-oidc v2.2.1+incompatible
 	github.com/google/uuid v1.1.1
 	github.com/gorilla/mux v1.7.4
