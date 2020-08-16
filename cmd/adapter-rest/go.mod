@@ -15,7 +15,7 @@ require (
 	github.com/spf13/cobra v1.0.0
 	github.com/stretchr/testify v1.5.1
 	github.com/trustbloc/edge-adapter v0.0.0-00010101000000-000000000000
-	github.com/trustbloc/edge-core v0.1.4-0.20200728153544-0323395713e0
+	github.com/trustbloc/edge-core v0.1.4-0.20200814194611-5f3b95f18b63
 )
 
 replace github.com/trustbloc/edge-adapter => ../..

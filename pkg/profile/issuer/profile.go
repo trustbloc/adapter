@@ -43,7 +43,7 @@ type ProfileData struct {
 // New returns new issuer profile instance.
 func New(provider storage.Provider) (*Profile, error) {
 	err := provider.CreateStore(storeName)
-	if err != nil && err != storage.ErrDuplicateStore {
+	if err != nil && !errors.Is(err, storage.ErrDuplicateStore) {
 		return nil, err
 	}
 

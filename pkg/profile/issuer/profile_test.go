@@ -147,7 +147,7 @@ func TestGetProfile(t *testing.T) {
 
 		resp, err := profileStore.GetProfile("issuer-1")
 		require.Error(t, err)
-		require.Contains(t, err.Error(), "store does not have a value associated with this key")
+		require.Contains(t, err.Error(), storage.ErrValueNotFound.Error())
 		require.Nil(t, resp)
 	})
 
