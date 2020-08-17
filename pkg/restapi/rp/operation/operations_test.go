@@ -2702,6 +2702,10 @@ func (s *stubStore) Query(query string) (storage.ResultsIterator, error) {
 	panic("implement me")
 }
 
+func (s *stubStore) Delete(k string) error {
+	panic("implement me")
+}
+
 type stubPublicDIDCreator struct {
 	createValue *did.Doc
 	createErr   error

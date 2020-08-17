@@ -39,6 +39,7 @@ import (
 	mockvdri "github.com/hyperledger/aries-framework-go/pkg/mock/vdri"
 	"github.com/hyperledger/aries-framework-go/pkg/store/connection"
 	"github.com/stretchr/testify/require"
+	"github.com/trustbloc/edge-core/pkg/storage"
 	"github.com/trustbloc/edge-core/pkg/storage/memstore"
 	mockstorage "github.com/trustbloc/edge-core/pkg/storage/mockstore"
 
@@ -236,7 +237,7 @@ func TestGetProfile(t *testing.T) {
 		rr := serveHTTPMux(t, handler, endpoint, nil, urlVars)
 
 		require.Equal(t, http.StatusBadRequest, rr.Code)
-		require.Contains(t, rr.Body.String(), "store does not have a value associated with this key")
+		require.Contains(t, rr.Body.String(), storage.ErrValueNotFound.Error())
 	})
 }
 
@@ -284,7 +285,7 @@ func TestConnectWallet(t *testing.T) {
 		rr := serveHTTPMux(t, walletConnectHandler, walletConnectEndpoint, nil, urlVars)
 
 		require.Equal(t, http.StatusBadRequest, rr.Code)
-		require.Contains(t, rr.Body.String(), "store does not have a value associated with this key")
+		require.Contains(t, rr.Body.String(), storage.ErrValueNotFound.Error())
 	})
 
 	t.Run("test connect wallet - no state in the url", func(t *testing.T) {

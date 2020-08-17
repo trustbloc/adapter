@@ -809,7 +809,7 @@ func presentProofClient(prov presentproof.Provider, actionCh chan service.DIDCom
 
 func getTxnStore(prov storage.Provider) (storage.Store, error) {
 	err := prov.CreateStore(txnStoreName)
-	if err != nil && err != storage.ErrDuplicateStore {
+	if err != nil && !errors.Is(err, storage.ErrDuplicateStore) {
 		return nil, err
 	}
 
@@ -823,7 +823,7 @@ func getTxnStore(prov storage.Provider) (storage.Store, error) {
 
 func getTokenStore(prov storage.Provider) (storage.Store, error) {
 	err := prov.CreateStore(tokenStoreName)
-	if err != nil && err != storage.ErrDuplicateStore {
+	if err != nil && !errors.Is(err, storage.ErrDuplicateStore) {
 		return nil, err
 	}
 
