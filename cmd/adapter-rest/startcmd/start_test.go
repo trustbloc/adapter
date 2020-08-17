@@ -409,6 +409,7 @@ func TestAdapterModes(t *testing.T) {
 			"--" + didCommDBPathFlagName, generateTempDir(t),
 			"--" + datasourceNameFlagName, "mem://test",
 			"--" + datasourceTimeoutFlagName, "30",
+			"--" + governanceVCSURLFlagName, "http://example.vcs.com",
 		}
 		startCmd.SetArgs(args)
 
@@ -430,6 +431,7 @@ func TestAdapterModes(t *testing.T) {
 			"--" + didCommDBPathFlagName, path,
 			"--" + datasourceNameFlagName, "mem://test",
 			"--" + datasourceTimeoutFlagName, "30",
+			"--" + governanceVCSURLFlagName, "http://example.vcs.com",
 		}
 		startCmd.SetArgs(args)
 

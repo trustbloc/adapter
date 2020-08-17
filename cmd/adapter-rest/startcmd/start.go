@@ -41,6 +41,7 @@ import (
 
 	ariespai "github.com/trustbloc/edge-adapter/pkg/aries"
 	"github.com/trustbloc/edge-adapter/pkg/did"
+	"github.com/trustbloc/edge-adapter/pkg/governance"
 	"github.com/trustbloc/edge-adapter/pkg/hydra"
 	"github.com/trustbloc/edge-adapter/pkg/presentationex"
 	"github.com/trustbloc/edge-adapter/pkg/restapi/healthcheck"
@@ -558,7 +559,7 @@ func startAdapterService(parameters *adapterRestParameters, srv server) error {
 		constructCORSHandler(router))
 }
 
-// nolint:funlen
+// nolint:funlen,gocyclo
 func addRPHandlers(
 	parameters *adapterRestParameters, ctx ariespai.CtxProvider, router *mux.Router, rootCAs *x509.CertPool) error {
 	presentationExProvider, err := getPresentationExchangeProvider(parameters.presentationDefinitionsFile)
@@ -591,6 +592,17 @@ func addRPHandlers(
 		return fmt.Errorf("failed to init edge storage: %w", err)
 	}
 
+	var governanceProvider *governance.Provider
+
+	if parameters.governanceVCSURL != "" {
+		var errNew error
+
+		governanceProvider, errNew = newGovernanceProvider(parameters.governanceVCSURL, rootCAs, store)
+		if errNew != nil {
+			return errNew
+		}
+	}
+
 	// TODO init OIDC stuff in iteration 2 - https://github.com/trustbloc/edge-adapter/issues/24
 
 	// add rp endpoints
@@ -608,6 +620,7 @@ func addRPHandlers(
 			ctx.LegacyKMS(),
 			rootCAs),
 		AriesStorageProvider: ctx,
+		GovernanceProvider:   governanceProvider,
 		PresentProofClient:   presentProofClient,
 	})
 	if err != nil {
@@ -635,6 +648,17 @@ func addIssuerHandlers(parameters *adapterRestParameters, ariesCtx ariespai.CtxP
 		return fmt.Errorf("failed to init storage provider : %w", err)
 	}
 
+	var governanceProvider *governance.Provider
+
+	if parameters.governanceVCSURL != "" {
+		var errNew error
+
+		governanceProvider, errNew = newGovernanceProvider(parameters.governanceVCSURL, rootCAs, store)
+		if errNew != nil {
+			return errNew
+		}
+	}
+
 	// add issuer endpoints
 	issuerService, err := issuer.New(&issuerops.Config{
 		AriesCtx:      ariesCtx,
@@ -647,7 +671,8 @@ func addIssuerHandlers(parameters *adapterRestParameters, ariesCtx ariespai.CtxP
 			ariesCtx.LegacyKMS(),
 			rootCAs,
 		),
-		TLSConfig: &tls.Config{RootCAs: rootCAs},
+		TLSConfig:          &tls.Config{RootCAs: rootCAs},
+		GovernanceProvider: governanceProvider,
 	})
 
 	if err != nil {
@@ -666,6 +691,13 @@ func addIssuerHandlers(parameters *adapterRestParameters, ariesCtx ariespai.CtxP
 		HandlerFunc(uiHandler(parameters.staticFiles, http.ServeFile))
 
 	return nil
+}
+
+func newGovernanceProvider(governanceVCSURL string, rootCAs *x509.CertPool,
+	store storage.Provider) (*governance.Provider, error) {
+	// TODO add token parameter
+	return governance.New(governanceVCSURL, &tls.Config{RootCAs: rootCAs}, store,
+		map[string]string{})
 }
 
 func uiHandler(

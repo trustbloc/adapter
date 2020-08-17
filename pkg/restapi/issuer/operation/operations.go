@@ -89,13 +89,19 @@ type PublicDIDCreator interface {
 	Create() (*did.Doc, error)
 }
 
+// GovernanceProvider governance provider.
+type GovernanceProvider interface {
+	IssueCredential(didID, profileID string) ([]byte, error)
+}
+
 // Config defines configuration for issuer operations.
 type Config struct {
-	AriesCtx         aries.CtxProvider
-	UIEndpoint       string
-	StoreProvider    storage.Provider
-	PublicDIDCreator PublicDIDCreator
-	TLSConfig        *tls.Config
+	AriesCtx           aries.CtxProvider
+	UIEndpoint         string
+	StoreProvider      storage.Provider
+	PublicDIDCreator   PublicDIDCreator
+	TLSConfig          *tls.Config
+	GovernanceProvider GovernanceProvider
 }
 
 // New returns issuer rest instance.
@@ -158,6 +164,7 @@ func New(config *Config) (*Operation, error) { // nolint:funlen
 		serviceEndpoint:    config.AriesCtx.ServiceEndpoint(),
 		vccrypto:           vccrypto,
 		publicDIDCreator:   config.PublicDIDCreator,
+		governanceProvider: config.GovernanceProvider,
 		httpClient:         &http.Client{Transport: &http.Transport{TLSClientConfig: config.TLSConfig}},
 	}
 
@@ -186,6 +193,7 @@ type Operation struct {
 	serviceEndpoint    string
 	publicDIDCreator   PublicDIDCreator
 	httpClient         httpClient
+	governanceProvider GovernanceProvider
 }
 
 // GetRESTHandlers get all controller API handler available for this service.
@@ -236,13 +244,9 @@ func (o *Operation) createIssuerProfileHandler(rw http.ResponseWriter, req *http
 
 	created := time.Now().UTC()
 	profileData := &issuer.ProfileData{
-		ID:                     data.ID,
-		Name:                   data.Name,
-		SupportedVCContexts:    data.SupportedVCContexts,
-		URL:                    data.URL,
+		ID: data.ID, Name: data.Name, SupportedVCContexts: data.SupportedVCContexts, URL: data.URL,
 		CredentialSigningKey:   newDidDoc.AssertionMethod[0].PublicKey.ID,
-		PresentationSigningKey: newDidDoc.Authentication[0].PublicKey.ID,
-		CreatedAt:              &created,
+		PresentationSigningKey: newDidDoc.Authentication[0].PublicKey.ID, CreatedAt: &created,
 	}
 
 	err = o.profileStore.SaveProfile(profileData)
@@ -251,6 +255,17 @@ func (o *Operation) createIssuerProfileHandler(rw http.ResponseWriter, req *http
 			fmt.Sprintf("failed to create profile: %s", err.Error()), profileEndpoint, logger)
 
 		return
+	}
+
+	if o.governanceProvider != nil {
+		_, err = o.governanceProvider.IssueCredential(newDidDoc.ID, data.ID)
+		if err != nil {
+			commhttp.WriteErrorResponseWithLog(rw, http.StatusInternalServerError,
+				fmt.Sprintf("failed to issue governance vc: %s", err.Error()),
+				profileEndpoint, logger)
+
+			return
+		}
 	}
 
 	rw.WriteHeader(http.StatusCreated)

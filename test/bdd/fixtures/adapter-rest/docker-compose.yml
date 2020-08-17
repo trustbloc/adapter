@@ -12,6 +12,7 @@ services:
     image: ${ISSUER_ADAPTER_REST_IMAGE}:latest
     environment:
       - ADAPTER_REST_HOST_URL=0.0.0.0:9070
+      - ADAPTER_REST_GOVERNANCE_VCS_URL=http://governance.vcs.example.com:8066
       - ADAPTER_REST_TLS_CACERTS=/etc/tls/ec-cacert.pem
       - ADAPTER_REST_TLS_SYSTEMCERTPOOL=true
       - ADAPTER_REST_TLS_SERVE_CERT=/etc/tls/ec-pubCert.pem
@@ -38,6 +39,7 @@ services:
     environment:
       - ADAPTER_REST_HOST_URL=0.0.0.0:8070
       - ADAPTER_REST_TLS_CACERTS=/etc/tls/ec-cacert.pem
+      - ADAPTER_REST_GOVERNANCE_VCS_URL=http://governance.vcs.example.com:8066
       - ADAPTER_REST_TLS_SYSTEMCERTPOOL=true
       - ADAPTER_REST_TLS_SERVE_CERT=/etc/tls/ec-pubCert.pem
       - ADAPTER_REST_TLS_SERVE_KEY=/etc/tls/ec-key.pem
