@@ -16,14 +16,13 @@ import (
 
 	"github.com/PaesslerAG/gval"
 	"github.com/PaesslerAG/jsonpath"
-	"github.com/piprate/json-gold/ld"
-
 	"github.com/hyperledger/aries-framework-go/pkg/doc/verifiable"
+	"github.com/piprate/json-gold/ld"
 )
 
 const (
 	// PresentationSubmissionJSONLDContext is the JSONLD context of presentation submissions.
-	PresentationSubmissionJSONLDContext = "https://identity.foundation/presentation-exchange/submission/v1"
+	PresentationSubmissionJSONLDContext = "https://trustbloc.github.io/context/vp/presentation-exchange-submission-v1.jsonld" // nolint:lll
 	// PresentationSubmissionJSONLDType is the JSONLD type of presentation submissions.
 	PresentationSubmissionJSONLDType = "PresentationSubmission"
 
@@ -40,8 +39,9 @@ type PresentationDefinitions struct {
 
 // InputDescriptor input descriptors.
 type InputDescriptor struct {
-	ID     string  `json:"id,omitempty"`
-	Schema *Schema `json:"schema,omitempty"`
+	ID          string       `json:"id,omitempty"`
+	Schema      *Schema      `json:"schema,omitempty"`
+	Constraints *Constraints `json:"constraints,omitempty"`
 }
 
 // Schema input descriptor schema.
@@ -49,6 +49,17 @@ type Schema struct {
 	URI     string `json:"uri,omitempty"`
 	Name    string `json:"name,omitempty"`
 	Purpose string `json:"purpose,omitempty"`
+}
+
+// Constraints describe constraints on fields.
+type Constraints struct {
+	Fields []*Field `json:"fields"`
+}
+
+// Field identifies one or more fields in a credential.
+type Field struct {
+	Path   []string               `json:"path"`
+	Filter map[string]interface{} `json:"filter"`
 }
 
 // PresentationSubmission is the container for the descriptor_map:
@@ -135,7 +146,7 @@ func (p *PresentationDefinitions) Match(vp *verifiable.Presentation, // nolint:g
 		if !stringsContain(vc.Context, inputDescriptor.Schema.URI) {
 			return nil, fmt.Errorf(
 				"input descriptor id [%s] requires schema uri [%s] which is not in vc context [%+v]",
-				inputDescriptor.ID, inputDescriptor.Schema.URI, vc.Types,
+				inputDescriptor.ID, inputDescriptor.Schema.URI, vc.Context,
 			)
 		}
 

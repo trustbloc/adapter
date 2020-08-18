@@ -6,7 +6,13 @@ SPDX-License-Identifier: Apache-2.0
 
 package vc
 
-import "github.com/hyperledger/aries-framework-go/pkg/doc/verifiable"
+import (
+	"encoding/json"
+
+	"github.com/hyperledger/aries-framework-go/pkg/doc/verifiable"
+
+	"github.com/trustbloc/edge-adapter/pkg/internal/common/adapterutil"
+)
 
 const (
 	// VerifiableCredential vc type.
@@ -21,4 +27,11 @@ type Crypto interface {
 	SignCredential(*verifiable.Credential, string) (*verifiable.Credential, error)
 
 	SignPresentation(*verifiable.Presentation, string) (*verifiable.Presentation, error)
+}
+
+// AuthZSubject returns the AuthorizationCredentialSubject from the verifiable credential.
+func AuthZSubject(vc json.Marshaler) (*AuthorizationCredentialSubject, error) {
+	authz := &AuthorizationCredential{}
+
+	return authz.Subject, adapterutil.DecodeJSONMarshaller(vc, authz)
 }

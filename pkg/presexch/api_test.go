@@ -315,7 +315,7 @@ func newVP(t *testing.T, submission *PresentationSubmission, vcs ...*verifiable.
 	vp := &verifiable.Presentation{
 		Context: []string{
 			"https://www.w3.org/2018/credentials/v1",
-			"https://identity.foundation/presentation-exchange/submission/v1",
+			"https://trustbloc.github.io/context/vp/presentation-exchange-submission-v1.jsonld",
 		},
 		Type: []string{
 			"VerifiablePresentation",

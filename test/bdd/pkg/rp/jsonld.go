@@ -14,47 +14,43 @@ import (
 	"github.com/hyperledger/aries-framework-go/pkg/doc/signature/jsonld"
 	"github.com/hyperledger/aries-framework-go/pkg/doc/signature/suite"
 	"github.com/hyperledger/aries-framework-go/pkg/doc/signature/suite/ed25519signature2018"
+	"github.com/hyperledger/aries-framework-go/pkg/doc/util"
 	"github.com/hyperledger/aries-framework-go/pkg/doc/verifiable"
 	"github.com/piprate/json-gold/ld"
+
+	"github.com/trustbloc/edge-adapter/pkg/presexch"
 )
 
 //nolint:gochecknoglobals
 var testDocumentLoader = createTestJSONLDDocumentLoader()
 
-func newVerifiablePresentation(credentials ...*verifiable.Credential) (*verifiable.Presentation, error) {
-	template := `{
-  	"@context": [
-    	"https://www.w3.org/2018/credentials/v1"
-  	],
-  	"type": [
-    	"VerifiablePresentation"
-  	],
-  	"verifiableCredential": [%s]
-}`
-
-	var contents string
-
-	switch len(credentials) > 0 {
-	case true:
-		rawCreds := make([]string, len(credentials))
-
-		for i := range credentials {
-			raw, err := credentials[i].MarshalJSON()
-			if err != nil {
-				return nil, err
-			}
-
-			rawCreds[i] = string(raw)
-		}
-
-		contents = fmt.Sprintf(template, strings.Join(rawCreds, ", "))
-	default:
-		contents = strings.ReplaceAll(template, "%s", "")
+func newPresentationSubmissionVP(submission *presexch.PresentationSubmission,
+	credentials ...*verifiable.Credential) (*verifiable.Presentation, error) {
+	vp := &verifiable.Presentation{
+		Context: []string{
+			"https://www.w3.org/2018/credentials/v1",
+			"https://trustbloc.github.io/context/vp/presentation-exchange-submission-v1.jsonld",
+		},
+		Type: []string{
+			"VerifiablePresentation",
+			"PresentationSubmission",
+		},
+		CustomFields: map[string]interface{}{
+			"presentation_submission": submission,
+		},
 	}
 
-	vp, err := verifiable.ParseUnverifiedPresentation([]byte(contents))
-	if err != nil {
-		return nil, err
+	if len(credentials) > 0 {
+		creds := make([]interface{}, len(credentials))
+
+		for i := range credentials {
+			creds[i] = credentials[i]
+		}
+
+		err := vp.SetCredentials(creds...)
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	return vp, addLDProof(vp)
@@ -109,49 +105,75 @@ func newUserAuthorizationVC(subjectDID string, rpDID, issuerDID *did.Doc) (*veri
 	return verifiable.ParseCredential([]byte(contents), verifiable.WithJSONLDDocumentLoader(testDocumentLoader))
 }
 
-func newCreditCardStatementVC() (*verifiable.Credential, error) {
-	const template = `{
-	"@context": [
-		"https://www.w3.org/2018/credentials/v1",
-		"https://trustbloc.github.io/context/vc/examples-ext-v1.jsonld"
-	],
-	"type": [
-		"VerifiableCredential",
-		"CreditCardStatement"
-	],
-	"id": "http://example.gov/credentials/ff98f978-588f-4eb0-b17b-60c18e1dac2c",
-	"issuanceDate": "2020-03-16T22:37:26.544Z",
-	"issuer": {
-		"id": "did:peer:issuer"
-	},
-	"credentialSubject": {
-		"id": "did:peer:user",
-		"stmt": {
-			"description": "June 2020 Credit Card Statement",
-			"url": "http://acmebank.com/invoice.pdf",
-			"accountId": "xxxx-xxxx-xxxx-1234",
-			"customer": {
-				"@type": "Person",
-				"name": "Jane Doe"
+func newCreditCardStatementVC() *verifiable.Credential {
+	return &verifiable.Credential{
+		Context: []string{
+			"https://www.w3.org/2018/credentials/v1",
+			"https://trustbloc.github.io/context/vc/examples-ext-v1.jsonld",
+		},
+		ID: "http://example.gov/credentials/ff98f978-588f-4eb0-b17b-60c18e1dac2c",
+		Types: []string{
+			"VerifiableCredential",
+			"CreditCardStatement",
+		},
+		Issuer: verifiable.Issuer{
+			ID: "did:peer:issuer",
+		},
+		Issued: util.NewTimeWithTrailingZeroMsec(time.Now(), 0),
+		Subject: &verifiable.Subject{
+			ID: "did:peer:user",
+			CustomFields: map[string]interface{}{
+				"stmt": map[string]interface{}{
+					"description": "June 2020 Credit Card Statement",
+					"url":         "http://acmebank.com/invoice.pdf",
+					"accountId":   "xxxx-xxxx-xxxx-1234",
+					"customer": map[string]string{
+						"@type": "Person",
+						"name":  "Jane Doe",
+					},
+					"paymentDueDate": "2020-06-30T12:00:00",
+					"minimumPaymentDue": map[string]interface{}{
+						"@type":         "PriceSpecification",
+						"price":         15.00, // nolint:gomnd
+						"priceCurrency": "CAD",
+					},
+					"totalPaymentDue": map[string]interface{}{
+						"@type":         "PriceSpecification",
+						"price":         200.00, // nolint:gomnd
+						"priceCurrency": "CAD",
+					},
+					"billingPeriod": "P30D",
+					"paymentStatus": "http://schema.org/PaymentDue",
+				},
 			},
-			"paymentDueDate": "2020-06-30T12:00:00",
-			"minimumPaymentDue": {
-				"@type": "PriceSpecification",
-				"price": 15.00,
-				"priceCurrency": "CAD"
-			},
-			"totalPaymentDue": {
-				"@type": "PriceSpecification",
-				"price": 200.00,
-				"priceCurrency": "CAD"
-			},
-			"billingPeriod": "P30D",
-			"paymentStatus": "http://schema.org/PaymentDue"			
-		}
+		},
 	}
-}`
+}
 
-	return verifiable.ParseCredential([]byte(template), verifiable.WithJSONLDDocumentLoader(testDocumentLoader))
+func newDriversLicenseVC() *verifiable.Credential {
+	return &verifiable.Credential{
+		Context: []string{
+			"https://www.w3.org/2018/credentials/v1",
+			"https://trustbloc.github.io/context/vc/examples/mdl-v1.jsonld",
+		},
+		ID: "http://example.gov/credentials/ff98f978-588f-4eb0-b17b-60c18e1dac2c",
+		Types: []string{
+			"VerifiableCredential",
+			"mDL",
+		},
+		Issuer: verifiable.Issuer{
+			ID: "did:peer:issuer",
+		},
+		Issued: util.NewTimeWithTrailingZeroMsec(time.Now(), 0),
+		Subject: &verifiable.Subject{
+			ID: "did:peer:user",
+			CustomFields: map[string]interface{}{
+				"given_name":      "John",
+				"family_name":     "Smith",
+				"document_number": "123-456-789",
+			},
+		},
+	}
 }
 
 func addLDProof(vp *verifiable.Presentation) error {
@@ -208,6 +230,10 @@ func createTestJSONLDDocumentLoader() *ld.CachingDocumentLoader {
 		{
 			vocab:    "https://trustbloc.github.io/context/vp/presentation-exchange-submission-v1.jsonld",
 			filename: "presentation_exchange.jsonld",
+		},
+		{
+			vocab:    "https://trustbloc.github.io/context/vp/examples/mdl-v1.jsonld",
+			filename: "mdl-v1.jsonld",
 		},
 	}
 

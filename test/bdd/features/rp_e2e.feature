@@ -12,20 +12,20 @@ Feature: RP Adapter
     And the "Mock Issuer Adapter" is running on "localhost" port "10010" with controller "http://localhost:10011"
 
   Scenario: Register relying party
-    When a request is sent to create an RP tenant with label "test-tenant" and scopes "CreditCardStatement"
+    When a request is sent to create an RP tenant with label "test-tenant" and scopes "credit_card_stmt:remote"
     Then the trustbloc DID of the tenant with label "test-tenant" is resolvable
-    And the client ID of the tenant with label "test-tenant" and scopes "CreditCardStatement" is registered at hydra
+    And the client ID of the tenant with label "test-tenant" and scopes "credit_card_stmt:remote" is registered at hydra
 
   Scenario: Establishment of didcomm connection with the web wallet
-    Given a registered rp tenant with label "didcommconnection" and scopes "CreditCardStatement"
-    When the rp tenant "didcommconnection" redirects the user to the rp adapter with scope "CreditCardStatement"
+    Given a registered rp tenant with label "didcommconnection" and scopes "credit_card_stmt:remote"
+    When the rp tenant "didcommconnection" redirects the user to the rp adapter with scope "credit_card_stmt:remote"
     And the rp adapter "didcommconnection" submits a CHAPI request to "Mock Wallet" with presentation-definitions and a didcomm invitation to connect
     And "Mock Wallet" accepts the didcomm invitation from "didcommconnection"
     Then "Mock Wallet" connects with the RP adapter "didcommconnection"
 
-  Scenario: Returns data from the user's issuer adapter to the relying party with the user's consent
+  Scenario: Returns both local and remote user data to the relying party with the user's consent
     Given "Mock Issuer Adapter" and "Mock Wallet" have a didcomm connection
-    And an rp tenant with label "userdata" and scopes "CreditCardStatement" that requests the "CreditCardStatement" scope from the "Mock Wallet"
+    And an rp tenant with label "userdata" and scopes "credit_card_stmt:remote,driver_license:local" that requests the "credit_card_stmt:remote,driver_license:local" scope from the "Mock Wallet"
     And the "Mock Wallet" provides a authorization credential via CHAPI that contains the DIDs of rp "userdata" and issuer "Mock Issuer Adapter"
     When "Mock Issuer Adapter" responds to "userdata" with the user's data
     Then the user is redirected to the rp tenant "userdata"

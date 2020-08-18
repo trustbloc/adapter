@@ -1,0 +1,28 @@
+{
+   "@context":{
+      "@version":1.1,
+      "id":"@id",
+      "type":"@type",
+      "name":"http://schema.org/name",
+      "description":"http://schema.org/description",
+
+      "CreditScore":{
+         "@id":"ex:CreditScore",
+         "@context":{
+            "@version":1.1,
+            "@protected":true,
+            "id":"@id",
+            "type":"@type",
+            "ex":"https://example.org/examples#",
+
+            "family_name":{ "@id":"ex:family_name" },
+            "given_name":{ "@id":"ex:given_name" },
+            "birthdate":{ "@id":"ex:birthdate" },
+            "address":{ "@id":"ex:address" },
+            "report_date":{ "@id":"ex:reported_date" },
+            "score":{ "@id":"ex:score" },
+            "provider_name":{ "@id":"ex:provider_name" }
+         }
+      }
+   }
+}

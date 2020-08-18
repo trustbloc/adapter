@@ -13,13 +13,8 @@ import (
 	"net/url"
 )
 
-// JSONMarshaller can marshal itself to JSON bytes.
-type JSONMarshaller interface {
-	MarshalJSON() ([]byte, error)
-}
-
 // DecodeJSONMarshaller decodes the JSONMarshaller into the given object.
-func DecodeJSONMarshaller(jm JSONMarshaller, custom interface{}) error {
+func DecodeJSONMarshaller(jm json.Marshaler, custom interface{}) error {
 	bits, err := jm.MarshalJSON()
 	if err != nil {
 		return fmt.Errorf("failed to execute MarshalJSON() : %w", err)
