@@ -119,6 +119,11 @@ type PublicDIDCreator interface {
 	Create() (*did.Doc, error)
 }
 
+// GovernanceProvider governance provider.
+type GovernanceProvider interface {
+	IssueCredential(didID, profileID string) ([]byte, error)
+}
+
 // AriesContextProvider is the dependency interface for the connection.Recorder.
 type AriesContextProvider interface {
 	StorageProvider() ariesstorage.Provider
@@ -179,6 +184,7 @@ func New(config *Config) (*Operation, error) {
 		issuerCallbackTimeout:  defaultTimeout,
 		vdriReg:                config.AriesStorageProvider.VDRIRegistry(),
 		walletResponseCtx:      make(map[string]*walletResponseCtx),
+		governanceProvider:     config.GovernanceProvider,
 	}
 
 	err := o.didClient.RegisterActionEvent(o.didActions)
@@ -233,6 +239,7 @@ type Config struct {
 	AriesStorageProvider   AriesContextProvider
 	PresentProofClient     PresentProofClient
 	Storage                *Storage
+	GovernanceProvider     GovernanceProvider
 }
 
 // TODO implement an eviction strategy for Operation.oidcStates and OIDC.consentRequests
@@ -261,6 +268,7 @@ type Operation struct {
 	transientStore         storage.Store
 	walletResponseCtx      map[string]*walletResponseCtx
 	walletResponseCtxLock  sync.Mutex
+	governanceProvider     GovernanceProvider
 }
 
 // GetRESTHandlers get all controller API handler available for this service.
@@ -1101,7 +1109,7 @@ func testResponse(w io.Writer) {
 	}
 }
 
-//nolint:funlen
+//nolint:funlen,gocyclo
 func (o *Operation) createRPTenant(w http.ResponseWriter, r *http.Request) {
 	request := &CreateRPTenantRequest{}
 
@@ -1126,15 +1134,7 @@ func (o *Operation) createRPTenant(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	req := admin.NewCreateOAuth2ClientParams()
-	req.SetBody(&models.OAuth2Client{
-		GrantTypes:    []string{"authorization_code", "refresh_token"},
-		ResponseTypes: []string{"code", "id_token"},
-		Scope:         strings.Join(append(request.Scopes, oidc.ScopeOpenID), " "),
-		RedirectUris:  []string{request.Callback},
-	})
-
-	created, err := o.hydra.CreateOAuth2Client(req)
+	created, err := o.createOAuth2Client(request.Scopes, request.Callback)
 	if err != nil {
 		msg := fmt.Sprintf("failed to create oauth2 client at hydra : %s", err)
 		logger.Errorf(msg)
@@ -1177,6 +1177,17 @@ func (o *Operation) createRPTenant(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if o.governanceProvider != nil {
+		_, err = o.governanceProvider.IssueCredential(publicDID.ID, created.Payload.ClientID)
+		if err != nil {
+			msg := fmt.Sprintf("failed to issue governance vc : %s", err)
+			logger.Errorf(msg)
+			commhttp.WriteErrorResponse(w, http.StatusInternalServerError, msg)
+
+			return
+		}
+	}
+
 	w.WriteHeader(http.StatusCreated)
 	commhttp.WriteResponse(w, &CreateRPTenantResponse{
 		ClientID:     created.Payload.ClientID,
@@ -1184,6 +1195,18 @@ func (o *Operation) createRPTenant(w http.ResponseWriter, r *http.Request) {
 		PublicDID:    publicDID.ID,
 		Scopes:       request.Scopes,
 	})
+}
+
+func (o *Operation) createOAuth2Client(scopes []string, callback string) (*admin.CreateOAuth2ClientCreated, error) {
+	req := admin.NewCreateOAuth2ClientParams()
+	req.SetBody(&models.OAuth2Client{
+		GrantTypes:    []string{"authorization_code", "refresh_token"},
+		ResponseTypes: []string{"code", "id_token"},
+		Scope:         strings.Join(append(scopes, oidc.ScopeOpenID), " "),
+		RedirectUris:  []string{callback},
+	})
+
+	return o.hydra.CreateOAuth2Client(req)
 }
 
 // TODO add an LD proof that contains the issuer's challenge: https://github.com/trustbloc/edge-adapter/issues/145

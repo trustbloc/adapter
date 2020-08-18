@@ -43,6 +43,7 @@ import (
 	"github.com/trustbloc/edge-adapter/pkg/db/rp"
 	"github.com/trustbloc/edge-adapter/pkg/internal/common/adapterutil"
 	mockdidexchange "github.com/trustbloc/edge-adapter/pkg/internal/mock/didexchange"
+	mockgovernance "github.com/trustbloc/edge-adapter/pkg/internal/mock/governance"
 	mockoutofband "github.com/trustbloc/edge-adapter/pkg/internal/mock/outofband"
 	mockpresentproof "github.com/trustbloc/edge-adapter/pkg/internal/mock/presentproof"
 	"github.com/trustbloc/edge-adapter/pkg/presexch"
@@ -2255,6 +2256,7 @@ func TestCreateRPTenant(t *testing.T) {
 			},
 			PublicDIDCreator:   &stubPublicDIDCreator{createValue: &did.Doc{ID: expected.PublicDID}},
 			PresentProofClient: &mockpresentproof.MockClient{},
+			GovernanceProvider: &mockgovernance.MockProvider{},
 		})
 		require.NoError(t, err)
 
@@ -2473,6 +2475,58 @@ func TestCreateRPTenant(t *testing.T) {
 			Scopes:   []string{creditCardStatementScope},
 		}))
 		require.Equal(t, http.StatusInternalServerError, w.Code)
+	})
+
+	t.Run("failed to issue governance vc", func(t *testing.T) {
+		callback := "http://test.example.com"
+		expected := &rp.Tenant{
+			ClientID:  uuid.New().String(),
+			PublicDID: newDID(t).String(),
+			Label:     "test label",
+			Scopes:    []string{creditCardStatementScope},
+		}
+		clientSecret := uuid.New().String()
+
+		store := mockStore()
+		o, err := New(&Config{
+			DIDExchClient: &mockdidexchange.MockClient{},
+			Storage: &Storage{
+				Persistent: store,
+				Transient:  memstore.NewProvider(),
+			},
+			AriesStorageProvider: &mockAriesContextProvider{},
+			Hydra: &stubHydra{
+				createOauth2ClientFunc: func(params *admin.CreateOAuth2ClientParams) (*admin.CreateOAuth2ClientCreated, error) {
+					require.Contains(t, strings.Split(params.Body.Scope, " "), oidc.ScopeOpenID)
+					require.Contains(t, strings.Split(params.Body.Scope, " "), creditCardStatementScope)
+					require.Contains(t, params.Body.RedirectUris, callback)
+					return &admin.CreateOAuth2ClientCreated{
+						Payload: &models.OAuth2Client{
+							ClientID:     expected.ClientID,
+							ClientSecret: clientSecret,
+							RequestUris:  []string{callback},
+							Scope:        strings.Join([]string{oidc.ScopeOpenID, creditCardStatementScope}, " "),
+						},
+					}, nil
+				},
+			},
+			PublicDIDCreator:   &stubPublicDIDCreator{createValue: &did.Doc{ID: expected.PublicDID}},
+			PresentProofClient: &mockpresentproof.MockClient{},
+			GovernanceProvider: &mockgovernance.MockProvider{
+				IssueCredentialFunc: func(didID, profileID string) ([]byte, error) {
+					return nil, fmt.Errorf("failed to issue governance vc")
+				}},
+		})
+		require.NoError(t, err)
+
+		w := httptest.NewRecorder()
+		o.createRPTenant(w, newCreateRPRequest(t, &CreateRPTenantRequest{
+			Label:    expected.Label,
+			Callback: callback,
+			Scopes:   []string{creditCardStatementScope},
+		}))
+		require.Equal(t, http.StatusInternalServerError, w.Code)
+		require.Contains(t, w.Body.String(), "failed to issue governance vc")
 	})
 }
 

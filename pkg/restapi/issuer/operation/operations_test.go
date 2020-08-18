@@ -46,6 +46,7 @@ import (
 	"github.com/trustbloc/edge-adapter/pkg/aries"
 	mockconn "github.com/trustbloc/edge-adapter/pkg/internal/mock/connection"
 	mockdiddoc "github.com/trustbloc/edge-adapter/pkg/internal/mock/diddoc"
+	mockgovernance "github.com/trustbloc/edge-adapter/pkg/internal/mock/governance"
 	"github.com/trustbloc/edge-adapter/pkg/internal/mock/issuecredential"
 	mockoutofband "github.com/trustbloc/edge-adapter/pkg/internal/mock/outofband"
 	"github.com/trustbloc/edge-adapter/pkg/internal/mock/presentproof"
@@ -118,9 +119,10 @@ func TestNew(t *testing.T) {
 
 func TestCreateProfile(t *testing.T) {
 	op, err := New(&Config{
-		AriesCtx:         getAriesCtx(),
-		StoreProvider:    memstore.NewProvider(),
-		PublicDIDCreator: &stubPublicDIDCreator{createValue: mockdiddoc.GetMockDIDDoc("did:example:def567")},
+		AriesCtx:           getAriesCtx(),
+		StoreProvider:      memstore.NewProvider(),
+		PublicDIDCreator:   &stubPublicDIDCreator{createValue: mockdiddoc.GetMockDIDDoc("did:example:def567")},
+		GovernanceProvider: &mockgovernance.MockProvider{},
 	})
 	require.NoError(t, err)
 
@@ -143,6 +145,31 @@ func TestCreateProfile(t *testing.T) {
 		require.Equal(t, vReq.ID, profileRes.ID)
 		require.Equal(t, vReq.Name, profileRes.Name)
 		require.Equal(t, vReq.URL, profileRes.URL)
+	})
+
+	t.Run("create profile - failed to issue governance vc", func(t *testing.T) {
+		op, err := New(&Config{
+			AriesCtx:         getAriesCtx(),
+			StoreProvider:    memstore.NewProvider(),
+			PublicDIDCreator: &stubPublicDIDCreator{createValue: mockdiddoc.GetMockDIDDoc("did:example:def567")},
+			GovernanceProvider: &mockgovernance.MockProvider{
+				IssueCredentialFunc: func(didID, profileID string) ([]byte, error) {
+					return nil, fmt.Errorf("failed to issue governance vc")
+				}},
+		})
+		require.NoError(t, err)
+
+		h := getHandler(t, op, endpoint)
+
+		vReq := createProfileData(uuid.New().String())
+
+		vReqBytes, err := json.Marshal(vReq)
+		require.NoError(t, err)
+
+		rr := serveHTTP(t, h.Handle(), http.MethodPost, endpoint, vReqBytes)
+
+		require.Equal(t, http.StatusInternalServerError, rr.Code)
+		require.Contains(t, rr.Body.String(), "failed to issue governance vc")
 	})
 
 	t.Run("create profile - invalid request", func(t *testing.T) {
