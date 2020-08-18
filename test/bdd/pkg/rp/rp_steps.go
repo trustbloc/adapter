@@ -395,13 +395,13 @@ func validatePresentationDefinitions(pd *presexch.PresentationDefinitions, scope
 			"presentation definitions provider failed to create definitions for %+v: %w", scope, err)
 	}
 
-	actual := make([]string, len(pd.InputDescriptors))
+	actual := make([][]string, len(pd.InputDescriptors))
 
 	for i := range pd.InputDescriptors {
 		actual[i] = pd.InputDescriptors[i].Schema.URI
 	}
 
-	expected := make([]string, len(reference.InputDescriptors))
+	expected := make([][]string, len(reference.InputDescriptors))
 
 	for i := range reference.InputDescriptors {
 		expected[i] = reference.InputDescriptors[i].Schema.URI
@@ -414,7 +414,7 @@ func validatePresentationDefinitions(pd *presexch.PresentationDefinitions, scope
 	}
 
 	for i := range expected {
-		if !stringsContain(actual, expected[i]) {
+		if !stringsIntersect(actual[i], expected[i]) {
 			return fmt.Errorf(
 				"presentation definition missing schema uri %s; expected=%+v, actual=%+v",
 				expected[i], expected, actual)
@@ -771,6 +771,18 @@ func stringsContain(slice []string, val string) bool {
 	for i := range slice {
 		if slice[i] == val {
 			return true
+		}
+	}
+
+	return false
+}
+
+func stringsIntersect(a, b []string) bool {
+	for i := range a {
+		for j := range b {
+			if a[i] == b[j] {
+				return true
+			}
 		}
 	}
 

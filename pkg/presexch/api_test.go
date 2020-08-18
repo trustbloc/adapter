@@ -24,7 +24,7 @@ import (
 func TestPresentationDefinitions_Match(t *testing.T) {
 	t.Run("match one credential", func(t *testing.T) {
 		uri := randomURI()
-		expected := newVC([]string{uri})
+		expected := newVC(uri)
 		defs := &PresentationDefinitions{
 			InputDescriptors: []*InputDescriptor{{
 				ID: uuid.New().String(),
@@ -64,7 +64,7 @@ func TestPresentationDefinitions_Match(t *testing.T) {
 				ID:   defs.InputDescriptors[0].ID,
 				Path: "$.verifiableCredential[0]",
 			}}},
-			newVC([]string{uri}),
+			newVC(uri),
 		)
 
 		vp.Context = []string{"https://www.w3.org/2018/credentials/v1"}
@@ -89,7 +89,7 @@ func TestPresentationDefinitions_Match(t *testing.T) {
 				ID:   defs.InputDescriptors[0].ID,
 				Path: "$.verifiableCredential[0]",
 			}}},
-			newVC([]string{uri}),
+			newVC(uri),
 		)
 
 		vp.Type = []string{"VerifiablePresentation"}
@@ -114,7 +114,7 @@ func TestPresentationDefinitions_Match(t *testing.T) {
 				ID:   "INVALID",
 				Path: "$.verifiableCredential[0]",
 			}}},
-			newVC([]string{uri}),
+			newVC(uri),
 		), WithJSONLDDocumentLoader(jsonldContextLoader(t, uri)))
 		require.Error(t, err)
 	})
@@ -154,7 +154,7 @@ func TestPresentationDefinitions_Match(t *testing.T) {
 			&PresentationSubmission{DescriptorMap: []*InputDescriptorMapping{{
 				ID:   defs.InputDescriptors[0].ID,
 				Path: "$.verifiableCredential[0]",
-			}}}, newVC([]string{uri}),
+			}}}, newVC(uri),
 		))
 		require.Error(t, err)
 	})
@@ -178,7 +178,7 @@ func TestPresentationDefinitions_Match(t *testing.T) {
 				ID:   defs.InputDescriptors[0].ID,
 				Path: "$.verifiableCredential[0]",
 			}}},
-			newVC([]string{diffURI}),
+			newVC(diffURI),
 		), WithJSONLDDocumentLoader(jsonldContextLoader(t, diffURI)))
 		require.Error(t, err)
 	})
@@ -208,7 +208,7 @@ func TestPresentationDefinitions_Match(t *testing.T) {
 				ID:   defs.InputDescriptors[0].ID,
 				Path: "$.verifiableCredential[0]",
 			}}},
-			newVC([]string{uriOne}),
+			newVC(uriOne),
 		), WithJSONLDDocumentLoader(jsonldContextLoader(t, uriOne)))
 		require.Error(t, err)
 	})
@@ -226,7 +226,7 @@ func TestPresentationDefinitions_Match(t *testing.T) {
 
 		_, err := defs.Match(newVP(t,
 			nil,
-			newVC([]string{uri}),
+			newVC(uri),
 		), WithJSONLDDocumentLoader(jsonldContextLoader(t, uri)))
 		require.Error(t, err)
 	})
@@ -244,7 +244,7 @@ func TestPresentationDefinitions_Match(t *testing.T) {
 
 		_, err := defs.Match(newVP(t,
 			&PresentationSubmission{},
-			newVC([]string{uri}),
+			newVC(uri),
 		), WithJSONLDDocumentLoader(jsonldContextLoader(t, uri)))
 		require.Error(t, err)
 	})
@@ -262,7 +262,7 @@ func TestE2E(t *testing.T) {
 	}
 
 	// holder builds their presentation submission against the verifier's definitions
-	holderCredential := newVC([]string{verifierDefinitions.InputDescriptors[0].Schema.URI})
+	holderCredential := newVC(verifierDefinitions.InputDescriptors[0].Schema.URI)
 	vp := newVP(t,
 		&PresentationSubmission{DescriptorMap: []*InputDescriptorMapping{{
 			ID:   verifierDefinitions.InputDescriptors[0].ID,
@@ -361,11 +361,11 @@ func marshal(t *testing.T, v interface{}) []byte {
 	return bits
 }
 
-func randomURI() string {
-	return fmt.Sprintf("https://my.test.context.jsonld/%s", uuid.New().String())
+func randomURI() []string {
+	return []string{fmt.Sprintf("https://my.test.context.jsonld/%s", uuid.New().String())}
 }
 
-func jsonldContextLoader(t *testing.T, contextURL string) *ld.CachingDocumentLoader {
+func jsonldContextLoader(t *testing.T, contextURLs []string) *ld.CachingDocumentLoader {
 	const jsonLDContext = `{
     "@context":{
       "@version":1.1,
@@ -381,7 +381,9 @@ func jsonldContextLoader(t *testing.T, contextURL string) *ld.CachingDocumentLoa
 
 	loader := verifiable.CachingJSONLDLoader()
 
-	loader.AddDocument(contextURL, reader)
+	for i := range contextURLs {
+		loader.AddDocument(contextURLs[i], reader)
+	}
 
 	return loader
 }

@@ -1589,13 +1589,13 @@ func TestCHAPIResponseHandler(t *testing.T) {
 				{
 					ID: uuid.New().String(),
 					Schema: &presexch.Schema{
-						URI: vc.AuthorizationCredentialContext,
+						URI: []string{vc.AuthorizationCredentialContext},
 					},
 				},
 				{
 					ID: uuid.New().String(),
 					Schema: &presexch.Schema{
-						URI: "https://www.w3.org/2018/credentials/examples/v1",
+						URI: []string{"https://www.w3.org/2018/credentials/examples/v1"},
 					},
 				},
 			},
@@ -1781,7 +1781,7 @@ func TestCHAPIResponseHandler(t *testing.T) {
 			InputDescriptors: []*presexch.InputDescriptor{{
 				ID: uuid.New().String(),
 				Schema: &presexch.Schema{
-					URI: vc.AuthorizationCredentialContext,
+					URI: []string{vc.AuthorizationCredentialContext},
 				},
 			}},
 		}
@@ -1821,7 +1821,7 @@ func TestCHAPIResponseHandler(t *testing.T) {
 			InputDescriptors: []*presexch.InputDescriptor{{
 				ID: uuid.New().String(),
 				Schema: &presexch.Schema{
-					URI: vc.AuthorizationCredentialContext,
+					URI: []string{vc.AuthorizationCredentialContext},
 				},
 			}},
 		}
@@ -1868,7 +1868,7 @@ func TestCHAPIResponseHandler(t *testing.T) {
 			InputDescriptors: []*presexch.InputDescriptor{{
 				ID: uuid.New().String(),
 				Schema: &presexch.Schema{
-					URI: vc.AuthorizationCredentialContext,
+					URI: []string{vc.AuthorizationCredentialContext},
 				},
 			}},
 		}
@@ -1916,13 +1916,13 @@ func TestCHAPIResponseHandler(t *testing.T) {
 				{
 					ID: uuid.New().String(),
 					Schema: &presexch.Schema{
-						URI: vc.AuthorizationCredentialContext,
+						URI: []string{vc.AuthorizationCredentialContext},
 					},
 				},
 				{
 					ID: uuid.New().String(),
 					Schema: &presexch.Schema{
-						URI: "https://www.w3.org/2018/credentials/examples/v1",
+						URI: []string{"https://www.w3.org/2018/credentials/examples/v1"},
 					},
 				},
 			},
@@ -2050,7 +2050,7 @@ func TestCHAPIResponseHandler(t *testing.T) {
 			InputDescriptors: []*presexch.InputDescriptor{{
 				ID: uuid.New().String(),
 				Schema: &presexch.Schema{
-					URI: vc.AuthorizationCredentialContext,
+					URI: []string{vc.AuthorizationCredentialContext},
 				},
 			}},
 		}

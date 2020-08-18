@@ -44,3 +44,16 @@ func ValidHTTPURL(str string) bool {
 	u, err := url.Parse(str)
 	return err == nil && (u.Scheme == "http" || u.Scheme == "https") && u.Host != ""
 }
+
+// StringsIntersect determines whether a and b have at least one common element.
+func StringsIntersect(a, b []string) bool {
+	for i := range a {
+		for j := range b {
+			if a[i] == b[j] {
+				return true
+			}
+		}
+	}
+
+	return false
+}

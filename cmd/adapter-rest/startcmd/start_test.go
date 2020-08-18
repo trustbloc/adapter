@@ -25,7 +25,7 @@ import (
 var inputDescriptors = `{
   "CreditCardStatement": {
     "schema": {
-      "uri": "https://trustbloc.github.io/context/vc/examples-ext-v1.jsonld",
+      "uri": ["https://trustbloc.github.io/context/vc/examples-ext-v1.jsonld"],
       "name": "Bank Account Information",
       "purpose": "We need your bank and account information."
     }
