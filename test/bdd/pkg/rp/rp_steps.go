@@ -17,6 +17,7 @@ import (
 	"net/http/cookiejar"
 	"net/http/httptest"
 	"net/url"
+	"os"
 	"reflect"
 	"strings"
 	"time"
@@ -34,6 +35,8 @@ import (
 	trustblocvdri "github.com/trustbloc/trustbloc-did-method/pkg/vdri/trustbloc"
 	"golang.org/x/oauth2"
 
+	"github.com/trustbloc/edge-adapter/pkg/presentationex"
+	"github.com/trustbloc/edge-adapter/pkg/presexch"
 	"github.com/trustbloc/edge-adapter/pkg/restapi/rp/operation"
 	"github.com/trustbloc/edge-adapter/test/bdd/pkg/agent"
 	"github.com/trustbloc/edge-adapter/test/bdd/pkg/bddutil"
@@ -61,10 +64,12 @@ type tenantContext struct {
 	walletConnID        string
 	invitationID        string
 	chapiResponseResult *handleChapiResponseCallResult
-	expectedUserData    interface{}
+	expectedUserData    []map[string]interface{}
 	oidcProvider        *oidc.Provider
 	oauth2Config        *oauth2.Config
 	callbackReceived    *url.URL
+	scope               []string
+	presDefs            *presexch.PresentationDefinitions
 }
 
 type handleChapiResponseCallResult struct {
@@ -238,7 +243,7 @@ func validateTenantRegistration(expected *tenantContext, result *models.OAuth2Cl
 			expected.callbackURL, result.RedirectUris)
 	}
 
-	expectedScopes := []string{oidc.ScopeOpenID, "CreditCardStatement"}
+	expectedScopes := []string{oidc.ScopeOpenID, "credit_card_stmt:remote"}
 	resultScopes := strings.Split(result.Scope, " ")
 
 	for i := range expectedScopes {
@@ -266,6 +271,7 @@ func (s *Steps) registerTenantFlow(label, scopesStr string) error {
 	return s.lookupClientID(label)
 }
 
+// nolint:funlen
 func (s *Steps) redirectUserToAdapter(label, scope string) error {
 	cookieJar, err := cookiejar.New(nil)
 	if err != nil {
@@ -289,7 +295,7 @@ func (s *Steps) redirectUserToAdapter(label, scope string) error {
 		ClientSecret: tenant.ClientSecret,
 		Endpoint:     provider.Endpoint(),
 		RedirectURL:  tenant.callbackURL,
-		Scopes:       []string{oidc.ScopeOpenID, scope},
+		Scopes:       append([]string{oidc.ScopeOpenID}, strings.Split(scope, ",")...),
 	}
 
 	state := strings.ReplaceAll(uuid.New().String(), "-", "")
@@ -325,6 +331,7 @@ func (s *Steps) redirectUserToAdapter(label, scope string) error {
 	tenant.oauth2Config = &oauth2Config
 	tenant.pdHandle = handle
 	tenant.browser = browser
+	tenant.scope = strings.Split(scope, ",")
 
 	return nil
 }
@@ -352,8 +359,67 @@ func (s *Steps) sendCHAPIRequestToWallet(tenantID, walletID string) error {
 		return fmt.Errorf("failed to marshal didcomm invitation : %w", err)
 	}
 
+	err = validatePresentationDefinitions(result.PD, tenant.scope)
+	if err != nil {
+		return fmt.Errorf("failed to validate presentation definitions for '%s': %w", tenantID, err)
+	}
+
 	tenant.invitationID = result.Inv.ID
+	tenant.presDefs = result.PD
 	s.context.Store[bddutil.GetDIDConnectRequestKey(tenantID, walletID)] = string(bits)
+
+	return nil
+}
+
+func validatePresentationDefinitions(pd *presexch.PresentationDefinitions, scope []string) error {
+	file, err := os.Open("./fixtures/testdata/presentationdefinitions.json")
+	if err != nil {
+		return fmt.Errorf("failed open presentation definitions config file: %w", err)
+	}
+
+	defer func() {
+		closeErr := file.Close()
+		if closeErr != nil {
+			fmt.Printf("WARNING - failed to close presentation definitions config file: %s", closeErr)
+		}
+	}()
+
+	prov, err := presentationex.New(file)
+	if err != nil {
+		return fmt.Errorf("failed to init presentation definitions provider: %w", err)
+	}
+
+	reference, err := prov.Create(scope)
+	if err != nil {
+		return fmt.Errorf(
+			"presentation definitions provider failed to create definitions for %+v: %w", scope, err)
+	}
+
+	actual := make([]string, len(pd.InputDescriptors))
+
+	for i := range pd.InputDescriptors {
+		actual[i] = pd.InputDescriptors[i].Schema.URI
+	}
+
+	expected := make([]string, len(reference.InputDescriptors))
+
+	for i := range reference.InputDescriptors {
+		expected[i] = reference.InputDescriptors[i].Schema.URI
+	}
+
+	if len(expected) != len(actual) {
+		return fmt.Errorf(
+			"unexpected number of descriptors in presentation definition: expected=%+v, actual=%+v",
+			reference, pd)
+	}
+
+	for i := range expected {
+		if !stringsContain(actual, expected[i]) {
+			return fmt.Errorf(
+				"presentation definition missing schema uri %s; expected=%+v, actual=%+v",
+				expected[i], expected, actual)
+		}
+	}
 
 	return nil
 }
@@ -506,12 +572,30 @@ func (s *Steps) walletCreatesAuthorizationCredential(wallet, tenant, issuer stri
 
 	subjectDID := walletTenantConn.MyDID
 
-	userAuthorizationVC, err := newUserAuthorizationVC(subjectDID, rpDID, issuerDID)
+	authzVC, err := newUserAuthorizationVC(subjectDID, rpDID, issuerDID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create user authorization credential : %w", err)
 	}
 
-	submissionVP, err := newVerifiablePresentation(userAuthorizationVC)
+	driversLicenseVC := newDriversLicenseVC()
+
+	tenantCtx := s.tenantCtx[tenant]
+
+	submissionVP, err := newPresentationSubmissionVP(
+		&presexch.PresentationSubmission{
+			DescriptorMap: []*presexch.InputDescriptorMapping{
+				{
+					ID:   tenantCtx.presDefs.InputDescriptors[0].ID,
+					Path: "$.verifiableCredential[0]",
+				},
+				{
+					ID:   tenantCtx.presDefs.InputDescriptors[1].ID,
+					Path: "$.verifiableCredential[1]",
+				},
+			},
+		},
+		authzVC, driversLicenseVC,
+	)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create presentation submission VP : %w", err)
 	}
@@ -520,17 +604,14 @@ func (s *Steps) walletCreatesAuthorizationCredential(wallet, tenant, issuer stri
 }
 
 func (s *Steps) issuerRepliesWithUserData(issuer, tenant string) error {
-	vc, err := newCreditCardStatementVC()
-	if err != nil {
-		return fmt.Errorf("failed to create credit card statement vc : %w", err)
-	}
+	vc := newCreditCardStatementVC()
 
 	bits, err := json.Marshal(vc.Subject)
 	if err != nil {
 		return fmt.Errorf(`"%s" failed to marshal credential subject : %w`, issuer, err)
 	}
 
-	expected := make([]map[string]interface{}, 0)
+	expected := make(map[string]interface{})
 
 	err = json.Unmarshal(bits, &expected)
 	if err != nil {
@@ -539,9 +620,9 @@ func (s *Steps) issuerRepliesWithUserData(issuer, tenant string) error {
 
 	tenantCtx := s.tenantCtx[tenant]
 
-	tenantCtx.expectedUserData = expected[0]["stmt"]
+	tenantCtx.expectedUserData = []map[string]interface{}{expected}
 
-	vp, err := newVerifiablePresentation(vc)
+	vp, err := newPresentationSubmissionVP(nil, vc)
 	if err != nil {
 		return fmt.Errorf("failed to create verifiable presentation : %w", err)
 	}
@@ -628,15 +709,35 @@ func (s *Steps) rpTenantRetrievesUserData(tenant string) error {
 		return fmt.Errorf(`"%s" failed to verify idToken "%s" : %w`, tenant, idToken, err)
 	}
 
-	resultUserData := make(map[string]interface{})
+	claims := make(map[string]interface{})
 
-	err = idToken.Claims(&resultUserData)
+	err = idToken.Claims(&claims)
 	if err != nil {
 		return fmt.Errorf(`"%s" failed to extract the claims from the id_token : %w`, tenant, err)
 	}
 
-	if !reflect.DeepEqual(tenantCtx.expectedUserData, resultUserData["stmt"]) {
-		return fmt.Errorf(`"%s" did not get the expected data from the issuer`, tenant)
+	verifiedClaims, ok := claims["verified_claims"].([]interface{})
+	if !ok {
+		return fmt.Errorf(
+			"unexpected container format for verified_claims: %s", reflect.TypeOf(claims["verified_claims"]).String())
+	}
+
+	found := 0
+
+	for i := range tenantCtx.expectedUserData {
+		for j := range verifiedClaims {
+			if reflect.DeepEqual(tenantCtx.expectedUserData[i], verifiedClaims[j]) {
+				found++
+
+				break
+			}
+		}
+	}
+
+	if found != len(tenantCtx.expectedUserData) {
+		return fmt.Errorf(
+			`"%s" did not get the expected data from the issuer: expected=%+v actual=%+v`,
+			tenant, tenantCtx.expectedUserData, verifiedClaims)
 	}
 
 	return nil

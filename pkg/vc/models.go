@@ -8,10 +8,14 @@ package vc
 
 import (
 	"encoding/json"
+
+	"github.com/trustbloc/edge-adapter/pkg/presexch"
 )
 
 const (
-	// AuthorizationCredentialType vc type.
+	// AuthorizationCredentialContext is the JSON-LD context for the AuthorizationCredential.
+	AuthorizationCredentialContext = "https://trustbloc.github.io/context/vc/authorization-credential-v1.jsonld"
+	// AuthorizationCredentialType is the JSON-LD type for the AuthorizationCredential.
 	AuthorizationCredentialType = "AuthorizationCredential"
 )
 
@@ -22,10 +26,11 @@ type AuthorizationCredential struct {
 
 // AuthorizationCredentialSubject struct for sending the issuer IssuerDIDDoc to wallet.
 type AuthorizationCredentialSubject struct {
-	ID           string  `json:"id,omitempty"`
-	IssuerDIDDoc *DIDDoc `json:"issuerDIDDoc,omitempty"`
-	RPDIDDoc     *DIDDoc `json:"requestingPartyDIDDoc,omitempty"`
-	SubjectDID   string  `json:"subjectDID,omitempty"`
+	ID           string                      `json:"id,omitempty"`
+	Scope        []*presexch.InputDescriptor `json:"scope"`
+	IssuerDIDDoc *DIDDoc                     `json:"issuerDIDDoc,omitempty"`
+	RPDIDDoc     *DIDDoc                     `json:"requestingPartyDIDDoc,omitempty"`
+	SubjectDID   string                      `json:"subjectDID,omitempty"`
 }
 
 // DIDDoc is how a DID document is transported over the wire.

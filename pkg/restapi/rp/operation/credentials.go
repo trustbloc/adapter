@@ -17,76 +17,51 @@ import (
 	"github.com/trustbloc/edge-adapter/pkg/internal/common/adapterutil"
 	"github.com/trustbloc/edge-adapter/pkg/presexch"
 	"github.com/trustbloc/edge-adapter/pkg/vc"
-	"github.com/trustbloc/edge-adapter/pkg/vc/rp"
 )
 
 var errInvalidCredential = errors.New("malformed credential")
 
-func parseWalletResponse(definitions *presexch.PresentationDefinitions, vdriReg vdriapi.Registry,
-	vpBytes []byte) (*vc.AuthorizationCredential, *verifiable.Credential, error) {
+func parseWalletResponse(definitions *presexch.PresentationDefinitions,
+	vpBytes []byte) (local, remote map[string]*verifiable.Credential, err error) {
 	vp, err := verifiable.ParsePresentation(vpBytes)
 	if err != nil {
-		return nil, nil, errors.Wrapf(
-			errInvalidCredential, fmt.Sprintf("error parsing a verifiable presentation : %s", err))
+		return nil, nil, fmt.Errorf(
+			"%w: parseWalletResponse: failed to parse verifiable presentation: %s", errInvalidCredential, err.Error())
 	}
 
-	err = evaluatePresentationSubmission(definitions, vp)
+	matched, err := definitions.Match(vp)
 	if err != nil {
-		return nil, nil, errors.Wrapf(errInvalidCredential, "invalid presentation submission : %s", err)
+		return nil, nil, fmt.Errorf(
+			"%w: parseWalletResponse: invalid presentation submission: %s", errInvalidCredential, err.Error())
 	}
 
-	rawCreds, err := vp.MarshalledCredentials()
-	if err != nil {
-		return nil, nil, fmt.Errorf("failed to marshal credentials from vp : %w", err)
-	}
+	local = make(map[string]*verifiable.Credential)
+	remote = make(map[string]*verifiable.Credential)
 
-	var orig *verifiable.Credential
+	for id, cred := range matched {
+		if !adapterutil.StringsContains(vc.AuthorizationCredentialType, cred.Types) {
+			local[id] = cred
 
-	for i := range rawCreds {
-		raw := rawCreds[i]
+			continue
+		}
 
-		cred, parseErr := verifiable.ParseCredential(
-			raw,
-			verifiable.WithPublicKeyFetcher(verifiable.NewDIDKeyResolver(vdriReg).PublicKeyFetcher()),
-		)
-		if parseErr != nil {
+		err := evaluateAuthorizationCredential(cred)
+		if err != nil {
 			return nil, nil, fmt.Errorf(
-				"%w : failed to parse raw credential %s : %s",
-				errInvalidCredential, string(raw), parseErr)
+				"%w: parseWalletResponse: invalid authorization credential: %s", errInvalidCredential, err.Error())
 		}
 
-		if adapterutil.StringsContains(vc.AuthorizationCredentialType, cred.Types) {
-			orig = cred
-			break
-		}
-
-		logger.Warnf("ignoring credential with unrecognized types: %+v", cred.Types)
+		remote[id] = cred
 	}
 
-	if orig == nil {
-		return nil, nil, errors.Wrapf(
-			errInvalidCredential, "no suitable credential of type %s found", vc.AuthorizationCredentialType)
-	}
-
-	authorizationVC := &vc.AuthorizationCredential{}
-
-	err = adapterutil.DecodeJSONMarshaller(orig, authorizationVC)
-	if err != nil {
-		return nil, nil, fmt.Errorf("unable to decode user authorization credential : %w", err)
-	}
-
-	err = evaluateAuthorizationCredential(authorizationVC)
-	if err != nil {
-		return nil, nil, fmt.Errorf("failed to evaluate credential : %w", err)
-	}
-
-	return authorizationVC, orig, nil
+	return local, remote, nil
 }
 
-func parseIssuerResponse(def *presexch.PresentationDefinitions,
-	pres *presentproof.Presentation) (*rp.PresentationSubmissionPresentation, error) {
+// TODO validate issuer's response against presentation_definitions
+//  https://github.com/trustbloc/edge-adapter/issues/108
+func parseIssuerResponse(pres *presentproof.Presentation, vdriReg vdriapi.Registry) (*verifiable.Credential, error) {
 	if len(pres.PresentationsAttach) == 0 {
-		return nil, fmt.Errorf("%w : expected at least 1 attachment but got 0", errInvalidCredential)
+		return nil, fmt.Errorf("%w: expected at least 1 attachment but got 0", errInvalidCredential)
 	}
 
 	attachment := pres.PresentationsAttach[0]
@@ -99,39 +74,37 @@ func parseIssuerResponse(def *presexch.PresentationDefinitions,
 	vp, err := verifiable.ParsePresentation(vpBytes)
 	if err != nil {
 		return nil,
-			errors.Wrapf(errInvalidCredential, fmt.Sprintf("failed to parse a verifiable presentation : %s", err))
+			fmt.Errorf("%w: failed to parse a verifiable presentation : %s", errInvalidCredential, err.Error())
 	}
 
-	err = evaluatePresentationSubmission(def, vp)
+	if len(vp.Credentials()) != 1 {
+		return nil, fmt.Errorf(
+			"%w: expected one credential in the issuer's VP but got %d", errInvalidCredential, len(vp.Credentials()))
+	}
+
+	rawCred, err := vp.MarshalledCredentials()
 	if err != nil {
-		return nil, errors.Wrapf(errInvalidCredential, "invalid presentation submission : %s", err)
+		return nil, fmt.Errorf("failed to marshal issuer's vp credentials: %w", err)
 	}
 
-	presentationSubmissionVP := &rp.PresentationSubmissionPresentation{
-		Base: vp,
-	}
-
-	err = adapterutil.DecodeJSONMarshaller(vp, presentationSubmissionVP)
+	data, err := verifiable.ParseCredential(
+		rawCred[0],
+		verifiable.WithPublicKeyFetcher(verifiable.NewDIDKeyResolver(vdriReg).PublicKeyFetcher()))
 	if err != nil {
-		return nil, fmt.Errorf("failed to decode presentation_submission VP : %w", err)
+		return nil, fmt.Errorf("failed to parse issuer's credential: %w", err)
 	}
 
-	return presentationSubmissionVP, nil
+	return data, nil
 }
 
-// TODO validate presentation_submission against presentation_definitions
-//  https://github.com/trustbloc/edge-adapter/issues/108
-func evaluatePresentationSubmission(_ *presexch.PresentationDefinitions, vp *verifiable.Presentation) error {
-	submission := &rp.PresentationSubmissionPresentation{
-		Base: vp,
+func evaluateAuthorizationCredential(c *verifiable.Credential) error {
+	authZ, err := vc.AuthZSubject(c)
+	if err != nil {
+		return fmt.Errorf("unable to decode authorization credential: %w", err)
 	}
 
-	return adapterutil.DecodeJSONMarshaller(vp, submission)
-}
-
-func evaluateAuthorizationCredential(c *vc.AuthorizationCredential) error {
-	if c.Subject.IssuerDIDDoc == nil || c.Subject.IssuerDIDDoc.Doc == nil {
-		return fmt.Errorf("%w : authorization creddential missing issuer did doc", errInvalidCredential)
+	if authZ.IssuerDIDDoc == nil || authZ.IssuerDIDDoc.Doc == nil {
+		return errors.New("authorization credential missing issuer did doc")
 	}
 
 	return nil

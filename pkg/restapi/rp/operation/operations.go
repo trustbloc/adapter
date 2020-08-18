@@ -18,6 +18,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/trustbloc/edge-adapter/pkg/vc"
+
 	"github.com/coreos/go-oidc"
 	"github.com/google/uuid"
 	"github.com/hyperledger/aries-framework-go/pkg/client/didexchange"
@@ -41,7 +43,6 @@ import (
 	"github.com/trustbloc/edge-adapter/pkg/internal/common/support"
 	"github.com/trustbloc/edge-adapter/pkg/presexch"
 	commhttp "github.com/trustbloc/edge-adapter/pkg/restapi/internal/common/http"
-	rp2 "github.com/trustbloc/edge-adapter/pkg/vc/rp"
 )
 
 // API endpoints.
@@ -67,6 +68,8 @@ const (
 
 	transientStoreName = "rpadapter_trx"
 )
+
+var errTimeout = errors.New("timeout")
 
 var logger = log.New("edge-adapter/rp-operations")
 
@@ -146,14 +149,14 @@ type consentRequestCtx struct {
 // context shared between routine that receives CHAPI response from the wallet and routine that receives
 // the issuer's present-proof response.
 type walletResponseCtx struct {
-	threadID             string
 	consentRequestCtx    *consentRequestCtx
 	issuerResponseStatus chan *issuerResponseStatus
+	descriptorID         string
 }
 
 type issuerResponseStatus struct {
 	err               error
-	submission        *rp2.PresentationSubmissionPresentation
+	credentials       map[string]*verifiable.Credential
 	walletResponseCtx *walletResponseCtx
 }
 
@@ -676,8 +679,7 @@ func (o *Operation) getPresentationsRequest(w http.ResponseWriter, r *http.Reque
 
 	cr.InvitationID = invitation.ID
 
-	// TODO delete old mapping handle -> consentRequestCtx
-	//  edge-core store API is missing a Delete() method: https://github.com/trustbloc/edge-core/issues/45
+	// TODO delete transient data: https://github.com/trustbloc/edge-adapter/issues/255
 	err = newTransientStorage(o.transientStore).Put(invitation.ID, cr)
 	if err != nil {
 		handleError(w, http.StatusInternalServerError,
@@ -719,7 +721,7 @@ func (o *Operation) updateUserConnection(r *consentRequestCtx) error {
 // - all required credentials in a single response, or
 // - consent credential + didcomm endpoint where the requested presentations can be obtained, or
 // - nothing (an error response?), indicating they cannot satisfy the request.
-func (o *Operation) chapiResponseHandler(w http.ResponseWriter, r *http.Request) { //nolint:funlen,gocyclo
+func (o *Operation) chapiResponseHandler(w http.ResponseWriter, r *http.Request) { //nolint:funlen,gocyclo,gocognit
 	request := &HandleCHAPIResponse{}
 
 	err := json.NewDecoder(r.Body).Decode(request)
@@ -744,54 +746,130 @@ func (o *Operation) chapiResponseHandler(w http.ResponseWriter, r *http.Request)
 	// TODO save user Consent VC https://github.com/trustbloc/edge-adapter/issues/92
 	// TODO validate the user consent credential (expected rp and user DIDs, etc.)
 
-	customConsentVC, origConsentVC, err := parseWalletResponse(crCtx.PD, o.vdriReg, request.VerifiablePresentation)
-	if errors.Is(err, errInvalidCredential) {
-		handleError(w, http.StatusBadRequest, "malformed credentials")
+	local, remote, err := parseWalletResponse(crCtx.PD, request.VerifiablePresentation)
+	if err != nil {
+		if errors.Is(err, errInvalidCredential) {
+			handleError(w, http.StatusBadRequest, fmt.Sprintf("malformed credentials: %s", err.Error()))
+		} else {
+			handleError(w, http.StatusInternalServerError, fmt.Sprintf("failed to parse credentials : %s", err.Error()))
+		}
 
 		return
 	}
 
-	if err != nil {
-		handleError(w, http.StatusInternalServerError, fmt.Sprintf("failed to parse custom credentials : %s", err))
+	callback := make(chan *issuerResponseStatus)
+
+	for descriptorID, authz := range remote {
+		// TODO do not send multiple requests for each scope in an authz cred:
+		//  https://github.com/trustbloc/edge-adapter/issues/253
+		thid, err := o.requestRemoteCredential(authz, crCtx)
+		if err != nil {
+			if errors.Is(err, errInvalidCredential) {
+				handleError(w, http.StatusBadRequest, err.Error())
+			} else {
+				handleError(w, http.StatusInternalServerError, err.Error())
+			}
+
+			return
+		}
+
+		o.setWalletResponseContext(thid, &walletResponseCtx{
+			consentRequestCtx:    crCtx,
+			issuerResponseStatus: callback,
+			descriptorID:         descriptorID,
+		})
+	}
+
+	start := time.Now()
+	userData := make(map[string]*verifiable.Credential)
+
+	for id, cred := range local {
+		userData[id] = cred
+	}
+
+	// TODO delete transient data: https://github.com/trustbloc/edge-adapter/issues/255
+
+	var callbackErr error
+
+	timeout := time.After(o.issuerCallbackTimeout)
+
+WaitForRemoteCredentials:
+	for {
+		select {
+		case c := <-callback:
+			if c.err != nil {
+				callbackErr = c.err
+
+				break WaitForRemoteCredentials
+			}
+
+			for id, cred := range c.credentials {
+				userData[id] = cred
+			}
+
+			if len(userData) == len(local)+len(remote) {
+				break WaitForRemoteCredentials
+			}
+		case <-timeout:
+			callbackErr = fmt.Errorf("%w: timed out waiting for credentials", errTimeout)
+
+			break WaitForRemoteCredentials
+		}
+	}
+
+	if callbackErr != nil {
+		// nolint:gocritic
+		if errors.Is(callbackErr, errInvalidCredential) {
+			handleError(w, http.StatusBadRequest,
+				fmt.Sprintf("received invalid credentials from the issuer: %s", callbackErr.Error()))
+		} else if errors.Is(callbackErr, errTimeout) {
+			handleError(w, http.StatusGatewayTimeout, "timed out waiting for credentials")
+		} else {
+			handleError(w, http.StatusInternalServerError,
+				fmt.Sprintf("failed to validate credentials: %s", callbackErr.Error()))
+		}
 
 		return
 	}
 
-	issuerDID, err := did.ParseDocument(customConsentVC.Subject.IssuerDIDDoc.Doc)
-	if err != nil {
-		msg := fmt.Sprintf("failed to parse did document : %s", err)
-		logger.Errorf(msg)
-		commhttp.WriteErrorResponse(w, http.StatusBadRequest, msg)
+	logger.Infof("collected responses from all issuers in %s", time.Since(start))
 
-		return
+	// TODO validate all credentials against presentation definitions:
+	//  https://github.com/trustbloc/edge-adapter/issues/108
+
+	result := make([]*verifiable.Credential, 0)
+
+	for _, cred := range userData {
+		result = append(result, cred)
+	}
+
+	// accept at hydra and return response to user
+	o.handleUserDataSuccess(w, r, result, crCtx)
+}
+
+func (o *Operation) requestRemoteCredential(authz *verifiable.Credential,
+	crCtx *consentRequestCtx) (threadID string, err error) {
+	sub, err := vc.AuthZSubject(authz)
+	if err != nil {
+		return "", fmt.Errorf("%w: failed to parse authz subject: %s", errInvalidCredential, err.Error())
+	}
+
+	issuerDID, err := did.ParseDocument(sub.IssuerDIDDoc.Doc)
+	if err != nil {
+		return "", fmt.Errorf("%w: failed to parse issuer did document: %s", errInvalidCredential, err.Error())
 	}
 
 	// TODO Issuer's label on the connection record https://github.com/trustbloc/edge-adapter/issues/93
 	_, err = o.didClient.CreateConnection(crCtx.RPPairwiseDID, issuerDID)
 	if err != nil {
-		msg := fmt.Sprintf("failed to create didcomm connection : %s", err)
-		logger.Errorf(msg)
-		commhttp.WriteErrorResponse(w, http.StatusInternalServerError, msg)
-
-		return
+		return "", fmt.Errorf(
+			"failed to create didcomm connection between %s and %s: %w",
+			crCtx.RPPairwiseDID, issuerDID.ID, err)
 	}
 
-	vp, err := o.toVP(origConsentVC)
+	vpBytes, err := o.toMarshalledVP(authz)
 	if err != nil {
-		msg := fmt.Sprintf("failed to convert user consent VC to a verifiable presentation : %s", err)
-		logger.Errorf(msg)
-		commhttp.WriteErrorResponse(w, http.StatusInternalServerError, msg)
-
-		return
-	}
-
-	consentVCBits, err := vp.MarshalJSON()
-	if err != nil {
-		msg := fmt.Sprintf("failed to marshal user consent VP to json : %s", err)
-		logger.Errorf(msg)
-		commhttp.WriteErrorResponse(w, http.StatusInternalServerError, msg)
-
-		return
+		return "", fmt.Errorf("failed to convert authz credential to verifiable presentation: %w", err)
 	}
 
 	attachID := uuid.New().String()
@@ -805,56 +883,22 @@ func (o *Operation) chapiResponseHandler(w http.ResponseWriter, r *http.Request)
 			ID:       attachID,
 			MimeType: "application/ld+json",
 			Data: decorator.AttachmentData{
-				Base64: base64.StdEncoding.EncodeToString(consentVCBits),
+				Base64: base64.StdEncoding.EncodeToString(vpBytes),
 			},
 		}},
 	}, crCtx.RPPairwiseDID, issuerDID.ID)
 	if err != nil {
-		msg := fmt.Sprintf("failed to send request-presentation : %s", err)
-		logger.Errorf(msg)
-		commhttp.WriteErrorResponse(w, http.StatusInternalServerError, msg)
-
-		return
+		return "", fmt.Errorf("failed to send request-presentation: %w", err)
 	}
 
 	logger.Debugf("sent request-presentation with threadID=%s", thid)
 
-	callback := make(chan *issuerResponseStatus)
-
-	o.setWalletResponseContext(thid, &walletResponseCtx{
-		threadID:             thid,
-		consentRequestCtx:    crCtx,
-		issuerResponseStatus: callback,
-	})
-
-	start := time.Now()
-
-	// TODO the transient invitationData should be after the CHAPI response is processed but the edge-coge Store API
-	//  is missing a Delete() method: https://github.com/trustbloc/edge-core/issues/45
-
-	select {
-	case c := <-callback:
-		logger.Infof("got response from issuer in %s", time.Since(start))
-		o.handleIssuerCallback(w, r, c)
-	case <-time.After(o.issuerCallbackTimeout):
-		handleError(w, http.StatusGatewayTimeout, "timeout waiting for credentials")
-	}
+	return thid, nil
 }
 
-func (o *Operation) handleIssuerCallback(w http.ResponseWriter, r *http.Request, c *issuerResponseStatus) {
-	if errors.Is(c.err, errInvalidCredential) {
-		handleError(w, http.StatusBadRequest, "received invalid credentials from the issuer")
-
-		return
-	}
-
-	if c.err != nil {
-		handleError(w, http.StatusInternalServerError, "failed to validate credentials")
-
-		return
-	}
-
-	rpData, err := o.mapPresentationSubmissionToRPData(c.submission)
+func (o *Operation) handleUserDataSuccess(w http.ResponseWriter, r *http.Request,
+	userData []*verifiable.Credential, crCtx *consentRequestCtx) {
+	rpData, err := transformUserData(userData)
 	if err != nil {
 		handleError(w, http.StatusInternalServerError, fmt.Sprintf("failed to map VCs into RP object : %s", err))
 
@@ -864,14 +908,14 @@ func (o *Operation) handleIssuerCallback(w http.ResponseWriter, r *http.Request,
 	// TODO support selective disclosure
 	accept := &admin.AcceptConsentRequestParams{}
 	accept.SetContext(r.Context())
-	accept.SetConsentChallenge(c.walletResponseCtx.consentRequestCtx.CR.Payload.Challenge)
+	accept.SetConsentChallenge(crCtx.CR.Payload.Challenge)
 	accept.SetBody(&models.AcceptConsentRequest{
-		GrantAccessTokenAudience: c.walletResponseCtx.consentRequestCtx.CR.Payload.RequestedAccessTokenAudience,
-		GrantScope:               c.walletResponseCtx.consentRequestCtx.CR.Payload.RequestedScope,
+		GrantAccessTokenAudience: crCtx.CR.Payload.RequestedAccessTokenAudience,
+		GrantScope:               crCtx.CR.Payload.RequestedScope,
 		HandledAt:                models.NullTime(time.Now()),
 		Remember:                 true, // TODO support user choice whether consent should be remembered
 		Session: &models.ConsentRequestSession{
-			IDToken: rpData[0],
+			IDToken: rpData,
 		},
 	})
 
@@ -889,41 +933,37 @@ func (o *Operation) handleIssuerCallback(w http.ResponseWriter, r *http.Request,
 	logger.Debugf("redirected user to: %s", resp.Payload.RedirectTo)
 }
 
-// TODO surely there must be a better way to unmarshal the credentialSubject of a VC into a map????
-func (o *Operation) mapPresentationSubmissionToRPData(
-	submission *rp2.PresentationSubmissionPresentation) ([]map[string]interface{}, error) {
-	rpdata := make([]map[string]interface{}, 0)
+// https://openid.net/specs/openid-connect-4-identity-assurance-1_0.html
+func transformUserData(userData []*verifiable.Credential) (map[string]interface{}, error) {
+	verifiedClaims := make([]interface{}, len(userData))
+	transformIdx := 0
 
-	raw, err := submission.Base.MarshalledCredentials()
-	if err != nil {
-		return nil, fmt.Errorf("failed to extract marshalled credentials : %w", err)
+	for i := range userData {
+		raw, err := json.Marshal(userData[i].Subject)
+		if err != nil {
+			return nil, fmt.Errorf("failed to marshal user data subject: %w", err)
+		}
+
+		data := make([]map[string]interface{}, 0)
+
+		err = json.Unmarshal(raw, &data)
+		if err != nil {
+			return nil, fmt.Errorf("failed to unmarshal user data subject: %w", err)
+		}
+
+		for j := range data {
+			filtered := filterJSONLDisms(data[j])
+			verifiedClaims[transformIdx] = filtered
+			transformIdx++
+		}
 	}
 
-	if len(raw) == 0 {
-		return nil, errors.New("expected at least one credentialSubject in VP")
-	}
-
-	cred, err := verifiable.ParseCredential(
-		raw[0],
-		verifiable.WithPublicKeyFetcher(verifiable.NewDIDKeyResolver(o.vdriReg).PublicKeyFetcher()))
-	if err != nil {
-		return nil, fmt.Errorf("failed to unmarshal : %w", err)
-	}
-
-	bits, err := json.Marshal(cred.Subject)
-	if err != nil {
-		return nil, fmt.Errorf("failed to marshal vc subject : %w", err)
-	}
-
-	err = json.Unmarshal(bits, &rpdata)
-	if err != nil {
-		return nil, fmt.Errorf("failed to unmarshal vc subject : %w", err)
-	}
-
-	return filterJSONLDisms(rpdata), nil
+	return map[string]interface{}{
+		"verified_claims": verifiedClaims,
+	}, nil
 }
 
-func filterJSONLDisms(in []map[string]interface{}) []map[string]interface{} {
+func filterJSONLDisms(in map[string]interface{}) map[string]interface{} {
 	// TODO filter JSONLD-isms from the credential subject like "@id", "@type", "@context", etc.
 	//  https://github.com/trustbloc/edge-adapter/issues/127
 	return in
@@ -1043,6 +1083,8 @@ func (o *Operation) listenForIssuerResponses() {
 }
 
 func (o *Operation) handleIssuerPresentationMsg(msg service.DIDCommMsg) error {
+	logger.Infof("handling issuer presentation msg")
+
 	thid, err := msg.ThreadID()
 	if err != nil {
 		return fmt.Errorf("failed to extract threadID from didcomm msg : %w", err)
@@ -1065,7 +1107,7 @@ func (o *Operation) handleIssuerPresentationMsg(msg service.DIDCommMsg) error {
 
 	logger.Debugf("handling present-proof message: %+v", presentation)
 
-	presentationSubmissionVP, err := parseIssuerResponse(ctx.consentRequestCtx.PD, presentation)
+	userData, err := parseIssuerResponse(presentation, o.vdriReg)
 	if err != nil {
 		err = fmt.Errorf("failed to parse verifiable presentation : %w", err)
 		notifyIssuerResponseError(err, ctx.issuerResponseStatus)
@@ -1073,9 +1115,12 @@ func (o *Operation) handleIssuerPresentationMsg(msg service.DIDCommMsg) error {
 		return err
 	}
 
-	logger.Debugf("received presentation_submission : %+v", presentationSubmissionVP)
-
-	notifyIssuerResponse(presentationSubmissionVP, ctx.issuerResponseStatus, ctx)
+	ctx.issuerResponseStatus <- &issuerResponseStatus{
+		credentials: map[string]*verifiable.Credential{
+			ctx.descriptorID: userData,
+		},
+		walletResponseCtx: ctx,
+	}
 
 	return nil
 }
@@ -1083,14 +1128,6 @@ func (o *Operation) handleIssuerPresentationMsg(msg service.DIDCommMsg) error {
 func notifyIssuerResponseError(err error, c chan *issuerResponseStatus) {
 	c <- &issuerResponseStatus{
 		err: err,
-	}
-}
-
-func notifyIssuerResponse(p *rp2.PresentationSubmissionPresentation,
-	c chan *issuerResponseStatus, ctx *walletResponseCtx) {
-	c <- &issuerResponseStatus{
-		submission:        p,
-		walletResponseCtx: ctx,
 	}
 }
 
@@ -1187,8 +1224,13 @@ func (o *Operation) createRPTenant(w http.ResponseWriter, r *http.Request) {
 }
 
 // TODO add an LD proof that contains the issuer's challenge: https://github.com/trustbloc/edge-adapter/issues/145
-func (o *Operation) toVP(consentVC *verifiable.Credential) (*verifiable.Presentation, error) {
-	return consentVC.Presentation()
+func (o *Operation) toMarshalledVP(authZ *verifiable.Credential) ([]byte, error) {
+	vp, err := authZ.Presentation()
+	if err != nil {
+		return nil, fmt.Errorf("failed to convert authz credential to presentation: %w", err)
+	}
+
+	return json.Marshal(vp)
 }
 
 func removeOIDCScope(scopes []string) []string {
