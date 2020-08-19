@@ -9,6 +9,7 @@ package governance
 // MockProvider is a mock used in tests.
 type MockProvider struct {
 	IssueCredentialFunc func(didID, profileID string) ([]byte, error)
+	GetCredentialFunc   func(profileID string) ([]byte, error)
 }
 
 // IssueCredential issue credential.
@@ -21,6 +22,10 @@ func (s *MockProvider) IssueCredential(didID, profileID string) ([]byte, error) 
 }
 
 // GetCredential get credential.
-func (s *MockProvider) GetCredential() ([]byte, error) {
-	panic("implement me")
+func (s *MockProvider) GetCredential(profileID string) ([]byte, error) {
+	if s.GetCredentialFunc != nil {
+		return s.GetCredentialFunc(profileID)
+	}
+
+	return nil, nil
 }

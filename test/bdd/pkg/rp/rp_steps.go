@@ -44,10 +44,12 @@ import (
 )
 
 const (
-	rpAdapterURL   = "https://localhost:8070"
-	resolverURL    = "http://localhost:8072/1.0/identifiers"
-	hydraAdminURL  = "https://localhost:4445/"
-	hydraPublicURL = "https://localhost:4444/"
+	rpAdapterURL        = "https://localhost:8070"
+	resolverURL         = "http://localhost:8072/1.0/identifiers"
+	hydraAdminURL       = "https://localhost:4445/"
+	hydraPublicURL      = "https://localhost:4444/"
+	governanceCtx       = "https://trustbloc.github.io/context/governance/context.jsonld"
+	governanceVCCTXSize = 3
 )
 
 const relyingPartyResultsPageSimulation = "Your credentials have been received!"
@@ -364,6 +366,11 @@ func (s *Steps) sendCHAPIRequestToWallet(tenantID, walletID string) error {
 		return fmt.Errorf("failed to validate presentation definitions for '%s': %w", tenantID, err)
 	}
 
+	err = validateGovernance(result.CredentialGovernance)
+	if err != nil {
+		return fmt.Errorf("failed to parse governance credential : %s", err.Error())
+	}
+
 	tenant.invitationID = result.Inv.ID
 	tenant.presDefs = result.PD
 	s.context.Store[bddutil.GetDIDConnectRequestKey(tenantID, walletID)] = string(bits)
@@ -419,6 +426,31 @@ func validatePresentationDefinitions(pd *presexch.PresentationDefinitions, scope
 				"presentation definition missing schema uri %s; expected=%+v, actual=%+v",
 				expected[i], expected, actual)
 		}
+	}
+
+	return nil
+}
+
+func validateGovernance(governanceVCBytes []byte) error {
+	governanceVC, err := verifiable.ParseUnverifiedCredential(governanceVCBytes)
+	if err != nil {
+		return err
+	}
+
+	if len(governanceVC.Context) != governanceVCCTXSize {
+		return fmt.Errorf("governance vc context not equal 2")
+	}
+
+	exist := false
+
+	for _, v := range governanceVC.Context {
+		if v == governanceCtx {
+			exist = true
+		}
+	}
+
+	if !exist {
+		return fmt.Errorf("governance vc context %s not exist", governanceCtx)
 	}
 
 	return nil

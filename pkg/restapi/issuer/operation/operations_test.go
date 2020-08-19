@@ -664,6 +664,9 @@ func TestCHAPIRequest(t *testing.T) {
 		c, err := New(&Config{
 			AriesCtx:      getAriesCtx(),
 			StoreProvider: memstore.NewProvider(),
+			GovernanceProvider: &mockgovernance.MockProvider{GetCredentialFunc: func(profileID string) ([]byte, error) {
+				return []byte(`{"key":"value"}`), nil
+			}},
 		})
 		require.NoError(t, err)
 
@@ -687,6 +690,34 @@ func TestCHAPIRequest(t *testing.T) {
 		require.NoError(t, err)
 		require.Equal(t, DIDConnectCHAPIQueryType, chapiReq.Query.Type)
 		require.Equal(t, "https://didcomm.org/oob-invitation/1.0/invitation", chapiReq.DIDCommInvitation.Type)
+		require.Equal(t, `{"key":"value"}`, string(chapiReq.CredentialGovernance))
+	})
+
+	t.Run("test get governance - failed", func(t *testing.T) {
+		c, err := New(&Config{
+			AriesCtx:      getAriesCtx(),
+			StoreProvider: memstore.NewProvider(),
+			GovernanceProvider: &mockgovernance.MockProvider{GetCredentialFunc: func(profileID string) ([]byte, error) {
+				return nil, fmt.Errorf("failed to get vc")
+			}},
+		})
+		require.NoError(t, err)
+
+		profile := createProfileData("profile1")
+
+		err = c.profileStore.SaveProfile(profile)
+		require.NoError(t, err)
+
+		txnID, err := c.createTxn(profile, uuid.New().String())
+		require.NoError(t, err)
+
+		getCHAPIRequestHandler := getHandler(t, c, getCHAPIRequestEndpoint)
+
+		rr := serveHTTP(t, getCHAPIRequestHandler.Handle(), http.MethodGet,
+			getCHAPIRequestEndpoint+"?"+txnIDQueryParam+"="+txnID, nil)
+
+		require.Equal(t, http.StatusInternalServerError, rr.Code)
+		require.Contains(t, rr.Body.String(), "error retrieving governance vc : failed to get vc")
 	})
 
 	t.Run("test fetch invitation - no txnID in the url query", func(t *testing.T) {

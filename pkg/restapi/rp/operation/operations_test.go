@@ -1329,6 +1329,9 @@ func TestGetPresentationsRequest(t *testing.T) {
 			},
 			AriesStorageProvider: &mockAriesContextProvider{},
 			PresentProofClient:   &mockpresentproof.MockClient{},
+			GovernanceProvider: &mockgovernance.MockProvider{GetCredentialFunc: func(profileID string) ([]byte, error) {
+				return []byte(`{"key":"value"}`), nil
+			}},
 		})
 		require.NoError(t, err)
 
@@ -1355,6 +1358,73 @@ func TestGetPresentationsRequest(t *testing.T) {
 		require.NotNil(t, resp.Inv)
 		require.Len(t, resp.Inv.Service, 1)
 		require.Equal(t, rpPublicDID.String(), resp.Inv.Service[0])
+		require.Equal(t, `{"key":"value"}`, string(resp.CredentialGovernance))
+	})
+
+	t.Run("test get governance - failed", func(t *testing.T) {
+		userSubject := uuid.New().String()
+		rpClientID := uuid.New().String()
+		rpPublicDID := newDID(t)
+		handle := uuid.New().String()
+		presDefs := &presexch.PresentationDefinitions{
+			InputDescriptors: []*presexch.InputDescriptor{{ID: uuid.New().String()}},
+		}
+		store := mockStore()
+		saveUserConn(t, store, &rp.UserConnection{
+			User:    &rp.User{Subject: userSubject},
+			RP:      &rp.Tenant{ClientID: rpClientID},
+			Request: &rp.DataRequest{},
+		})
+
+		c, err := New(&Config{
+			PresentationExProvider: &mockPresentationExProvider{createValue: presDefs},
+			OOBClient: &mockoutofband.MockClient{
+				CreateInvVal: &outofband.Invitation{
+					ID:        uuid.New().String(),
+					Type:      outofband.InvitationMsgType,
+					Label:     "test-label",
+					Service:   []interface{}{rpPublicDID.String()},
+					Protocols: []string{didexchangesvc.PIURI},
+				},
+			},
+			DIDExchClient: &mockdidexchange.MockClient{
+				CreateInvWithDIDFunc: func(label, didID string) (*didexchange.Invitation, error) {
+					return &didexchange.Invitation{Invitation: &didexchangesvc.Invitation{
+						ID:    uuid.New().String(),
+						Type:  didexchange.InvitationMsgType,
+						Label: "test-label",
+						DID:   rpPublicDID.String(),
+					}}, nil
+				},
+			},
+			Storage: &Storage{
+				Persistent: store,
+				Transient:  memstore.NewProvider(),
+			},
+			AriesStorageProvider: &mockAriesContextProvider{},
+			PresentProofClient:   &mockpresentproof.MockClient{},
+			GovernanceProvider: &mockgovernance.MockProvider{GetCredentialFunc: func(profileID string) ([]byte, error) {
+				return nil, fmt.Errorf("failed to get vc")
+			}},
+		})
+		require.NoError(t, err)
+
+		storePut(t, c.transientStore, handle, &consentRequestCtx{
+			PD: presDefs,
+			CR: &admin.GetConsentRequestOK{
+				Payload: &models.ConsentRequest{
+					Subject: userSubject,
+					Client:  &models.OAuth2Client{ClientID: rpClientID},
+				},
+			},
+			RPPublicDID: rpPublicDID.String(),
+		})
+
+		r := httptest.NewRecorder()
+		c.getPresentationsRequest(r, newCreatePresentationDefinitionRequest(t, handle))
+
+		require.Equal(t, http.StatusInternalServerError, r.Code)
+		require.Contains(t, r.Body.String(), "error retrieving governance vc : failed to get vc")
 	})
 
 	t.Run("bad request if handle is invalid", func(t *testing.T) {
