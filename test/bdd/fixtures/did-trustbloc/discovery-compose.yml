@@ -1,0 +1,49 @@
+#
+# Copyright SecureKey Technologies Inc. All Rights Reserved.
+#
+# SPDX-License-Identifier: Apache-2.0
+#
+version: '2'
+
+services:
+
+  static-file-server:
+    container_name: static-file-server
+    image: halverneus/static-file-server:v1.7.2
+    environment:
+      - PORT=443
+      - FOLDER=/web
+      - TLS_CERT=/etc/tls/ec-pubCert.pem
+      - TLS_KEY=/etc/tls/ec-key.pem
+    ports:
+      - 443:443
+    volumes:
+      - ./config/did-trustbloc:/web/.well-known/did-trustbloc
+      - ../keys/tls:/etc/tls
+    networks:
+      adapter-rest_bdd_net:
+        aliases:
+          - ${BLOC_DOMAIN}
+
+  stakeholder.one:
+    container_name: stakeholder.one
+    image: halverneus/static-file-server:v1.7.2
+    environment:
+      - PORT=8088
+      - FOLDER=/web
+      - TLS_CERT=/etc/tls/ec-pubCert.pem
+      - TLS_KEY=/etc/tls/ec-key.pem
+    ports:
+      - 8088:8088
+    volumes:
+      - ./config/did-trustbloc:/web/.well-known/did-trustbloc
+      - ./config/stakeholder-one.trustbloc.local/did-configuration.json:/web/.well-known/did-configuration.json
+      - ../keys/tls:/etc/tls
+    networks:
+      adapter-rest_bdd_net:
+        aliases:
+          - stakeholder-one.trustbloc.local
+
+networks:
+  adapter-rest_bdd_net:
+    external: true

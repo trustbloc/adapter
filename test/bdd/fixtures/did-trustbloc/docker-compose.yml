@@ -7,24 +7,6 @@ version: '2'
 
 services:
 
-  static-file-server:
-    container_name: static-file-server
-    image: halverneus/static-file-server:v1.7.2
-    environment:
-      - PORT=443
-      - FOLDER=/web
-      - TLS_CERT=/etc/tls/ec-pubCert.pem
-      - TLS_KEY=/etc/tls/ec-key.pem
-    ports:
-      - 443:443
-    volumes:
-      - ./config:/web/.well-known/did-trustbloc
-      - ../keys/tls:/etc/tls
-    networks:
-      adapter-rest_bdd_net:
-        aliases:
-          - ${BLOC_DOMAIN}
-
   did.rest.example.com:
     container_name: did.rest.example.com
     image: ${DID_REST_IMAGE}:${DID_REST_IMAGE_TAG}
@@ -80,24 +62,6 @@ services:
       adapter-rest_bdd_net:
         aliases:
           - sidetree-mock.trustbloc.local
-
-  stakeholder.one:
-    container_name: stakeholder.one
-    image: halverneus/static-file-server:v1.7.2
-    environment:
-      - PORT=8088
-      - FOLDER=/web
-      - TLS_CERT=/etc/tls/ec-pubCert.pem
-      - TLS_KEY=/etc/tls/ec-key.pem
-    ports:
-      - 8088:8088
-    volumes:
-      - ./config:/web/.well-known/did-trustbloc
-      - ../keys/tls:/etc/tls
-    networks:
-      adapter-rest_bdd_net:
-        aliases:
-          - stakeholder-one.trustbloc.local
 
 networks:
   adapter-rest_bdd_net:
