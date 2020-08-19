@@ -158,6 +158,11 @@ const (
 	governanceVCSURLFlagName  = "governance-vcs-url"
 	governanceVCSURLFlagUsage = "Governance VCS instance is running on. Format: HostName:Port."
 	governanceVCSURLEnvKey    = "ADAPTER_REST_GOVERNANCE_VCS_URL"
+
+	requestTokensFlagName  = "request-tokens"
+	requestTokensEnvKey    = "ADAPTER_REST_REQUEST_TOKENS" //nolint: gosec
+	requestTokensFlagUsage = "Tokens used for http request " +
+		" Alternatively, this can be set with the following environment variable: " + requestTokensEnvKey
 )
 
 // API endpoints.
@@ -173,6 +178,7 @@ const (
 	rpAdapterPersistentStorePrefix = "rpadapter"
 	rpAdapterTransientStorePrefix  = "rpadapter_txn"
 	issuerAdapterStorePrefix       = "issueradapter"
+	tokenLength                    = 2
 )
 
 // nolint:gochecknoglobals
@@ -217,6 +223,7 @@ type adapterRestParameters struct {
 	trustblocDomain      string
 	universalResolverURL string
 	governanceVCSURL     string
+	requestTokens        map[string]string
 }
 
 type server interface {
@@ -333,6 +340,11 @@ func getAdapterRestParameters(cmd *cobra.Command) (*adapterRestParameters, error
 		return nil, err
 	}
 
+	requestTokens, err := getRequestTokens(cmd)
+	if err != nil {
+		return nil, err
+	}
+
 	err = setLogLevel(logLevel)
 	if err != nil {
 		return nil, err
@@ -353,7 +365,30 @@ func getAdapterRestParameters(cmd *cobra.Command) (*adapterRestParameters, error
 		trustblocDomain:             trustblocDomain,
 		universalResolverURL:        universalResolverURL,
 		governanceVCSURL:            governanceVCSURL,
+		requestTokens:               requestTokens,
 	}, nil
+}
+
+func getRequestTokens(cmd *cobra.Command) (map[string]string, error) {
+	requestTokens, err := cmdutils.GetUserSetVarFromArrayString(cmd, requestTokensFlagName,
+		requestTokensEnvKey, true)
+	if err != nil {
+		return nil, err
+	}
+
+	tokens := make(map[string]string)
+
+	for _, token := range requestTokens {
+		split := strings.Split(token, "=")
+		switch len(split) {
+		case tokenLength:
+			tokens[split[0]] = split[1]
+		default:
+			logger.Warnf("invalid token '%s'", token)
+		}
+	}
+
+	return tokens, nil
 }
 
 func setLogLevel(logLevel string) error {
@@ -497,6 +532,8 @@ func createFlags(startCmd *cobra.Command) {
 	startCmd.Flags().StringP(presentationDefinitionsFlagName, "", "", presentationDefinitionsFlagUsage)
 	startCmd.Flags().StringP(hydraURLFlagName, "", "", hydraURLFlagUsage)
 	startCmd.Flags().StringP(modeFlagName, "", "", modeFlagUsage)
+	startCmd.Flags().StringP(governanceVCSURLFlagName, "", "", governanceVCSURLFlagUsage)
+	startCmd.Flags().StringArrayP(requestTokensFlagName, "", []string{}, requestTokensFlagUsage)
 
 	// didcomm
 	startCmd.Flags().StringP(didCommInboundHostFlagName, "", "", didCommInboundHostFlagUsage)
@@ -507,8 +544,6 @@ func createFlags(startCmd *cobra.Command) {
 	startCmd.Flags().StringP(universalResolverURLFlagName, universalResolverURLFlagShorthand, "",
 		universalResolverURLFlagUsage)
 	startCmd.Flags().StringP(logLevelFlagName, "", "INFO", logLevelFlagUsage)
-	startCmd.Flags().StringP(governanceVCSURLFlagName, "", "",
-		governanceVCSURLFlagUsage)
 }
 
 func startAdapterService(parameters *adapterRestParameters, srv server) error {
@@ -597,7 +632,8 @@ func addRPHandlers(
 	if parameters.governanceVCSURL != "" {
 		var errNew error
 
-		governanceProvider, errNew = newGovernanceProvider(parameters.governanceVCSURL, rootCAs, store)
+		governanceProvider, errNew = newGovernanceProvider(parameters.governanceVCSURL, rootCAs, store,
+			parameters.requestTokens)
 		if errNew != nil {
 			return errNew
 		}
@@ -653,7 +689,8 @@ func addIssuerHandlers(parameters *adapterRestParameters, ariesCtx ariespai.CtxP
 	if parameters.governanceVCSURL != "" {
 		var errNew error
 
-		governanceProvider, errNew = newGovernanceProvider(parameters.governanceVCSURL, rootCAs, store)
+		governanceProvider, errNew = newGovernanceProvider(parameters.governanceVCSURL, rootCAs, store,
+			parameters.requestTokens)
 		if errNew != nil {
 			return errNew
 		}
@@ -694,10 +731,9 @@ func addIssuerHandlers(parameters *adapterRestParameters, ariesCtx ariespai.CtxP
 }
 
 func newGovernanceProvider(governanceVCSURL string, rootCAs *x509.CertPool,
-	store storage.Provider) (*governance.Provider, error) {
-	// TODO add token parameter
+	store storage.Provider, requestTokens map[string]string) (*governance.Provider, error) {
 	return governance.New(governanceVCSURL, &tls.Config{RootCAs: rootCAs}, store,
-		map[string]string{})
+		requestTokens)
 }
 
 func uiHandler(
