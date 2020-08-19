@@ -92,6 +92,7 @@ type PublicDIDCreator interface {
 // GovernanceProvider governance provider.
 type GovernanceProvider interface {
 	IssueCredential(didID, profileID string) ([]byte, error)
+	GetCredential(profileID string) ([]byte, error)
 }
 
 // Config defines configuration for issuer operations.
@@ -432,10 +433,25 @@ func (o *Operation) getCHAPIRequestHandler(rw http.ResponseWriter, req *http.Req
 		return
 	}
 
+	var governanceVC []byte
+
+	if o.governanceProvider != nil {
+		var err error
+		governanceVC, err = o.governanceProvider.GetCredential(profile.ID)
+
+		if err != nil {
+			commhttp.WriteErrorResponseWithLog(rw, http.StatusInternalServerError,
+				fmt.Sprintf("error retrieving governance vc : %s", err.Error()), getCHAPIRequestEndpoint, logger)
+
+			return
+		}
+	}
+
 	commhttp.WriteResponseWithLog(rw, &CHAPIRequest{
-		Query:             &CHAPIQuery{Type: DIDConnectCHAPIQueryType},
-		DIDCommInvitation: txnData.DIDCommInvitation,
-		Manifest:          manifestVC,
+		Query:                &CHAPIQuery{Type: DIDConnectCHAPIQueryType},
+		DIDCommInvitation:    txnData.DIDCommInvitation,
+		Manifest:             manifestVC,
+		CredentialGovernance: governanceVC,
 	}, getCHAPIRequestEndpoint, logger)
 }
 

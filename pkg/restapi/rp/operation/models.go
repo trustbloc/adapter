@@ -16,8 +16,9 @@ import (
 
 // GetPresentationRequestResponse API response of getPresentationRequest.
 type GetPresentationRequestResponse struct {
-	PD  *presexch.PresentationDefinitions `json:"pd"`
-	Inv *outofband.Invitation             `json:"invitation"`
+	PD                   *presexch.PresentationDefinitions `json:"pd"`
+	Inv                  *outofband.Invitation             `json:"invitation"`
+	CredentialGovernance json.RawMessage                   `json:"credentialGovernance,omitempty"`
 }
 
 // CreateRPTenantRequest API request body to register an RP tenant.

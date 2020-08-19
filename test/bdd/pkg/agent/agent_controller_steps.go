@@ -71,6 +71,9 @@ const (
 	vdriOperationID = "/vdri"
 	vdriDIDPath     = vdriOperationID + "/did"
 	resolveDIDPath  = vdriDIDPath + "/resolve/%s"
+
+	governanceCtx       = "https://trustbloc.github.io/context/governance/context.jsonld"
+	governanceVCCTXSize = 3
 )
 
 var logger = log.New("edge-adapter/tests")
@@ -157,6 +160,7 @@ func (a *Steps) healthCheck(endpoint string) error {
 	return errors.New("url scheme is not supported for url = " + endpoint)
 }
 
+//nolint:funlen
 func (a *Steps) handleDIDCommConnectRequest(agentID, supportedVCContexts, issuerID string, timeout int) error {
 	// Mock CHAPI request from Issuer
 	didConnReq := a.bddContext.Store[bddutil.GetDIDConnectRequestKey(issuerID, agentID)]
@@ -171,6 +175,11 @@ func (a *Steps) handleDIDCommConnectRequest(agentID, supportedVCContexts, issuer
 	err = validateManifestCred(request.Manifest, supportedVCContexts)
 	if err != nil {
 		return fmt.Errorf("failed to parse credential : %s", err.Error())
+	}
+
+	err = validateGovernance(request.CredentialGovernance)
+	if err != nil {
+		return fmt.Errorf("failed to parse governance credential : %s", err.Error())
 	}
 
 	connectionID, err := a.AcceptOOBInvitation(agentID, request.DIDCommInvitation, issuerID)
@@ -825,6 +834,31 @@ func validateManifestCred(manifestVCBytes []byte, supportedVCContexts string) er
 	if len(manifestCredSub.Subject.Contexts) != len(strings.Split(supportedVCContexts, ",")) {
 		return fmt.Errorf("supported vc count doesnt match : expected=%d actual=%d",
 			len(strings.Split(supportedVCContexts, ",")), len(manifestCredSub.Subject.Contexts))
+	}
+
+	return nil
+}
+
+func validateGovernance(governanceVCBytes []byte) error {
+	governanceVC, err := verifiable.ParseUnverifiedCredential(governanceVCBytes)
+	if err != nil {
+		return err
+	}
+
+	if len(governanceVC.Context) != governanceVCCTXSize {
+		return fmt.Errorf("governance vc context not equal 3")
+	}
+
+	exist := false
+
+	for _, v := range governanceVC.Context {
+		if v == governanceCtx {
+			exist = true
+		}
+	}
+
+	if !exist {
+		return fmt.Errorf("governance vc context %s not exist", governanceCtx)
 	}
 
 	return nil

@@ -125,6 +125,7 @@ type PublicDIDCreator interface {
 // GovernanceProvider governance provider.
 type GovernanceProvider interface {
 	IssueCredential(didID, profileID string) ([]byte, error)
+	GetCredential(profileID string) ([]byte, error)
 }
 
 // AriesContextProvider is the dependency interface for the connection.Recorder.
@@ -645,7 +646,7 @@ func (o *Operation) skipConsentScreen(w http.ResponseWriter, r *http.Request, co
 }
 
 // Frontend requests to create presentation definition.
-func (o *Operation) getPresentationsRequest(w http.ResponseWriter, r *http.Request) {
+func (o *Operation) getPresentationsRequest(w http.ResponseWriter, r *http.Request) { //nolint:funlen
 	logger.Debugf("getPresentationsRequest request: %s", r.URL.String())
 
 	// get the request
@@ -696,9 +697,24 @@ func (o *Operation) getPresentationsRequest(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
+	var governanceVC []byte
+
+	if o.governanceProvider != nil {
+		var err error
+		governanceVC, err = o.governanceProvider.GetCredential(cr.CR.GetPayload().Client.ClientID)
+
+		if err != nil {
+			handleError(w, http.StatusInternalServerError,
+				fmt.Sprintf("error retrieving governance vc : %s", err))
+
+			return
+		}
+	}
+
 	response := &GetPresentationRequestResponse{
-		PD:  cr.PD,
-		Inv: invitation,
+		PD:                   cr.PD,
+		Inv:                  invitation,
+		CredentialGovernance: governanceVC,
 	}
 
 	w.WriteHeader(http.StatusOK)
