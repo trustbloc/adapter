@@ -103,7 +103,7 @@ func (a *Steps) RegisterSteps(s *godog.Suite) {
 		a.handleDIDCommConnectRequest)
 	s.Step(`^"([^"]*)" sends request credential message and receives credential from the issuer \("([^"]*)"\)$`,
 		a.fetchCredential)
-	s.Step(`^"([^"]*)" sends present proof request message and receives presentation from the issuer \("([^"]*)"\)$`,
+	s.Step(`^"([^"]*)" sends present proof request message to the the issuer \("([^"]*)"\) and validates that the vc inside vp contains type "([^"]*)"$`, // nolint: lll
 		a.fetchPresentation)
 }
 
@@ -486,7 +486,7 @@ func (a *Steps) fetchCredential(agentID, issuerID string) error { // nolint: fun
 	return nil
 }
 
-func (a *Steps) fetchPresentation(agentID, issuerID string) error {
+func (a *Steps) fetchPresentation(agentID, issuerID, expectedScope string) error {
 	conn, ok := a.adapterConnections[getExtCreateConnKey(agentID)]
 	if !ok {
 		return fmt.Errorf("unable to find the issuer connection data [%s]", agentID)
@@ -528,7 +528,12 @@ func (a *Steps) fetchPresentation(agentID, issuerID string) error {
 	}
 
 	// validate presentation
-	err = validatePresentation(presentationName, controllerURL)
+	vpID, err := validatePresentation(presentationName, controllerURL)
+	if err != nil {
+		return err
+	}
+
+	err = validateIssuerVC(vpID, controllerURL, expectedScope, a.bddContext.VDRI)
 	if err != nil {
 		return err
 	}
@@ -743,7 +748,7 @@ func acceptPresentation(piid, presentationName, controllerURL string) error {
 	return nil
 }
 
-func validatePresentation(presentationName, controllerURL string) error {
+func validatePresentation(presentationName, controllerURL string) (string, error) {
 	const (
 		timeoutWait = 10 * time.Second
 		retryDelay  = 500 * time.Millisecond
@@ -758,12 +763,12 @@ func validatePresentation(presentationName, controllerURL string) error {
 
 		var result verifiablecmd.RecordResult
 		if err := sendHTTP(http.MethodGet, controllerURL+"/verifiable/presentations", nil, &result); err != nil {
-			return err
+			return "", err
 		}
 
 		for _, val := range result.Result {
 			if val.Name == presentationName {
-				return nil
+				return val.ID, nil
 			}
 		}
 
@@ -772,7 +777,50 @@ func validatePresentation(presentationName, controllerURL string) error {
 		continue
 	}
 
-	return errors.New("presentation not found")
+	return "", errors.New("presentation not found")
+}
+
+func validateIssuerVC(id, controllerURL, expectedScope string, vdri vdriapi.Registry) error {
+	var vpResult verifiablecmd.Presentation
+
+	if err := sendHTTP(http.MethodGet,
+		controllerURL+"/verifiable/presentation/"+base64.StdEncoding.EncodeToString([]byte(id)),
+		nil, &vpResult); err != nil {
+		return err
+	}
+
+	vp, err := verifiable.ParsePresentation(
+		vpResult.VerifiablePresentation,
+		verifiable.WithPresPublicKeyFetcher(verifiable.NewDIDKeyResolver(vdri).PublicKeyFetcher()),
+	)
+	if err != nil {
+		return err
+	}
+
+	creds, err := vp.MarshalledCredentials()
+	if err != nil {
+		return err
+	}
+
+	if len(creds) != 1 {
+		return fmt.Errorf("invalid number of credentials: expected=%d actual=%d", 1, len(creds))
+	}
+
+	vc, err := verifiable.ParseCredential(
+		creds[0],
+		verifiable.WithPublicKeyFetcher(verifiable.NewDIDKeyResolver(vdri).PublicKeyFetcher()),
+	)
+	if err != nil {
+		return err
+	}
+
+	for _, t := range vc.Types {
+		if t == expectedScope {
+			return nil
+		}
+	}
+
+	return fmt.Errorf("vc type validation failed : expected=%s actual=%s", expectedScope, vc.Types)
 }
 
 func actionPIID(endpoint, urlPath string) (string, error) {

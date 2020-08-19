@@ -19,7 +19,8 @@ Feature: Issuer Adapter e2e
     And   Issuer adapter ("<profileID>") validates response from "Wallet" and redirects to "<issuerURL>"
     When  "Wallet" sends request credential message and receives credential from the issuer ("<profileID>")
     ## Mocking RP present proof call here (wallet calls instead of RP here)
-    Then  "Wallet" sends present proof request message and receives presentation from the issuer ("<profileID>")
+    Then  "Wallet" sends present proof request message to the the issuer ("<profileID>") and validates that the vc inside vp contains type "<vcType>"
     Examples:
-      | profileID             | profileName           | issuerURL                             | supportedVCContexts                 |
-      | abc123                | Example Issuer        | http://issuer.example.com:9080        | https://w3id.org/citizenship/v3     |
+      | profileID     | profileName           | issuerURL                                 | supportedVCContexts                                                       | vcType                  |
+      | prCard        | PRCard Issuer         | http://issuer.example.com:9080/prCard     | https://w3id.org/citizenship/v3                                           | PermanentResidentCard   |
+      | creditCard    | CreditCard Issuer     | http://issuer.example.com:9080/creditCard | https://trustbloc.github.io/context/vc/examples/credit-card-v1.jsonld     | CreditCardStatement     |
