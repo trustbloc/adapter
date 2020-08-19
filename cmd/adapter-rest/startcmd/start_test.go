@@ -214,6 +214,8 @@ func TestStartCmdValidArgs(t *testing.T) {
 		"--" + didCommDBPathFlagName, generateTempDir(t),
 		"--" + trustblocDomainFlagName, "http://example.trustbloc.com",
 		"--" + universalResolverURLFlagName, "http://uniresolver.trustbloc.com",
+		"--" + requestTokensFlagName, "token1=tk1",
+		"--" + requestTokensFlagName, "token2=tk2=tk2",
 	}
 	startCmd.SetArgs(args)
 
