@@ -18,6 +18,8 @@ import (
 	"github.com/PaesslerAG/jsonpath"
 	"github.com/hyperledger/aries-framework-go/pkg/doc/verifiable"
 	"github.com/piprate/json-gold/ld"
+
+	"github.com/trustbloc/edge-adapter/pkg/internal/common/adapterutil"
 )
 
 const (
@@ -46,9 +48,9 @@ type InputDescriptor struct {
 
 // Schema input descriptor schema.
 type Schema struct {
-	URI     string `json:"uri,omitempty"`
-	Name    string `json:"name,omitempty"`
-	Purpose string `json:"purpose,omitempty"`
+	URI     []string `json:"uri,omitempty"`
+	Name    string   `json:"name,omitempty"`
+	Purpose string   `json:"purpose,omitempty"`
 }
 
 // Constraints describe constraints on fields.
@@ -143,9 +145,9 @@ func (p *PresentationDefinitions) Match(vp *verifiable.Presentation, // nolint:g
 		inputDescriptor := p.inputDescriptor(mapping.ID)
 
 		// The schema of the candidate input must match one of the Input Descriptor schema object uri values exactly.
-		if !stringsContain(vc.Context, inputDescriptor.Schema.URI) {
+		if !adapterutil.StringsIntersect(vc.Context, inputDescriptor.Schema.URI) {
 			return nil, fmt.Errorf(
-				"input descriptor id [%s] requires schema uri [%s] which is not in vc context [%+v]",
+				"input descriptor id [%s] requires schema uri [%+v] which is not in vc context [%+v]",
 				inputDescriptor.ID, inputDescriptor.Schema.URI, vc.Context,
 			)
 		}

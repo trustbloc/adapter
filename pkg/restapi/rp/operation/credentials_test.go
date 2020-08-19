@@ -70,13 +70,13 @@ func TestParseWalletResponse(t *testing.T) {
 					{
 						ID: localID,
 						Schema: &presexch.Schema{
-							URI: "https://www.w3.org/2018/credentials/examples/v1",
+							URI: []string{"https://www.w3.org/2018/credentials/examples/v1"},
 						},
 					},
 					{
 						ID: remoteID,
 						Schema: &presexch.Schema{
-							URI: vc2.AuthorizationCredentialContext,
+							URI: []string{vc2.AuthorizationCredentialContext},
 						},
 					},
 				},
@@ -107,7 +107,7 @@ func TestParseWalletResponse(t *testing.T) {
 				InputDescriptors: []*presexch.InputDescriptor{{
 					ID: uuid.New().String(),
 					Schema: &presexch.Schema{
-						URI: vc2.AuthorizationCredentialContext,
+						URI: []string{vc2.AuthorizationCredentialContext},
 					},
 				}},
 			},
@@ -120,7 +120,7 @@ func TestParseWalletResponse(t *testing.T) {
 			InputDescriptors: []*presexch.InputDescriptor{{
 				ID: uuid.New().String(),
 				Schema: &presexch.Schema{
-					URI: vc2.AuthorizationCredentialContext,
+					URI: []string{vc2.AuthorizationCredentialContext},
 				},
 			}},
 		}
@@ -141,7 +141,7 @@ func TestParseWalletResponse(t *testing.T) {
 			InputDescriptors: []*presexch.InputDescriptor{{
 				ID: uuid.New().String(),
 				Schema: &presexch.Schema{
-					URI: vc2.AuthorizationCredentialContext,
+					URI: []string{vc2.AuthorizationCredentialContext},
 				},
 			}},
 		}

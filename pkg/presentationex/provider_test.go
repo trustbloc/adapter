@@ -15,6 +15,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 
+	"github.com/trustbloc/edge-adapter/pkg/internal/common/adapterutil"
 	"github.com/trustbloc/edge-adapter/pkg/presexch"
 )
 
@@ -48,7 +49,7 @@ func TestProvider_Create(t *testing.T) {
 				Schema: &presexch.Schema{
 					Name:    uuid.New().String(),
 					Purpose: uuid.New().String(),
-					URI:     uuid.New().String(),
+					URI:     []string{uuid.New().String()},
 				},
 			}
 		}
@@ -96,14 +97,14 @@ func (m *mockReader) Read([]byte) (int, error) {
 	return 0, m.err
 }
 
-func descriptor(t *testing.T, uri string, descriptors []*presexch.InputDescriptor) *presexch.InputDescriptor {
+func descriptor(t *testing.T, uri []string, descriptors []*presexch.InputDescriptor) *presexch.InputDescriptor {
 	for i := range descriptors {
-		if descriptors[i].Schema.URI == uri {
+		if adapterutil.StringsIntersect(descriptors[i].Schema.URI, uri) {
 			return descriptors[i]
 		}
 	}
 
-	require.Fail(t, "no descriptor found for schema uri %s", uri)
+	require.Fail(t, "no descriptor found for schema uri %+v", uri)
 
 	return nil
 }
