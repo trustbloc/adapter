@@ -21,7 +21,7 @@ import (
 
 var errInvalidCredential = errors.New("malformed credential")
 
-func parseWalletResponse(definitions *presexch.PresentationDefinitions,
+func parseWalletResponse(definitions *presexch.PresentationDefinitions, vdriReg vdriapi.Registry,
 	vpBytes []byte) (local, remote map[string]*verifiable.Credential, err error) {
 	vp, err := verifiable.ParsePresentation(vpBytes)
 	if err != nil {
@@ -29,7 +29,9 @@ func parseWalletResponse(definitions *presexch.PresentationDefinitions,
 			"%w: parseWalletResponse: failed to parse verifiable presentation: %s", errInvalidCredential, err.Error())
 	}
 
-	matched, err := definitions.Match(vp)
+	matched, err := definitions.Match(
+		vp,
+		presexch.WithPublicKeyFetcher(verifiable.NewDIDKeyResolver(vdriReg).PublicKeyFetcher()))
 	if err != nil {
 		return nil, nil, fmt.Errorf(
 			"%w: parseWalletResponse: invalid presentation submission: %s", errInvalidCredential, err.Error())

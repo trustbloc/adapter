@@ -636,6 +636,7 @@ func (s *Steps) walletCreatesAuthorizationCredential(wallet, tenant, issuer stri
 }
 
 func (s *Steps) issuerRepliesWithUserData(issuer, tenant string) error {
+	// TODO the issuer should sign this VC: https://github.com/trustbloc/edge-adapter/issues/269
 	vc := newCreditCardStatementVC()
 
 	bits, err := json.Marshal(vc.Subject)
