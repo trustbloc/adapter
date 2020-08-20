@@ -32,6 +32,7 @@ type txnData struct {
 	IssuerID          string                `json:"issuerID,omitempty"`
 	State             string                `json:"state,omitempty"`
 	DIDCommInvitation *outofband.Invitation `json:"didCommInvitation,omitempty"`
+	Token             string                `json:"token,omitempty"`
 }
 
 // CHAPIRequest wallet chapi request.
@@ -92,4 +93,14 @@ type UserDataRes struct {
 type UserMetadata struct {
 	Contexts []string `json:"contexts,omitempty"`
 	Scopes   []string `json:"scopes,omitempty"`
+}
+
+// IssuerTokenReq issuer user data token request.
+type IssuerTokenReq struct {
+	State string `json:"state,omitempty"`
+}
+
+// IssuerTokenResp issuer user data token response.
+type IssuerTokenResp struct {
+	Token string `json:"token,omitempty"`
 }

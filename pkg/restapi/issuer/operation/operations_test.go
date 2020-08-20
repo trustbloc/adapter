@@ -275,6 +275,13 @@ func TestConnectWallet(t *testing.T) {
 	endpoint := walletConnectEndpoint
 	urlVars := make(map[string]string)
 
+	tknResp := &IssuerTokenResp{
+		Token: uuid.New().String(),
+	}
+
+	tknRespBytes, err := json.Marshal(tknResp)
+	require.NoError(t, err)
+
 	t.Run("test connect wallet - success", func(t *testing.T) {
 		c, err := New(&Config{
 			AriesCtx:      getAriesCtx(),
@@ -282,6 +289,12 @@ func TestConnectWallet(t *testing.T) {
 			UIEndpoint:    uiEndpoint,
 		})
 		require.NoError(t, err)
+
+		c.httpClient = &mockHTTPClient{
+			respValue: &http.Response{
+				StatusCode: http.StatusOK, Body: ioutil.NopCloser(bytes.NewReader(tknRespBytes)),
+			},
+		}
 
 		data := createProfileData(profileID)
 		err = c.profileStore.SaveProfile(data)
@@ -305,6 +318,12 @@ func TestConnectWallet(t *testing.T) {
 		})
 		require.NoError(t, err)
 
+		c.httpClient = &mockHTTPClient{
+			respValue: &http.Response{
+				StatusCode: http.StatusOK, Body: ioutil.NopCloser(bytes.NewReader(tknRespBytes)),
+			},
+		}
+
 		walletConnectHandler := getHandler(t, c, endpoint)
 
 		urlVars[idPathParam] = profileID
@@ -322,6 +341,12 @@ func TestConnectWallet(t *testing.T) {
 			UIEndpoint:    uiEndpoint,
 		})
 		require.NoError(t, err)
+
+		c.httpClient = &mockHTTPClient{
+			respValue: &http.Response{
+				StatusCode: http.StatusOK, Body: ioutil.NopCloser(bytes.NewReader(tknRespBytes)),
+			},
+		}
 
 		data := createProfileData(profileID)
 		err = c.profileStore.SaveProfile(data)
@@ -359,6 +384,12 @@ func TestConnectWallet(t *testing.T) {
 		})
 		require.NoError(t, err)
 
+		c.httpClient = &mockHTTPClient{
+			respValue: &http.Response{
+				StatusCode: http.StatusOK, Body: ioutil.NopCloser(bytes.NewReader(tknRespBytes)),
+			},
+		}
+
 		data := createProfileData(profileID)
 		err = c.profileStore.SaveProfile(data)
 		require.NoError(t, err)
@@ -381,6 +412,12 @@ func TestConnectWallet(t *testing.T) {
 		})
 		require.NoError(t, err)
 
+		c.httpClient = &mockHTTPClient{
+			respValue: &http.Response{
+				StatusCode: http.StatusOK, Body: ioutil.NopCloser(bytes.NewReader(tknRespBytes)),
+			},
+		}
+
 		data := createProfileData(profileID)
 		err = c.profileStore.SaveProfile(data)
 		require.NoError(t, err)
@@ -398,6 +435,68 @@ func TestConnectWallet(t *testing.T) {
 
 		require.Equal(t, http.StatusInternalServerError, rr.Code)
 		require.Contains(t, rr.Body.String(), "failed to create txn")
+	})
+
+	t.Run("test connect wallet - retrieve token errors", func(t *testing.T) {
+		c, err := New(&Config{
+			AriesCtx:      getAriesCtx(),
+			StoreProvider: memstore.NewProvider(),
+			UIEndpoint:    uiEndpoint,
+		})
+		require.NoError(t, err)
+
+		c.httpClient = &mockHTTPClient{
+			respValue: &http.Response{
+				StatusCode: http.StatusBadRequest, Body: ioutil.NopCloser(bytes.NewReader([]byte("failed at issuer"))),
+			},
+		}
+
+		data := createProfileData(profileID)
+		err = c.profileStore.SaveProfile(data)
+		require.NoError(t, err)
+
+		walletConnectHandler := getHandler(t, c, endpoint)
+
+		urlVars[idPathParam] = profileID
+
+		// issuer http call error
+		rr := serveHTTPMux(t, walletConnectHandler, walletConnectEndpoint+"?"+stateQueryParam+"="+state, nil, urlVars)
+
+		require.Equal(t, http.StatusInternalServerError, rr.Code)
+		require.Contains(t, rr.Body.String(), "failed to get token from to the issuer")
+
+		// empty token from the issuer
+		tknRespBytes, err = json.Marshal(&IssuerTokenResp{})
+		require.NoError(t, err)
+
+		c.httpClient = &mockHTTPClient{
+			respValue: &http.Response{
+				StatusCode: http.StatusOK, Body: ioutil.NopCloser(bytes.NewReader(tknRespBytes)),
+			},
+		}
+
+		rr = serveHTTPMux(t, walletConnectHandler, walletConnectEndpoint+"?"+stateQueryParam+"="+state, nil, urlVars)
+
+		require.Equal(t, http.StatusInternalServerError, rr.Code)
+		require.Contains(t, rr.Body.String(), "received empty token from the issuer")
+
+		// issuer http call error
+		rr = serveHTTPMux(t, walletConnectHandler, walletConnectEndpoint+"?"+stateQueryParam+"="+state, nil, urlVars)
+
+		require.Equal(t, http.StatusInternalServerError, rr.Code)
+		require.Contains(t, rr.Body.String(), "failed to get token from to the issuer")
+
+		// invalid resp from issuer
+		c.httpClient = &mockHTTPClient{
+			respValue: &http.Response{
+				StatusCode: http.StatusOK, Body: ioutil.NopCloser(bytes.NewReader([]byte("invalid resp"))),
+			},
+		}
+
+		rr = serveHTTPMux(t, walletConnectHandler, walletConnectEndpoint+"?"+stateQueryParam+"="+state, nil, urlVars)
+
+		require.Equal(t, http.StatusInternalServerError, rr.Code)
+		require.Contains(t, rr.Body.String(), "issuer response parse error")
 	})
 }
 
@@ -429,8 +528,9 @@ func TestValidateWalletResponse(t *testing.T) {
 	connID := uuid.New().String()
 	threadID := uuid.New().String()
 	state := uuid.New().String()
+	token := uuid.New().String()
 
-	txnID, err := c.createTxn(data, state)
+	txnID, err := c.createTxn(data, state, token)
 	require.NoError(t, err)
 
 	txn, err := c.getTxn(txnID)
@@ -469,7 +569,6 @@ func TestValidateWalletResponse(t *testing.T) {
 		require.NoError(t, parseErr)
 
 		require.Equal(t, state, u.Query().Get(stateQueryParam))
-		require.True(t, u.Query().Get("token") != "")
 	})
 
 	t.Run("test validate response - missing cookie", func(t *testing.T) {
@@ -513,7 +612,7 @@ func TestValidateWalletResponse(t *testing.T) {
 	})
 
 	t.Run("test validate response - invalid vp", func(t *testing.T) {
-		txnID, err = c.createTxn(createProfileData("profile1"), uuid.New().String())
+		txnID, err = c.createTxn(createProfileData("profile1"), uuid.New().String(), token)
 		require.NoError(t, err)
 
 		rr := serveHTTP(t, handler.Handle(), http.MethodPost,
@@ -524,7 +623,7 @@ func TestValidateWalletResponse(t *testing.T) {
 	})
 
 	t.Run("test validate response - profile not found", func(t *testing.T) {
-		txnID, err = c.createTxn(createProfileData("invalid-profile"), uuid.New().String())
+		txnID, err = c.createTxn(createProfileData("invalid-profile"), uuid.New().String(), token)
 		require.NoError(t, err)
 
 		txn, err = c.getTxn(txnID)
@@ -637,7 +736,7 @@ func TestValidateWalletResponse(t *testing.T) {
 		err = ops.profileStore.SaveProfile(data)
 		require.NoError(t, err)
 
-		id, err := ops.createTxn(createProfileData(profileID), state)
+		id, err := ops.createTxn(createProfileData(profileID), state, token)
 		require.NoError(t, err)
 
 		ops.tokenStore = &mockstorage.MockStore{Store: make(map[string][]byte), ErrPut: errors.New("error put")}
@@ -675,7 +774,7 @@ func TestCHAPIRequest(t *testing.T) {
 		err = c.profileStore.SaveProfile(profile)
 		require.NoError(t, err)
 
-		txnID, err := c.createTxn(profile, uuid.New().String())
+		txnID, err := c.createTxn(profile, uuid.New().String(), uuid.New().String())
 		require.NoError(t, err)
 
 		getCHAPIRequestHandler := getHandler(t, c, getCHAPIRequestEndpoint)
@@ -708,7 +807,7 @@ func TestCHAPIRequest(t *testing.T) {
 		err = c.profileStore.SaveProfile(profile)
 		require.NoError(t, err)
 
-		txnID, err := c.createTxn(profile, uuid.New().String())
+		txnID, err := c.createTxn(profile, uuid.New().String(), uuid.New().String())
 		require.NoError(t, err)
 
 		getCHAPIRequestHandler := getHandler(t, c, getCHAPIRequestEndpoint)
@@ -760,7 +859,7 @@ func TestCHAPIRequest(t *testing.T) {
 
 		profile := createProfileData("profile1")
 
-		txnID, err := c.createTxn(profile, uuid.New().String())
+		txnID, err := c.createTxn(profile, uuid.New().String(), uuid.New().String())
 		require.NoError(t, err)
 
 		getCHAPIRequestHandler := getHandler(t, c, getCHAPIRequestEndpoint)

@@ -60,7 +60,7 @@ const (
 	idPathParam     = "id"
 	txnIDQueryParam = "txnID"
 	stateQueryParam = "state"
-	redirectURLFmt  = "%s?state=%s&token=%s"
+	redirectURLFmt  = "%s?state=%s"
 
 	txnStoreName   = "issuer_txn"
 	tokenStoreName = "issuer_token"
@@ -306,8 +306,23 @@ func (o *Operation) walletConnectHandler(rw http.ResponseWriter, req *http.Reque
 		return
 	}
 
+	tknResp, err := o.retrieveIssuerToken(profile, state)
+	if err != nil {
+		commhttp.WriteErrorResponseWithLog(rw, http.StatusInternalServerError,
+			fmt.Sprintf("failed to get token from to the issuer : %s", err.Error()), walletConnectEndpoint, logger)
+
+		return
+	}
+
+	if tknResp.Token == "" {
+		commhttp.WriteErrorResponseWithLog(rw, http.StatusInternalServerError,
+			"received empty token from the issuer", walletConnectEndpoint, logger)
+
+		return
+	}
+
 	// store the txn data
-	txnID, err := o.createTxn(profile, state)
+	txnID, err := o.createTxn(profile, state, tknResp.Token)
 	if err != nil {
 		commhttp.WriteErrorResponseWithLog(rw, http.StatusInternalServerError,
 			fmt.Sprintf("failed to create txn : %s", err.Error()), walletConnectEndpoint, logger)
@@ -373,12 +388,10 @@ func (o *Operation) validateWalletResponseHandler(rw http.ResponseWriter, req *h
 		return
 	}
 
-	token := uuid.New().String()
-
 	userConnMap := &UserConnectionMapping{
 		ConnectionID: conn.ConnectionID,
 		IssuerID:     txnData.IssuerID,
-		Token:        token,
+		Token:        txnData.Token,
 	}
 
 	err = o.storeUserConnectionMapping(userConnMap)
@@ -390,7 +403,7 @@ func (o *Operation) validateWalletResponseHandler(rw http.ResponseWriter, req *h
 		return
 	}
 
-	redirectURL := fmt.Sprintf(redirectURLFmt, getCallBackURL(profile.URL), txnData.State, token)
+	redirectURL := fmt.Sprintf(redirectURLFmt, getCallBackURL(profile.URL), txnData.State)
 
 	rw.WriteHeader(http.StatusOK)
 	commhttp.WriteResponseWithLog(rw,
@@ -479,7 +492,7 @@ func (o *Operation) validateAndGetConnection(connectData *issuervc.DIDConnectCre
 	return conn, nil
 }
 
-func (o *Operation) createTxn(profile *issuer.ProfileData, state string) (string, error) {
+func (o *Operation) createTxn(profile *issuer.ProfileData, state, token string) (string, error) {
 	invitation, err := o.oobClient.CreateInvitation(nil, outofband.WithLabel("issuer"))
 	if err != nil {
 		return "", fmt.Errorf("failed to create invitation : %w", err)
@@ -492,6 +505,7 @@ func (o *Operation) createTxn(profile *issuer.ProfileData, state string) (string
 		IssuerID:          profile.ID,
 		State:             state,
 		DIDCommInvitation: invitation,
+		Token:             token,
 	}
 
 	dataBytes, err := json.Marshal(data)
@@ -782,6 +796,34 @@ func (o *Operation) storeAuthorizationCredHandle(handle *AuthorizationCredential
 	return nil
 }
 
+func (o *Operation) retrieveIssuerToken(profile *issuer.ProfileData, state string) (*IssuerTokenResp, error) {
+	reqBytes, err := json.Marshal(&IssuerTokenReq{
+		State: state,
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPost, getTokenURL(profile.URL), bytes.NewBuffer(reqBytes))
+	if err != nil {
+		return nil, fmt.Errorf("create token request : %w", err)
+	}
+
+	respBytes, err := sendHTTPRequest(req, o.httpClient, http.StatusOK, "")
+	if err != nil {
+		return nil, fmt.Errorf("call issuer token service : %w", err)
+	}
+
+	var dataResp *IssuerTokenResp
+
+	err = json.Unmarshal(respBytes, &dataResp)
+	if err != nil {
+		return nil, fmt.Errorf("issuer response parse error : %w", err)
+	}
+
+	return dataResp, nil
+}
+
 func outofbandClient(ariesCtx outofband.Provider) (*outofband.Client, error) {
 	c, err := outofband.New(ariesCtx)
 	if err != nil {
@@ -974,6 +1016,10 @@ func getCallBackURL(issuerURL string) string {
 
 func getUserDataURL(issuerURL string) string {
 	return fmt.Sprintf("%s/data", issuerURL)
+}
+
+func getTokenURL(issuerURL string) string {
+	return fmt.Sprintf("%s/token", issuerURL)
 }
 
 func sendHTTPRequest(req *http.Request, client httpClient, status int, bearerToken string) ([]byte, error) {
