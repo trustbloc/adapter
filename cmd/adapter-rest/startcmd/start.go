@@ -226,6 +226,12 @@ type adapterRestParameters struct {
 	requestTokens        map[string]string
 }
 
+// governanceProvider governance provider.
+type governanceProvider interface {
+	IssueCredential(didID, profileID string) ([]byte, error)
+	GetCredential(profileID string) ([]byte, error)
+}
+
 type server interface {
 	ListenAndServe(host string, router http.Handler) error
 	ListenAndServeTLS(host, certFile, keyFile string, router http.Handler) error
@@ -627,12 +633,12 @@ func addRPHandlers(
 		return fmt.Errorf("failed to init edge storage: %w", err)
 	}
 
-	var governanceProvider *governance.Provider
+	var governanceProv governanceProvider
 
 	if parameters.governanceVCSURL != "" {
 		var errNew error
 
-		governanceProvider, errNew = newGovernanceProvider(parameters.governanceVCSURL, rootCAs, store,
+		governanceProv, errNew = newGovernanceProvider(parameters.governanceVCSURL, rootCAs, store,
 			parameters.requestTokens)
 		if errNew != nil {
 			return errNew
@@ -656,7 +662,7 @@ func addRPHandlers(
 			ctx.LegacyKMS(),
 			rootCAs),
 		AriesStorageProvider: ctx,
-		GovernanceProvider:   governanceProvider,
+		GovernanceProvider:   governanceProv,
 		PresentProofClient:   presentProofClient,
 	})
 	if err != nil {
@@ -684,12 +690,12 @@ func addIssuerHandlers(parameters *adapterRestParameters, ariesCtx ariespai.CtxP
 		return fmt.Errorf("failed to init storage provider : %w", err)
 	}
 
-	var governanceProvider *governance.Provider
+	var governanceProv governanceProvider
 
 	if parameters.governanceVCSURL != "" {
 		var errNew error
 
-		governanceProvider, errNew = newGovernanceProvider(parameters.governanceVCSURL, rootCAs, store,
+		governanceProv, errNew = newGovernanceProvider(parameters.governanceVCSURL, rootCAs, store,
 			parameters.requestTokens)
 		if errNew != nil {
 			return errNew
@@ -709,7 +715,7 @@ func addIssuerHandlers(parameters *adapterRestParameters, ariesCtx ariespai.CtxP
 			rootCAs,
 		),
 		TLSConfig:          &tls.Config{RootCAs: rootCAs},
-		GovernanceProvider: governanceProvider,
+		GovernanceProvider: governanceProv,
 	})
 
 	if err != nil {
