@@ -7,11 +7,12 @@ SPDX-License-Identifier: Apache-2.0
 package main
 
 import (
+	"encoding/json"
 	"fmt"
-	"io/ioutil"
 	"net/http"
 	"os"
 
+	"github.com/google/uuid"
 	"github.com/gorilla/mux"
 	"github.com/trustbloc/edge-core/pkg/log"
 )
@@ -29,31 +30,88 @@ func main() {
 	}
 
 	router := mux.NewRouter().StrictSlash(true)
+	router.HandleFunc("/{issuer}/token", tokenHandler).Methods(http.MethodPost)
 	router.HandleFunc("/{issuer}/data", createUserDataVCHandler).Methods(http.MethodPost)
 
 	logger.Fatalf("issuer server start error %s", http.ListenAndServe(fmt.Sprintf(addressPattern, port), router))
 }
 
+func tokenHandler(rw http.ResponseWriter, req *http.Request) {
+	token := uuid.New().String()
+
+	resp := &issuerTokenResp{
+		Token: token,
+	}
+
+	respBytes, err := json.Marshal(resp)
+	if err != nil {
+		WriteErrorResponseWithLog(rw, http.StatusInternalServerError,
+			fmt.Sprintf("[issuer] failed to send token resp - err:%s", err.Error()), req.RequestURI, logger)
+	}
+
+	tokenStore[token] = true
+
+	_, err = rw.Write(respBytes)
+	if err != nil {
+		WriteErrorResponseWithLog(rw, http.StatusInternalServerError,
+			fmt.Sprintf("[issuer] failed to send token resp - err:%s", err.Error()), req.RequestURI, logger)
+	}
+
+	rw.WriteHeader(http.StatusOK)
+}
+
 func createUserDataVCHandler(rw http.ResponseWriter, req *http.Request) {
 	vars := mux.Vars(req)
 
-	msg, err := ioutil.ReadAll(req.Body)
-	if err != nil {
-		logger.Errorf("[issuer] failed to read request - err:%s", err.Error())
-		rw.WriteHeader(http.StatusBadRequest)
+	data := &userDataReq{}
+
+	if err := json.NewDecoder(req.Body).Decode(&data); err != nil {
+		WriteErrorResponseWithLog(rw, http.StatusBadRequest,
+			fmt.Sprintf("[issuer] invalid request - err:%s", err.Error()), req.RequestURI, logger)
 	}
 
-	// TODO add validation, for now return VC
+	tokenStore[data.Token] = true
 
-	_, err = rw.Write([]byte(dataMap[vars["issuer"]]))
+	_, ok := tokenStore[data.Token]
+	if !ok {
+		WriteErrorResponseWithLog(rw, http.StatusBadRequest, "invalid token", req.RequestURI, logger)
+	}
+
+	_, err := rw.Write([]byte(dataMap[vars["issuer"]]))
 	if err != nil {
-		logger.Errorf("[issuer] failed to send vc - err:%s", err.Error())
-		rw.WriteHeader(http.StatusBadRequest)
+		WriteErrorResponseWithLog(rw, http.StatusInternalServerError,
+			fmt.Sprintf("[issuer] failed to send vc - err:%s", err.Error()), req.RequestURI, logger)
 	}
 
 	rw.WriteHeader(http.StatusOK)
 
-	logger.Infof("[issuer] req: %s resp=%s", string(msg), prCardData)
+	logger.Infof("[issuer] req: %s resp=%s", data.Token, prCardData)
+}
+
+type userDataReq struct {
+	Token string `json:"token,omitempty"`
+}
+
+type issuerTokenResp struct {
+	Token string `json:"token,omitempty"`
+}
+
+type errorResponse struct {
+	Message string `json:"errMessage,omitempty"`
+}
+
+func WriteErrorResponseWithLog(rw http.ResponseWriter, status int, msg, endpoint string, logger log.Logger) {
+	logger.Errorf("endpoint=[%s] status=[%d] errMsg=[%s]", endpoint, status, msg)
+
+	rw.WriteHeader(status)
+
+	err := json.NewEncoder(rw).Encode(errorResponse{
+		Message: msg,
+	})
+
+	if err != nil {
+		logger.Errorf("Unable to send error message, %s", err)
+	}
 }
 
 const (
@@ -115,7 +173,8 @@ const (
 
 var (
 	// nolint:gochecknoglobals
-	dataMap = make(map[string]string)
+	dataMap    = make(map[string]string)
+	tokenStore = make(map[string]bool)
 )
 
 // nolint:gochecknoinits
