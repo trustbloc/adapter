@@ -22,48 +22,11 @@ var logger = log.New("edge-adapter/governance")
 
 const (
 	governanceProfileName         = "governance" // TODO make it configurable
-	issueCredentialURLFormat      = "%s/%s" + "/credentials/issueCredential"
+	issueCredentialURLFormat      = "%s/governance/%s" + "/issueCredential"
 	storeName                     = "governance"
 	governanceVCKey               = "%s_governance_vc"
 	vcsGovernanceRequestTokenName = "vcs_governance" //nolint: gosec
 )
-
-// TODO generate vc from governance vcs https://github.com/trustbloc/edge-service/issues/469
-// nolint: gochecknoglobals
-var governanceJSONLdDoc = `{
- "@context": [
-   "https://www.w3.org/2018/credentials/v1",
-   "https://trustbloc.github.io/context/governance/context.jsonld"
- ],
- "type": "VerifiableCredential",
- "id": "http://governance.gov/credentials/3732",
- "issuanceDate": "2020-03-16T22:37:26.544Z",
- "issuer": {
-   "id": "did:example:oakek12as93mas91220dapop092",
-   "name": "Governance"
- },
- "credentialSubject": {
-   "name": "trustbloc",
-   "version": "1.0",
-   "logo": "https://example.com/logo",
-   "description": "Trustbloc Governs.",
-   "docs_uri": "https://example.com/docs",
-   "data_uri": "https://example.com/data.json",
-   "topics": ["banking"],
-   "jurisdictions": ["ca"],
-   "geos": ["Canadian"],
-   "roles": ["accreditor"],
-   "privileges": [
-       {"name": "accredit", "uri": "https://example.com/accredit"}
-   ],
-  "duties": [
-       {"name": "safe-accredit", "uri": "https://example.com/responsible-accredit"}
-    ],
-   "define": [
-       {"name": "DID", "id": "%s"}
-   ]
- }
-}`
 
 type httpClient interface {
 	Do(req *http.Request) (*http.Response, error)
@@ -71,7 +34,7 @@ type httpClient interface {
 
 // issueCredentialRequest request for issuing credential.
 type issueCredentialRequest struct {
-	Credential json.RawMessage `json:"credential,omitempty"`
+	DID string `json:"did,omitempty"`
 }
 
 // Provider provide governance operation.
@@ -115,9 +78,7 @@ func (p *Provider) IssueCredential(didID, profileID string) ([]byte, error) {
 }
 
 func (p *Provider) issueCredential(didID, profileID string) ([]byte, error) {
-	req := &issueCredentialRequest{
-		Credential: []byte(fmt.Sprintf(governanceJSONLdDoc, didID)),
-	}
+	req := &issueCredentialRequest{DID: didID}
 
 	reqBytes, err := json.Marshal(req)
 	if err != nil {
