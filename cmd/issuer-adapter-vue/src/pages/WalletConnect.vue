@@ -5,15 +5,15 @@ SPDX-License-Identifier: Apache-2.0
 -->
 
 <template>
+    <div>
+    <navbar-component></navbar-component>
     <div class="text-center">
-
-        <br/>
-        <h2 class="blue bg-aqua text-black">Connect Wallet to the Issuer (DIDComm)</h2>
-        <br/>
-
-        <p v-if="connectWalletSuccess">Wallet Connected Successfully.
+        <h2 class="blue bg-aqua text-black">Connecting Wallet to Issuer</h2>
+        <div></div>
+        <p tyle="color:green;" v-if="connectWalletSuccess">Wallet Connected Successfully.
         <p style="color:red;">{{ connectWalletErr }}</p>
-
+    </div>
+        <footer-component></footer-component>
     </div>
 </template>
 
