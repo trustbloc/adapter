@@ -4,14 +4,14 @@ Copyright SecureKey Technologies Inc. All Rights Reserved.
 SPDX-License-Identifier: Apache-2.0
 */
 
-import Layout from "@/pages/layout/Layout";
+import Landing from "@/pages/views/Landing";
 import WalletConnect from '@/pages/WalletConnect'
 import NotFound from '@/pages/PageNotFound'
 
 const routes = [
     {
         path: "/ui",
-        component: Layout,
+        component: Landing,
         name: "main",
         redirect: "ui/walletConnect",
         children: [
@@ -25,7 +25,7 @@ const routes = [
     {
         path: '*',
         name: 'NotFound',
-        component: Layout,
+        component: Landing,
         children: [
             {
                 path: "*",
