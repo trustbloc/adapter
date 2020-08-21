@@ -28,11 +28,12 @@ services:
       - EDV_REST_HOST_URL=${EDV_HOST}:${EDV_PORT}${EDV_ROOT_ENDPOINT}
       - UNIVERSAL_RESOLVER_HOST_URL=http://did.rest.example.com:8072/1.0/identifiers
       - BLOC_DOMAIN=${BLOC_DOMAIN}
-      - VC_REST_MODE=issuer
+      - VC_REST_MODE=governance
       - DATABASE_TYPE=mem
       - KMSSECRETS_DATABASE_TYPE=mem
       - VC_REST_TLS_CACERTS=/etc/tls/ec-cacert.pem
       - VC_REST_TLS_SYSTEMCERTPOOL=true
+      - VC_REST_GOVERNANCE_CLAIMS_FILE=/etc/governance_claims.json
     ports:
       - 8066:8066
     entrypoint: ""
@@ -40,6 +41,7 @@ services:
     volumes:
       - ./governance-vcs-profiles.sh/:/tmp/governance-vcs-profiles.sh
       - ../keys/tls:/etc/tls
+      - ./governance_claims.json:/etc/governance_claims.json
     depends_on:
       - edv.rest.example.com
     networks:
