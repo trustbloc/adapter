@@ -770,7 +770,7 @@ func (o *Operation) chapiResponseHandler(w http.ResponseWriter, r *http.Request)
 	// TODO save user Consent VC https://github.com/trustbloc/edge-adapter/issues/92
 	// TODO validate the user consent credential (expected rp and user DIDs, etc.)
 
-	local, remote, err := parseWalletResponse(crCtx.PD, request.VerifiablePresentation)
+	local, remote, err := parseWalletResponse(crCtx.PD, o.vdriReg, request.VerifiablePresentation)
 	if err != nil {
 		if errors.Is(err, errInvalidCredential) {
 			handleError(w, http.StatusBadRequest, fmt.Sprintf("malformed credentials: %s", err.Error()))

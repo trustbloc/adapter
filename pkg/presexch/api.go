@@ -79,6 +79,7 @@ type InputDescriptorMapping struct {
 // MatchOptions is a holder of options that can set when matching a submission against definitions.
 type MatchOptions struct {
 	JSONLDDocumentLoader ld.DocumentLoader
+	PublicKeyFetcher     verifiable.PublicKeyFetcher
 }
 
 // MatchOption is an option that sets an option for when matching.
@@ -88,6 +89,14 @@ type MatchOption func(*MatchOptions)
 func WithJSONLDDocumentLoader(l ld.DocumentLoader) MatchOption {
 	return func(m *MatchOptions) {
 		m.JSONLDDocumentLoader = l
+	}
+}
+
+// WithPublicKeyFetcher sets the key fetcher that resolves the key references in credentials and definitions when
+// verifying their proofs.
+func WithPublicKeyFetcher(fetcher verifiable.PublicKeyFetcher) MatchOption {
+	return func(m *MatchOptions) {
+		m.PublicKeyFetcher = fetcher
 	}
 }
 
@@ -137,7 +146,7 @@ func (p *PresentationDefinitions) Match(vp *verifiable.Presentation, // nolint:g
 				descriptorMapProperty, mapping.ID)
 		}
 
-		vc, selectErr := selectByPath(builder, typelessVP, mapping.Path, opts.JSONLDDocumentLoader)
+		vc, selectErr := selectByPath(builder, typelessVP, mapping.Path, opts.JSONLDDocumentLoader, opts.PublicKeyFetcher)
 		if selectErr != nil {
 			return nil, fmt.Errorf("failed to select vc from submission: %w", selectErr)
 		}
@@ -239,7 +248,7 @@ func descriptorIDs(input []*InputDescriptor) []string {
 // string expression that selects the credential to be submit in relation to the identified Input Descriptor
 // identified, when executed against the top-level of the object the Presentation Submission is embedded within.
 func selectByPath(builder gval.Language, vp interface{}, jsonPath string,
-	loader ld.DocumentLoader) (*verifiable.Credential, error) {
+	loader ld.DocumentLoader, keyFetcher verifiable.PublicKeyFetcher) (*verifiable.Credential, error) {
 	path, err := builder.NewEvaluable(jsonPath)
 	if err != nil {
 		return nil, fmt.Errorf("failed to build new json path evaluator: %w", err)
@@ -259,6 +268,10 @@ func selectByPath(builder gval.Language, vp interface{}, jsonPath string,
 
 	if loader != nil {
 		vcOpts = append(vcOpts, verifiable.WithJSONLDDocumentLoader(loader))
+	}
+
+	if keyFetcher != nil {
+		vcOpts = append(vcOpts, verifiable.WithPublicKeyFetcher(keyFetcher))
 	}
 
 	vc, err := verifiable.ParseCredential(credBits, vcOpts...)
