@@ -23,11 +23,29 @@ SPDX-License-Identifier: Apache-2.0
                             <img class="max-w-full rounded-lg shadow-lg" src="../assets/img/rp_wallet.jpg"/>
                         </div>
                         <div class="w-full md:w-5/12 ml-auto mr-auto px-4">
-                            <i class="fas fa-cog fa-spin text-4xl items-center"></i>
                             <div class="md:pr-12">
-                                <h3 class="text-3xl font-semibold">
-                                    RP requesting credential(s) from  User's Wallet</h3>
-                                <ul class="list-none mt-6">
+                                <ul class="list-none">
+                                    <li class="py-2">
+                                        <div class="flex items-center">
+                                            <div><span class="text-4xl font-semibold inline-block py-1 px-2 uppercase rounded-full text-pink-600 bg-pink-200 mr-3">
+                                                 <i class="fas fa-cog fa-spin text-4xl items-center"></i></span>
+                                            </div>
+                                            <div>
+                                                <h4 class="text-3xl font-bold">
+                                                    RP requesting credential(s) from Wallet
+                                                </h4>
+                                            </div>
+                                        </div>
+                                    </li>
+                                    <li class="py-2 px-4">
+                                        <div class="flex items-center">
+                                        <div>
+                                            <a class="no-underline hover:underline font-bold text-blue-700"
+                                               href="https://github.com/trustbloc/edge-sandbox/blob/master/docs/demo/sandbox_nondidcomm_playground.md">
+                                                <i class="fas fa-info-circle text-xl"></i>  Find more about User's wallet here</a>
+                                        </div>
+                                        </div>
+                                    </li>
                                 </ul>
                             </div>
                         </div>

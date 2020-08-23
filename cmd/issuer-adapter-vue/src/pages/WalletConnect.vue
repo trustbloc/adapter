@@ -7,12 +7,33 @@ SPDX-License-Identifier: Apache-2.0
 <template>
     <div>
     <navbar-component></navbar-component>
-    <div class="text-center">
-        <h2 class="blue bg-aqua text-black">Connecting Wallet to Issuer</h2>
-        <div></div>
-        <p tyle="color:green;" v-if="connectWalletSuccess">Wallet Connected Successfully.
-        <p style="color:red;">{{ connectWalletErr }}</p>
-    </div>
+        <div class="container mx-auto px-2">
+            <div class="items-center flex flex-wrap">
+                <div class="w-full md:w-4/12 ml-auto mr-auto px-4">
+                </div>
+                <div class="w-full md:w-5/12 ml-auto mr-auto px-2">
+                    <div class="md:pr-12">
+                        <ul class="list-none mt-6">
+                            <li class="py-2">
+                                <div class="flex items-center">
+                                    <div>
+                                            <p class="text-2xl font-bold" style="color: red">{{ connectWalletErr }}</p>
+                                    </div>
+                                </div>
+                            </li>
+                            <li class="py-2">
+                                <div class="flex items-center">
+                                    <div>
+                                        <p class="text-2xl font-bold" v-if="connectWalletSuccess" style="color:green">
+                                            <i class="fa fa-check-circle"></i>Wallet Connected Successfully.</p>
+                                    </div>
+                                </div>
+                            </li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+        </div>
         <footer-component></footer-component>
     </div>
 </template>
