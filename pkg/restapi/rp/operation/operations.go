@@ -861,14 +861,8 @@ WaitForRemoteCredentials:
 	// TODO validate all credentials against presentation definitions:
 	//  https://github.com/trustbloc/edge-adapter/issues/108
 
-	result := make([]*verifiable.Credential, 0)
-
-	for _, cred := range userData {
-		result = append(result, cred)
-	}
-
 	// accept at hydra and return response to user
-	o.handleUserDataSuccess(w, r, result, crCtx)
+	o.handleUserDataSuccess(w, r, userData, crCtx)
 }
 
 func (o *Operation) requestRemoteCredential(authz *verifiable.Credential,
@@ -921,7 +915,7 @@ func (o *Operation) requestRemoteCredential(authz *verifiable.Credential,
 }
 
 func (o *Operation) handleUserDataSuccess(w http.ResponseWriter, r *http.Request,
-	userData []*verifiable.Credential, crCtx *consentRequestCtx) {
+	userData map[string]*verifiable.Credential, crCtx *consentRequestCtx) {
 	rpData, err := transformUserData(userData)
 	if err != nil {
 		handleError(w, http.StatusInternalServerError, fmt.Sprintf("failed to map VCs into RP object : %s", err))
@@ -958,12 +952,13 @@ func (o *Operation) handleUserDataSuccess(w http.ResponseWriter, r *http.Request
 }
 
 // https://openid.net/specs/openid-connect-4-identity-assurance-1_0.html
-func transformUserData(userData []*verifiable.Credential) (map[string]interface{}, error) {
-	verifiedClaims := make([]interface{}, len(userData))
-	transformIdx := 0
+func transformUserData(userData map[string]*verifiable.Credential) (map[string]interface{}, error) {
+	claimNames := make(map[string]string)
+	claimSources := make(map[string]interface{})
+	idx := 1
 
-	for i := range userData {
-		raw, err := json.Marshal(userData[i].Subject)
+	for scope, cred := range userData {
+		raw, err := json.Marshal(cred.Subject)
 		if err != nil {
 			return nil, fmt.Errorf("failed to marshal user data subject: %w", err)
 		}
@@ -975,15 +970,19 @@ func transformUserData(userData []*verifiable.Credential) (map[string]interface{
 			return nil, fmt.Errorf("failed to unmarshal user data subject: %w", err)
 		}
 
-		for j := range data {
-			filtered := filterJSONLDisms(data[j])
-			verifiedClaims[transformIdx] = filtered
-			transformIdx++
+		ref := fmt.Sprintf("src%d", idx)
+
+		claimNames[scope] = ref
+		claimSources[ref] = map[string]interface{}{
+			"claims": filterJSONLDisms(data[0]),
 		}
+
+		idx++
 	}
 
 	return map[string]interface{}{
-		"verified_claims": verifiedClaims,
+		"_claim_names":   claimNames,
+		"_claim_sources": claimSources,
 	}, nil
 }
 

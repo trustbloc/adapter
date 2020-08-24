@@ -66,7 +66,7 @@ type tenantContext struct {
 	walletConnID        string
 	invitationID        string
 	chapiResponseResult *handleChapiResponseCallResult
-	expectedUserData    []map[string]interface{}
+	expectedUserData    map[string]interface{}
 	oidcProvider        *oidc.Provider
 	oauth2Config        *oauth2.Config
 	callbackReceived    *url.URL
@@ -77,6 +77,16 @@ type tenantContext struct {
 type handleChapiResponseCallResult struct {
 	result *operation.HandleCHAPIResponseResult
 	err    error
+}
+
+// nolint:gochecknoglobals
+var localCredentials = map[string]func() *verifiable.Credential{
+	"driver_license:local": newDriversLicenseVC,
+}
+
+// nolint:gochecknoglobals
+var remoteCredentials = map[string]func() *verifiable.Credential{
+	"credit_card_stmt:remote": newCreditCardStatementVC,
 }
 
 // Steps is the BDD steps for the RP Adapter BDD tests.
@@ -164,6 +174,7 @@ func (s *Steps) createTenant(label, scopesStr string) error {
 		label:                  label,
 		callbackURL:            callbackURL,
 		callbackServer:         callbackServer,
+		expectedUserData:       make(map[string]interface{}),
 	}
 
 	return nil
@@ -609,7 +620,10 @@ func (s *Steps) walletCreatesAuthorizationCredential(wallet, tenant, issuer stri
 		return nil, fmt.Errorf("failed to create user authorization credential : %w", err)
 	}
 
-	driversLicenseVC := newDriversLicenseVC()
+	localCred, err := s.findCred(tenant, localCredentials)
+	if err != nil {
+		return nil, fmt.Errorf("'%s' failed to find a remote test credential: %w", issuer, err)
+	}
 
 	tenantCtx := s.tenantCtx[tenant]
 
@@ -626,7 +640,7 @@ func (s *Steps) walletCreatesAuthorizationCredential(wallet, tenant, issuer stri
 				},
 			},
 		},
-		authzVC, driversLicenseVC,
+		authzVC, localCred,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create presentation submission VP : %w", err)
@@ -637,25 +651,12 @@ func (s *Steps) walletCreatesAuthorizationCredential(wallet, tenant, issuer stri
 
 func (s *Steps) issuerRepliesWithUserData(issuer, tenant string) error {
 	// TODO the issuer should sign this VC: https://github.com/trustbloc/edge-adapter/issues/269
-	vc := newCreditCardStatementVC()
-
-	bits, err := json.Marshal(vc.Subject)
+	remoteCred, err := s.findCred(tenant, remoteCredentials)
 	if err != nil {
-		return fmt.Errorf(`"%s" failed to marshal credential subject : %w`, issuer, err)
+		return fmt.Errorf("'%s' failed to find a remote test credential: %w", issuer, err)
 	}
 
-	expected := make(map[string]interface{})
-
-	err = json.Unmarshal(bits, &expected)
-	if err != nil {
-		return fmt.Errorf(`"%s" failed to unmarshal credential subject : %w`, issuer, err)
-	}
-
-	tenantCtx := s.tenantCtx[tenant]
-
-	tenantCtx.expectedUserData = []map[string]interface{}{expected}
-
-	vp, err := newPresentationSubmissionVP(nil, vc)
+	vp, err := newPresentationSubmissionVP(nil, remoteCred)
 	if err != nil {
 		return fmt.Errorf("failed to create verifiable presentation : %w", err)
 	}
@@ -666,6 +667,45 @@ func (s *Steps) issuerRepliesWithUserData(issuer, tenant string) error {
 	}
 
 	return nil
+}
+
+func (s *Steps) findCred(
+	tenant string, suppliers map[string]func() *verifiable.Credential) (*verifiable.Credential, error) {
+	tenantCtx := s.tenantCtx[tenant]
+
+	var cred *verifiable.Credential
+
+	for _, scope := range tenantCtx.scope {
+		f, supported := suppliers[scope]
+		if !supported {
+			continue
+		}
+
+		cred = f()
+
+		bits, err := json.Marshal(cred.Subject)
+		if err != nil {
+			return nil, fmt.Errorf(`failed to marshal credential subject: %w`, err)
+		}
+
+		expected := make(map[string]interface{})
+
+		err = json.Unmarshal(bits, &expected)
+		if err != nil {
+			return nil, fmt.Errorf(`failed to unmarshal credential subject: %w`, err)
+		}
+
+		tenantCtx.expectedUserData[scope] = expected
+
+		break
+	}
+
+	if cred == nil {
+		return nil, fmt.Errorf(
+			"scopes [%+v] not supported by test credential suppliers %+v", tenantCtx.scope, suppliers)
+	}
+
+	return cred, nil
 }
 
 func (s *Steps) userRedirectBackToTenant(tenant string) error {
@@ -742,35 +782,51 @@ func (s *Steps) rpTenantRetrievesUserData(tenant string) error {
 		return fmt.Errorf(`"%s" failed to verify idToken "%s" : %w`, tenant, idToken, err)
 	}
 
+	return s.validate(tenant, idToken)
+}
+
+func (s *Steps) validate(tenant string, idToken *oidc.IDToken) error {
+	tenantCtx := s.tenantCtx[tenant]
 	claims := make(map[string]interface{})
 
-	err = idToken.Claims(&claims)
+	err := idToken.Claims(&claims)
 	if err != nil {
 		return fmt.Errorf(`"%s" failed to extract the claims from the id_token : %w`, tenant, err)
 	}
 
-	verifiedClaims, ok := claims["verified_claims"].([]interface{})
-	if !ok {
-		return fmt.Errorf(
-			"unexpected container format for verified_claims: %s", reflect.TypeOf(claims["verified_claims"]).String())
+	claimNames, found := claims["_claim_names"].(map[string]interface{})
+	if !found {
+		return fmt.Errorf("'%s' did not find '_claim_names' in the id_token", tenant)
 	}
 
-	found := 0
+	claimSources, found := claims["_claim_sources"].(map[string]interface{})
+	if !found {
+		return fmt.Errorf("'%s' did not find '_claim_sources' in the id_token", tenant)
+	}
 
-	for i := range tenantCtx.expectedUserData {
-		for j := range verifiedClaims {
-			if reflect.DeepEqual(tenantCtx.expectedUserData[i], verifiedClaims[j]) {
-				found++
-
-				break
-			}
+	for scope, expected := range tenantCtx.expectedUserData {
+		src, found := claimNames[scope].(string)
+		if !found {
+			return fmt.Errorf("'%s' did not find scope '%s' in _claim_names", tenant, scope)
 		}
-	}
 
-	if found != len(tenantCtx.expectedUserData) {
-		return fmt.Errorf(
-			`"%s" did not get the expected data from the issuer: expected=%+v actual=%+v`,
-			tenant, tenantCtx.expectedUserData, verifiedClaims)
+		received, found := claimSources[src].(map[string]interface{})
+		if !found {
+			return fmt.Errorf("'%s' did not find a claimSource for scope %s", tenant, scope)
+		}
+
+		actual, found := received["claims"].(map[string]interface{})
+		if !found {
+			return fmt.Errorf(
+				"'%s' did not find a 'claims' container inside verified_claims for scope %s",
+				tenant, scope)
+		}
+
+		if !reflect.DeepEqual(expected, actual) {
+			return fmt.Errorf(
+				"'%s' did not receive the data expected from the issuer. got: %+v want: %+v",
+				tenant, actual, expected)
+		}
 	}
 
 	return nil
