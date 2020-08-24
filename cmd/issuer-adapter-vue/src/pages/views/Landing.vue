@@ -24,18 +24,34 @@ SPDX-License-Identifier: Apache-2.0
                         </div>
                         <div class="w-full md:w-5/12 ml-auto mr-auto px-2">
                             <div class="md:pr-12">
-                                <i class="fas fa-sync fa-spin text-4xl items-center"></i>
-                                <h3 class="text-3xl font-semibold">Connecting Issuer to User Wallet</h3>
-                                <ul class="list-none mt-6">
+                                <ul class="list-none">
                                     <li class="py-2">
                                         <div class="flex items-center">
                                             <div><span class="text-xs font-semibold inline-block py-1 px-2 uppercase rounded-full text-pink-600 bg-pink-200 mr-3">
-                                                <i class="fas fa-fingerprint"></i></span>
+                                                  <i class="fas fa-sync fa-spin text-4xl"></i></span>
                                             </div>
+                                            <div>
+                                                <h4 class="text-3xl font-bold">
+                                                    Connecting Issuer to Wallet
+                                                </h4>
+                                            </div>
+                                        </div>
+                                    </li>
+                                    <li class="py-2">
+                                        <div class="flex items-center">
                                             <div>
                                                 <h4 class="text-gray-600">
                                                     Issuer adapter establishes the connection between issuer and user digital wallet
                                                 </h4>
+                                            </div>
+                                        </div>
+                                    </li>
+                                    <li class="py-4 px-4">
+                                        <div class="flex items-center">
+                                            <div>
+                                                <a class="no-underline hover:underline font-bold text-blue-700"
+                                                   href="https://github.com/trustbloc/edge-sandbox/blob/master/docs/demo/sandbox_nondidcomm_playground.md">
+                                                    <i class="fas fa-info-circle text-xl"></i> Find more about User's wallet here</a>
                                             </div>
                                         </div>
                                     </li>
@@ -44,6 +60,9 @@ SPDX-License-Identifier: Apache-2.0
                         </div>
                     </div>
                 </div>
+                <transition name="fade" mode="out-in">
+                    <router-view></router-view>
+                </transition>
             </section>
         </main>
         <footer-component></footer-component>

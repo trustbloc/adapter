@@ -8,7 +8,7 @@ SPDX-License-Identifier: Apache-2.0
   <footer class="relative gradient pt-8 pb-6">
     <div class="container mx-auto px-4">
       <div class="flex flex-wrap items-center md:justify-between justify-center">
-        <div class="w-full md:w-2/12 px-4 mx-auto text-center">
+        <div class="w-full md:w-1/2 px-4 mx-auto text-center">
           <div class="text-sm text-white font-semibold py-1">
             Copyright © <a href="https://securekey.com/" rel="nofollow">SecureKey Technologies</a> and the TrustBloc Contributors.
 

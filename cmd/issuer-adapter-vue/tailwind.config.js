@@ -4,7 +4,7 @@ module.exports = {
     enabled: true,
     content: [
       'src/components/**/*.vue',
-      'src/pages/layouts/*.vue',
+      'src/pages/views/*.vue',
       'src/pages/**/*.vue',
       'src/*.vue',
       'src/*.js'
