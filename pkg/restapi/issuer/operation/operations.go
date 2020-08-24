@@ -243,12 +243,7 @@ func (o *Operation) createIssuerProfileHandler(rw http.ResponseWriter, req *http
 		return
 	}
 
-	created := time.Now().UTC()
-	profileData := &issuer.ProfileData{
-		ID: data.ID, Name: data.Name, SupportedVCContexts: data.SupportedVCContexts, URL: data.URL,
-		CredentialSigningKey:   newDidDoc.AssertionMethod[0].PublicKey.ID,
-		PresentationSigningKey: newDidDoc.Authentication[0].PublicKey.ID, CreatedAt: &created,
-	}
+	profileData := mapProfileReqToData(data, newDidDoc)
 
 	err = o.profileStore.SaveProfile(profileData)
 	if err != nil {
@@ -410,7 +405,7 @@ func (o *Operation) validateWalletResponseHandler(rw http.ResponseWriter, req *h
 		&ValidateConnectResp{RedirectURL: redirectURL}, validateConnectResponseEndpoint, logger)
 }
 
-func (o *Operation) getCHAPIRequestHandler(rw http.ResponseWriter, req *http.Request) {
+func (o *Operation) getCHAPIRequestHandler(rw http.ResponseWriter, req *http.Request) { // nolint:funlen
 	// get the txnID
 	txnID := req.URL.Query().Get(txnIDQueryParam)
 
@@ -460,12 +455,61 @@ func (o *Operation) getCHAPIRequestHandler(rw http.ResponseWriter, req *http.Req
 		}
 	}
 
+	var credentials []json.RawMessage
+
+	// append manifest credential
+	credentials = append(credentials, manifestVC)
+
+	if profile.SupportsAssuranceCredential {
+		vcBytes, err := o.createReferenceCredential(txnData.Token, profile)
+		if err != nil {
+			commhttp.WriteErrorResponseWithLog(rw, http.StatusInternalServerError,
+				fmt.Sprintf("error creating reference credential : %s", err.Error()), getCHAPIRequestEndpoint, logger)
+
+			return
+		}
+
+		credentials = append(credentials, vcBytes)
+	}
+
 	commhttp.WriteResponseWithLog(rw, &CHAPIRequest{
-		Query:                &CHAPIQuery{Type: DIDConnectCHAPIQueryType},
-		DIDCommInvitation:    txnData.DIDCommInvitation,
+		Query:             &CHAPIQuery{Type: DIDConnectCHAPIQueryType},
+		DIDCommInvitation: txnData.DIDCommInvitation,
+		// TODO - https://github.com/trustbloc/edge-adapter/issues/281 Remove manifest attribute once
+		//  wallet is updated, as it would be part of credentials array
 		Manifest:             manifestVC,
+		Credentials:          credentials,
 		CredentialGovernance: governanceVC,
 	}, getCHAPIRequestEndpoint, logger)
+}
+
+func (o *Operation) createReferenceCredential(token string, profile *issuer.ProfileData) ([]byte, error) {
+	vc, err := o.createCredential(token, profile, false)
+	if err != nil {
+		return nil, fmt.Errorf("create credential : %w", err)
+	}
+
+	// TODO - https://github.com/trustbloc/edge-adapter/issues/280 Add hash of the vc
+	refCredData := &ReferenceCredentialData{
+		ID: vc.ID,
+	}
+
+	refCredDataBytes, err := json.Marshal(refCredData)
+	if err != nil {
+		return nil, fmt.Errorf("marshal reference credential data : %w", err)
+	}
+
+	err = o.txnStore.Put(token, refCredDataBytes)
+	if err != nil {
+		return nil, fmt.Errorf("store reference credential data : %w", err)
+	}
+
+	vcBytes, err := vc.MarshalJSON()
+	if err != nil {
+		return nil, fmt.Errorf("marshal reference credential : %w", err)
+	}
+
+	return vcBytes, nil
 }
 
 func (o *Operation) validateAndGetConnection(connectData *issuervc.DIDConnectCredentialSubject) (*connection.Record, error) { // nolint: lll
@@ -709,15 +753,23 @@ func (o *Operation) handleRequestPresentation(msg service.DIDCommAction) (interf
 	}), nil
 }
 
-func (o *Operation) generateUserPresentation(handle *AuthorizationCredentialHandle, profile *issuer.ProfileData) (*verifiable.Presentation, error) { // nolint: lll
-	dataReq := &UserDataReq{Token: handle.Token}
+func (o *Operation) createCredential(token string, profile *issuer.ProfileData, authZReq bool) (*verifiable.Credential, error) { // nolint:lll,funlen,gocyclo
+	dataReq := &UserDataReq{Token: token}
 
 	reqBytes, err := json.Marshal(dataReq)
 	if err != nil {
 		return nil, err
 	}
 
-	req, err := http.NewRequest(http.MethodPost, getUserDataURL(profile.URL), bytes.NewBuffer(reqBytes))
+	assuranceCred := false
+	url := getUserDataURL(profile.URL)
+
+	if authZReq && profile.SupportsAssuranceCredential {
+		assuranceCred = true
+		url = getAssuranceDataURL(profile.URL)
+	}
+
+	req, err := http.NewRequest(http.MethodPost, url, bytes.NewBuffer(reqBytes))
 
 	if err != nil {
 		return nil, err
@@ -755,7 +807,37 @@ func (o *Operation) generateUserPresentation(handle *AuthorizationCredentialHand
 		cred.Types = append(cred.Types, resp.Metadata.Scopes...)
 	}
 
+	if assuranceCred {
+		refCredDataBytes, storeErr := o.txnStore.Get(token)
+		if storeErr != nil {
+			return nil, fmt.Errorf("get reference credential data : %w", storeErr)
+		}
+
+		var refCredData *ReferenceCredentialData
+
+		err = json.Unmarshal(refCredDataBytes, &refCredData)
+		if err != nil {
+			return nil, fmt.Errorf("unmarshal reference credential data : %w", err)
+		}
+
+		cred.Context = append(cred.Context, adaptervc.AssuranceCredentialContext)
+		cred.Types = append(cred.Types, adaptervc.AssuranceCredentialType)
+
+		// TODO - https://github.com/trustbloc/edge-adapter/issues/280 Add hash of the vc
+		cred.CustomFields = make(verifiable.CustomFields)
+		cred.CustomFields["referenceVCID"] = refCredData.ID
+	}
+
 	vc, err := o.vccrypto.SignCredential(cred, profile.CredentialSigningKey)
+	if err != nil {
+		return nil, fmt.Errorf("sign vc : %w", err)
+	}
+
+	return vc, nil
+}
+
+func (o *Operation) generateUserPresentation(handle *AuthorizationCredentialHandle, profile *issuer.ProfileData) (*verifiable.Presentation, error) { // nolint: lll
+	vc, err := o.createCredential(handle.Token, profile, true)
 	if err != nil {
 		return nil, fmt.Errorf("sign vc : %w", err)
 	}
@@ -1022,6 +1104,10 @@ func getTokenURL(issuerURL string) string {
 	return fmt.Sprintf("%s/token", issuerURL)
 }
 
+func getAssuranceDataURL(issuerURL string) string {
+	return fmt.Sprintf("%s/assurance", issuerURL)
+}
+
 func sendHTTPRequest(req *http.Request, client httpClient, status int, bearerToken string) ([]byte, error) {
 	if bearerToken != "" {
 		req.Header.Add("Authorization", "Bearer "+bearerToken)
@@ -1060,4 +1146,19 @@ func unmarshalSubject(data []byte) (map[string]interface{}, error) {
 	}
 
 	return subject, nil
+}
+
+func mapProfileReqToData(data *ProfileDataRequest, didDoc *did.Doc) *issuer.ProfileData {
+	created := time.Now().UTC()
+
+	return &issuer.ProfileData{
+		ID:                          data.ID,
+		Name:                        data.Name,
+		SupportedVCContexts:         data.SupportedVCContexts,
+		URL:                         data.URL,
+		SupportsAssuranceCredential: data.SupportsAssuranceCredential,
+		CredentialSigningKey:        didDoc.AssertionMethod[0].PublicKey.ID,
+		PresentationSigningKey:      didDoc.Authentication[0].PublicKey.ID,
+		CreatedAt:                   &created,
+	}
 }

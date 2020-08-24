@@ -14,6 +14,7 @@ import (
 	"fmt"
 	"io/ioutil"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
@@ -85,6 +86,7 @@ type Steps struct {
 	WebhookURLs        map[string]string
 	adapterConnections map[string]*didexchange.Connection
 	credentials        map[string]*verifiable.Credential
+	refCredentials     map[string]*verifiable.Credential
 }
 
 // NewSteps returns new agent steps.
@@ -95,6 +97,7 @@ func NewSteps(ctx *context.BDDContext) *Steps {
 		WebhookURLs:        make(map[string]string),
 		adapterConnections: make(map[string]*didexchange.Connection),
 		credentials:        make(map[string]*verifiable.Credential),
+		refCredentials:     make(map[string]*verifiable.Credential),
 	}
 }
 
@@ -102,11 +105,11 @@ func NewSteps(ctx *context.BDDContext) *Steps {
 func (a *Steps) RegisterSteps(s *godog.Suite) {
 	s.Step(`^"([^"]*)" agent is running on "([^"]*)" port "([^"]*)" with controller "([^"]*)"$`,
 		a.ValidateAgentConnection)
-	s.Step(`^"([^"]*)" validates the supportedVCContexts "([^"]*)" in connect request from Issuer adapter \("([^"]*)"\) and responds within "([^"]*)" seconds$`, // nolint: lll
+	s.Step(`^"([^"]*)" validates the supportedVCContexts "([^"]*)" in connect request from Issuer adapter \("([^"]*)"\) along with primary credential type "([^"]*)" in case of supportsAssuranceCred "([^"]*)" and responds within "([^"]*)" seconds$`, // nolint: lll
 		a.handleDIDCommConnectRequest)
 	s.Step(`^"([^"]*)" sends request credential message and receives credential from the issuer \("([^"]*)"\)$`,
 		a.fetchCredential)
-	s.Step(`^"([^"]*)" sends present proof request message to the the issuer \("([^"]*)"\) and validates that the vc inside vp contains type "([^"]*)"$`, // nolint: lll
+	s.Step(`^"([^"]*)" sends present proof request message to the the issuer \("([^"]*)"\) and validates that the vc inside vp contains type "([^"]*)" along with supportsAssuranceCred "([^"]*)" validation$`, // nolint: lll
 		a.fetchPresentation)
 }
 
@@ -160,8 +163,9 @@ func (a *Steps) healthCheck(endpoint string) error {
 	return errors.New("url scheme is not supported for url = " + endpoint)
 }
 
-//nolint:funlen
-func (a *Steps) handleDIDCommConnectRequest(agentID, supportedVCContexts, issuerID string, timeout int) error {
+//nolint:funlen,gocyclo
+func (a *Steps) handleDIDCommConnectRequest(agentID, supportedVCContexts, issuerID,
+	primaryVCType, supportsAssuranceCredStr string, timeout int) error {
 	// Mock CHAPI request from Issuer
 	didConnReq := a.bddContext.Store[bddutil.GetDIDConnectRequestKey(issuerID, agentID)]
 
@@ -172,9 +176,31 @@ func (a *Steps) handleDIDCommConnectRequest(agentID, supportedVCContexts, issuer
 		return err
 	}
 
-	err = validateManifestCred(request.Manifest, supportedVCContexts)
+	supportsAssuranceCred, err := strconv.ParseBool(supportsAssuranceCredStr)
+	if err != nil {
+		return err
+	}
+
+	if supportsAssuranceCred && len(request.Credentials) != 2 {
+		return fmt.Errorf("invalid number of credential in chapi request: "+
+			"expected=%d actual=%d", 2, len(request.Credentials))
+	} else if !supportsAssuranceCred && len(request.Credentials) != 1 {
+		return fmt.Errorf("invalid number of credential in chapi request: "+
+			"expected=%d actual=%d", 1, len(request.Credentials))
+	}
+
+	err = validateManifestCred(request.Credentials[0], supportedVCContexts)
 	if err != nil {
 		return fmt.Errorf("failed to parse credential : %s", err.Error())
+	}
+
+	if supportsAssuranceCred {
+		vc, vcErr := validateAndGetReferenceCred(request.Credentials[1], primaryVCType, a.bddContext.VDRI)
+		if vcErr != nil {
+			return fmt.Errorf("failed to parse credential : %s", vcErr.Error())
+		}
+
+		a.refCredentials[agentID] = vc
 	}
 
 	err = validateGovernance(request.CredentialGovernance)
@@ -495,7 +521,8 @@ func (a *Steps) fetchCredential(agentID, issuerID string) error { // nolint: fun
 	return nil
 }
 
-func (a *Steps) fetchPresentation(agentID, issuerID, expectedScope string) error {
+// nolint:gocyclo
+func (a *Steps) fetchPresentation(agentID, issuerID, expectedScope, supportsAssuranceCredStr string) error {
 	conn, ok := a.adapterConnections[getExtCreateConnKey(agentID)]
 	if !ok {
 		return fmt.Errorf("unable to find the issuer connection data [%s]", agentID)
@@ -542,7 +569,12 @@ func (a *Steps) fetchPresentation(agentID, issuerID, expectedScope string) error
 		return err
 	}
 
-	err = validateIssuerVC(vpID, controllerURL, expectedScope, a.bddContext.VDRI)
+	supportsAssuranceCred, err := strconv.ParseBool(supportsAssuranceCredStr)
+	if err != nil {
+		return err
+	}
+
+	err = a.validateIssuerVC(vpID, agentID, controllerURL, expectedScope, supportsAssuranceCred, a.bddContext.VDRI)
 	if err != nil {
 		return err
 	}
@@ -789,7 +821,9 @@ func validatePresentation(presentationName, controllerURL string) (string, error
 	return "", errors.New("presentation not found")
 }
 
-func validateIssuerVC(id, controllerURL, expectedScope string, vdri vdriapi.Registry) error {
+// nolint: gocyclo
+func (a *Steps) validateIssuerVC(id, agentID, controllerURL, expectedScope string, supportsAssuranceCred bool,
+	vdri vdriapi.Registry) error {
 	var vpResult verifiablecmd.Presentation
 
 	if err := sendHTTP(http.MethodGet,
@@ -823,6 +857,18 @@ func validateIssuerVC(id, controllerURL, expectedScope string, vdri vdriapi.Regi
 		return err
 	}
 
+	if supportsAssuranceCred {
+		err = validateAssuranceVC(vc)
+		if err != nil {
+			return err
+		}
+
+		if a.refCredentials[agentID].ID != fmt.Sprintf("%v", vc.CustomFields["referenceVCID"]) {
+			return fmt.Errorf("reference credential id doesn't match: expected=%s actual=%s",
+				a.refCredentials[agentID].ID, fmt.Sprintf("%v", vc.CustomFields["referenceVCID"]))
+		}
+	}
+
 	for _, t := range vc.Types {
 		if t == expectedScope {
 			return nil
@@ -830,6 +876,17 @@ func validateIssuerVC(id, controllerURL, expectedScope string, vdri vdriapi.Regi
 	}
 
 	return fmt.Errorf("vc type validation failed : expected=%s actual=%s", expectedScope, vc.Types)
+}
+
+func validateAssuranceVC(vc *verifiable.Credential) error {
+	for _, t := range vc.Types {
+		if t == adaptervc.AssuranceCredentialType {
+			return nil
+		}
+	}
+
+	return fmt.Errorf("assurance vc type validation failed : expected=%s actual=%s",
+		adaptervc.AssuranceCredentialType, vc.Types)
 }
 
 func actionPIID(endpoint, urlPath string) (string, error) {
@@ -910,6 +967,24 @@ func validateGovernance(governanceVCBytes []byte) error {
 	}
 
 	return nil
+}
+
+func validateAndGetReferenceCred(vcBytes []byte, vcType string, vdri vdriapi.Registry) (*verifiable.Credential, error) {
+	cred, err := verifiable.ParseCredential(
+		vcBytes,
+		verifiable.WithPublicKeyFetcher(verifiable.NewDIDKeyResolver(vdri).PublicKeyFetcher()),
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	for _, t := range cred.Types {
+		if t == vcType {
+			return cred, nil
+		}
+	}
+
+	return nil, fmt.Errorf("primary vc type validation failed; expected=%s actual=%s", vcType, cred.Types)
 }
 
 func getExtCreateConnKey(agentID string) string {

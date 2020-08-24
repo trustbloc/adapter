@@ -20,6 +20,12 @@ const (
 
 	// VerifiableCredentialContext vc base context.
 	VerifiableCredentialContext = "https://www.w3.org/2018/credentials/v1"
+
+	// AssuranceCredentialContext is the JSON-LD context for the AssuranceCredential.
+	AssuranceCredentialContext = "https://trustbloc.github.io/context/vc/assurance-credential-v1.jsonld"
+
+	// AssuranceCredentialType is the JSON-LD type for the AssuranceCredential.
+	AssuranceCredentialType = "AssuranceCredential"
 )
 
 // Crypto vc/vp signing apis.
