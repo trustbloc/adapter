@@ -13,6 +13,7 @@ import (
 	"io/ioutil"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 
 	"github.com/google/uuid"
@@ -47,9 +48,9 @@ func NewSteps(ctx *context.BDDContext) *Steps {
 
 // RegisterSteps registers agent steps.
 func (e *Steps) RegisterSteps(s *godog.Suite) {
-	s.Step(`^Issuer Profile with id "([^"]*)", name "([^"]*)", issuerURL "([^"]*)" and supportedVCContexts "([^"]*)"$`, // nolint: lll
+	s.Step(`^Issuer Profile with id "([^"]*)", name "([^"]*)", issuerURL "([^"]*)", supportedVCContexts "([^"]*)" and supportsAssuranceCred "([^"]*)"$`, // nolint: lll
 		e.createProfile)
-	s.Step(`^Retrieved profile with id "([^"]*)" contains name "([^"]*)", issuerURL "([^"]*)" and supportedVCContexts "([^"]*)"$`, // nolint: lll
+	s.Step(`^Retrieved profile with id "([^"]*)" contains name "([^"]*)", issuerURL "([^"]*)", supportedVCContexts "([^"]*)" and supportsAssuranceCred "([^"]*)"$`, // nolint: lll
 		e.retrieveProfile)
 	s.Step(`^Issuer adapter shows the wallet connect UI when the issuer "([^"]*)" wants to connect to the wallet$`,
 		e.walletConnect)
@@ -59,12 +60,18 @@ func (e *Steps) RegisterSteps(s *godog.Suite) {
 		e.validateConnectResp)
 }
 
-func (e *Steps) createProfile(id, name, issuerURL, supportedVCContexts string) error {
+func (e *Steps) createProfile(id, name, issuerURL, supportedVCContexts, supportsAssuranceCredStr string) error {
+	supportsAssuranceCred, err := strconv.ParseBool(supportsAssuranceCredStr)
+	if err != nil {
+		return err
+	}
+
 	profileReq := operation.ProfileDataRequest{
-		ID:                  id,
-		Name:                name,
-		URL:                 issuerURL,
-		SupportedVCContexts: strings.Split(supportedVCContexts, ","),
+		ID:                          id,
+		Name:                        name,
+		URL:                         issuerURL,
+		SupportedVCContexts:         strings.Split(supportedVCContexts, ","),
+		SupportsAssuranceCredential: supportsAssuranceCred,
 	}
 
 	requestBytes, err := json.Marshal(profileReq)
@@ -93,7 +100,7 @@ func (e *Steps) createProfile(id, name, issuerURL, supportedVCContexts string) e
 	return nil
 }
 
-func (e *Steps) retrieveProfile(id, name, issuerURL, supportedVCContexts string) error {
+func (e *Steps) retrieveProfile(id, name, issuerURL, supportedVCContexts, supportsAssuranceCredStr string) error {
 	resp, err := bddutil.HTTPDo(http.MethodGet, //nolint: bodyclose
 		fmt.Sprintf(issuerAdapterURL+"/profile/%s", id), "", "", nil, e.bddContext.TLSConfig())
 	if err != nil {
@@ -130,6 +137,16 @@ func (e *Steps) retrieveProfile(id, name, issuerURL, supportedVCContexts string)
 	if len(profileResponse.SupportedVCContexts) != len(strings.Split(supportedVCContexts, ",")) {
 		return fmt.Errorf("supported vc count doesnt match : expected=%d actual=%d",
 			len(strings.Split(supportedVCContexts, ",")), len(profileResponse.SupportedVCContexts))
+	}
+
+	supportsAssuranceCred, err := strconv.ParseBool(supportsAssuranceCredStr)
+	if err != nil {
+		return err
+	}
+
+	if profileResponse.SupportsAssuranceCredential != supportsAssuranceCred {
+		return fmt.Errorf("profile supports assurance cred url doesn't match : expected=%t actual=%t",
+			supportsAssuranceCred, profileResponse.SupportsAssuranceCredential)
 	}
 
 	return nil
@@ -174,7 +191,7 @@ func (e *Steps) didcommConnectionInvitation(issuerID, agentID string) error {
 	}
 
 	if resp.StatusCode != http.StatusOK {
-		return bddutil.ExpectedStatusCodeError(http.StatusOK, resp.StatusCode, nil)
+		return bddutil.ExpectedStatusCodeError(http.StatusOK, resp.StatusCode, respBytes)
 	}
 
 	// Mocking CHAPI request call

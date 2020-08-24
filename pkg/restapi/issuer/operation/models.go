@@ -16,10 +16,11 @@ import (
 
 // ProfileDataRequest req for profile creation.
 type ProfileDataRequest struct {
-	ID                  string   `json:"id,omitempty"`
-	Name                string   `json:"name"`
-	SupportedVCContexts []string `json:"supportedVCContexts"`
-	URL                 string   `json:"url"`
+	ID                          string   `json:"id,omitempty"`
+	Name                        string   `json:"name"`
+	SupportedVCContexts         []string `json:"supportedVCContexts"`
+	SupportsAssuranceCredential bool     `json:"SupportsAssuranceCredential"`
+	URL                         string   `json:"url"`
 }
 
 // WalletConnect response from wallet.
@@ -40,6 +41,7 @@ type CHAPIRequest struct {
 	Query                *CHAPIQuery           `json:"query,omitempty"`
 	DIDCommInvitation    *outofband.Invitation `json:"invitation,omitempty"`
 	Manifest             json.RawMessage       `json:"manifest,omitempty"`
+	Credentials          []json.RawMessage     `json:"credentials,omitempty"`
 	CredentialGovernance json.RawMessage       `json:"credentialGovernance,omitempty"`
 }
 
@@ -103,4 +105,9 @@ type IssuerTokenReq struct {
 // IssuerTokenResp issuer user data token response.
 type IssuerTokenResp struct {
 	Token string `json:"token,omitempty"`
+}
+
+// ReferenceCredentialData reference credential data.
+type ReferenceCredentialData struct {
+	ID string `json:"id,omitempty"`
 }

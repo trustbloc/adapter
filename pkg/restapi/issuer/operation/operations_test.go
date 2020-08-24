@@ -145,6 +145,7 @@ func TestCreateProfile(t *testing.T) {
 		require.Equal(t, vReq.ID, profileRes.ID)
 		require.Equal(t, vReq.Name, profileRes.Name)
 		require.Equal(t, vReq.URL, profileRes.URL)
+		require.Equal(t, vReq.SupportsAssuranceCredential, profileRes.SupportsAssuranceCredential)
 	})
 
 	t.Run("create profile - failed to issue governance vc", func(t *testing.T) {
@@ -759,7 +760,7 @@ func TestValidateWalletResponse(t *testing.T) {
 }
 
 func TestCHAPIRequest(t *testing.T) {
-	t.Run("test fetch invitation - success", func(t *testing.T) {
+	t.Run("test fetch chapi request - success", func(t *testing.T) {
 		c, err := New(&Config{
 			AriesCtx:      getAriesCtx(),
 			StoreProvider: memstore.NewProvider(),
@@ -769,27 +770,63 @@ func TestCHAPIRequest(t *testing.T) {
 		})
 		require.NoError(t, err)
 
-		profile := createProfileData("profile1")
+		t.Run("without assurance support", func(t *testing.T) {
+			profile := createProfileData("profile1")
 
-		err = c.profileStore.SaveProfile(profile)
-		require.NoError(t, err)
+			err = c.profileStore.SaveProfile(profile)
+			require.NoError(t, err)
 
-		txnID, err := c.createTxn(profile, uuid.New().String(), uuid.New().String())
-		require.NoError(t, err)
+			txnID, txnErr := c.createTxn(profile, uuid.New().String(), uuid.New().String())
+			require.NoError(t, txnErr)
 
-		getCHAPIRequestHandler := getHandler(t, c, getCHAPIRequestEndpoint)
+			getCHAPIRequestHandler := getHandler(t, c, getCHAPIRequestEndpoint)
 
-		rr := serveHTTP(t, getCHAPIRequestHandler.Handle(), http.MethodGet,
-			getCHAPIRequestEndpoint+"?"+txnIDQueryParam+"="+txnID, nil)
+			rr := serveHTTP(t, getCHAPIRequestHandler.Handle(), http.MethodGet,
+				getCHAPIRequestEndpoint+"?"+txnIDQueryParam+"="+txnID, nil)
 
-		require.Equal(t, http.StatusOK, rr.Code)
+			require.Equal(t, http.StatusOK, rr.Code)
 
-		chapiReq := &CHAPIRequest{}
-		err = json.Unmarshal(rr.Body.Bytes(), &chapiReq)
-		require.NoError(t, err)
-		require.Equal(t, DIDConnectCHAPIQueryType, chapiReq.Query.Type)
-		require.Equal(t, "https://didcomm.org/oob-invitation/1.0/invitation", chapiReq.DIDCommInvitation.Type)
-		require.Equal(t, `{"key":"value"}`, string(chapiReq.CredentialGovernance))
+			chapiReq := &CHAPIRequest{}
+			err = json.Unmarshal(rr.Body.Bytes(), &chapiReq)
+			require.NoError(t, err)
+			require.Equal(t, DIDConnectCHAPIQueryType, chapiReq.Query.Type)
+			require.Equal(t, "https://didcomm.org/oob-invitation/1.0/invitation", chapiReq.DIDCommInvitation.Type)
+			require.Equal(t, `{"key":"value"}`, string(chapiReq.CredentialGovernance))
+			require.Equal(t, 1, len(chapiReq.Credentials))
+		})
+
+		t.Run("with assurance support", func(t *testing.T) {
+			c.httpClient = &mockHTTPClient{
+				respValue: &http.Response{
+					StatusCode: http.StatusOK, Body: ioutil.NopCloser(bytes.NewReader([]byte(prCardData))),
+				},
+			}
+
+			profile := createProfileData("profile2")
+			profile.SupportsAssuranceCredential = true
+			profile.CredentialSigningKey = mockdiddoc.GetMockDIDDoc("did:example:def567").PublicKey[0].ID
+
+			err = c.profileStore.SaveProfile(profile)
+			require.NoError(t, err)
+
+			txnID, err := c.createTxn(profile, uuid.New().String(), uuid.New().String())
+			require.NoError(t, err)
+
+			getCHAPIRequestHandler := getHandler(t, c, getCHAPIRequestEndpoint)
+
+			rr := serveHTTP(t, getCHAPIRequestHandler.Handle(), http.MethodGet,
+				getCHAPIRequestEndpoint+"?"+txnIDQueryParam+"="+txnID, nil)
+
+			require.Equal(t, http.StatusOK, rr.Code)
+
+			chapiReq := &CHAPIRequest{}
+			err = json.Unmarshal(rr.Body.Bytes(), &chapiReq)
+			require.NoError(t, err)
+			require.Equal(t, DIDConnectCHAPIQueryType, chapiReq.Query.Type)
+			require.Equal(t, "https://didcomm.org/oob-invitation/1.0/invitation", chapiReq.DIDCommInvitation.Type)
+			require.Equal(t, `{"key":"value"}`, string(chapiReq.CredentialGovernance))
+			require.Equal(t, 2, len(chapiReq.Credentials))
+		})
 	})
 
 	t.Run("test get governance - failed", func(t *testing.T) {
@@ -868,6 +905,30 @@ func TestCHAPIRequest(t *testing.T) {
 			getCHAPIRequestEndpoint+"?"+txnIDQueryParam+"="+txnID, nil)
 		require.Equal(t, http.StatusInternalServerError, rr.Code)
 		require.Contains(t, rr.Body.String(), "issuer not found")
+	})
+
+	t.Run("test fetch chapi request with assurance - error", func(t *testing.T) {
+		c, err := New(&Config{
+			AriesCtx:      getAriesCtx(),
+			StoreProvider: memstore.NewProvider(),
+		})
+		require.NoError(t, err)
+
+		profile := createProfileData("profile2")
+		profile.SupportsAssuranceCredential = true
+
+		err = c.profileStore.SaveProfile(profile)
+		require.NoError(t, err)
+
+		txnID, err := c.createTxn(profile, uuid.New().String(), uuid.New().String())
+		require.NoError(t, err)
+
+		getCHAPIRequestHandler := getHandler(t, c, getCHAPIRequestEndpoint)
+
+		rr := serveHTTP(t, getCHAPIRequestHandler.Handle(), http.MethodGet,
+			getCHAPIRequestEndpoint+"?"+txnIDQueryParam+"="+txnID, nil)
+		require.Equal(t, http.StatusInternalServerError, rr.Code)
+		require.Contains(t, rr.Body.String(), "error creating reference credential")
 	})
 }
 
@@ -1322,6 +1383,92 @@ func TestDIDCommListeners(t *testing.T) {
 			}
 		})
 
+		t.Run("test request presentation - success (assurance flow)", func(t *testing.T) {
+			actionCh := make(chan service.DIDCommAction, 1)
+
+			c, err := New(&Config{
+				AriesCtx:      getAriesCtx(),
+				StoreProvider: memstore.NewProvider(),
+			})
+			require.NoError(t, err)
+
+			c.httpClient = &mockHTTPClient{
+				respValue: &http.Response{
+					StatusCode: http.StatusOK, Body: ioutil.NopCloser(bytes.NewReader([]byte(prCardData))),
+				},
+			}
+
+			issuerID := uuid.New().String()
+
+			profile := createProfileData(issuerID)
+			profile.PresentationSigningKey = mockdiddoc.GetMockDIDDoc("did:example:def567").PublicKey[0].ID
+			profile.CredentialSigningKey = mockdiddoc.GetMockDIDDoc("did:example:def567").PublicKey[0].ID
+			profile.SupportsAssuranceCredential = true
+
+			err = c.profileStore.SaveProfile(profile)
+			require.NoError(t, err)
+
+			go c.didCommActionListener(actionCh)
+
+			didDocument := mockdiddoc.GetMockDIDDoc("did:example:def567")
+
+			didDocJSON, err := didDocument.JSONBytes()
+			require.NoError(t, err)
+
+			subjectDID := "did:example:abc789"
+
+			rpDIDDoc := &adaptervc.DIDDoc{
+				ID:  didDocument.ID,
+				Doc: didDocJSON,
+			}
+
+			vc := createAuthorizationCredential(t)
+
+			handle := &AuthorizationCredentialHandle{
+				ID:         vc.ID,
+				IssuerDID:  didDocument.ID,
+				SubjectDID: subjectDID,
+				RPDID:      rpDIDDoc.ID,
+				Token:      uuid.New().String(),
+				IssuerID:   issuerID,
+			}
+
+			err = c.storeAuthorizationCredHandle(handle)
+			require.NoError(t, err)
+
+			refCredData := &ReferenceCredentialData{
+				ID: uuid.New().String(),
+			}
+
+			refCredDataBytes, err := json.Marshal(refCredData)
+			require.NoError(t, err)
+
+			err = c.txnStore.Put(handle.Token, refCredDataBytes)
+			require.NoError(t, err)
+
+			vp, err := vc.Presentation()
+			require.NoError(t, err)
+
+			done := make(chan struct{})
+
+			actionCh <- createProofReqMsg(t, presentproofsvc.RequestPresentation{
+				Type: presentproofsvc.RequestPresentationMsgType,
+				RequestPresentationsAttach: []decorator.Attachment{
+					{Data: decorator.AttachmentData{
+						JSON: vp,
+					}},
+				},
+			}, func(args interface{}) {
+				done <- struct{}{}
+			}, nil)
+
+			select {
+			case <-done:
+			case <-time.After(5 * time.Second):
+				require.Fail(t, "tests are not validated due to timeout")
+			}
+		})
+
 		t.Run("test request presentation - failures", func(t *testing.T) {
 			actionCh := make(chan service.DIDCommAction, 1)
 
@@ -1669,6 +1816,84 @@ func TestDIDCommListeners(t *testing.T) {
 				require.Fail(t, "tests are not validated due to timeout")
 			}
 		})
+
+		t.Run("test request presentation - failures (assurance flow)", func(t *testing.T) {
+			actionCh := make(chan service.DIDCommAction, 1)
+
+			c, err := New(&Config{
+				AriesCtx:      getAriesCtx(),
+				StoreProvider: memstore.NewProvider(),
+			})
+			require.NoError(t, err)
+
+			c.httpClient = &mockHTTPClient{
+				respValue: &http.Response{
+					StatusCode: http.StatusOK, Body: ioutil.NopCloser(bytes.NewReader([]byte(prCardData))),
+				},
+			}
+
+			issuerID := uuid.New().String()
+
+			profile := createProfileData(issuerID)
+			profile.PresentationSigningKey = mockdiddoc.GetMockDIDDoc("did:example:def567").PublicKey[0].ID
+			profile.CredentialSigningKey = mockdiddoc.GetMockDIDDoc("did:example:def567").PublicKey[0].ID
+			profile.SupportsAssuranceCredential = true
+
+			err = c.profileStore.SaveProfile(profile)
+			require.NoError(t, err)
+
+			go c.didCommActionListener(actionCh)
+
+			didDocument := mockdiddoc.GetMockDIDDoc("did:example:def567")
+
+			didDocJSON, err := didDocument.JSONBytes()
+			require.NoError(t, err)
+
+			subjectDID := "did:example:abc789"
+
+			rpDIDDoc := &adaptervc.DIDDoc{
+				ID:  didDocument.ID,
+				Doc: didDocJSON,
+			}
+
+			vc := createAuthorizationCredential(t)
+
+			handle := &AuthorizationCredentialHandle{
+				ID:         vc.ID,
+				IssuerDID:  didDocument.ID,
+				SubjectDID: subjectDID,
+				RPDID:      rpDIDDoc.ID,
+				Token:      uuid.New().String(),
+				IssuerID:   issuerID,
+			}
+
+			err = c.storeAuthorizationCredHandle(handle)
+			require.NoError(t, err)
+
+			vp, err := vc.Presentation()
+			require.NoError(t, err)
+
+			done := make(chan struct{})
+
+			actionCh <- createProofReqMsg(t, presentproofsvc.RequestPresentation{
+				Type: presentproofsvc.RequestPresentationMsgType,
+				RequestPresentationsAttach: []decorator.Attachment{
+					{Data: decorator.AttachmentData{
+						JSON: vp,
+					}},
+				},
+			}, nil, func(err error) {
+				require.NotNil(t, err)
+				require.Contains(t, err.Error(), "get reference credential data")
+				done <- struct{}{}
+			})
+
+			select {
+			case <-done:
+			case <-time.After(5 * time.Second):
+				require.Fail(t, "tests are not validated due to timeout")
+			}
+		})
 	})
 }
 
@@ -1910,11 +2135,12 @@ func getTestVP(t *testing.T, inviteeDID, inviterDID, threadID string) []byte { /
 
 func createProfileData(profileID string) *issuer.ProfileData {
 	return &issuer.ProfileData{
-		ID:                     profileID,
-		Name:                   "Issuer Profile 1",
-		SupportedVCContexts:    []string{"https://w3id.org/citizenship/v3"},
-		URL:                    "http://issuer.example.com",
-		PresentationSigningKey: "did:example:123xyz#key-1",
+		ID:                          profileID,
+		Name:                        "Issuer Profile 1",
+		SupportedVCContexts:         []string{"https://w3id.org/citizenship/v3"},
+		SupportsAssuranceCredential: false,
+		URL:                         "http://issuer.example.com",
+		PresentationSigningKey:      "did:example:123xyz#key-1",
 	}
 }
 

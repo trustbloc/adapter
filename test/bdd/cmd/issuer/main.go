@@ -23,6 +23,22 @@ const (
 	addressPattern = ":%s"
 )
 
+var (
+	// nolint:gochecknoglobals
+	dataMap          = make(map[string]string)
+	assuranceDataMap = make(map[string]string)
+	tokenStore       = make(map[string]bool)
+)
+
+// nolint:gochecknoinits
+func init() {
+	dataMap["prCard"] = prCardData
+	dataMap["creditCard"] = creditCardData
+	dataMap["driversLicense"] = driversLicenceData
+
+	assuranceDataMap["driversLicense"] = driversLicenceAssuranceData
+}
+
 func main() {
 	port := os.Getenv("ISSUER_PORT")
 	if port == "" {
@@ -32,6 +48,7 @@ func main() {
 	router := mux.NewRouter().StrictSlash(true)
 	router.HandleFunc("/{issuer}/token", tokenHandler).Methods(http.MethodPost)
 	router.HandleFunc("/{issuer}/data", createUserDataVCHandler).Methods(http.MethodPost)
+	router.HandleFunc("/{issuer}/assurance", createAssuranceDataVCHandler).Methods(http.MethodPost)
 
 	logger.Fatalf("issuer server start error %s", http.ListenAndServe(fmt.Sprintf(addressPattern, port), router))
 }
@@ -85,7 +102,35 @@ func createUserDataVCHandler(rw http.ResponseWriter, req *http.Request) {
 
 	rw.WriteHeader(http.StatusOK)
 
-	logger.Infof("[issuer] req: %s resp=%s", data.Token, prCardData)
+	logger.Infof("[issuer] issuer:%s req: %s resp=%s", vars["issuer"], data.Token, dataMap[vars["issuer"]])
+}
+
+func createAssuranceDataVCHandler(rw http.ResponseWriter, req *http.Request) {
+	vars := mux.Vars(req)
+
+	data := &userDataReq{}
+
+	if err := json.NewDecoder(req.Body).Decode(&data); err != nil {
+		WriteErrorResponseWithLog(rw, http.StatusBadRequest,
+			fmt.Sprintf("[issuer] invalid request - err:%s", err.Error()), req.RequestURI, logger)
+	}
+
+	tokenStore[data.Token] = true
+
+	_, ok := tokenStore[data.Token]
+	if !ok {
+		WriteErrorResponseWithLog(rw, http.StatusBadRequest, "invalid token", req.RequestURI, logger)
+	}
+
+	_, err := rw.Write([]byte(assuranceDataMap[vars["issuer"]]))
+	if err != nil {
+		WriteErrorResponseWithLog(rw, http.StatusInternalServerError,
+			fmt.Sprintf("[issuer] failed to send assurance data - err:%s", err.Error()), req.RequestURI, logger)
+	}
+
+	rw.WriteHeader(http.StatusOK)
+
+	logger.Infof("[issuer-assurance] issuer:%s req: %s resp=%s", vars["issuer"], data.Token, assuranceDataMap[vars["issuer"]])
 }
 
 type userDataReq struct {
@@ -169,16 +214,34 @@ const (
 		  ]
 	   }
 	}`
-)
 
-var (
-	// nolint:gochecknoglobals
-	dataMap    = make(map[string]string)
-	tokenStore = make(map[string]bool)
-)
+	driversLicenceData = `{
+	   "data":{
+		  "given_name":"John",
+		  "family_name":"Smith",
+		  "document_number":"123-456-789"
+	   },
+	   "metadata":{
+		  "contexts":[
+			 "https://trustbloc.github.io/context/vc/examples/mdl-v1.jsonld"
+		  ],
+		  "scopes":[
+			 "mDL"
+		  ]
+	   }
+	}`
 
-// nolint:gochecknoinits
-func init() {
-	dataMap["prCard"] = prCardData
-	dataMap["creditCard"] = creditCardData
-}
+	driversLicenceAssuranceData = `{
+	   "data":{
+		  "document_number":"123-456-789"
+	   },
+	   "metadata":{
+		  "contexts":[
+			 "https://trustbloc.github.io/context/vc/examples/driver-license-evidence-v1.jsonld"
+		  ],
+		  "scopes":[
+			 "DrivingLicenseEvidence"
+		  ]
+	   }
+	}`
+)
