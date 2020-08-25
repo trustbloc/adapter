@@ -480,7 +480,7 @@ func TestGetRESTHandlers(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	require.Equal(t, 7, len(c.GetRESTHandlers()))
+	require.NotEmpty(t, c.GetRESTHandlers())
 }
 
 func TestHydraLoginHandlerIterOne(t *testing.T) {
@@ -1056,7 +1056,7 @@ func TestHydraConsentHandler(t *testing.T) {
 			require.NoError(t, err)
 			require.Equal(t, expected.Scheme, redirectURL.Scheme)
 			require.Equal(t, expected.Host, redirectURL.Host)
-			handle := redirectURL.Query().Get("pd")
+			handle := redirectURL.Query().Get("h")
 			require.NotEmpty(t, handle)
 		})
 
@@ -1645,7 +1645,6 @@ func TestGetPresentationsRequest(t *testing.T) {
 	})
 }
 
-//nolint:gocyclo
 func TestCHAPIResponseHandler(t *testing.T) {
 	t.Run("valid chapi response", func(t *testing.T) {
 		invitationID := uuid.New().String()
@@ -1654,7 +1653,6 @@ func TestCHAPIResponseHandler(t *testing.T) {
 		issuerPeerDID := newPeerDID(t)
 		userPeerDID := newDID(t).String()
 		thid := uuid.New().String()
-		var issuerResponse chan<- service.DIDCommAction = nil
 		definitions := &presexch.PresentationDefinitions{
 			InputDescriptors: []*presexch.InputDescriptor{
 				{
@@ -1687,7 +1685,6 @@ func TestCHAPIResponseHandler(t *testing.T) {
 			authz, degree)
 		redirectURL := "http://hydra.example.com/accept"
 		requestPresentationSent := make(chan struct{})
-		acceptedAtHydra := make(chan struct{})
 
 		c, err := New(&Config{
 			DIDExchClient:        &mockdidexchange.MockClient{},
@@ -1695,8 +1692,6 @@ func TestCHAPIResponseHandler(t *testing.T) {
 			AriesStorageProvider: &mockAriesContextProvider{},
 			PresentProofClient: &mockpresentproof.MockClient{
 				RegisterActionFunc: func(c chan<- service.DIDCommAction) error {
-					issuerResponse = c
-
 					return nil
 				},
 				RequestPresentationFunc: func(request *presentproof.RequestPresentation, myDID, theirDID string) (string, error) {
@@ -1712,8 +1707,6 @@ func TestCHAPIResponseHandler(t *testing.T) {
 			},
 			Hydra: &stubHydra{
 				acceptConsentRequestFunc: func(*admin.AcceptConsentRequestParams) (*admin.AcceptConsentRequestOK, error) {
-					go func() { acceptedAtHydra <- struct{}{} }()
-
 					return &admin.AcceptConsentRequestOK{Payload: &models.CompletedRequest{RedirectTo: redirectURL}}, nil
 				},
 			},
@@ -1729,66 +1722,14 @@ func TestCHAPIResponseHandler(t *testing.T) {
 			RPPairwiseDID: rpPeerDID.ID,
 		})
 
-		result := make(chan struct {
-			code int
-			body *HandleCHAPIResponseResult
-		})
-
-		go func() {
-			w := httptest.NewRecorder()
-			c.chapiResponseHandler(w, newCHAPIResponse(t, invitationID, vp))
-			body := &HandleCHAPIResponseResult{}
-			err := json.Unmarshal(w.Body.Bytes(), body)
-			require.NoError(t, err)
-			result <- struct {
-				code int
-				body *HandleCHAPIResponseResult
-			}{
-				code: w.Code,
-				body: body,
-			}
-		}()
+		w := httptest.NewRecorder()
+		c.chapiResponseHandler(w, newCHAPIResponse(t, invitationID, vp))
+		require.Equal(t, http.StatusAccepted, w.Code)
 
 		select {
 		case <-requestPresentationSent:
-		case <-time.After(2 * time.Second):
-			t.Fatalf("timeout while waiting for request-presentation to be sent")
-		}
-
-		continued := make(chan struct{})
-		stopped := make(chan error)
-
-		go func() {
-			issuerResponse <- service.DIDCommAction{
-				Message: newIssuerResponse(t, thid, newPresentationSubmissionVP(t, nil, newCreditCardStatementVC(t))),
-				Continue: func(interface{}) {
-					continued <- struct{}{}
-				},
-				Stop: func(err error) {
-					stopped <- err
-				},
-			}
-		}()
-
-		select {
-		case <-acceptedAtHydra:
-			select {
-			case <-continued:
-			case err := <-stopped:
-				t.Fatalf("didcomm action was stopped: %s", err)
-			case <-time.After(time.Second):
-				t.Fatal("timed out waiting for didcomm action Continue()")
-			}
-
-			select {
-			case r := <-result:
-				require.Equal(t, http.StatusOK, r.code)
-				require.Equal(t, redirectURL, r.body.RedirectURL)
-			case <-time.After(time.Second):
-				t.Fatal("timed out waiting for the http response")
-			}
 		case <-time.After(time.Second):
-			t.Fatal("timeout waiting for acceptance at hydra")
+			t.Fatalf("timeout while waiting for request-presentation to be sent")
 		}
 	})
 
@@ -1974,14 +1915,13 @@ func TestCHAPIResponseHandler(t *testing.T) {
 		require.Equal(t, http.StatusInternalServerError, w.Code)
 	})
 
-	t.Run("bad request if issuer's response has no credentials", func(t *testing.T) {
+	t.Run("internal server error if cannot update consent request context in transient storage", func(t *testing.T) {
 		invitationID := uuid.New().String()
 		rpPublicDID := newDID(t).String()
 		rpPeerDID := newPeerDID(t)
 		issuerPeerDID := newPeerDID(t)
 		userPeerDID := newDID(t).String()
 		thid := uuid.New().String()
-		var issuerResponse chan<- service.DIDCommAction = nil
 		definitions := &presexch.PresentationDefinitions{
 			InputDescriptors: []*presexch.InputDescriptor{
 				{
@@ -2012,30 +1952,71 @@ func TestCHAPIResponseHandler(t *testing.T) {
 				},
 			}},
 			authz, degree)
-		redirectURL := "http://hydra.example.com/accept"
-		requestPresentationSent := make(chan struct{})
+
+		mockStorage := memStorage()
+
+		mockStorage.Transient = &mockstorage.Provider{
+			Store: &mockstorage.MockStore{
+				Store: map[string][]byte{
+					invitationID: toBytes(t, &consentRequestCtx{
+						InvitationID: invitationID,
+						PD:           definitions,
+						CR: &admin.GetConsentRequestOK{
+							Payload: &models.ConsentRequest{Challenge: uuid.New().String()},
+						},
+						UserDID:       userPeerDID,
+						RPPublicDID:   rpPublicDID,
+						RPPairwiseDID: rpPeerDID.ID,
+					}),
+				},
+				ErrPut: errors.New("test"),
+			},
+		}
 
 		c, err := New(&Config{
 			DIDExchClient:        &mockdidexchange.MockClient{},
-			Storage:              memStorage(),
+			Storage:              mockStorage,
 			AriesStorageProvider: &mockAriesContextProvider{},
 			PresentProofClient: &mockpresentproof.MockClient{
-				RegisterActionFunc: func(c chan<- service.DIDCommAction) error {
-					issuerResponse = c
-
-					return nil
-				},
 				RequestPresentationFunc: func(request *presentproof.RequestPresentation, myDID, theirDID string) (string, error) {
-					require.Equal(t, rpPeerDID.ID, myDID)
-					require.Equal(t, issuerPeerDID.ID, theirDID)
-					require.Len(t, request.RequestPresentationsAttach, 1)
-					checkPresentationDefinitionAttachment(t, authz, request)
-
-					go func() { requestPresentationSent <- struct{}{} }()
-
 					return thid, nil
 				},
 			},
+			Hydra: &stubHydra{
+				acceptConsentRequestFunc: func(*admin.AcceptConsentRequestParams) (*admin.AcceptConsentRequestOK, error) {
+					return &admin.AcceptConsentRequestOK{
+						Payload: &models.CompletedRequest{RedirectTo: "http://hydra.example.com/accept"},
+					}, nil
+				},
+			},
+		})
+		require.NoError(t, err)
+
+		w := httptest.NewRecorder()
+		c.chapiResponseHandler(w, newCHAPIResponse(t, invitationID, vp))
+		require.Equal(t, http.StatusInternalServerError, w.Code)
+	})
+}
+
+func TestGetPresentationResponseResultHandler(t *testing.T) {
+	t.Run("returns redirectURL if user data has been collected", func(t *testing.T) {
+		redirectURL := "http://hydra.example.com/accept"
+		invitationID := uuid.New().String()
+		thid := uuid.New().String()
+
+		local := map[string][]byte{
+			uuid.New().String(): marshal(t, newUniversityDegreeVC(t)),
+		}
+
+		remote := map[string]string{
+			uuid.New().String(): thid,
+		}
+
+		o, err := New(&Config{
+			DIDExchClient:        &mockdidexchange.MockClient{},
+			Storage:              memStorage(),
+			AriesStorageProvider: &mockAriesContextProvider{},
+			PresentProofClient:   &mockpresentproof.MockClient{},
 			Hydra: &stubHydra{
 				acceptConsentRequestFunc: func(*admin.AcceptConsentRequestParams) (*admin.AcceptConsentRequestOK, error) {
 					return &admin.AcceptConsentRequestOK{Payload: &models.CompletedRequest{RedirectTo: redirectURL}}, nil
@@ -2044,166 +2025,200 @@ func TestCHAPIResponseHandler(t *testing.T) {
 		})
 		require.NoError(t, err)
 
-		storePut(t, c.transientStore, invitationID, &consentRequestCtx{
-			InvitationID:  invitationID,
-			PD:            definitions,
-			CR:            &admin.GetConsentRequestOK{Payload: &models.ConsentRequest{Challenge: uuid.New().String()}},
-			UserDID:       userPeerDID,
-			RPPublicDID:   rpPublicDID,
-			RPPairwiseDID: rpPeerDID.ID,
-		})
-
-		result := make(chan struct {
-			code int
-			body *HandleCHAPIResponseResult
-		})
-
-		go func() {
-			w := httptest.NewRecorder()
-			c.chapiResponseHandler(w, newCHAPIResponse(t, invitationID, vp))
-			body := &HandleCHAPIResponseResult{}
-			err := json.Unmarshal(w.Body.Bytes(), body)
-			require.NoError(t, err)
-			result <- struct {
-				code int
-				body *HandleCHAPIResponseResult
-			}{
-				code: w.Code,
-				body: body,
-			}
-		}()
-
-		select {
-		case <-requestPresentationSent:
-		case <-time.After(2 * time.Second):
-			t.Fatalf("timeout while waiting for request-presentation to be sent")
-		}
-
-		continued := make(chan struct{})
-		stopped := make(chan error)
-
-		go func() {
-			issuerResponse <- service.DIDCommAction{
-				Message: newIssuerResponse(t, thid, newPresentationSubmissionVP(t, nil)),
-				Continue: func(interface{}) {
-					continued <- struct{}{}
-				},
-				Stop: func(err error) {
-					stopped <- err
-				},
-			}
-		}()
-
-		select {
-		case <-continued:
-			t.Fatalf("didcomm action should not have been allowed to continue")
-		case <-stopped:
-		case <-time.After(time.Second):
-			t.Fatal("timed out waiting for didcomm action Continue()")
-		}
-
-		select {
-		case r := <-result:
-			require.Equal(t, http.StatusBadRequest, r.code)
-		case <-time.After(time.Second):
-			t.Fatal("timed out waiting for the http response")
-		}
-	})
-
-	t.Run("gateway timeout if issuer does not respond on time", func(t *testing.T) {
-		invitationID := uuid.New().String()
-		rpPublicDID := newDID(t).String()
-		rpPeerDID := newPeerDID(t)
-		issuerPeerDID := newPeerDID(t)
-		userPeerDID := newDID(t).String()
-		thid := uuid.New().String()
-		definitions := &presexch.PresentationDefinitions{
-			InputDescriptors: []*presexch.InputDescriptor{{
-				ID: uuid.New().String(),
-				Schema: &presexch.Schema{
-					URI: []string{vc.AuthorizationCredentialContext},
-				},
-			}},
-		}
-		vp := newPresentationSubmissionVP(t,
-			&presexch.PresentationSubmission{DescriptorMap: []*presexch.InputDescriptorMapping{{
-				ID:   definitions.InputDescriptors[0].ID,
-				Path: "$.verifiableCredential[0]",
-			}}},
-			newUserAuthorizationVC(t, userPeerDID, rpPeerDID, issuerPeerDID))
-
-		c, err := New(&Config{
-			DIDExchClient:        &mockdidexchange.MockClient{},
-			Storage:              memStorage(),
-			AriesStorageProvider: &mockAriesContextProvider{},
-			PresentProofClient: &mockpresentproof.MockClient{
-				RequestPresentationFunc: func(request *presentproof.RequestPresentation, myDID, theirDID string) (string, error) {
-					return thid, nil
-				},
-			},
-			Hydra: &stubHydra{},
-		})
-		require.NoError(t, err)
-		c.issuerCallbackTimeout = 500 * time.Millisecond
-
-		storePut(t, c.transientStore, invitationID, &consentRequestCtx{
+		storePut(t, o.transientStore, invitationID, &consentRequestCtx{
 			InvitationID: invitationID,
-			PD:           definitions,
-			CR: &admin.GetConsentRequestOK{
-				Payload: &models.ConsentRequest{
-					Challenge: uuid.New().String(),
-				},
+			CR: &admin.GetConsentRequestOK{Payload: &models.ConsentRequest{
+				Challenge:                    uuid.New().String(),
+				RequestedAccessTokenAudience: []string{uuid.New().String()},
+				RequestedScope:               []string{uuid.New().String()},
+			}},
+			UserData: &userDataCollection{
+				Local:  local,
+				Remote: remote,
 			},
-			UserDID:       userPeerDID,
-			RPPublicDID:   rpPublicDID,
-			RPPairwiseDID: rpPeerDID.ID,
 		})
 
-		result := make(chan int)
+		// simulate response from remote issuer
+		storePut(t, o.transientStore, thid, newCreditCardStatementVC(t))
 
-		go func() {
-			w := httptest.NewRecorder()
-			c.chapiResponseHandler(w, newCHAPIResponse(t, invitationID, vp))
-			result <- w.Code
-		}()
+		w := httptest.NewRecorder()
+		o.getPresentationResponseResultHandler(w, newGetPresentationResponseResult(invitationID))
 
-		select {
-		case r := <-result:
-			require.Equal(t, http.StatusGatewayTimeout, r)
-		case <-time.After(time.Second):
-			t.Fatal("timeout")
-		}
+		require.Equal(t, http.StatusOK, w.Code)
+
+		result := &HandleCHAPIResponseResult{}
+
+		err = json.NewDecoder(w.Body).Decode(result)
+		require.NoError(t, err)
+
+		require.Equal(t, redirectURL, result.RedirectURL)
 	})
-}
 
-func TestHandleUserDataSuccess(t *testing.T) {
-	t.Run("internal server error if cannot map credential to issuer object", func(t *testing.T) {
-		invalid := newUniversityDegreeVC(t)
-		invalid.Subject = "}"
-		c, err := New(&Config{
+	t.Run("bad request error if handle query param is missing", func(t *testing.T) {
+		o, err := New(&Config{
+			DIDExchClient:        &mockdidexchange.MockClient{},
 			Storage:              memStorage(),
 			AriesStorageProvider: &mockAriesContextProvider{},
-			DIDExchClient:        &mockdidexchange.MockClient{},
 			PresentProofClient:   &mockpresentproof.MockClient{},
+			Hydra:                &stubHydra{},
 		})
 		require.NoError(t, err)
-		c.issuerCallbackTimeout = time.Second
-		require.NoError(t, err)
+
 		w := httptest.NewRecorder()
-		c.handleUserDataSuccess(w,
-			nil,
-			map[string]*verifiable.Credential{
-				"scope": invalid,
+		o.getPresentationResponseResultHandler(w, httptest.NewRequest(http.MethodGet, "/dummy", nil))
+
+		require.Equal(t, http.StatusBadRequest, w.Code)
+	})
+
+	t.Run("bad request error if handle is invalid", func(t *testing.T) {
+		o, err := New(&Config{
+			DIDExchClient:        &mockdidexchange.MockClient{},
+			Storage:              memStorage(),
+			AriesStorageProvider: &mockAriesContextProvider{},
+			PresentProofClient:   &mockpresentproof.MockClient{},
+			Hydra:                &stubHydra{},
+		})
+		require.NoError(t, err)
+
+		w := httptest.NewRecorder()
+		o.getPresentationResponseResultHandler(w, newGetPresentationResponseResult(uuid.New().String()))
+
+		require.Equal(t, http.StatusBadRequest, w.Code)
+	})
+
+	t.Run("internal server error if remote threadID not found", func(t *testing.T) {
+		invitationID := uuid.New().String()
+		thid := uuid.New().String()
+
+		local := map[string][]byte{
+			uuid.New().String(): marshal(t, newUniversityDegreeVC(t)),
+		}
+
+		remote := map[string]string{
+			uuid.New().String(): thid,
+		}
+
+		o, err := New(&Config{
+			DIDExchClient:        &mockdidexchange.MockClient{},
+			Storage:              memStorage(),
+			AriesStorageProvider: &mockAriesContextProvider{},
+			PresentProofClient:   &mockpresentproof.MockClient{},
+			Hydra:                &stubHydra{},
+		})
+		require.NoError(t, err)
+
+		storePut(t, o.transientStore, invitationID, &consentRequestCtx{
+			InvitationID: invitationID,
+			UserData: &userDataCollection{
+				Local:  local,
+				Remote: remote,
 			},
-			&consentRequestCtx{})
+		})
+
+		// simulate response from remote issuer
+		storePut(t, o.transientStore, uuid.New().String(), newCreditCardStatementVC(t))
+
+		w := httptest.NewRecorder()
+		o.getPresentationResponseResultHandler(w, newGetPresentationResponseResult(invitationID))
+
 		require.Equal(t, http.StatusInternalServerError, w.Code)
 	})
 
-	t.Run("bad gateway if cannot accept consent request at hydra", func(t *testing.T) {
-		c, err := New(&Config{
+	t.Run("internal server error if cannot parse local credential", func(t *testing.T) {
+		invitationID := uuid.New().String()
+		thid := uuid.New().String()
+
+		local := map[string][]byte{
+			uuid.New().String(): []byte("{INVALID"),
+		}
+
+		remote := map[string]string{
+			uuid.New().String(): thid,
+		}
+
+		o, err := New(&Config{
+			DIDExchClient:        &mockdidexchange.MockClient{},
 			Storage:              memStorage(),
 			AriesStorageProvider: &mockAriesContextProvider{},
+			PresentProofClient:   &mockpresentproof.MockClient{},
+			Hydra:                &stubHydra{},
+		})
+		require.NoError(t, err)
+
+		storePut(t, o.transientStore, invitationID, &consentRequestCtx{
+			InvitationID: invitationID,
+			UserData: &userDataCollection{
+				Local:  local,
+				Remote: remote,
+			},
+		})
+
+		// simulate response from remote issuer
+		storePut(t, o.transientStore, thid, newCreditCardStatementVC(t))
+
+		w := httptest.NewRecorder()
+		o.getPresentationResponseResultHandler(w, newGetPresentationResponseResult(invitationID))
+
+		require.Equal(t, http.StatusInternalServerError, w.Code)
+	})
+
+	t.Run("internal server error if cannot parse remote credential", func(t *testing.T) {
+		invitationID := uuid.New().String()
+		thid := uuid.New().String()
+
+		local := map[string][]byte{
+			uuid.New().String(): marshal(t, newUniversityDegreeVC(t)),
+		}
+
+		remote := map[string]string{
+			uuid.New().String(): thid,
+		}
+
+		o, err := New(&Config{
 			DIDExchClient:        &mockdidexchange.MockClient{},
+			Storage:              memStorage(),
+			AriesStorageProvider: &mockAriesContextProvider{},
+			PresentProofClient:   &mockpresentproof.MockClient{},
+			Hydra:                &stubHydra{},
+		})
+		require.NoError(t, err)
+
+		storePut(t, o.transientStore, invitationID, &consentRequestCtx{
+			InvitationID: invitationID,
+			UserData: &userDataCollection{
+				Local:  local,
+				Remote: remote,
+			},
+		})
+
+		// simulate response from remote issuer
+		remoteVC := newCreditCardStatementVC(t)
+		remoteVC.Types = nil
+		remoteVC.Context = nil
+		storePut(t, o.transientStore, thid, remoteVC)
+
+		w := httptest.NewRecorder()
+		o.getPresentationResponseResultHandler(w, newGetPresentationResponseResult(invitationID))
+
+		require.Equal(t, http.StatusInternalServerError, w.Code)
+	})
+
+	t.Run("bad gateway error if hydra fails to accept consent", func(t *testing.T) {
+		invitationID := uuid.New().String()
+		thid := uuid.New().String()
+
+		local := map[string][]byte{
+			uuid.New().String(): marshal(t, newUniversityDegreeVC(t)),
+		}
+
+		remote := map[string]string{
+			uuid.New().String(): thid,
+		}
+
+		o, err := New(&Config{
+			DIDExchClient:        &mockdidexchange.MockClient{},
+			Storage:              memStorage(),
+			AriesStorageProvider: &mockAriesContextProvider{},
 			PresentProofClient:   &mockpresentproof.MockClient{},
 			Hydra: &stubHydra{
 				acceptConsentRequestFunc: func(*admin.AcceptConsentRequestParams) (*admin.AcceptConsentRequestOK, error) {
@@ -2212,25 +2227,30 @@ func TestHandleUserDataSuccess(t *testing.T) {
 			},
 		})
 		require.NoError(t, err)
-		c.issuerCallbackTimeout = time.Second
-		ccVC := newCreditCardStatementVC(t)
-		vp := newPresentationSubmissionVP(t, nil, ccVC)
-		require.NoError(t, err)
+
+		storePut(t, o.transientStore, invitationID, &consentRequestCtx{
+			InvitationID: invitationID,
+			CR: &admin.GetConsentRequestOK{Payload: &models.ConsentRequest{
+				Challenge:                    uuid.New().String(),
+				RequestedAccessTokenAudience: []string{uuid.New().String()},
+				RequestedScope:               []string{uuid.New().String()},
+			}},
+			UserData: &userDataCollection{
+				Local:  local,
+				Remote: remote,
+			},
+		})
+
+		// simulate response from remote issuer
+		storePut(t, o.transientStore, thid, newCreditCardStatementVC(t))
+
 		w := httptest.NewRecorder()
-		c.handleUserDataSuccess(w,
-			newCHAPIResponse(t, "", vp),
-			map[string]*verifiable.Credential{
-				"scope": ccVC,
-			},
-			&consentRequestCtx{
-				CR: &admin.GetConsentRequestOK{Payload: &models.ConsentRequest{}},
-			},
-		)
+		o.getPresentationResponseResultHandler(w, newGetPresentationResponseResult(invitationID))
+
 		require.Equal(t, http.StatusBadGateway, w.Code)
 	})
 }
 
-//nolint:gocyclo
 func TestHandleIssuerPresentationMsg(t *testing.T) {
 	t.Run("valid response", func(t *testing.T) {
 		o, err := New(&Config{
@@ -2242,26 +2262,19 @@ func TestHandleIssuerPresentationMsg(t *testing.T) {
 		require.NoError(t, err)
 
 		thid := uuid.New().String()
-		callback := make(chan *issuerResponseStatus)
+		expected := newCreditCardStatementVC(t)
 
-		o.setWalletResponseContext(thid, &walletResponseCtx{
-			consentRequestCtx:    &consentRequestCtx{PD: &presexch.PresentationDefinitions{}},
-			issuerResponseStatus: callback,
-		})
+		err = o.handleIssuerPresentationMsg(
+			newIssuerResponse(t, thid, newPresentationSubmissionVP(t, nil, expected)))
+		require.NoError(t, err)
 
-		go func() {
-			err = o.handleIssuerPresentationMsg(
-				newIssuerResponse(t, thid, newPresentationSubmissionVP(t, nil, newCreditCardStatementVC(t))))
-			require.NoError(t, err)
-		}()
+		bits, err := o.transientStore.Get(thid)
+		require.NoError(t, err)
 
-		select {
-		case c := <-callback:
-			require.NoError(t, c.err)
-			require.NotNil(t, c.credentials)
-		case <-time.After(time.Second):
-			t.Fatal("timeout")
-		}
+		actual, err := verifiable.ParseUnverifiedCredential(bits)
+		require.NoError(t, err)
+
+		require.Equal(t, expected.ID, actual.ID)
 	})
 
 	t.Run("error if invalid threadID", func(t *testing.T) {
@@ -2275,89 +2288,6 @@ func TestHandleIssuerPresentationMsg(t *testing.T) {
 
 		err = o.handleIssuerPresentationMsg(service.NewDIDCommMsgMap(&presentproof.Presentation{}))
 		require.Error(t, err)
-	})
-
-	t.Run("error if no callback channel is registered", func(t *testing.T) {
-		o, err := New(&Config{
-			DIDExchClient:        &mockdidexchange.MockClient{},
-			Storage:              memStorage(),
-			AriesStorageProvider: &mockAriesContextProvider{},
-			PresentProofClient:   &mockpresentproof.MockClient{},
-		})
-		require.NoError(t, err)
-
-		err = o.handleIssuerPresentationMsg(
-			newIssuerResponse(t, "INVALID", newPresentationSubmissionVP(t, nil, newCreditCardStatementVC(t))))
-		require.Error(t, err)
-	})
-
-	t.Run("error if no thid->invitationID mapping is found", func(t *testing.T) {
-		o, err := New(&Config{
-			DIDExchClient:        &mockdidexchange.MockClient{},
-			Storage:              memStorage(),
-			AriesStorageProvider: &mockAriesContextProvider{},
-			PresentProofClient:   &mockpresentproof.MockClient{},
-		})
-		require.NoError(t, err)
-
-		thid := uuid.New().String()
-		callback := make(chan *issuerResponseStatus)
-
-		o.setWalletResponseContext(thid, &walletResponseCtx{
-			consentRequestCtx:    &consentRequestCtx{PD: &presexch.PresentationDefinitions{}},
-			issuerResponseStatus: callback,
-		})
-
-		msg := service.NewDIDCommMsgMap(&presentproof.Presentation{})
-		err = msg.SetID(thid)
-		require.NoError(t, err)
-
-		go func() {
-			err = o.handleIssuerPresentationMsg(msg)
-			require.Error(t, err)
-		}()
-
-		select {
-		case c := <-callback:
-			require.Error(t, c.err)
-		case <-time.After(time.Second):
-			t.Fatal("timeout")
-		}
-	})
-
-	t.Run("error if no invitationData is found", func(t *testing.T) {
-		o, err := New(&Config{
-			DIDExchClient:        &mockdidexchange.MockClient{},
-			Storage:              memStorage(),
-			AriesStorageProvider: &mockAriesContextProvider{},
-			PresentProofClient:   &mockpresentproof.MockClient{},
-		})
-		require.NoError(t, err)
-
-		thid := uuid.New().String()
-		msg := service.NewDIDCommMsgMap(&presentproof.Presentation{})
-
-		err = msg.SetID(thid)
-		require.NoError(t, err)
-
-		callback := make(chan *issuerResponseStatus)
-
-		o.setWalletResponseContext(thid, &walletResponseCtx{
-			consentRequestCtx:    &consentRequestCtx{PD: &presexch.PresentationDefinitions{}},
-			issuerResponseStatus: callback,
-		})
-
-		go func() {
-			err = o.handleIssuerPresentationMsg(msg)
-			require.Error(t, err)
-		}()
-
-		select {
-		case c := <-callback:
-			require.Error(t, c.err)
-		case <-time.After(time.Second):
-			t.Fatal("timeout")
-		}
 	})
 
 	t.Run("error on invalid presentation response", func(t *testing.T) {
@@ -2375,24 +2305,8 @@ func TestHandleIssuerPresentationMsg(t *testing.T) {
 		err = msg.SetID(thid)
 		require.NoError(t, err)
 
-		callback := make(chan *issuerResponseStatus)
-
-		o.setWalletResponseContext(thid, &walletResponseCtx{
-			consentRequestCtx:    &consentRequestCtx{PD: &presexch.PresentationDefinitions{}},
-			issuerResponseStatus: callback,
-		})
-
-		go func() {
-			err = o.handleIssuerPresentationMsg(msg)
-			require.Error(t, err)
-		}()
-
-		select {
-		case c := <-callback:
-			require.Error(t, c.err)
-		case <-time.After(time.Second):
-			t.Fatal("timeout")
-		}
+		err = o.handleIssuerPresentationMsg(msg)
+		require.Error(t, err)
 	})
 
 	t.Run("error fetching attachment contents", func(t *testing.T) {
@@ -2417,11 +2331,6 @@ func TestHandleIssuerPresentationMsg(t *testing.T) {
 		err = msg.SetID(thid)
 		require.NoError(t, err)
 
-		o.setWalletResponseContext(thid, &walletResponseCtx{
-			consentRequestCtx:    &consentRequestCtx{PD: &presexch.PresentationDefinitions{}},
-			issuerResponseStatus: make(chan *issuerResponseStatus, 2),
-		})
-
 		err = o.handleIssuerPresentationMsg(msg)
 		require.Error(t, err)
 	})
@@ -2436,25 +2345,35 @@ func TestHandleIssuerPresentationMsg(t *testing.T) {
 		require.NoError(t, err)
 
 		thid := uuid.New().String()
-		callback := make(chan *issuerResponseStatus)
 
-		o.setWalletResponseContext(thid, &walletResponseCtx{
-			consentRequestCtx:    &consentRequestCtx{PD: &presexch.PresentationDefinitions{}},
-			issuerResponseStatus: callback,
-		})
+		err = o.handleIssuerPresentationMsg(newIssuerResponse(t, thid, map[string]interface{}{}))
+		require.Error(t, err)
+		require.True(t, errors.Is(err, errInvalidCredential))
+	})
 
-		go func() {
-			err = o.handleIssuerPresentationMsg(newIssuerResponse(t, thid, map[string]interface{}{}))
-			require.Error(t, err)
-			require.True(t, errors.Is(err, errInvalidCredential))
-		}()
-
-		select {
-		case c := <-callback:
-			require.True(t, errors.Is(c.err, errInvalidCredential))
-		case <-time.After(time.Second):
-			t.Fatal("timeout")
+	t.Run("error on transient store PUT error", func(t *testing.T) {
+		mockStorage := memStorage()
+		mockStorage.Transient = &mockstorage.Provider{
+			Store: &mockstorage.MockStore{
+				Store:  make(map[string][]byte),
+				ErrPut: errors.New("test"),
+			},
 		}
+
+		o, err := New(&Config{
+			DIDExchClient:        &mockdidexchange.MockClient{},
+			Storage:              mockStorage,
+			AriesStorageProvider: &mockAriesContextProvider{},
+			PresentProofClient:   &mockpresentproof.MockClient{},
+		})
+		require.NoError(t, err)
+
+		thid := uuid.New().String()
+		expected := newCreditCardStatementVC(t)
+
+		err = o.handleIssuerPresentationMsg(
+			newIssuerResponse(t, thid, newPresentationSubmissionVP(t, nil, expected)))
+		require.Error(t, err)
 	})
 }
 
@@ -2851,7 +2770,7 @@ func newHydraRequestNoChallenge(t *testing.T) *http.Request {
 }
 
 func newCreatePresentationDefinitionRequest(t *testing.T, handle string) *http.Request {
-	u, err := url.Parse(fmt.Sprintf("http://adapter.example.com?pd=%s", handle))
+	u, err := url.Parse(fmt.Sprintf("http://adapter.example.com?h=%s", handle))
 	require.NoError(t, err)
 
 	return &http.Request{URL: u}
@@ -2964,6 +2883,10 @@ func newCHAPIResponse(t *testing.T, invID string, vp *verifiable.Presentation) *
 	return httptest.NewRequest(http.MethodPost, "/dummy", bytes.NewReader(bits))
 }
 
+func newGetPresentationResponseResult(h string) *http.Request {
+	return httptest.NewRequest(http.MethodGet, fmt.Sprintf("/dummy?h=%s", h), nil)
+}
+
 type stubStorageProvider struct {
 	storeCreateErr error
 	storeOpenErr   error
@@ -3061,7 +2984,7 @@ func toBytes(t *testing.T, v interface{}) []byte {
 	return bits
 }
 
-func marshalVP(t *testing.T, vp json.Marshaler) []byte {
+func marshal(t *testing.T, vp json.Marshaler) []byte {
 	bits, err := json.Marshal(vp)
 	require.NoError(t, err)
 

@@ -58,25 +58,19 @@ var logger = log.New("edge-adapter/bddtests/rp")
 
 type tenantContext struct {
 	*operation.CreateRPTenantResponse
-	label               string
-	callbackURL         string
-	pdHandle            string
-	browser             *http.Client
-	callbackServer      *httptest.Server
-	walletConnID        string
-	invitationID        string
-	chapiResponseResult *handleChapiResponseCallResult
-	expectedUserData    map[string]interface{}
-	oidcProvider        *oidc.Provider
-	oauth2Config        *oauth2.Config
-	callbackReceived    *url.URL
-	scope               []string
-	presDefs            *presexch.PresentationDefinitions
-}
-
-type handleChapiResponseCallResult struct {
-	result *operation.HandleCHAPIResponseResult
-	err    error
+	label            string
+	callbackURL      string
+	pdHandle         string
+	browser          *http.Client
+	callbackServer   *httptest.Server
+	walletConnID     string
+	invitationID     string
+	expectedUserData map[string]interface{}
+	oidcProvider     *oidc.Provider
+	oauth2Config     *oauth2.Config
+	callbackReceived *url.URL
+	scope            []string
+	presDefs         *presexch.PresentationDefinitions
 }
 
 // nolint:gochecknoglobals
@@ -334,7 +328,7 @@ func (s *Steps) redirectUserToAdapter(label, scope string) error {
 		)
 	}
 
-	handle := resp.Request.URL.Query().Get("pd")
+	handle := resp.Request.URL.Query().Get("h")
 
 	if handle == "" {
 		return errors.New("adapter failed to redirect user to UI with a handle")
@@ -353,7 +347,7 @@ func (s *Steps) sendCHAPIRequestToWallet(tenantID, walletID string) error {
 	tenant := s.tenantCtx[tenantID]
 
 	//nolint:bodyclose
-	resp, err := tenant.browser.Get(fmt.Sprintf("%s/presentations/create?pd=%s", rpAdapterURL, tenant.pdHandle))
+	resp, err := tenant.browser.Get(fmt.Sprintf("%s/presentations/create?h=%s", rpAdapterURL, tenant.pdHandle))
 	if err != nil {
 		return fmt.Errorf("rp adapter failed to produce a chapi request : %w", err)
 	}
@@ -555,34 +549,18 @@ func (s *Steps) walletRespondsWithAuthorizationCredential(wallet, tenant, issuer
 		return fmt.Errorf("failed to marshal chapi response : %w", err)
 	}
 
-	go func() {
-		// this call blocks until a timeout occurs, or the issuer responds with the presentation
-		resp, err := tenantCtx.browser.Post( //nolint:bodyclose
-			rpAdapterURL+"/presentations/handleResponse", "application/json", bytes.NewReader(chapiResponseBytes))
-		if err != nil {
-			tenantCtx.chapiResponseResult = &handleChapiResponseCallResult{err: err}
+	resp, err := tenantCtx.browser.Post( // nolint:bodyclose
+		rpAdapterURL+"/presentations/handleResponse", "application/json", bytes.NewReader(chapiResponseBytes))
+	if err != nil {
+		return fmt.Errorf("'%s' failed to post response back to '%s': %w", wallet, tenant, err)
+	}
 
-			logger.Errorf("failed to send chapi response to rp adapter : %s", err)
+	defer bddutil.CloseResponseBody(resp.Body)
 
-			return
-		}
-
-		defer bddutil.CloseResponseBody(resp.Body)
-
-		var result operation.HandleCHAPIResponseResult
-
-		err = json.NewDecoder(resp.Body).Decode(&result)
-		if err != nil {
-			err = fmt.Errorf("failed to decode handle chapi response : %s", err)
-			tenantCtx.chapiResponseResult = &handleChapiResponseCallResult{err: err}
-
-			logger.Errorf("%s", err)
-
-			return
-		}
-
-		tenantCtx.chapiResponseResult = &handleChapiResponseCallResult{result: &result}
-	}()
+	if resp.StatusCode != http.StatusAccepted {
+		return fmt.Errorf(
+			"'%s' returned an unexpected status code. got: %d, want: %d", tenant, resp.StatusCode, http.StatusAccepted)
+	}
 
 	return nil
 }
@@ -711,10 +689,27 @@ func (s *Steps) findCred(
 func (s *Steps) userRedirectBackToTenant(tenant string) error {
 	tenantCtx := s.tenantCtx[tenant]
 
+	result := &operation.HandleCHAPIResponseResult{}
+
 	err := backoff.Retry(
 		func() error {
-			if tenantCtx.chapiResponseResult == nil {
-				return fmt.Errorf(`no chapi response result received for tenant "%s"`, tenant)
+			req := fmt.Sprintf("%s/presentations/result?h=%s", rpAdapterURL, tenantCtx.invitationID)
+
+			resp, serviceErr := tenantCtx.browser.Get(req) // nolint:bodyclose
+			if serviceErr != nil {
+				return fmt.Errorf("'%s' failed to respond to wallet response status request: %w", tenant, serviceErr)
+			}
+
+			defer bddutil.CloseResponseBody(resp.Body)
+
+			if resp.StatusCode != http.StatusOK {
+				return fmt.Errorf(
+					"unexpected status from '%s': got: %d, want: %d", tenant, resp.StatusCode, http.StatusOK)
+			}
+
+			serviceErr = json.NewDecoder(resp.Body).Decode(result)
+			if serviceErr != nil {
+				return fmt.Errorf("failed to decode response from '%s': %w", tenant, serviceErr)
 			}
 
 			return nil
@@ -725,18 +720,13 @@ func (s *Steps) userRedirectBackToTenant(tenant string) error {
 		return err
 	}
 
-	chapiResponseResult := tenantCtx.chapiResponseResult
-
-	if chapiResponseResult.err != nil {
-		return fmt.Errorf(
-			"chapi response result received an error from the rp adapter %s : %w", tenant, chapiResponseResult.err)
+	if result.RedirectURL == "" {
+		return fmt.Errorf("'%s' did not return a redirect url", tenant)
 	}
 
-	redirectURL := chapiResponseResult.result.RedirectURL
-
-	resp, err := tenantCtx.browser.Get(redirectURL) //nolint:bodyclose
+	resp, err := tenantCtx.browser.Get(result.RedirectURL) //nolint:bodyclose
 	if err != nil {
-		return fmt.Errorf("failed to redirect user to %s : %w", redirectURL, err)
+		return fmt.Errorf("failed to redirect user to %s : %w", result.RedirectURL, err)
 	}
 
 	defer bddutil.CloseResponseBody(resp.Body)
