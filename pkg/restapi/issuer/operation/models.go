@@ -92,8 +92,10 @@ type UserDataRes struct {
 
 // UserMetadata contains metadata associated with user data.
 type UserMetadata struct {
-	Contexts []string `json:"contexts,omitempty"`
-	Scopes   []string `json:"scopes,omitempty"`
+	Contexts    []string `json:"contexts,omitempty"`
+	Scopes      []string `json:"scopes,omitempty"`
+	Name        string   `json:"name,omitempty"`
+	Description string   `json:"description,omitempty"`
 }
 
 // IssuerTokenReq issuer user data token request.

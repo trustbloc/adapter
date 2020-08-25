@@ -70,6 +70,10 @@ const (
 
 	// DIDConnectCHAPIQueryType CHAPI query type DIDConnect
 	DIDConnectCHAPIQueryType = "DIDConnect"
+
+	// credential custom fields
+	vcFieldName        = "name"
+	vcFieldDescription = "description"
 )
 
 // Handler http handler for each controller API endpoint.
@@ -796,12 +800,16 @@ func (o *Operation) createCredential(token string, profile *issuer.ProfileData, 
 	cred.Issued = util.NewTime(time.Now().UTC())
 	cred.Issuer.ID = profile.URL
 	cred.Issuer.CustomFields = make(verifiable.CustomFields)
-	cred.Issuer.CustomFields["name"] = profile.Name
+	cred.Issuer.CustomFields[vcFieldName] = profile.Name
 	cred.ID = uuid.New().URN()
+	cred.CustomFields = make(verifiable.CustomFields)
 
 	if resp.Metadata != nil {
 		cred.Context = append(cred.Context, resp.Metadata.Contexts...)
 		cred.Types = append(cred.Types, resp.Metadata.Scopes...)
+
+		cred.CustomFields[vcFieldName] = resp.Metadata.Name
+		cred.CustomFields[vcFieldDescription] = resp.Metadata.Description
 	}
 
 	if assuranceCred {
@@ -821,7 +829,6 @@ func (o *Operation) createCredential(token string, profile *issuer.ProfileData, 
 		cred.Types = append(cred.Types, adaptervc.AssuranceCredentialType)
 
 		// TODO - https://github.com/trustbloc/edge-adapter/issues/280 Add hash of the vc
-		cred.CustomFields = make(verifiable.CustomFields)
 		cred.CustomFields["referenceVCID"] = refCredData.ID
 	}
 
