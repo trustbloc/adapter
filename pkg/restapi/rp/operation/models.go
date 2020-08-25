@@ -18,6 +18,7 @@ import (
 type GetPresentationRequestResponse struct {
 	PD                   *presexch.PresentationDefinitions `json:"pd"`
 	Inv                  *outofband.Invitation             `json:"invitation"`
+	Credentials          []json.RawMessage                 `json:"credentials,omitempty"`
 	CredentialGovernance json.RawMessage                   `json:"credentialGovernance,omitempty"`
 }
 

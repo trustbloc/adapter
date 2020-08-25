@@ -1358,7 +1358,8 @@ func TestGetPresentationsRequest(t *testing.T) {
 		require.NotNil(t, resp.Inv)
 		require.Len(t, resp.Inv.Service, 1)
 		require.Equal(t, rpPublicDID.String(), resp.Inv.Service[0])
-		require.Equal(t, `{"key":"value"}`, string(resp.CredentialGovernance))
+		require.Len(t, resp.Credentials, 1)
+		require.Equal(t, `{"key":"value"}`, string(resp.Credentials[0]))
 	})
 
 	t.Run("test get governance - failed", func(t *testing.T) {

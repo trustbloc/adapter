@@ -791,8 +791,8 @@ func TestCHAPIRequest(t *testing.T) {
 			require.NoError(t, err)
 			require.Equal(t, DIDConnectCHAPIQueryType, chapiReq.Query.Type)
 			require.Equal(t, "https://didcomm.org/oob-invitation/1.0/invitation", chapiReq.DIDCommInvitation.Type)
-			require.Equal(t, `{"key":"value"}`, string(chapiReq.CredentialGovernance))
-			require.Equal(t, 1, len(chapiReq.Credentials))
+			require.Equal(t, `{"key":"value"}`, string(chapiReq.Credentials[1]))
+			require.Equal(t, 2, len(chapiReq.Credentials))
 		})
 
 		t.Run("with assurance support", func(t *testing.T) {
@@ -824,8 +824,8 @@ func TestCHAPIRequest(t *testing.T) {
 			require.NoError(t, err)
 			require.Equal(t, DIDConnectCHAPIQueryType, chapiReq.Query.Type)
 			require.Equal(t, "https://didcomm.org/oob-invitation/1.0/invitation", chapiReq.DIDCommInvitation.Type)
-			require.Equal(t, `{"key":"value"}`, string(chapiReq.CredentialGovernance))
-			require.Equal(t, 2, len(chapiReq.Credentials))
+			require.Equal(t, `{"key":"value"}`, string(chapiReq.Credentials[2]))
+			require.Equal(t, 3, len(chapiReq.Credentials))
 		})
 	})
 

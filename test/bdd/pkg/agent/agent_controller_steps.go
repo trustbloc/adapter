@@ -181,12 +181,12 @@ func (a *Steps) handleDIDCommConnectRequest(agentID, supportedVCContexts, issuer
 		return err
 	}
 
-	if supportsAssuranceCred && len(request.Credentials) != 2 {
+	if supportsAssuranceCred && len(request.Credentials) != 3 {
+		return fmt.Errorf("invalid number of credential in chapi request: "+
+			"expected=%d actual=%d", 3, len(request.Credentials))
+	} else if !supportsAssuranceCred && len(request.Credentials) != 2 {
 		return fmt.Errorf("invalid number of credential in chapi request: "+
 			"expected=%d actual=%d", 2, len(request.Credentials))
-	} else if !supportsAssuranceCred && len(request.Credentials) != 1 {
-		return fmt.Errorf("invalid number of credential in chapi request: "+
-			"expected=%d actual=%d", 1, len(request.Credentials))
 	}
 
 	err = validateManifestCred(request.Credentials[0], supportedVCContexts)
@@ -203,7 +203,12 @@ func (a *Steps) handleDIDCommConnectRequest(agentID, supportedVCContexts, issuer
 		a.refCredentials[agentID] = vc
 	}
 
-	err = validateGovernance(request.CredentialGovernance)
+	if supportsAssuranceCred {
+		err = validateGovernance(request.Credentials[2])
+	} else {
+		err = validateGovernance(request.Credentials[1])
+	}
+
 	if err != nil {
 		return fmt.Errorf("failed to parse governance credential : %s", err.Error())
 	}
@@ -944,7 +949,7 @@ func validateManifestCred(manifestVCBytes []byte, supportedVCContexts string) er
 	return nil
 }
 
-func validateGovernance(governanceVCBytes []byte) error {
+func validateGovernance(governanceVCBytes json.RawMessage) error {
 	governanceVC, err := verifiable.ParseUnverifiedCredential(governanceVCBytes)
 	if err != nil {
 		return err

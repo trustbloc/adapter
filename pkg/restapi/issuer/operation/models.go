@@ -38,10 +38,9 @@ type txnData struct {
 
 // CHAPIRequest wallet chapi request.
 type CHAPIRequest struct {
-	Query                *CHAPIQuery           `json:"query,omitempty"`
-	DIDCommInvitation    *outofband.Invitation `json:"invitation,omitempty"`
-	Credentials          []json.RawMessage     `json:"credentials,omitempty"`
-	CredentialGovernance json.RawMessage       `json:"credentialGovernance,omitempty"`
+	Query             *CHAPIQuery           `json:"query,omitempty"`
+	DIDCommInvitation *outofband.Invitation `json:"invitation,omitempty"`
+	Credentials       []json.RawMessage     `json:"credentials,omitempty"`
 }
 
 // CHAPIQuery chapi query type data.

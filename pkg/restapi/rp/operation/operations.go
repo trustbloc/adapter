@@ -712,9 +712,9 @@ func (o *Operation) getPresentationsRequest(w http.ResponseWriter, r *http.Reque
 	}
 
 	response := &GetPresentationRequestResponse{
-		PD:                   cr.PD,
-		Inv:                  invitation,
-		CredentialGovernance: governanceVC,
+		PD:          cr.PD,
+		Inv:         invitation,
+		Credentials: []json.RawMessage{governanceVC},
 	}
 
 	w.WriteHeader(http.StatusOK)
