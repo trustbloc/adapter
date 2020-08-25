@@ -176,7 +176,9 @@ const (
 	   },
 	   "metadata":{
 		  "contexts":["https://w3id.org/citizenship/v1"],
-		  "scopes":["PermanentResidentCard"]
+		  "scopes":["PermanentResidentCard"],
+		  "name":"Permanent Resident Card",
+		  "description":"Permanent Resident Card for John Smith"
 	   }
 	}`
 
@@ -211,7 +213,9 @@ const (
 		  ],
 		  "scopes":[
 			 "CreditCardStatement"
-		  ]
+		  ],
+		  "name":"Credit Card Statement",
+		  "description":"Credit Card Statement for Jane Doe"
 	   }
 	}`
 
@@ -227,7 +231,9 @@ const (
 		  ],
 		  "scopes":[
 			 "mDL"
-		  ]
+		  ],
+		  "name":"Drivers License",
+		  "description":"Drivers License for John Smith"
 	   }
 	}`
 
@@ -241,7 +247,9 @@ const (
 		  ],
 		  "scopes":[
 			 "DrivingLicenseEvidence"
-		  ]
+		  ],
+		  "name":"Drivers License Evidence",
+		  "description":"Drivers License Evidence for John Smith"
 	   }
 	}`
 )
