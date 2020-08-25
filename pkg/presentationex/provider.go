@@ -11,8 +11,6 @@ import (
 	"io"
 	"io/ioutil"
 
-	"github.com/google/uuid"
-
 	"github.com/trustbloc/edge-adapter/pkg/presexch"
 )
 
@@ -51,7 +49,7 @@ func (p *Provider) Create(scopes []string) (*presexch.PresentationDefinitions, e
 			return nil, fmt.Errorf("scope [%s] not supported", scope)
 		}
 
-		def.ID = uuid.New().String()
+		def.ID = scope
 		defs.InputDescriptors = append(defs.InputDescriptors, def)
 	}
 

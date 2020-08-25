@@ -2189,7 +2189,12 @@ func TestHandleUserDataSuccess(t *testing.T) {
 		c.issuerCallbackTimeout = time.Second
 		require.NoError(t, err)
 		w := httptest.NewRecorder()
-		c.handleUserDataSuccess(w, nil, []*verifiable.Credential{invalid}, &consentRequestCtx{})
+		c.handleUserDataSuccess(w,
+			nil,
+			map[string]*verifiable.Credential{
+				"scope": invalid,
+			},
+			&consentRequestCtx{})
 		require.Equal(t, http.StatusInternalServerError, w.Code)
 	})
 
@@ -2213,7 +2218,9 @@ func TestHandleUserDataSuccess(t *testing.T) {
 		w := httptest.NewRecorder()
 		c.handleUserDataSuccess(w,
 			newCHAPIResponse(t, "", vp),
-			[]*verifiable.Credential{ccVC},
+			map[string]*verifiable.Credential{
+				"scope": ccVC,
+			},
 			&consentRequestCtx{
 				CR: &admin.GetConsentRequestOK{Payload: &models.ConsentRequest{}},
 			},
