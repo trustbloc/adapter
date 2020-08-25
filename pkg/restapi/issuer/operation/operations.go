@@ -445,24 +445,8 @@ func (o *Operation) getCHAPIRequestHandler(rw http.ResponseWriter, req *http.Req
 		return
 	}
 
-	var governanceVC []byte
-
-	if o.governanceProvider != nil {
-		var err error
-		governanceVC, err = o.governanceProvider.GetCredential(profile.ID)
-
-		if err != nil {
-			commhttp.WriteErrorResponseWithLog(rw, http.StatusInternalServerError,
-				fmt.Sprintf("error retrieving governance vc : %s", err.Error()), getCHAPIRequestEndpoint, logger)
-
-			return
-		}
-	}
-
-	var credentials []json.RawMessage
-
-	// append manifest credential
-	credentials = append(credentials, manifestVC)
+	// preprate credentials to be sent and append manifest credential
+	credentials := append([]json.RawMessage{}, manifestVC)
 
 	if profile.SupportsAssuranceCredential {
 		vcBytes, err := o.createReferenceCredential(txnData.Token, profile)
@@ -476,11 +460,24 @@ func (o *Operation) getCHAPIRequestHandler(rw http.ResponseWriter, req *http.Req
 		credentials = append(credentials, vcBytes)
 	}
 
+	if o.governanceProvider != nil {
+		governanceVC, err := o.governanceProvider.GetCredential(profile.ID)
+
+		if err != nil {
+			commhttp.WriteErrorResponseWithLog(rw, http.StatusInternalServerError,
+				fmt.Sprintf("error retrieving governance vc : %s", err.Error()), getCHAPIRequestEndpoint, logger)
+
+			return
+		}
+
+		// append governance credential
+		credentials = append(credentials, governanceVC)
+	}
+
 	commhttp.WriteResponseWithLog(rw, &CHAPIRequest{
-		Query:                &CHAPIQuery{Type: DIDConnectCHAPIQueryType},
-		DIDCommInvitation:    txnData.DIDCommInvitation,
-		Credentials:          credentials,
-		CredentialGovernance: governanceVC,
+		Query:             &CHAPIQuery{Type: DIDConnectCHAPIQueryType},
+		DIDCommInvitation: txnData.DIDCommInvitation,
+		Credentials:       credentials,
 	}, getCHAPIRequestEndpoint, logger)
 }
 

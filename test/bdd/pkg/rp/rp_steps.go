@@ -377,7 +377,7 @@ func (s *Steps) sendCHAPIRequestToWallet(tenantID, walletID string) error {
 		return fmt.Errorf("failed to validate presentation definitions for '%s': %w", tenantID, err)
 	}
 
-	err = validateGovernance(result.CredentialGovernance)
+	err = validateGovernance(result.Credentials[0])
 	if err != nil {
 		return fmt.Errorf("failed to parse governance credential : %s", err.Error())
 	}
