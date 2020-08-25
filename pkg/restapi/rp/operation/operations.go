@@ -1215,6 +1215,17 @@ func (o *Operation) createRPTenant(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if o.governanceProvider != nil {
+		_, err = o.governanceProvider.IssueCredential(publicDID.ID, created.Payload.ClientID)
+		if err != nil {
+			msg := fmt.Sprintf("failed to issue governance vc : %s", err)
+			logger.Errorf(msg)
+			commhttp.WriteErrorResponse(w, http.StatusInternalServerError, msg)
+
+			return
+		}
+	}
+
 	// RP not found - we're good to go
 	err = o.rpStore.SaveRP(&rp.Tenant{
 		ClientID:  created.Payload.ClientID,
@@ -1228,17 +1239,6 @@ func (o *Operation) createRPTenant(w http.ResponseWriter, r *http.Request) {
 		commhttp.WriteErrorResponse(w, http.StatusInternalServerError, msg)
 
 		return
-	}
-
-	if o.governanceProvider != nil {
-		_, err = o.governanceProvider.IssueCredential(publicDID.ID, created.Payload.ClientID)
-		if err != nil {
-			msg := fmt.Sprintf("failed to issue governance vc : %s", err)
-			logger.Errorf(msg)
-			commhttp.WriteErrorResponse(w, http.StatusInternalServerError, msg)
-
-			return
-		}
 	}
 
 	w.WriteHeader(http.StatusCreated)

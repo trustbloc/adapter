@@ -243,16 +243,6 @@ func (o *Operation) createIssuerProfileHandler(rw http.ResponseWriter, req *http
 		return
 	}
 
-	profileData := mapProfileReqToData(data, newDidDoc)
-
-	err = o.profileStore.SaveProfile(profileData)
-	if err != nil {
-		commhttp.WriteErrorResponseWithLog(rw, http.StatusBadRequest,
-			fmt.Sprintf("failed to create profile: %s", err.Error()), profileEndpoint, logger)
-
-		return
-	}
-
 	if o.governanceProvider != nil {
 		_, err = o.governanceProvider.IssueCredential(newDidDoc.ID, data.ID)
 		if err != nil {
@@ -262,6 +252,16 @@ func (o *Operation) createIssuerProfileHandler(rw http.ResponseWriter, req *http
 
 			return
 		}
+	}
+
+	profileData := mapProfileReqToData(data, newDidDoc)
+
+	err = o.profileStore.SaveProfile(profileData)
+	if err != nil {
+		commhttp.WriteErrorResponseWithLog(rw, http.StatusBadRequest,
+			fmt.Sprintf("failed to create profile: %s", err.Error()), profileEndpoint, logger)
+
+		return
 	}
 
 	rw.WriteHeader(http.StatusCreated)
