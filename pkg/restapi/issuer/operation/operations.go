@@ -473,11 +473,8 @@ func (o *Operation) getCHAPIRequestHandler(rw http.ResponseWriter, req *http.Req
 	}
 
 	commhttp.WriteResponseWithLog(rw, &CHAPIRequest{
-		Query:             &CHAPIQuery{Type: DIDConnectCHAPIQueryType},
-		DIDCommInvitation: txnData.DIDCommInvitation,
-		// TODO - https://github.com/trustbloc/edge-adapter/issues/281 Remove manifest attribute once
-		//  wallet is updated, as it would be part of credentials array
-		Manifest:             manifestVC,
+		Query:                &CHAPIQuery{Type: DIDConnectCHAPIQueryType},
+		DIDCommInvitation:    txnData.DIDCommInvitation,
 		Credentials:          credentials,
 		CredentialGovernance: governanceVC,
 	}, getCHAPIRequestEndpoint, logger)
@@ -789,7 +786,7 @@ func (o *Operation) createCredential(token string, profile *issuer.ProfileData, 
 
 	credSubData, err := unmarshalSubject(resp.Data)
 	if err != nil {
-		return nil, fmt.Errorf("unmarshal issuer resp : %w", err)
+		return nil, fmt.Errorf("unmarshal credential subject in issuer resp : %w", err)
 	}
 
 	cred := &verifiable.Credential{}

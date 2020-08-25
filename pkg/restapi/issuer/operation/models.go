@@ -40,7 +40,6 @@ type txnData struct {
 type CHAPIRequest struct {
 	Query                *CHAPIQuery           `json:"query,omitempty"`
 	DIDCommInvitation    *outofband.Invitation `json:"invitation,omitempty"`
-	Manifest             json.RawMessage       `json:"manifest,omitempty"`
 	Credentials          []json.RawMessage     `json:"credentials,omitempty"`
 	CredentialGovernance json.RawMessage       `json:"credentialGovernance,omitempty"`
 }
