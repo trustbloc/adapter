@@ -52,6 +52,7 @@ const (
 	OIDCCallbackEndpoint               = "/callback"
 	getPresentationsRequestEndpoint    = "/presentations/create"
 	handlePresentationResponseEndpoint = "/presentations/handleResponse"
+	getPresentationResultEndpoint      = "/presentations/result"
 	userInfoEndpoint                   = "/userinfo"
 	createRPTenantEndpoint             = "/relyingparties"
 )
@@ -68,8 +69,6 @@ const (
 
 	transientStoreName = "rpadapter_trx"
 )
-
-var errTimeout = errors.New("timeout")
 
 var logger = log.New("edge-adapter/rp-operations")
 
@@ -150,27 +149,16 @@ type consentRequestCtx struct {
 	RPPublicDID   string
 	RPPairwiseDID string
 	RPLabel       string
+	UserData      *userDataCollection
 }
 
-// context shared between routine that receives CHAPI response from the wallet and routine that receives
-// the issuer's present-proof response.
-type walletResponseCtx struct {
-	consentRequestCtx    *consentRequestCtx
-	issuerResponseStatus chan *issuerResponseStatus
-	descriptorID         string
-}
-
-type issuerResponseStatus struct {
-	err               error
-	credentials       map[string]*verifiable.Credential
-	walletResponseCtx *walletResponseCtx
+type userDataCollection struct {
+	Local  map[string][]byte
+	Remote map[string]string
 }
 
 // New returns CreateCredential instance.
 func New(config *Config) (*Operation, error) {
-	// TODO set timeout issuer's response: https://github.com/trustbloc/edge-adapter/issues/110
-	const defaultTimeout = 5 * time.Second
-
 	o := &Operation{
 		presentationExProvider: config.PresentationExProvider,
 		hydra:                  config.Hydra,
@@ -185,9 +173,7 @@ func New(config *Config) (*Operation, error) {
 		publicDIDCreator:       config.PublicDIDCreator,
 		ppClient:               config.PresentProofClient,
 		ppActions:              make(chan service.DIDCommAction),
-		issuerCallbackTimeout:  defaultTimeout,
 		vdriReg:                config.AriesStorageProvider.VDRIRegistry(),
-		walletResponseCtx:      make(map[string]*walletResponseCtx),
 		governanceProvider:     config.GovernanceProvider,
 	}
 
@@ -267,11 +253,8 @@ type Operation struct {
 	connections            *connection.Recorder
 	ppClient               PresentProofClient
 	ppActions              chan service.DIDCommAction
-	issuerCallbackTimeout  time.Duration
 	vdriReg                vdri.Registry
 	transientStore         storage.Store
-	walletResponseCtx      map[string]*walletResponseCtx
-	walletResponseCtxLock  sync.Mutex
 	governanceProvider     GovernanceProvider
 }
 
@@ -285,6 +268,7 @@ func (o *Operation) GetRESTHandlers() []Handler {
 		support.NewHTTPHandler(handlePresentationResponseEndpoint, http.MethodPost, o.chapiResponseHandler),
 		support.NewHTTPHandler(userInfoEndpoint, http.MethodGet, o.userInfoHandler),
 		support.NewHTTPHandler(createRPTenantEndpoint, http.MethodPost, o.createRPTenant),
+		support.NewHTTPHandler(getPresentationResultEndpoint, http.MethodGet, o.getPresentationResponseResultHandler),
 	}
 }
 
@@ -450,23 +434,6 @@ func (o *Operation) getAndUnsetLoginRequest(state string) *models.LoginRequest {
 	return r
 }
 
-func (o *Operation) setWalletResponseContext(thid string, ctx *walletResponseCtx) {
-	o.walletResponseCtxLock.Lock()
-	defer o.walletResponseCtxLock.Unlock()
-
-	o.walletResponseCtx[thid] = ctx
-}
-
-func (o *Operation) getAndUnsetWalletResponseContext(thid string) *walletResponseCtx {
-	o.walletResponseCtxLock.Lock()
-	defer o.walletResponseCtxLock.Unlock()
-
-	ctx := o.walletResponseCtx[thid]
-	delete(o.walletResponseCtx, thid)
-
-	return ctx
-}
-
 func acceptLoginAndRedirectToHydra(
 	w http.ResponseWriter, r *http.Request, hydra Hydra, login *models.LoginRequest) error {
 	accept := admin.NewAcceptLoginRequestParams()
@@ -620,7 +587,7 @@ func (o *Operation) hydraConsentHandler(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	redirectURL := fmt.Sprintf("%s?pd=%s", o.uiEndpoint, handle)
+	redirectURL := fmt.Sprintf("%s?h=%s", o.uiEndpoint, handle)
 
 	http.Redirect(w, r, redirectURL, http.StatusFound)
 	logger.Debugf("redirected to: %s", redirectURL)
@@ -650,7 +617,7 @@ func (o *Operation) getPresentationsRequest(w http.ResponseWriter, r *http.Reque
 	logger.Debugf("getPresentationsRequest request: %s", r.URL.String())
 
 	// get the request
-	handle := r.URL.Query().Get("pd")
+	handle := r.URL.Query().Get("h")
 	if handle == "" {
 		handleError(w, http.StatusBadRequest, "missing handle for presentation definition")
 
@@ -745,7 +712,7 @@ func (o *Operation) updateUserConnection(r *consentRequestCtx) error {
 // - all required credentials in a single response, or
 // - consent credential + didcomm endpoint where the requested presentations can be obtained, or
 // - nothing (an error response?), indicating they cannot satisfy the request.
-func (o *Operation) chapiResponseHandler(w http.ResponseWriter, r *http.Request) { //nolint:funlen,gocyclo,gocognit
+func (o *Operation) chapiResponseHandler(w http.ResponseWriter, r *http.Request) { //nolint:funlen,gocyclo
 	request := &HandleCHAPIResponse{}
 
 	err := json.NewDecoder(r.Body).Decode(request)
@@ -758,6 +725,8 @@ func (o *Operation) chapiResponseHandler(w http.ResponseWriter, r *http.Request)
 	crCtx, err := newTransientStorage(o.transientStore).GetConsentRequest(request.InvitationID)
 	if errors.Is(err, storage.ErrValueNotFound) {
 		handleError(w, http.StatusBadRequest, "stale or invalid invitation ID")
+
+		return
 	}
 
 	if err != nil {
@@ -781,88 +750,52 @@ func (o *Operation) chapiResponseHandler(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	callback := make(chan *issuerResponseStatus)
+	localMarshalled, err := marshalCreds(local)
+	if err != nil {
+		handleError(w, http.StatusInternalServerError,
+			fmt.Sprintf("failed to marshal local credentials: %s", err.Error()))
+
+		return
+	}
+
+	basket := &userDataCollection{
+		Local:  localMarshalled,
+		Remote: make(map[string]string),
+	}
 
 	for descriptorID, authz := range remote {
 		// TODO do not send multiple requests for each scope in an authz cred:
 		//  https://github.com/trustbloc/edge-adapter/issues/253
-		thid, err := o.requestRemoteCredential(authz, crCtx)
-		if err != nil {
-			if errors.Is(err, errInvalidCredential) {
-				handleError(w, http.StatusBadRequest, err.Error())
+		thid, remoteErr := o.requestRemoteCredential(authz, crCtx)
+		if remoteErr != nil {
+			if errors.Is(remoteErr, errInvalidCredential) {
+				handleError(w, http.StatusBadRequest, remoteErr.Error())
 			} else {
-				handleError(w, http.StatusInternalServerError, err.Error())
+				handleError(w, http.StatusInternalServerError, remoteErr.Error())
 			}
 
 			return
 		}
 
-		o.setWalletResponseContext(thid, &walletResponseCtx{
-			consentRequestCtx:    crCtx,
-			issuerResponseStatus: callback,
-			descriptorID:         descriptorID,
-		})
+		basket.Remote[descriptorID] = thid
 	}
 
-	start := time.Now()
-	userData := make(map[string]*verifiable.Credential)
+	crCtx.UserData = basket
 
-	for id, cred := range local {
-		userData[id] = cred
-	}
-
-	// TODO delete transient data: https://github.com/trustbloc/edge-adapter/issues/255
-
-	var callbackErr error
-
-	timeout := time.After(o.issuerCallbackTimeout)
-
-WaitForRemoteCredentials:
-	for {
-		select {
-		case c := <-callback:
-			if c.err != nil {
-				callbackErr = c.err
-
-				break WaitForRemoteCredentials
-			}
-
-			for id, cred := range c.credentials {
-				userData[id] = cred
-			}
-
-			if len(userData) == len(local)+len(remote) {
-				break WaitForRemoteCredentials
-			}
-		case <-timeout:
-			callbackErr = fmt.Errorf("%w: timed out waiting for credentials", errTimeout)
-
-			break WaitForRemoteCredentials
-		}
-	}
-
-	if callbackErr != nil {
-		// nolint:gocritic
-		if errors.Is(callbackErr, errInvalidCredential) {
-			handleError(w, http.StatusBadRequest,
-				fmt.Sprintf("received invalid credentials from the issuer: %s", callbackErr.Error()))
-		} else if errors.Is(callbackErr, errTimeout) {
-			handleError(w, http.StatusGatewayTimeout, "timed out waiting for credentials")
-		} else {
-			handleError(w, http.StatusInternalServerError,
-				fmt.Sprintf("failed to validate credentials: %s", callbackErr.Error()))
-		}
+	err = newTransientStorage(o.transientStore).Put(crCtx.InvitationID, crCtx)
+	if err != nil {
+		handleError(w, http.StatusInternalServerError,
+			fmt.Sprintf("failed to save user data basket to store: %s", err.Error()))
 
 		return
 	}
 
-	logger.Infof("collected responses from all issuers in %s", time.Since(start))
+	w.WriteHeader(http.StatusAccepted)
 
-	// TODO validate all credentials against presentation definitions:
-	//  https://github.com/trustbloc/edge-adapter/issues/108
-
-	// accept at hydra and return response to user
-	o.handleUserDataSuccess(w, r, userData, crCtx)
+	_, err = w.Write([]byte("OK"))
+	if err != nil {
+		logger.Errorf("failed to write response: %s", err.Error())
+	}
 }
 
 func (o *Operation) requestRemoteCredential(authz *verifiable.Credential,
@@ -914,9 +847,40 @@ func (o *Operation) requestRemoteCredential(authz *verifiable.Credential,
 	return thid, nil
 }
 
-func (o *Operation) handleUserDataSuccess(w http.ResponseWriter, r *http.Request,
-	userData map[string]*verifiable.Credential, crCtx *consentRequestCtx) {
-	rpData, err := transformUserData(userData)
+// nolint:funlen
+func (o *Operation) getPresentationResponseResultHandler(w http.ResponseWriter, r *http.Request) {
+	logger.Infof("handling request")
+
+	handle := r.URL.Query().Get("h")
+	if handle == "" {
+		handleError(w, http.StatusBadRequest, "missing handle for presentation definition")
+
+		return
+	}
+
+	crCtx, err := newTransientStorage(o.transientStore).GetConsentRequest(handle)
+	if err != nil {
+		handleError(w, http.StatusBadRequest,
+			fmt.Sprintf("unrecognized handle for presentation definition: %s", handle))
+
+		return
+	}
+
+	// TODO validate all credentials against presentation definitions:
+	//  https://github.com/trustbloc/edge-adapter/issues/108
+	userData, err := o.collectedUserData(crCtx.UserData)
+	if err != nil {
+		// TODO we should distinguish between classes of errors here
+		//  (timeout, not all responses have been received, generic error):
+		//  https://github.com/trustbloc/edge-adapter/issues/109
+		handleError(w, http.StatusInternalServerError,
+			fmt.Sprintf("failed to lookup collected credentials: %s", err.Error()))
+
+		return
+	}
+
+	// TODO delete transient data: https://github.com/trustbloc/edge-adapter/issues/255
+	rpData, err := transformUserData(userData) // userData: map of all descriptorID -> credentials
 	if err != nil {
 		handleError(w, http.StatusInternalServerError, fmt.Sprintf("failed to map VCs into RP object : %s", err))
 
@@ -951,7 +915,39 @@ func (o *Operation) handleUserDataSuccess(w http.ResponseWriter, r *http.Request
 	logger.Debugf("redirected user to: %s", resp.Payload.RedirectTo)
 }
 
-// https://openid.net/specs/openid-connect-4-identity-assurance-1_0.html
+func (o *Operation) collectedUserData(ref *userDataCollection) (map[string]*verifiable.Credential, error) {
+	collected := make(map[string]*verifiable.Credential)
+
+	for descriptorID, rawCred := range ref.Local {
+		// credential's proof has been validated upstream in the flow
+		cred, err := verifiable.ParseUnverifiedCredential(rawCred)
+		if err != nil {
+			return nil, fmt.Errorf("failed to parse credential [%s]: %w", rawCred, err)
+		}
+
+		collected[descriptorID] = cred
+	}
+
+	for descriptorID, thid := range ref.Remote {
+		// if thid not found then either we haven't received the response from that issuer,
+		//  or there was a generic error accessing the transient store
+		bits, err := o.transientStore.Get(thid)
+		if err != nil {
+			return nil, fmt.Errorf("failed to fetch remote credential for thid %s: %w", thid, err)
+		}
+
+		// credential's proof has been validated upstream in the flow
+		cred, err := verifiable.ParseUnverifiedCredential(bits)
+		if err != nil {
+			return nil, fmt.Errorf("failed to parse credential [%s]: %w", bits, err)
+		}
+
+		collected[descriptorID] = cred
+	}
+
+	return collected, nil
+}
+
 func transformUserData(userData map[string]*verifiable.Credential) (map[string]interface{}, error) {
 	claimNames := make(map[string]string)
 	claimSources := make(map[string]interface{})
@@ -1083,8 +1079,6 @@ func (o *Operation) listenForConnectionCompleteEvents() {
 	}
 }
 
-// TODO support for notifying the UI about any validation errors
-//  https://github.com/trustbloc/edge-adapter/issues/109
 func (o *Operation) listenForIssuerResponses() {
 	for action := range o.ppActions {
 		if action.Message.Type() != presentproofsvc.PresentationMsgType {
@@ -1113,45 +1107,31 @@ func (o *Operation) handleIssuerPresentationMsg(msg service.DIDCommMsg) error {
 		return fmt.Errorf("failed to extract threadID from didcomm msg : %w", err)
 	}
 
-	ctx := o.getAndUnsetWalletResponseContext(thid)
-	if ctx == nil {
-		return fmt.Errorf("ignoring present-proof response for invalid threadID=%s", thid)
-	}
-
 	presentation := &presentproof.Presentation{}
 
 	err = msg.Decode(presentation)
 	if err != nil {
-		err = fmt.Errorf("failed to decode present-proof message : %w", err)
-		notifyIssuerResponseError(err, ctx.issuerResponseStatus)
-
-		return err
+		return fmt.Errorf("failed to decode present-proof message for threadID=%s: %w", thid, err)
 	}
 
 	logger.Debugf("handling present-proof message: %+v", presentation)
 
 	userData, err := parseIssuerResponse(presentation, o.vdriReg)
 	if err != nil {
-		err = fmt.Errorf("failed to parse verifiable presentation : %w", err)
-		notifyIssuerResponseError(err, ctx.issuerResponseStatus)
-
-		return err
+		return fmt.Errorf("failed to parse verifiable presentation for threadID=%s: %w", thid, err)
 	}
 
-	ctx.issuerResponseStatus <- &issuerResponseStatus{
-		credentials: map[string]*verifiable.Credential{
-			ctx.descriptorID: userData,
-		},
-		walletResponseCtx: ctx,
+	bits, err := json.Marshal(userData)
+	if err != nil {
+		return fmt.Errorf("failed to marshal remote credential from issuer: %w", err)
+	}
+
+	err = o.transientStore.Put(thid, bits)
+	if err != nil {
+		return fmt.Errorf("failed to save remote credential to store: %w", err)
 	}
 
 	return nil
-}
-
-func notifyIssuerResponseError(err error, c chan *issuerResponseStatus) {
-	c <- &issuerResponseStatus{
-		err: err,
-	}
 }
 
 func testResponse(w io.Writer) {
@@ -1295,4 +1275,19 @@ func transientStore(p storage.Provider) (storage.Store, error) {
 func handleError(w http.ResponseWriter, statusCode int, msg string) {
 	logger.Errorf(msg)
 	commhttp.WriteErrorResponse(w, statusCode, msg)
+}
+
+func marshalCreds(in map[string]*verifiable.Credential) (map[string][]byte, error) {
+	out := make(map[string][]byte, len(in))
+
+	for id, cred := range in {
+		bits, err := json.Marshal(cred)
+		if err != nil {
+			return nil, fmt.Errorf("marshalCreds: failed to marshal vc for descriptorID %s: %w", id, err)
+		}
+
+		out[id] = bits
+	}
+
+	return out, nil
 }

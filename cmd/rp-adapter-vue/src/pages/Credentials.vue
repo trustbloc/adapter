@@ -94,7 +94,8 @@ SPDX-License-Identifier: Apache-2.0
                 console.error("no webcredential received from wallet!")
             }
             console.log("received from user: " + JSON.stringify(webCredential))
-            const redirectURL = await this.validatePresentation(webCredential)
+            await this.requestPresentationValidation(webCredential)
+            const redirectURL = await this.validationResult(this.presentationRequest.invitation["@id"])
             // redirect user
             console.log(`redirecting user to ${redirectURL}`)
             window.location.replace(redirectURL)
@@ -106,9 +107,9 @@ SPDX-License-Identifier: Apache-2.0
         },
         methods: {
             async getRequestForPresentation() {
-                const handle = this.$route.query.pd
+                const handle = this.$route.query.h
                 console.info(`using handle: ${handle}`)
-                await this.$http.get(`/presentations/create?pd=${handle}`).then(
+                await this.$http.get(`/presentations/create?h=${handle}`).then(
                     resp => {
                         this.presentationRequest = resp.data
                     },
@@ -118,7 +119,7 @@ SPDX-License-Identifier: Apache-2.0
                     }
                 )
             },
-            async validatePresentation(presentation) {
+            async requestPresentationValidation(presentation) {
                 if (!presentation || !presentation.data) {
                     throw new Error("user did not submit a proper web credential")
                 }
@@ -126,17 +127,45 @@ SPDX-License-Identifier: Apache-2.0
                     invID: this.presentationRequest.invitation["@id"],
                     vp: presentation.data
                 }
-                return this.$http.post(`/presentations/handleResponse`, request).then(
-                    resp => {
-                        const redirectURL = resp.data.redirectURL
-                        console.log(`submitted presentationHandle=${presentation} and got redirectURL=${redirectURL}`)
-                        return redirectURL
+                await this.$http.post(`/presentations/handleResponse`, request).then(
+                    () => {
+                        console.log(`submitted presentation for evaluation`)
                     },
                     err => {
-                        console.error(`failed to validate chapi response: ${err}`)
+                        console.error(`failed to submit presentation for validation: ${err}`)
                         throw err
                     }
                 )
+            },
+            async validationResult(handle) {
+                const sleep = async ms => {
+                    return new Promise(res => setTimeout(res, ms))
+                }
+
+                let redirectURL = ""
+
+                for (let i = 0; i < 40; i++) {
+                    await this.$http.get(`/presentations/result?h=${handle}`).then(
+                        resp => {
+                            redirectURL = resp.data.redirectURL
+                        },
+                        err => {
+                            console.error(`got error response while waiting for results: ${err}`)
+                        }
+                    )
+
+                    if (redirectURL.length > 0) {
+                        break
+                    }
+
+                    await sleep(500)
+                }
+
+                if (redirectURL.length === 0) {
+                    throw new Error("timeout waiting for presentation evaluation")
+                }
+
+                return redirectURL
             }
         }
     }

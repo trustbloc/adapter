@@ -82,7 +82,7 @@ func TestParseWalletResponse(t *testing.T) {
 				},
 			},
 			nil,
-			marshalVP(t, vp))
+			marshal(t, vp))
 		require.NoError(t, err)
 		require.Contains(t, actualLocal, localID)
 		require.Equal(t, expectedLocal[localID], actualLocal[localID])
@@ -97,7 +97,7 @@ func TestParseWalletResponse(t *testing.T) {
 		authorizationVC := newUserAuthorizationVC(t, newPeerDID(t).ID, newPeerDID(t), newPeerDID(t))
 		vp, err := authorizationVC.Presentation()
 		require.NoError(t, err)
-		_, _, err = parseWalletResponse(nil, nil, marshalVP(t, vp))
+		_, _, err = parseWalletResponse(nil, nil, marshal(t, vp))
 		require.True(t, errors.Is(err, errInvalidCredential))
 	})
 
@@ -113,7 +113,7 @@ func TestParseWalletResponse(t *testing.T) {
 				}},
 			},
 			nil,
-			marshalVP(t, vp))
+			marshal(t, vp))
 		require.True(t, errors.Is(err, errInvalidCredential))
 	})
 
@@ -135,7 +135,7 @@ func TestParseWalletResponse(t *testing.T) {
 		_, _, err := parseWalletResponse(
 			definitions,
 			nil,
-			marshalVP(t, vp))
+			marshal(t, vp))
 		require.True(t, errors.Is(err, errInvalidCredential))
 	})
 
@@ -154,7 +154,7 @@ func TestParseWalletResponse(t *testing.T) {
 				Path: "$.verifiableCredential[0]",
 			}}},
 			newUserAuthorizationVCMissingIssuerDIDDoc(t, newPeerDID(t).ID, newPeerDID(t)))
-		_, _, err := parseWalletResponse(definitions, nil, marshalVP(t, vp))
+		_, _, err := parseWalletResponse(definitions, nil, marshal(t, vp))
 		require.True(t, errors.Is(err, errInvalidCredential))
 	})
 }
