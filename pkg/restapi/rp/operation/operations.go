@@ -169,7 +169,7 @@ type issuerResponseStatus struct {
 // New returns CreateCredential instance.
 func New(config *Config) (*Operation, error) {
 	// TODO set timeout issuer's response: https://github.com/trustbloc/edge-adapter/issues/110
-	const defaultTimeout = 5 * time.Second
+	const defaultTimeout = 15 * time.Second
 
 	o := &Operation{
 		presentationExProvider: config.PresentationExProvider,
