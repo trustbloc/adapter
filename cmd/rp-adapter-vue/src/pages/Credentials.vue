@@ -81,7 +81,8 @@ SPDX-License-Identifier: Apache-2.0
                             },
                             {
                                 type: "DIDConnect",
-                                invitation: this.presentationRequest.invitation
+                                invitation: this.presentationRequest.invitation,
+                                credentials: this.presentationRequest.credentials
                             }
                         ]
                     }
