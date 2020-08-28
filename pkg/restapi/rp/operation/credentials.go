@@ -23,15 +23,20 @@ var errInvalidCredential = errors.New("malformed credential")
 
 func parseWalletResponse(definitions *presexch.PresentationDefinitions, vdriReg vdriapi.Registry,
 	vpBytes []byte) (local, remote map[string]*verifiable.Credential, err error) {
-	vp, err := verifiable.ParsePresentation(vpBytes)
+	vp, err := verifiable.ParsePresentation(
+		vpBytes,
+		verifiable.WithPresPublicKeyFetcher(verifiable.NewDIDKeyResolver(vdriReg).PublicKeyFetcher()))
 	if err != nil {
 		return nil, nil, fmt.Errorf(
 			"%w: parseWalletResponse: failed to parse verifiable presentation: %s", errInvalidCredential, err.Error())
 	}
 
+	// TODO unable to verify credential proofs inside wallet's verifiable presentation - should remove the
+	//  'WithDisabledCredProofCheck()' once we can: https://github.com/trustbloc/edge-adapter/issues/300
 	matched, err := definitions.Match(
 		vp,
-		presexch.WithPublicKeyFetcher(verifiable.NewDIDKeyResolver(vdriReg).PublicKeyFetcher()))
+		presexch.WithPublicKeyFetcher(verifiable.NewDIDKeyResolver(vdriReg).PublicKeyFetcher()),
+		presexch.WithDisabledCredProofCheck())
 	if err != nil {
 		return nil, nil, fmt.Errorf(
 			"%w: parseWalletResponse: invalid presentation submission: %s", errInvalidCredential, err.Error())
@@ -73,10 +78,12 @@ func parseIssuerResponse(pres *presentproof.Presentation, vdriReg vdriapi.Regist
 		return nil, fmt.Errorf("failed to fetch contents of attachment with id %s : %w", attachment.ID, err)
 	}
 
-	vp, err := verifiable.ParsePresentation(vpBytes)
+	vp, err := verifiable.ParsePresentation(
+		vpBytes,
+		verifiable.WithPresPublicKeyFetcher(verifiable.NewDIDKeyResolver(vdriReg).PublicKeyFetcher()))
 	if err != nil {
 		return nil,
-			fmt.Errorf("%w: failed to parse a verifiable presentation : %s", errInvalidCredential, err.Error())
+			fmt.Errorf("%w: failed to parse verifiable presentation %s: %s", errInvalidCredential, vpBytes, err.Error())
 	}
 
 	if len(vp.Credentials()) != 1 {

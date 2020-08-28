@@ -7,8 +7,6 @@ SPDX-License-Identifier: Apache-2.0
 package operation
 
 import (
-	"crypto/ed25519"
-	"crypto/rand"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -22,13 +20,9 @@ import (
 	"github.com/hyperledger/aries-framework-go/pkg/client/presentproof"
 	"github.com/hyperledger/aries-framework-go/pkg/didcomm/protocol/decorator"
 	"github.com/hyperledger/aries-framework-go/pkg/doc/did"
-	"github.com/hyperledger/aries-framework-go/pkg/doc/signature/jsonld"
-	"github.com/hyperledger/aries-framework-go/pkg/doc/signature/suite"
-	"github.com/hyperledger/aries-framework-go/pkg/doc/signature/suite/ed25519signature2018"
 	"github.com/hyperledger/aries-framework-go/pkg/doc/util"
 	"github.com/hyperledger/aries-framework-go/pkg/doc/verifiable"
-	"github.com/hyperledger/aries-framework-go/pkg/vdri/peer"
-	"github.com/mr-tron/base58"
+	ariesctx "github.com/hyperledger/aries-framework-go/pkg/framework/context"
 	"github.com/piprate/json-gold/ld"
 	"github.com/stretchr/testify/require"
 
@@ -36,23 +30,31 @@ import (
 	vc2 "github.com/trustbloc/edge-adapter/pkg/vc"
 )
 
-//nolint:gochecknoglobals
+// TODO - crypto.Crypto should support injection of document loader:
+//  https://github.com/trustbloc/edge-adapter/issues/306
+// nolint:gochecknoglobals,deadcode,varcheck,unused
 var testDocumentLoader = createTestJSONLDDocumentLoader()
 
 func TestParseWalletResponse(t *testing.T) {
 	t.Run("valid response", func(t *testing.T) {
-		subjectDID := newPeerDID(t)
-		rpDID := newPeerDID(t)
-		issuerDID := newPeerDID(t)
+		relyingParty, issuer, subject := trio(t)
+		subjectDID := newPeerDID(t, subject)
+		rpDID := newPeerDID(t, relyingParty)
+		issuerDID := newPeerDID(t, issuer)
+
+		simulateDIDExchange(t, relyingParty, rpDID, subject, subjectDID)
+
 		localID := uuid.New().String()
 		expectedLocal := map[string]*verifiable.Credential{
-			localID: newUniversityDegreeVC(t),
+			localID: newUniversityDegreeVC(t, issuer, issuerDID),
 		}
 		remoteID := uuid.New().String()
 		expectedRemote := map[string]*verifiable.Credential{
-			remoteID: newUserAuthorizationVC(t, subjectDID.ID, rpDID, issuerDID),
+			remoteID: newAuthorizationVC(t, subjectDID.ID, rpDID, issuerDID),
 		}
 		vp := newPresentationSubmissionVP(t,
+			subject,
+			subjectDID,
 			&presexch.PresentationSubmission{DescriptorMap: []*presexch.InputDescriptorMapping{
 				{
 					ID:   localID,
@@ -81,12 +83,11 @@ func TestParseWalletResponse(t *testing.T) {
 					},
 				},
 			},
-			nil,
+			relyingParty.VDRIRegistry(),
 			marshal(t, vp))
 		require.NoError(t, err)
 		require.Contains(t, actualLocal, localID)
-		require.Equal(t, expectedLocal[localID], actualLocal[localID])
-		require.Equal(t, expectedLocal, actualLocal)
+		require.Equal(t, expectedLocal[localID].Subject, actualLocal[localID].Subject)
 		sub, ok := actualRemote[remoteID].Subject.([]verifiable.Subject)
 		require.True(t, ok)
 		require.NotEmpty(t, sub)
@@ -94,7 +95,9 @@ func TestParseWalletResponse(t *testing.T) {
 	})
 
 	t.Run("errInvalidCredential if vp cannot be parsed", func(t *testing.T) {
-		authorizationVC := newUserAuthorizationVC(t, newPeerDID(t).ID, newPeerDID(t), newPeerDID(t))
+		relyingParty, issuer, subject := trio(t)
+		authorizationVC := newAuthorizationVC(t,
+			newPeerDID(t, subject).ID, newPeerDID(t, relyingParty), newPeerDID(t, issuer))
 		vp, err := authorizationVC.Presentation()
 		require.NoError(t, err)
 		_, _, err = parseWalletResponse(nil, nil, marshal(t, vp))
@@ -102,7 +105,13 @@ func TestParseWalletResponse(t *testing.T) {
 	})
 
 	t.Run("errInvalidCredential on no credentials", func(t *testing.T) {
-		vp := newPresentationSubmissionVP(t, nil)
+		relyingParty, subject, _ := trio(t)
+		rpDID := newPeerDID(t, relyingParty)
+		subjectDID := newPeerDID(t, subject)
+
+		simulateDIDExchange(t, relyingParty, rpDID, subject, subjectDID)
+
+		vp := newPresentationSubmissionVP(t, subject, subjectDID, nil)
 		_, _, err := parseWalletResponse(
 			&presexch.PresentationDefinitions{
 				InputDescriptors: []*presexch.InputDescriptor{{
@@ -112,12 +121,18 @@ func TestParseWalletResponse(t *testing.T) {
 					},
 				}},
 			},
-			nil,
+			relyingParty.VDRIRegistry(),
 			marshal(t, vp))
 		require.True(t, errors.Is(err, errInvalidCredential))
 	})
 
 	t.Run("errInvalidCredential if issuer's did doc is missing", func(t *testing.T) {
+		relyingParty, subject, _ := trio(t)
+		rpDID := newPeerDID(t, relyingParty)
+		subjectDID := newPeerDID(t, subject)
+
+		simulateDIDExchange(t, relyingParty, rpDID, subject, subjectDID)
+
 		definitions := &presexch.PresentationDefinitions{
 			InputDescriptors: []*presexch.InputDescriptor{{
 				ID: uuid.New().String(),
@@ -127,19 +142,27 @@ func TestParseWalletResponse(t *testing.T) {
 			}},
 		}
 		vp := newPresentationSubmissionVP(t,
+			subject,
+			subjectDID,
 			&presexch.PresentationSubmission{DescriptorMap: []*presexch.InputDescriptorMapping{{
 				ID:   definitions.InputDescriptors[0].ID,
 				Path: "$.verifiableCredential[0]",
 			}}},
-			newUserAuthorizationVCMissingIssuerDIDDoc(t, newPeerDID(t).ID, newPeerDID(t)))
+			newUserAuthorizationVCMissingIssuerDIDDoc(t, subjectDID.ID, rpDID))
 		_, _, err := parseWalletResponse(
 			definitions,
-			nil,
+			relyingParty.VDRIRegistry(),
 			marshal(t, vp))
 		require.True(t, errors.Is(err, errInvalidCredential))
 	})
 
 	t.Run("errInvalidCredential if vc cannot be parsed", func(t *testing.T) {
+		relyingParty, subject, _ := trio(t)
+		rpDID := newPeerDID(t, relyingParty)
+		subjectDID := newPeerDID(t, subject)
+
+		simulateDIDExchange(t, relyingParty, rpDID, subject, subjectDID)
+
 		definitions := &presexch.PresentationDefinitions{
 			InputDescriptors: []*presexch.InputDescriptor{{
 				ID: uuid.New().String(),
@@ -149,20 +172,28 @@ func TestParseWalletResponse(t *testing.T) {
 			}},
 		}
 		vp := newPresentationSubmissionVP(t,
+			subject,
+			subjectDID,
 			&presexch.PresentationSubmission{DescriptorMap: []*presexch.InputDescriptorMapping{{
 				ID:   definitions.InputDescriptors[0].ID,
 				Path: "$.verifiableCredential[0]",
 			}}},
-			newUserAuthorizationVCMissingIssuerDIDDoc(t, newPeerDID(t).ID, newPeerDID(t)))
-		_, _, err := parseWalletResponse(definitions, nil, marshal(t, vp))
+			newUserAuthorizationVCMissingIssuerDIDDoc(t, subjectDID.ID, rpDID))
+		_, _, err := parseWalletResponse(definitions, relyingParty.VDRIRegistry(), marshal(t, vp))
 		require.True(t, errors.Is(err, errInvalidCredential))
 	})
 }
 
 func TestParseIssuerResponse(t *testing.T) {
 	t.Run("valid response", func(t *testing.T) {
-		expectedVC := newCreditCardStatementVC(t)
-		expectedVP := newPresentationSubmissionVP(t, nil, expectedVC)
+		relyingParty, issuer, _ := trio(t)
+		rpDID := newPeerDID(t, relyingParty)
+		issuerDID := newPeerDID(t, issuer)
+
+		simulateDIDExchange(t, relyingParty, rpDID, issuer, issuerDID)
+
+		expectedVC := newCreditCardStatementVC(t, issuer, issuerDID)
+		expectedVP := newPresentationSubmissionVP(t, issuer, issuerDID, nil, expectedVC)
 		actualVC, err := parseIssuerResponse(&presentproof.Presentation{
 			PresentationsAttach: []decorator.Attachment{{
 				ID: uuid.New().String(),
@@ -170,7 +201,7 @@ func TestParseIssuerResponse(t *testing.T) {
 					JSON: expectedVP,
 				},
 			}},
-		}, nil)
+		}, relyingParty.VDRIRegistry())
 		require.NoError(t, err)
 		require.Equal(t, expectedVC.Subject, actualVC.Subject)
 	})
@@ -205,19 +236,26 @@ func TestParseIssuerResponse(t *testing.T) {
 	})
 
 	t.Run("errInvalidCredential if VP has no credentials", func(t *testing.T) {
+		relyingParty, issuer, _ := trio(t)
+		rpDID := newPeerDID(t, relyingParty)
+		issuerDID := newPeerDID(t, issuer)
+
+		simulateDIDExchange(t, relyingParty, rpDID, issuer, issuerDID)
+
 		_, err := parseIssuerResponse(&presentproof.Presentation{
 			PresentationsAttach: []decorator.Attachment{{
 				ID: uuid.New().String(),
 				Data: decorator.AttachmentData{
-					JSON: newPresentationSubmissionVP(t, nil),
+					JSON: newPresentationSubmissionVP(t, issuer, issuerDID, nil),
 				},
 			}},
-		}, nil)
+		}, relyingParty.VDRIRegistry())
 		require.True(t, errors.Is(err, errInvalidCredential))
 	})
 }
 
-func newPresentationSubmissionVP(t *testing.T, submission *presexch.PresentationSubmission,
+func newPresentationSubmissionVP(t *testing.T, holder *ariesctx.Provider, signingDID *did.Doc,
+	submission *presexch.PresentationSubmission,
 	credentials ...*verifiable.Credential) *verifiable.Presentation {
 	vp := &verifiable.Presentation{
 		Context: []string{
@@ -244,12 +282,11 @@ func newPresentationSubmissionVP(t *testing.T, submission *presexch.Presentation
 		require.NoError(t, err)
 	}
 
-	addLDProof(t, vp)
-
-	return vp
+	return signVP(t, holder, signingDID, vp)
 }
 
-func newUserAuthorizationVC(t *testing.T, subjectDID string, rpDID, issuerDID *did.Doc) *verifiable.Credential {
+// TODO need to sign VCs in tests: https://github.com/trustbloc/edge-adapter/issues/304
+func newAuthorizationVC(t *testing.T, subjectDID string, rpDID, issuerDID *did.Doc) *verifiable.Credential {
 	rpDocBits, err := rpDID.JSONBytes()
 	require.NoError(t, err)
 
@@ -298,184 +335,114 @@ func newUserAuthorizationVC(t *testing.T, subjectDID string, rpDID, issuerDID *d
 }
 
 func newUserAuthorizationVCMissingIssuerDIDDoc(t *testing.T, subjectDID string, rpDID *did.Doc) *verifiable.Credential {
-	const (
-		userAuthorizationVCTemplate = `{
-	"@context": [
-		"https://www.w3.org/2018/credentials/v1",
-		"https://trustbloc.github.io/context/vc/authorization-credential-v1.jsonld"
-	],
-	"type": [
-		"VerifiableCredential",
-		"AuthorizationCredential"
-	],
-	"id": "http://example.gov/credentials/ff98f978-588f-4eb0-b17b-60c18e1dac2c",
-	"issuanceDate": "2020-03-16T22:37:26.544Z",
-	"issuer": {
-		"id": "%s"
-	},
-	"credentialSubject": {
-		"id": "%s",
-		"requestingPartyDIDDoc": %s,
-		"subjectDID": "%s"
-	}
-}`
-		didDocTemplate = `{
-	"id": "%s",
-	"doc": %s
-}`
-	)
-
 	bits, err := rpDID.JSONBytes()
 	require.NoError(t, err)
 
-	rpDIDClaim := fmt.Sprintf(didDocTemplate, rpDID.ID, bits)
-
-	contents := fmt.Sprintf(
-		userAuthorizationVCTemplate,
-		subjectDID, subjectDID, rpDIDClaim, subjectDID)
-
-	return parseVC(t, contents)
-}
-
-func newCreditCardStatementVC(t *testing.T) *verifiable.Credential {
-	const template = `{
-	"@context": [
-		"https://www.w3.org/2018/credentials/v1",
-		"https://trustbloc.github.io/context/vc/examples-ext-v1.jsonld"
-	],
-	"type": [
-		"VerifiableCredential",
-		"CreditCardStatement"
-	],
-	"id": "http://example.gov/credentials/ff98f978-588f-4eb0-b17b-60c18e1dac2c",
-	"issuanceDate": "2020-03-16T22:37:26.544Z",
-	"issuer": {
-		"id": "did:peer:issuer"
-	},
-	"credentialSubject": {
-		"id": "did:peer:user",
-		"stmt": {
-			"description": "June 2020 Credit Card Statement",
-			"url": "http://acmebank.com/invoice.pdf",
-			"accountId": "xxxx-xxxx-xxxx-1234",
-			"customer": {
-				"@type": "Person",
-				"name": "Jane Doe"
-			},
-			"paymentDueDate": "2020-06-30T12:00:00",
-			"minimumPaymentDue": {
-				"@type": "PriceSpecification",
-				"price": 15.00,
-				"priceCurrency": "CAD"
-			},
-			"totalPaymentDue": {
-				"@type": "PriceSpecification",
-				"price": 200.00,
-				"priceCurrency": "CAD"
-			},
-			"billingPeriod": "P30D",
-			"paymentStatus": "http://schema.org/PaymentDue"			
-		}
-	}
-}`
-
-	return parseVC(t, template)
-}
-
-func newUniversityDegreeVC(t *testing.T) *verifiable.Credential {
-	const contents = `{
-	"@context": [
-		"https://www.w3.org/2018/credentials/v1",
-		"https://www.w3.org/2018/credentials/examples/v1"
-	],
-	"type": [
-		"VerifiableCredential",
-		"UniversityDegreeCredential"
-	],
-	"id": "http://example.gov/credentials/ff98f978-588f-4eb0-b17b-60c18e1dac2c",
-	"issuanceDate": "2020-03-16T22:37:26.544Z",
-	"issuer": {
-		"id": "did:web:vc.transmute.world",
-		"name": "University"
-	},
-	"credentialSubject": {
-		"id": "did:example:ebfeb1f712ebc6f1c276e12ec21",
-		"degree": {
-			"type": "BachelorDegree",
-			"degree": "MIT"
+	return &verifiable.Credential{
+		Context: []string{
+			"https://www.w3.org/2018/credentials/v1",
+			"https://trustbloc.github.io/context/vc/authorization-credential-v1.jsonld",
 		},
-		"name": "Jayden Doe",
-		"spouse": "did:example:c276e12ec21ebfeb1f712ebc6f1"
+		Types: []string{
+			"VerifiableCredential",
+			"AuthorizationCredential",
+		},
+		ID:     fmt.Sprintf("http://example.gov/credentials/%s", uuid.New().String()),
+		Issued: util.NewTime(time.Now()),
+		Issuer: verifiable.Issuer{
+			ID: subjectDID,
+		},
+		Subject: []verifiable.Subject{{
+			ID: subjectDID,
+			CustomFields: map[string]interface{}{
+				"subjectDID": subjectDID,
+				"requestingPartyDIDDoc": map[string]interface{}{
+					"id":  rpDID.ID,
+					"doc": bits,
+				},
+			},
+		}},
 	}
-}`
-
-	return parseVC(t, contents)
 }
 
-func parseVC(t *testing.T, contents string) *verifiable.Credential {
-	vc, err := verifiable.ParseCredential([]byte(contents), verifiable.WithJSONLDDocumentLoader(testDocumentLoader))
-	require.NoError(t, err)
+func newCreditCardStatementVC(_ *testing.T, _ *ariesctx.Provider, signingDID *did.Doc) *verifiable.Credential {
+	vc := &verifiable.Credential{
+		Context: []string{
+			"https://www.w3.org/2018/credentials/v1",
+			"https://trustbloc.github.io/context/vc/examples-ext-v1.jsonld",
+		},
+		Types: []string{
+			"VerifiableCredential",
+			"CreditCardStatement",
+		},
+		ID: fmt.Sprintf("http://example.gov/credentials/%s", uuid.New().String()),
+		Issuer: verifiable.Issuer{
+			ID: signingDID.ID,
+		},
+		Issued: util.NewTime(time.Now()),
+		Subject: []verifiable.Subject{{
+			ID: "did:peer:user",
+			CustomFields: map[string]interface{}{
+				"stmt": map[string]interface{}{
+					"description": "June 2020 Credit Card Statement",
+					"url":         "http://acmebank.com/invoice.pdf",
+					"accountId":   "xxxx-xxxx-xxxx-1234",
+					"customer": map[string]interface{}{
+						"@type": "Person",
+						"name":  "Jane Doe",
+					},
+					"paymentDueDate": "2020-06-30T12:00:00",
+					"minimumPaymentDue": map[string]interface{}{
+						"@type":         "PriceSpecification",
+						"price":         15.00,
+						"priceCurrency": "CAD",
+					},
+					"totalPaymentDue": map[string]interface{}{
+						"@type":         "PriceSpecification",
+						"price":         200.00,
+						"priceCurrency": "CAD",
+					},
+					"billingPeriod": "P30D",
+					"paymentStatus": "http://schema.org/PaymentDue",
+				},
+			},
+		}},
+	}
 
 	return vc
 }
 
-func newPeerDID(t *testing.T) *did.Doc {
-	pubKey, _, err := ed25519.GenerateKey(rand.Reader)
-	require.NoError(t, err)
-
-	key := did.PublicKey{
-		ID:         uuid.New().String(),
-		Type:       "Ed25519VerificationKey2018",
-		Controller: "did:example:123",
-		Value:      pubKey,
-	}
-	doc, err := peer.NewDoc(
-		[]did.PublicKey{key},
-		[]did.VerificationMethod{{
-			PublicKey:    key,
-			Relationship: 0,
-			Embedded:     true,
-			RelativeURL:  false,
+func newUniversityDegreeVC(_ *testing.T, _ *ariesctx.Provider, signingDID *did.Doc) *verifiable.Credential {
+	vc := &verifiable.Credential{
+		Context: []string{
+			"https://www.w3.org/2018/credentials/v1",
+			"https://www.w3.org/2018/credentials/examples/v1",
+		},
+		Types: []string{
+			"VerifiableCredential",
+			"UniversityDegreeCredential",
+		},
+		ID: fmt.Sprintf("http://example.gov/credentials/%s", uuid.New().String()),
+		Issuer: verifiable.Issuer{
+			ID: signingDID.ID,
+		},
+		Issued: util.NewTime(time.Now()),
+		Subject: []verifiable.Subject{{
+			ID: "did:peer:user",
+			CustomFields: map[string]interface{}{
+				"degree": map[string]interface{}{
+					"type":   "BachelorDegree",
+					"degree": "MIT",
+				},
+				"name":   "Jayden Doe",
+				"spouse": "did:example:c276e12ec21ebfeb1f712ebc6f1",
+			},
 		}},
-		did.WithService([]did.Service{{
-			ID:              "didcomm",
-			Type:            "did-communication",
-			Priority:        0,
-			RecipientKeys:   []string{base58.Encode(pubKey)},
-			ServiceEndpoint: "http://example.com",
-		}}),
-	)
-	require.NoError(t, err)
+		Schemas:      []verifiable.TypedID{},
+		CustomFields: verifiable.CustomFields{},
+	}
 
-	return doc
-}
-
-func addLDProof(t *testing.T, vp *verifiable.Presentation) {
-	t.Helper()
-
-	_, secretKey, err := ed25519.GenerateKey(rand.Reader)
-	require.NoError(t, err)
-
-	now := time.Now()
-	err = vp.AddLinkedDataProof(&verifiable.LinkedDataProofContext{
-		VerificationMethod:      "did:example:123",
-		SignatureRepresentation: verifiable.SignatureJWS,
-		SignatureType:           "Ed25519Signature2018",
-		Suite:                   ed25519signature2018.New(suite.WithSigner(&testSigner{privKey: secretKey})),
-		Created:                 &now,
-		Domain:                  "user.example.com",
-		Challenge:               uuid.New().String(),
-		Purpose:                 "authentication",
-	}, jsonld.WithDocumentLoader(testDocumentLoader))
-	require.NoError(t, err)
-}
-
-type testSigner struct {
-	privKey []byte
-}
-
-func (t *testSigner) Sign(plaintext []byte) ([]byte, error) {
-	return ed25519.Sign(t.privKey, plaintext), nil
+	return vc
 }
 
 func createTestJSONLDDocumentLoader() *ld.CachingDocumentLoader {

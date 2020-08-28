@@ -71,7 +71,7 @@ func CreateManifestCredential(issuerName string, supportedContexts []string) ([]
 // ParseWalletResponse parses VP received from the wallet and returns the DIDConnect response.
 func ParseWalletResponse(vpBytes []byte) (*DIDConnectCredentialSubject, error) {
 	// TODO https://github.com/trustbloc/edge-adapter/issues/87 validate the signature
-	pres, err := verifiable.ParsePresentation(vpBytes, verifiable.WithDisabledPresentationProofCheck())
+	pres, err := verifiable.ParsePresentation(vpBytes, verifiable.WithPresDisabledProofCheck())
 	if err != nil {
 		return nil, fmt.Errorf("invalid presentation: %s", err.Error())
 	}

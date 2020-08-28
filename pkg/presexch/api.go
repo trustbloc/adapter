@@ -78,8 +78,7 @@ type InputDescriptorMapping struct {
 
 // MatchOptions is a holder of options that can set when matching a submission against definitions.
 type MatchOptions struct {
-	JSONLDDocumentLoader ld.DocumentLoader
-	PublicKeyFetcher     verifiable.PublicKeyFetcher
+	CredentialOptions []verifiable.CredentialOpt
 }
 
 // MatchOption is an option that sets an option for when matching.
@@ -88,7 +87,7 @@ type MatchOption func(*MatchOptions)
 // WithJSONLDDocumentLoader sets the loader to use when parsing the embedded verifiable credentials.
 func WithJSONLDDocumentLoader(l ld.DocumentLoader) MatchOption {
 	return func(m *MatchOptions) {
-		m.JSONLDDocumentLoader = l
+		m.CredentialOptions = append(m.CredentialOptions, verifiable.WithJSONLDDocumentLoader(l))
 	}
 }
 
@@ -96,7 +95,14 @@ func WithJSONLDDocumentLoader(l ld.DocumentLoader) MatchOption {
 // verifying their proofs.
 func WithPublicKeyFetcher(fetcher verifiable.PublicKeyFetcher) MatchOption {
 	return func(m *MatchOptions) {
-		m.PublicKeyFetcher = fetcher
+		m.CredentialOptions = append(m.CredentialOptions, verifiable.WithPublicKeyFetcher(fetcher))
+	}
+}
+
+// WithDisabledCredProofCheck disables proof check on the embedded verifiable credentials.
+func WithDisabledCredProofCheck() MatchOption {
+	return func(m *MatchOptions) {
+		m.CredentialOptions = append(m.CredentialOptions, verifiable.WithDisabledProofCheck())
 	}
 }
 
@@ -146,7 +152,7 @@ func (p *PresentationDefinitions) Match(vp *verifiable.Presentation, // nolint:g
 				descriptorMapProperty, mapping.ID)
 		}
 
-		vc, selectErr := selectByPath(builder, typelessVP, mapping.Path, opts.JSONLDDocumentLoader, opts.PublicKeyFetcher)
+		vc, selectErr := selectByPath(builder, typelessVP, mapping.Path, opts)
 		if selectErr != nil {
 			return nil, fmt.Errorf("failed to select vc from submission: %w", selectErr)
 		}
@@ -248,7 +254,7 @@ func descriptorIDs(input []*InputDescriptor) []string {
 // string expression that selects the credential to be submit in relation to the identified Input Descriptor
 // identified, when executed against the top-level of the object the Presentation Submission is embedded within.
 func selectByPath(builder gval.Language, vp interface{}, jsonPath string,
-	loader ld.DocumentLoader, keyFetcher verifiable.PublicKeyFetcher) (*verifiable.Credential, error) {
+	options *MatchOptions) (*verifiable.Credential, error) {
 	path, err := builder.NewEvaluable(jsonPath)
 	if err != nil {
 		return nil, fmt.Errorf("failed to build new json path evaluator: %w", err)
@@ -264,17 +270,7 @@ func selectByPath(builder gval.Language, vp interface{}, jsonPath string,
 		return nil, fmt.Errorf("failed to marshal credential: %w", err)
 	}
 
-	vcOpts := make([]verifiable.CredentialOpt, 0)
-
-	if loader != nil {
-		vcOpts = append(vcOpts, verifiable.WithJSONLDDocumentLoader(loader))
-	}
-
-	if keyFetcher != nil {
-		vcOpts = append(vcOpts, verifiable.WithPublicKeyFetcher(keyFetcher))
-	}
-
-	vc, err := verifiable.ParseCredential(credBits, vcOpts...)
+	vc, err := verifiable.ParseCredential(credBits, options.CredentialOptions...)
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse credential: %w", err)
 	}

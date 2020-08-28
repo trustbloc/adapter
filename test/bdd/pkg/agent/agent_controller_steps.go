@@ -27,17 +27,22 @@ import (
 	"github.com/hyperledger/aries-framework-go/pkg/client/presentproof"
 	didexcmd "github.com/hyperledger/aries-framework-go/pkg/controller/command/didexchange"
 	issuecredcmd "github.com/hyperledger/aries-framework-go/pkg/controller/command/issuecredential"
+	kmscmd "github.com/hyperledger/aries-framework-go/pkg/controller/command/kms"
 	oobcmd "github.com/hyperledger/aries-framework-go/pkg/controller/command/outofband"
 	presentproofcmd "github.com/hyperledger/aries-framework-go/pkg/controller/command/presentproof"
 	vdricmd "github.com/hyperledger/aries-framework-go/pkg/controller/command/vdri"
 	verifiablecmd "github.com/hyperledger/aries-framework-go/pkg/controller/command/verifiable"
+	kms2 "github.com/hyperledger/aries-framework-go/pkg/controller/rest/kms"
+	"github.com/hyperledger/aries-framework-go/pkg/controller/rest/vdri"
 	"github.com/hyperledger/aries-framework-go/pkg/didcomm/protocol/decorator"
 	issuecredsvc "github.com/hyperledger/aries-framework-go/pkg/didcomm/protocol/issuecredential"
 	presentproofsvc "github.com/hyperledger/aries-framework-go/pkg/didcomm/protocol/presentproof"
 	"github.com/hyperledger/aries-framework-go/pkg/doc/did"
+	"github.com/hyperledger/aries-framework-go/pkg/doc/signature/suite/ed25519signature2018"
 	"github.com/hyperledger/aries-framework-go/pkg/doc/util"
 	"github.com/hyperledger/aries-framework-go/pkg/doc/verifiable"
 	vdriapi "github.com/hyperledger/aries-framework-go/pkg/framework/aries/api/vdri"
+	"github.com/hyperledger/aries-framework-go/pkg/kms"
 	"github.com/trustbloc/edge-core/pkg/log"
 
 	issuerops "github.com/trustbloc/edge-adapter/pkg/restapi/issuer/operation"
@@ -72,6 +77,10 @@ const (
 	vdriOperationID = "/vdri"
 	vdriDIDPath     = vdriOperationID + "/did"
 	resolveDIDPath  = vdriDIDPath + "/resolve/%s"
+
+	verifiableOperationID    = "/verifiable"
+	signCredentialPath       = verifiableOperationID + "/signcredential"
+	generatePresentationPath = verifiableOperationID + "/presentation/generate"
 
 	governanceCtx       = "https://trustbloc.github.io/context/governance/context.jsonld"
 	governanceVCCTXSize = 3
@@ -611,6 +620,31 @@ func (a *Steps) ResolveDID(agent, didID string) (*did.Doc, error) {
 	return doc, nil
 }
 
+// SaveDID saves the did document.
+func (a *Steps) SaveDID(agent, friendlyName string, d *did.Doc) error {
+	bits, err := d.JSONBytes()
+	if err != nil {
+		return fmt.Errorf("failed to marshal did doc: %w", err)
+	}
+
+	request, err := json.Marshal(&vdricmd.DIDArgs{
+		Name:     friendlyName,
+		Document: vdricmd.Document{DID: bits},
+	})
+	if err != nil {
+		return fmt.Errorf("failed to marshal request to save did doc: %w", err)
+	}
+
+	requestURL := a.ControllerURLs[agent] + vdri.SaveDIDPath
+
+	err = sendHTTP(http.MethodPost, requestURL, request, nil)
+	if err != nil {
+		return fmt.Errorf("failed to save did at url %s: %w", requestURL, err)
+	}
+
+	return nil
+}
+
 // AcceptRequestPresentation accepts the request for presentation.
 func (a *Steps) AcceptRequestPresentation(agent string, presentation *verifiable.Presentation) error {
 	destination := a.ControllerURLs[agent]
@@ -645,6 +679,122 @@ func (a *Steps) AcceptRequestPresentation(agent string, presentation *verifiable
 	acceptRequestURL := fmt.Sprintf(destination+acceptRequestPresentation, piid)
 
 	return sendHTTP(http.MethodPost, acceptRequestURL, request, &presentproofcmd.AcceptRequestPresentationResponse{})
+}
+
+// SignCredential signs the credential.
+func (a *Steps) SignCredential(agent, signingDID string, cred *verifiable.Credential) (*verifiable.Credential, error) {
+	destination := a.ControllerURLs[agent]
+
+	inputBits, err := json.Marshal(cred)
+	if err != nil {
+		return nil, fmt.Errorf("'%s' failed to marshal credential: %w", agent, err)
+	}
+
+	request, err := json.Marshal(&verifiablecmd.SignCredentialRequest{
+		Credential: inputBits,
+		DID:        signingDID,
+		ProofOptions: &verifiablecmd.ProofOptions{
+			SignatureType: verifiablecmd.Ed25519Signature2018,
+		},
+	})
+	if err != nil {
+		return nil, fmt.Errorf("'%s' failed to marshal SignCredential request: %w", agent, err)
+	}
+
+	response := &verifiablecmd.SignCredentialResponse{}
+
+	err = sendHTTP(http.MethodPost, destination+signCredentialPath, request, response)
+	if err != nil {
+		return nil, fmt.Errorf("'%s' failed to sign credential: %w", agent, err)
+	}
+
+	output, err := verifiable.ParseUnverifiedCredential(response.VerifiableCredential)
+	if err != nil {
+		return nil, fmt.Errorf("'%s' failed to parse their own signed credential: %w", agent, err)
+	}
+
+	return output, nil
+}
+
+// GeneratePresentation generates a new, signed presentation.
+func (a *Steps) GeneratePresentation(agent, signingDID, verificationMethod string,
+	vp *verifiable.Presentation, vcs ...*verifiable.Credential) (*verifiable.Presentation, error) {
+	destinationURL := a.ControllerURLs[agent]
+
+	rawCreds := make([]json.RawMessage, len(vcs))
+
+	for i := range vcs {
+		rawCred, err := json.Marshal(vcs[i])
+		if err != nil {
+			return nil, fmt.Errorf("'%s' failed to marshal a credential while generating a presentation: %w", agent, err)
+		}
+
+		rawCreds[i] = rawCred
+	}
+
+	var (
+		err      error
+		vpToSign []byte
+	)
+
+	if vp != nil {
+		vpToSign, err = json.Marshal(vp)
+		if err != nil {
+			return nil, fmt.Errorf("failed to sign vp with verMethod %s: %w", verificationMethod, err)
+		}
+	}
+
+	request, err := json.Marshal(&verifiablecmd.PresentationRequest{
+		Presentation:          vpToSign,
+		VerifiableCredentials: rawCreds,
+		DID:                   signingDID,
+		ProofOptions: &verifiablecmd.ProofOptions{
+			SignatureType:      ed25519signature2018.SignatureType,
+			VerificationMethod: verificationMethod,
+		},
+	})
+	if err != nil {
+		return nil, fmt.Errorf("'%s' failed to marshal generate presentation request: %w", agent, err)
+	}
+
+	response := &verifiablecmd.Presentation{}
+
+	err = sendHTTP(http.MethodPost, destinationURL+generatePresentationPath, request, response)
+	if err != nil {
+		return nil, fmt.Errorf("'%s' failed to generate their own presentation: %w", agent, err)
+	}
+
+	signedVP, err := verifiable.ParseUnverifiedPresentation(response.VerifiablePresentation)
+	if err != nil {
+		return nil, fmt.Errorf("'%s' failed to parse their own presentation: %w", agent, err)
+	}
+
+	return signedVP, nil
+}
+
+// CreateKey creates a key of the given type.
+// Returns the key's ID and the public key material.
+func (a *Steps) CreateKey(agent string, t kms.KeyType) (id string, key []byte, err error) {
+	request, err := json.Marshal(&kmscmd.CreateKeySetRequest{KeyType: string(t)})
+	if err != nil {
+		return "", nil, fmt.Errorf("failed to marshal createKeySet request: %w", err)
+	}
+
+	requestURL := a.ControllerURLs[agent] + kms2.CreateKeySetPath
+
+	response := &kmscmd.CreateKeySetResponse{}
+
+	err = sendHTTP(http.MethodPost, requestURL, request, response)
+	if err != nil {
+		return "", nil, fmt.Errorf("failed to execute createKeySet request to %s: %w", requestURL, err)
+	}
+
+	bits, err := base64.RawURLEncoding.DecodeString(response.PublicKey)
+	if err != nil {
+		return "", nil, fmt.Errorf("failed to base64URL-decode key: %w", err)
+	}
+
+	return response.KeyID, bits, nil
 }
 
 func sendPresentationRequest(conn *didexchange.Connection, vp *verifiable.Presentation, controllerURL string) error {
@@ -692,12 +842,14 @@ func acceptCredential(piid, credentialName, controllerURL string) error {
 	return nil
 }
 
-func getCredential(credentialName, controllerURL string, vdri vdriapi.Registry) (*verifiable.Credential, error) {
+func getCredential(credentialName, controllerURL string, vdriReg vdriapi.Registry) (*verifiable.Credential, error) {
 	// TODO use listener rather than polling (update once aries bdd-tests are refactored)
 	const (
 		timeoutWait = 10 * time.Second
 		retryDelay  = 500 * time.Millisecond
 	)
+
+	var err error
 
 	start := time.Now()
 
@@ -711,7 +863,7 @@ func getCredential(credentialName, controllerURL string, vdri vdriapi.Registry) 
 			Name string `json:"name"`
 		}
 
-		err := sendHTTP(http.MethodGet,
+		err = sendHTTP(http.MethodGet,
 			fmt.Sprintf("%s/verifiable/credential/name/%s", controllerURL, credentialName), nil, &result)
 		if err != nil {
 			time.Sleep(retryDelay)
@@ -729,9 +881,11 @@ func getCredential(credentialName, controllerURL string, vdri vdriapi.Registry) 
 			return nil, err
 		}
 
-		vc, err := verifiable.ParseCredential(
+		var vc *verifiable.Credential
+
+		vc, err = verifiable.ParseCredential(
 			[]byte(getVCResp.VC),
-			verifiable.WithPublicKeyFetcher(verifiable.NewDIDKeyResolver(vdri).PublicKeyFetcher()),
+			verifiable.WithPublicKeyFetcher(verifiable.NewDIDKeyResolver(vdriReg).PublicKeyFetcher()),
 		)
 		if err != nil {
 			return nil, err
@@ -740,7 +894,7 @@ func getCredential(credentialName, controllerURL string, vdri vdriapi.Registry) 
 		return vc, nil
 	}
 
-	return nil, fmt.Errorf("failed to validate credential: not found")
+	return nil, fmt.Errorf("failed to validate credential: not found: %w", err)
 }
 
 func validateAndGetAuthorizationCredential(vc *verifiable.Credential,
@@ -828,7 +982,7 @@ func validatePresentation(presentationName, controllerURL string) (string, error
 
 // nolint: gocyclo
 func (a *Steps) validateIssuerVC(id, agentID, controllerURL, expectedScope string, supportsAssuranceCred bool,
-	vdri vdriapi.Registry) error {
+	vdriReg vdriapi.Registry) error {
 	var vpResult verifiablecmd.Presentation
 
 	if err := sendHTTP(http.MethodGet,
@@ -839,7 +993,7 @@ func (a *Steps) validateIssuerVC(id, agentID, controllerURL, expectedScope strin
 
 	vp, err := verifiable.ParsePresentation(
 		vpResult.VerifiablePresentation,
-		verifiable.WithPresPublicKeyFetcher(verifiable.NewDIDKeyResolver(vdri).PublicKeyFetcher()),
+		verifiable.WithPresPublicKeyFetcher(verifiable.NewDIDKeyResolver(vdriReg).PublicKeyFetcher()),
 	)
 	if err != nil {
 		return err
@@ -856,7 +1010,7 @@ func (a *Steps) validateIssuerVC(id, agentID, controllerURL, expectedScope strin
 
 	vc, err := verifiable.ParseCredential(
 		creds[0],
-		verifiable.WithPublicKeyFetcher(verifiable.NewDIDKeyResolver(vdri).PublicKeyFetcher()),
+		verifiable.WithPublicKeyFetcher(verifiable.NewDIDKeyResolver(vdriReg).PublicKeyFetcher()),
 	)
 	if err != nil {
 		return err
@@ -974,10 +1128,11 @@ func validateGovernance(governanceVCBytes json.RawMessage) error {
 	return nil
 }
 
-func validateAndGetReferenceCred(vcBytes []byte, vcType string, vdri vdriapi.Registry) (*verifiable.Credential, error) {
+func validateAndGetReferenceCred(vcBytes []byte, vcType string,
+	vdriReg vdriapi.Registry) (*verifiable.Credential, error) {
 	cred, err := verifiable.ParseCredential(
 		vcBytes,
-		verifiable.WithPublicKeyFetcher(verifiable.NewDIDKeyResolver(vdri).PublicKeyFetcher()),
+		verifiable.WithPublicKeyFetcher(verifiable.NewDIDKeyResolver(vdriReg).PublicKeyFetcher()),
 	)
 	if err != nil {
 		return nil, err

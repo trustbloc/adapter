@@ -1,19 +1,13 @@
 package rp
 
 import (
-	"crypto/ed25519"
-	"crypto/rand"
 	"fmt"
 	"io/ioutil"
 	"path/filepath"
 	"strings"
 	"time"
 
-	"github.com/google/uuid"
 	"github.com/hyperledger/aries-framework-go/pkg/doc/did"
-	"github.com/hyperledger/aries-framework-go/pkg/doc/signature/jsonld"
-	"github.com/hyperledger/aries-framework-go/pkg/doc/signature/suite"
-	"github.com/hyperledger/aries-framework-go/pkg/doc/signature/suite/ed25519signature2018"
 	"github.com/hyperledger/aries-framework-go/pkg/doc/util"
 	"github.com/hyperledger/aries-framework-go/pkg/doc/verifiable"
 	"github.com/piprate/json-gold/ld"
@@ -53,7 +47,7 @@ func newPresentationSubmissionVP(submission *presexch.PresentationSubmission,
 		}
 	}
 
-	return vp, addLDProof(vp)
+	return vp, nil
 }
 
 func newUserAuthorizationVC(subjectDID string, rpDID, issuerDID *did.Doc) (*verifiable.Credential, error) {
@@ -174,34 +168,6 @@ func newDriversLicenseVC() *verifiable.Credential {
 			},
 		},
 	}
-}
-
-func addLDProof(vp *verifiable.Presentation) error {
-	_, secretKey, err := ed25519.GenerateKey(rand.Reader)
-	if err != nil {
-		return err
-	}
-
-	now := time.Now()
-
-	return vp.AddLinkedDataProof(&verifiable.LinkedDataProofContext{
-		VerificationMethod:      "did:example:123",
-		SignatureRepresentation: verifiable.SignatureJWS,
-		SignatureType:           "Ed25519Signature2018",
-		Suite:                   ed25519signature2018.New(suite.WithSigner(&testSigner{privKey: secretKey})),
-		Created:                 &now,
-		Domain:                  "user.example.com",
-		Challenge:               uuid.New().String(),
-		Purpose:                 "authentication",
-	}, jsonld.WithDocumentLoader(testDocumentLoader))
-}
-
-type testSigner struct {
-	privKey []byte
-}
-
-func (t *testSigner) Sign(plaintext []byte) ([]byte, error) {
-	return ed25519.Sign(t.privKey, plaintext), nil
 }
 
 func createTestJSONLDDocumentLoader() *ld.CachingDocumentLoader {

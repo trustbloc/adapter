@@ -18,8 +18,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/trustbloc/edge-adapter/pkg/vc"
-
 	"github.com/coreos/go-oidc"
 	"github.com/google/uuid"
 	"github.com/hyperledger/aries-framework-go/pkg/client/didexchange"
@@ -31,9 +29,9 @@ import (
 	presentproofsvc "github.com/hyperledger/aries-framework-go/pkg/didcomm/protocol/presentproof"
 	"github.com/hyperledger/aries-framework-go/pkg/doc/did"
 	"github.com/hyperledger/aries-framework-go/pkg/doc/verifiable"
-	vdriapi "github.com/hyperledger/aries-framework-go/pkg/framework/aries/api/vdri"
+	mockprovider "github.com/hyperledger/aries-framework-go/pkg/mock/provider"
 	ariesmockstorage "github.com/hyperledger/aries-framework-go/pkg/mock/storage"
-	ariesstorage "github.com/hyperledger/aries-framework-go/pkg/storage"
+	"github.com/hyperledger/aries-framework-go/pkg/storage/mem"
 	"github.com/hyperledger/aries-framework-go/pkg/store/connection"
 	"github.com/ory/hydra-client-go/client/admin"
 	"github.com/ory/hydra-client-go/models"
@@ -48,6 +46,7 @@ import (
 	mockoutofband "github.com/trustbloc/edge-adapter/pkg/internal/mock/outofband"
 	mockpresentproof "github.com/trustbloc/edge-adapter/pkg/internal/mock/presentproof"
 	"github.com/trustbloc/edge-adapter/pkg/presexch"
+	"github.com/trustbloc/edge-adapter/pkg/vc"
 )
 
 const (
@@ -56,6 +55,7 @@ const (
 
 func TestNew(t *testing.T) {
 	t.Run("registers for didcomm events", func(t *testing.T) {
+		relyingParty := agent(t)
 		registeredDIDExchActions := false
 		registeredPresentProofActions := false
 		registeredMsgs := false
@@ -71,7 +71,7 @@ func TestNew(t *testing.T) {
 				},
 			},
 			Storage:              memStorage(),
-			AriesStorageProvider: &mockAriesContextProvider{},
+			AriesContextProvider: relyingParty,
 			PresentProofClient: &mockpresentproof.MockClient{
 				RegisterActionFunc: func(chan<- service.DIDCommAction) error {
 					registeredPresentProofActions = true
@@ -94,7 +94,7 @@ func TestNew(t *testing.T) {
 				},
 			},
 			Storage:              memStorage(),
-			AriesStorageProvider: &mockAriesContextProvider{},
+			AriesContextProvider: agent(t),
 		})
 		require.Error(t, err)
 		require.True(t, errors.Is(err, expected))
@@ -110,7 +110,7 @@ func TestNew(t *testing.T) {
 					return expected
 				},
 			},
-			AriesStorageProvider: &mockAriesContextProvider{},
+			AriesContextProvider: agent(t),
 		})
 		require.Error(t, err)
 		require.True(t, errors.Is(err, expected))
@@ -125,7 +125,7 @@ func TestNew(t *testing.T) {
 				},
 			},
 			Storage:              memStorage(),
-			AriesStorageProvider: &mockAriesContextProvider{},
+			AriesContextProvider: agent(t),
 		})
 		require.Error(t, err)
 		require.True(t, errors.Is(err, expected))
@@ -139,7 +139,7 @@ func TestNew(t *testing.T) {
 				Persistent: &stubStorageProvider{storeCreateErr: expected},
 				Transient:  memstore.NewProvider(),
 			},
-			AriesStorageProvider: &mockAriesContextProvider{},
+			AriesContextProvider: agent(t),
 		})
 		require.Error(t, err)
 		require.True(t, errors.Is(err, expected))
@@ -154,7 +154,7 @@ func TestNew(t *testing.T) {
 				Persistent: memstore.NewProvider(),
 				Transient:  &stubStorageProvider{storeCreateErr: expected},
 			},
-			AriesStorageProvider: &mockAriesContextProvider{},
+			AriesContextProvider: agent(t),
 		})
 		require.Error(t, err)
 		require.True(t, errors.Is(err, expected))
@@ -169,7 +169,7 @@ func TestNew(t *testing.T) {
 				Persistent: memstore.NewProvider(),
 				Transient:  &stubStorageProvider{storeOpenErr: expected},
 			},
-			AriesStorageProvider: &mockAriesContextProvider{},
+			AriesContextProvider: agent(t),
 		})
 		require.Error(t, err)
 		require.True(t, errors.Is(err, expected))
@@ -180,8 +180,9 @@ func TestNew(t *testing.T) {
 		_, err := New(&Config{
 			DIDExchClient: &mockdidexchange.MockClient{},
 			Storage:       memStorage(),
-			AriesStorageProvider: &mockAriesContextProvider{
-				tstore: &ariesmockstorage.MockStoreProvider{ErrOpenStoreHandle: expected},
+			AriesContextProvider: &mockprovider.Provider{
+				ProtocolStateStorageProviderValue: &ariesmockstorage.MockStoreProvider{ErrOpenStoreHandle: expected},
+				StorageProviderValue:              mem.NewProvider(),
 			},
 		})
 		require.Error(t, err)
@@ -200,7 +201,7 @@ func Test_HandleDIDExchangeRequests(t *testing.T) {
 				},
 			},
 			Storage:              memStorage(),
-			AriesStorageProvider: &mockAriesContextProvider{},
+			AriesContextProvider: agent(t),
 			PresentProofClient:   &mockpresentproof.MockClient{},
 		})
 		require.NoError(t, err)
@@ -239,7 +240,7 @@ func Test_HandleDIDExchangeRequests(t *testing.T) {
 				},
 			},
 			Storage:              memStorage(),
-			AriesStorageProvider: &mockAriesContextProvider{},
+			AriesContextProvider: agent(t),
 			PresentProofClient:   &mockpresentproof.MockClient{},
 		})
 		require.NoError(t, err)
@@ -276,7 +277,7 @@ func Test_HandleDIDExchangeRequests(t *testing.T) {
 				},
 			},
 			Storage:              memStorage(),
-			AriesStorageProvider: &mockAriesContextProvider{},
+			AriesContextProvider: agent(t),
 			PresentProofClient:   &mockpresentproof.MockClient{},
 		})
 		require.NoError(t, err)
@@ -321,14 +322,15 @@ func TestListenForConnectionCompleteEvents(t *testing.T) {
 				},
 			},
 			Storage: memStorage(),
-			AriesStorageProvider: &mockAriesContextProvider{
-				store: &ariesmockstorage.MockStoreProvider{
+			AriesContextProvider: &mockprovider.Provider{
+				StorageProviderValue: &ariesmockstorage.MockStoreProvider{
 					Store: &ariesmockstorage.MockStore{
 						Store: map[string][]byte{
-							fmt.Sprintf("conn_%s", record.ConnectionID): toBytes(t, record),
+							fmt.Sprintf("conn_%s", record.ConnectionID): marshal(t, record),
 						},
 					},
 				},
+				ProtocolStateStorageProviderValue: mem.NewProvider(),
 			},
 			PresentProofClient: &mockpresentproof.MockClient{},
 		})
@@ -358,7 +360,7 @@ func TestListenForConnectionCompleteEvents(t *testing.T) {
 				},
 			},
 			Storage:              memStorage(),
-			AriesStorageProvider: &mockAriesContextProvider{},
+			AriesContextProvider: agent(t),
 			PresentProofClient:   &mockpresentproof.MockClient{},
 		})
 		require.NoError(t, err)
@@ -390,7 +392,7 @@ func TestListenForConnectionCompleteEvents(t *testing.T) {
 				},
 			},
 			Storage:              memStorage(),
-			AriesStorageProvider: &mockAriesContextProvider{},
+			AriesContextProvider: agent(t),
 			PresentProofClient:   &mockpresentproof.MockClient{},
 		})
 		require.NoError(t, err)
@@ -421,7 +423,7 @@ func TestListenForConnectionCompleteEvents(t *testing.T) {
 				},
 			},
 			Storage:              memStorage(),
-			AriesStorageProvider: &mockAriesContextProvider{},
+			AriesContextProvider: agent(t),
 			PresentProofClient:   &mockpresentproof.MockClient{},
 		})
 		require.NoError(t, err)
@@ -444,12 +446,13 @@ func TestListenForConnectionCompleteEvents(t *testing.T) {
 				},
 			},
 			Storage: memStorage(),
-			AriesStorageProvider: &mockAriesContextProvider{
-				store: &ariesmockstorage.MockStoreProvider{
+			AriesContextProvider: &mockprovider.Provider{
+				StorageProviderValue: &ariesmockstorage.MockStoreProvider{
 					Store: &ariesmockstorage.MockStore{
 						ErrGet: errors.New("test"),
 					},
 				},
+				ProtocolStateStorageProviderValue: mem.NewProvider(),
 			},
 			PresentProofClient: &mockpresentproof.MockClient{},
 		})
@@ -475,7 +478,7 @@ func TestGetRESTHandlers(t *testing.T) {
 	c, err := New(&Config{
 		DIDExchClient:        &mockdidexchange.MockClient{},
 		Storage:              memStorage(),
-		AriesStorageProvider: &mockAriesContextProvider{},
+		AriesContextProvider: agent(t),
 		PresentProofClient:   &mockpresentproof.MockClient{},
 	})
 	require.NoError(t, err)
@@ -520,7 +523,7 @@ func TestHydraLoginHandlerIterOne(t *testing.T) {
 					Persistent: store,
 					Transient:  memstore.NewProvider(),
 				},
-				AriesStorageProvider: &mockAriesContextProvider{},
+				AriesContextProvider: agent(t),
 				PresentProofClient:   &mockpresentproof.MockClient{},
 			})
 			require.NoError(t, err)
@@ -574,7 +577,7 @@ func TestHydraLoginHandlerIterOne(t *testing.T) {
 					Persistent: store,
 					Transient:  memstore.NewProvider(),
 				},
-				AriesStorageProvider: &mockAriesContextProvider{},
+				AriesContextProvider: agent(t),
 				PresentProofClient:   &mockpresentproof.MockClient{},
 			})
 			require.NoError(t, err)
@@ -588,7 +591,7 @@ func TestHydraLoginHandlerIterOne(t *testing.T) {
 		o, err := New(&Config{
 			DIDExchClient:        &mockdidexchange.MockClient{},
 			Storage:              memStorage(),
-			AriesStorageProvider: &mockAriesContextProvider{},
+			AriesContextProvider: agent(t),
 			PresentProofClient:   &mockpresentproof.MockClient{},
 		})
 		require.NoError(t, err)
@@ -607,7 +610,7 @@ func TestHydraLoginHandlerIterOne(t *testing.T) {
 			},
 			DIDExchClient:        &mockdidexchange.MockClient{},
 			Storage:              memStorage(),
-			AriesStorageProvider: &mockAriesContextProvider{},
+			AriesContextProvider: agent(t),
 			PresentProofClient:   &mockpresentproof.MockClient{},
 		})
 		require.NoError(t, err)
@@ -632,7 +635,7 @@ func TestHydraLoginHandlerIterOne(t *testing.T) {
 			},
 			DIDExchClient:        &mockdidexchange.MockClient{},
 			Storage:              memStorage(),
-			AriesStorageProvider: &mockAriesContextProvider{},
+			AriesContextProvider: agent(t),
 			PresentProofClient:   &mockpresentproof.MockClient{},
 		})
 		require.NoError(t, err)
@@ -676,7 +679,7 @@ func TestHydraLoginHandlerIterOne(t *testing.T) {
 				Persistent: store,
 				Transient:  memstore.NewProvider(),
 			},
-			AriesStorageProvider: &mockAriesContextProvider{},
+			AriesContextProvider: agent(t),
 			PresentProofClient:   &mockpresentproof.MockClient{},
 		})
 		require.NoError(t, err)
@@ -714,7 +717,7 @@ func TestHydraLoginHandlerIterOne(t *testing.T) {
 				Persistent: store,
 				Transient:  memstore.NewProvider(),
 			},
-			AriesStorageProvider: &mockAriesContextProvider{},
+			AriesContextProvider: agent(t),
 			PresentProofClient:   &mockpresentproof.MockClient{},
 		})
 		require.NoError(t, err)
@@ -746,7 +749,7 @@ func TestHydraLoginHandler(t *testing.T) {
 			},
 			DIDExchClient:        &mockdidexchange.MockClient{},
 			Storage:              memStorage(),
-			AriesStorageProvider: &mockAriesContextProvider{},
+			AriesContextProvider: agent(t),
 			PresentProofClient:   &mockpresentproof.MockClient{},
 		})
 		require.NoError(t, err)
@@ -777,7 +780,7 @@ func TestHydraLoginHandler(t *testing.T) {
 			},
 			DIDExchClient:        &mockdidexchange.MockClient{},
 			Storage:              memStorage(),
-			AriesStorageProvider: &mockAriesContextProvider{},
+			AriesContextProvider: agent(t),
 			PresentProofClient:   &mockpresentproof.MockClient{},
 		})
 		require.NoError(t, err)
@@ -790,7 +793,7 @@ func TestHydraLoginHandler(t *testing.T) {
 		o, err := New(&Config{
 			DIDExchClient:        &mockdidexchange.MockClient{},
 			Storage:              memStorage(),
-			AriesStorageProvider: &mockAriesContextProvider{},
+			AriesContextProvider: agent(t),
 			PresentProofClient:   &mockpresentproof.MockClient{},
 		})
 		require.NoError(t, err)
@@ -809,7 +812,7 @@ func TestHydraLoginHandler(t *testing.T) {
 			},
 			DIDExchClient:        &mockdidexchange.MockClient{},
 			Storage:              memStorage(),
-			AriesStorageProvider: &mockAriesContextProvider{},
+			AriesContextProvider: agent(t),
 			PresentProofClient:   &mockpresentproof.MockClient{},
 		})
 		require.NoError(t, err)
@@ -833,7 +836,7 @@ func TestHydraLoginHandler(t *testing.T) {
 			},
 			DIDExchClient:        &mockdidexchange.MockClient{},
 			Storage:              memStorage(),
-			AriesStorageProvider: &mockAriesContextProvider{},
+			AriesContextProvider: agent(t),
 			PresentProofClient:   &mockpresentproof.MockClient{},
 		})
 		require.NoError(t, err)
@@ -871,7 +874,7 @@ func TestOidcCallbackHandler(t *testing.T) {
 				Persistent: store,
 				Transient:  memstore.NewProvider(),
 			},
-			AriesStorageProvider: &mockAriesContextProvider{},
+			AriesContextProvider: agent(t),
 			PresentProofClient:   &mockpresentproof.MockClient{},
 		})
 		require.NoError(t, err)
@@ -889,7 +892,7 @@ func TestOidcCallbackHandler(t *testing.T) {
 		c, err := New(&Config{
 			DIDExchClient:        &mockdidexchange.MockClient{},
 			Storage:              memStorage(),
-			AriesStorageProvider: &mockAriesContextProvider{},
+			AriesContextProvider: agent(t),
 			PresentProofClient:   &mockpresentproof.MockClient{},
 		})
 		require.NoError(t, err)
@@ -908,7 +911,7 @@ func TestOidcCallbackHandler(t *testing.T) {
 			},
 			DIDExchClient:        &mockdidexchange.MockClient{},
 			Storage:              memStorage(),
-			AriesStorageProvider: &mockAriesContextProvider{},
+			AriesContextProvider: agent(t),
 			PresentProofClient:   &mockpresentproof.MockClient{},
 		})
 		require.NoError(t, err)
@@ -936,7 +939,7 @@ func TestOidcCallbackHandler(t *testing.T) {
 			},
 			DIDExchClient:        &mockdidexchange.MockClient{},
 			Storage:              memStorage(),
-			AriesStorageProvider: &mockAriesContextProvider{},
+			AriesContextProvider: agent(t),
 			PresentProofClient:   &mockpresentproof.MockClient{},
 		})
 		require.NoError(t, err)
@@ -968,7 +971,7 @@ func TestSaveUserAndRequest(t *testing.T) {
 				Persistent: store,
 				Transient:  memstore.NewProvider(),
 			},
-			AriesStorageProvider: &mockAriesContextProvider{},
+			AriesContextProvider: agent(t),
 			PresentProofClient:   &mockpresentproof.MockClient{},
 		})
 		require.NoError(t, err)
@@ -995,7 +998,7 @@ func TestSaveUserAndRequest(t *testing.T) {
 				Persistent: store,
 				Transient:  memstore.NewProvider(),
 			},
-			AriesStorageProvider: &mockAriesContextProvider{},
+			AriesContextProvider: agent(t),
 			PresentProofClient:   &mockpresentproof.MockClient{},
 		})
 		require.NoError(t, err)
@@ -1040,7 +1043,7 @@ func TestHydraConsentHandler(t *testing.T) {
 					Persistent: store,
 					Transient:  memstore.NewProvider(),
 				},
-				AriesStorageProvider: &mockAriesContextProvider{},
+				AriesContextProvider: agent(t),
 				PresentProofClient:   &mockpresentproof.MockClient{},
 			})
 			require.NoError(t, err)
@@ -1064,7 +1067,7 @@ func TestHydraConsentHandler(t *testing.T) {
 			c, err := New(&Config{
 				DIDExchClient:        &mockdidexchange.MockClient{},
 				Storage:              memStorage(),
-				AriesStorageProvider: &mockAriesContextProvider{},
+				AriesContextProvider: agent(t),
 				PresentProofClient:   &mockpresentproof.MockClient{},
 			})
 			require.NoError(t, err)
@@ -1080,7 +1083,7 @@ func TestHydraConsentHandler(t *testing.T) {
 				}},
 				DIDExchClient:        &mockdidexchange.MockClient{},
 				Storage:              memStorage(),
-				AriesStorageProvider: &mockAriesContextProvider{},
+				AriesContextProvider: agent(t),
 				PresentProofClient:   &mockpresentproof.MockClient{},
 			})
 			require.NoError(t, err)
@@ -1097,7 +1100,7 @@ func TestHydraConsentHandler(t *testing.T) {
 				PresentationExProvider: &mockPresentationExProvider{createErr: errors.New("test")},
 				DIDExchClient:          &mockdidexchange.MockClient{},
 				Storage:                memStorage(),
-				AriesStorageProvider:   &mockAriesContextProvider{},
+				AriesContextProvider:   agent(t),
 				PresentProofClient:     &mockpresentproof.MockClient{},
 			})
 			require.NoError(t, err)
@@ -1119,7 +1122,7 @@ func TestHydraConsentHandler(t *testing.T) {
 				},
 				DIDExchClient:        &mockdidexchange.MockClient{},
 				Storage:              memStorage(),
-				AriesStorageProvider: &mockAriesContextProvider{},
+				AriesContextProvider: agent(t),
 				PresentProofClient:   &mockpresentproof.MockClient{},
 			})
 			require.NoError(t, err)
@@ -1164,7 +1167,7 @@ func TestHydraConsentHandler(t *testing.T) {
 					},
 				},
 			},
-			AriesStorageProvider: &mockAriesContextProvider{},
+			AriesContextProvider: agent(t),
 			PresentProofClient:   &mockpresentproof.MockClient{},
 		})
 		require.NoError(t, err)
@@ -1199,7 +1202,7 @@ func TestHydraConsentHandler(t *testing.T) {
 				PresentationExProvider: mockPresentationDefinitionsProvider(),
 				DIDExchClient:          &mockdidexchange.MockClient{},
 				Storage:                memStorage(),
-				AriesStorageProvider:   &mockAriesContextProvider{},
+				AriesContextProvider:   agent(t),
 				PresentProofClient:     &mockpresentproof.MockClient{},
 			})
 			require.NoError(t, err)
@@ -1225,7 +1228,7 @@ func TestHydraConsentHandler(t *testing.T) {
 				},
 				DIDExchClient:        &mockdidexchange.MockClient{},
 				Storage:              memStorage(),
-				AriesStorageProvider: &mockAriesContextProvider{},
+				AriesContextProvider: agent(t),
 				PresentProofClient:   &mockpresentproof.MockClient{},
 			})
 			require.NoError(t, err)
@@ -1242,7 +1245,7 @@ func TestSaveConsentRequest(t *testing.T) {
 		c, err := New(&Config{
 			DIDExchClient:        &mockdidexchange.MockClient{},
 			Storage:              memStorage(),
-			AriesStorageProvider: &mockAriesContextProvider{},
+			AriesContextProvider: agent(t),
 			PresentProofClient:   &mockpresentproof.MockClient{},
 		})
 		require.NoError(t, err)
@@ -1271,7 +1274,7 @@ func TestSaveConsentRequest(t *testing.T) {
 				Persistent: store,
 				Transient:  memstore.NewProvider(),
 			},
-			AriesStorageProvider: &mockAriesContextProvider{},
+			AriesContextProvider: agent(t),
 			PresentProofClient:   &mockpresentproof.MockClient{},
 		})
 		require.NoError(t, err)
@@ -1327,7 +1330,7 @@ func TestGetPresentationsRequest(t *testing.T) {
 				Persistent: store,
 				Transient:  memstore.NewProvider(),
 			},
-			AriesStorageProvider: &mockAriesContextProvider{},
+			AriesContextProvider: agent(t),
 			PresentProofClient:   &mockpresentproof.MockClient{},
 			GovernanceProvider: &mockgovernance.MockProvider{GetCredentialFunc: func(profileID string) ([]byte, error) {
 				return []byte(`{"key":"value"}`), nil
@@ -1402,7 +1405,7 @@ func TestGetPresentationsRequest(t *testing.T) {
 				Persistent: store,
 				Transient:  memstore.NewProvider(),
 			},
-			AriesStorageProvider: &mockAriesContextProvider{},
+			AriesContextProvider: agent(t),
 			PresentProofClient:   &mockpresentproof.MockClient{},
 			GovernanceProvider: &mockgovernance.MockProvider{GetCredentialFunc: func(profileID string) ([]byte, error) {
 				return nil, fmt.Errorf("failed to get vc")
@@ -1432,7 +1435,7 @@ func TestGetPresentationsRequest(t *testing.T) {
 		c, err := New(&Config{
 			DIDExchClient:        &mockdidexchange.MockClient{},
 			Storage:              memStorage(),
-			AriesStorageProvider: &mockAriesContextProvider{},
+			AriesContextProvider: agent(t),
 			PresentProofClient:   &mockpresentproof.MockClient{},
 		})
 		require.NoError(t, err)
@@ -1447,7 +1450,7 @@ func TestGetPresentationsRequest(t *testing.T) {
 		c, err := New(&Config{
 			DIDExchClient:        &mockdidexchange.MockClient{},
 			Storage:              memStorage(),
-			AriesStorageProvider: &mockAriesContextProvider{},
+			AriesContextProvider: agent(t),
 			PresentProofClient:   &mockpresentproof.MockClient{},
 		})
 		require.NoError(t, err)
@@ -1483,7 +1486,7 @@ func TestGetPresentationsRequest(t *testing.T) {
 				Transient:  memstore.NewProvider(),
 			},
 			DIDExchClient:        &mockdidexchange.MockClient{},
-			AriesStorageProvider: &mockAriesContextProvider{},
+			AriesContextProvider: agent(t),
 			PresentProofClient:   &mockpresentproof.MockClient{},
 		})
 		require.NoError(t, err)
@@ -1520,7 +1523,7 @@ func TestGetPresentationsRequest(t *testing.T) {
 				},
 				Transient: memstore.NewProvider(),
 			},
-			AriesStorageProvider: &mockAriesContextProvider{},
+			AriesContextProvider: agent(t),
 			PresentProofClient:   &mockpresentproof.MockClient{},
 		})
 		require.NoError(t, err)
@@ -1567,7 +1570,7 @@ func TestGetPresentationsRequest(t *testing.T) {
 				Transient: &mockstorage.Provider{
 					Store: &mockstorage.MockStore{
 						Store: map[string][]byte{
-							handle: toBytes(t, &consentRequestCtx{
+							handle: marshal(t, &consentRequestCtx{
 								PD: &presexch.PresentationDefinitions{
 									InputDescriptors: []*presexch.InputDescriptor{{ID: uuid.New().String()}},
 								},
@@ -1583,7 +1586,7 @@ func TestGetPresentationsRequest(t *testing.T) {
 					},
 				},
 			},
-			AriesStorageProvider: &mockAriesContextProvider{},
+			AriesContextProvider: agent(t),
 			PresentProofClient:   &mockpresentproof.MockClient{},
 		})
 		require.NoError(t, err)
@@ -1616,7 +1619,7 @@ func TestGetPresentationsRequest(t *testing.T) {
 				Transient: &mockstorage.Provider{
 					Store: &mockstorage.MockStore{
 						Store: map[string][]byte{
-							handle: toBytes(t, &consentRequestCtx{
+							handle: marshal(t, &consentRequestCtx{
 								PD: &presexch.PresentationDefinitions{
 									InputDescriptors: []*presexch.InputDescriptor{{ID: uuid.New().String()}},
 								},
@@ -1633,7 +1636,7 @@ func TestGetPresentationsRequest(t *testing.T) {
 					},
 				},
 			},
-			AriesStorageProvider: &mockAriesContextProvider{},
+			AriesContextProvider: agent(t),
 			PresentProofClient:   &mockpresentproof.MockClient{},
 		})
 		require.NoError(t, err)
@@ -1647,11 +1650,15 @@ func TestGetPresentationsRequest(t *testing.T) {
 
 func TestCHAPIResponseHandler(t *testing.T) {
 	t.Run("valid chapi response", func(t *testing.T) {
+		relyingParty, subject, issuer := trio(t)
+		rpDID := newPeerDID(t, relyingParty)
+		subjectDID := newPeerDID(t, subject)
+		issuerDID := newPeerDID(t, issuer)
+
+		simulateDIDExchange(t, relyingParty, rpDID, subject, subjectDID)
+
 		invitationID := uuid.New().String()
 		rpPublicDID := newDID(t).String()
-		rpPeerDID := newPeerDID(t)
-		issuerPeerDID := newPeerDID(t)
-		userPeerDID := newDID(t).String()
 		thid := uuid.New().String()
 		definitions := &presexch.PresentationDefinitions{
 			InputDescriptors: []*presexch.InputDescriptor{
@@ -1669,9 +1676,11 @@ func TestCHAPIResponseHandler(t *testing.T) {
 				},
 			},
 		}
-		authz := newUserAuthorizationVC(t, userPeerDID, rpPeerDID, issuerPeerDID)
-		degree := newUniversityDegreeVC(t)
+		authz := newAuthorizationVC(t, subjectDID.ID, rpDID, issuerDID)
+		degree := newUniversityDegreeVC(t, issuer, issuerDID)
 		vp := newPresentationSubmissionVP(t,
+			subject,
+			subjectDID,
 			&presexch.PresentationSubmission{DescriptorMap: []*presexch.InputDescriptorMapping{
 				{
 					ID:   definitions.InputDescriptors[0].ID,
@@ -1689,14 +1698,14 @@ func TestCHAPIResponseHandler(t *testing.T) {
 		c, err := New(&Config{
 			DIDExchClient:        &mockdidexchange.MockClient{},
 			Storage:              memStorage(),
-			AriesStorageProvider: &mockAriesContextProvider{},
+			AriesContextProvider: relyingParty,
 			PresentProofClient: &mockpresentproof.MockClient{
 				RegisterActionFunc: func(c chan<- service.DIDCommAction) error {
 					return nil
 				},
 				RequestPresentationFunc: func(request *presentproof.RequestPresentation, myDID, theirDID string) (string, error) {
-					require.Equal(t, rpPeerDID.ID, myDID)
-					require.Equal(t, issuerPeerDID.ID, theirDID)
+					require.Equal(t, rpDID.ID, myDID)
+					require.Equal(t, issuerDID.ID, theirDID)
 					require.Len(t, request.RequestPresentationsAttach, 1)
 					checkPresentationDefinitionAttachment(t, authz, request)
 
@@ -1717,9 +1726,9 @@ func TestCHAPIResponseHandler(t *testing.T) {
 			InvitationID:  invitationID,
 			PD:            definitions,
 			CR:            &admin.GetConsentRequestOK{Payload: &models.ConsentRequest{Challenge: uuid.New().String()}},
-			UserDID:       userPeerDID,
+			UserDID:       subjectDID.ID,
 			RPPublicDID:   rpPublicDID,
-			RPPairwiseDID: rpPeerDID.ID,
+			RPPairwiseDID: rpDID.ID,
 		})
 
 		w := httptest.NewRecorder()
@@ -1737,7 +1746,7 @@ func TestCHAPIResponseHandler(t *testing.T) {
 		c, err := New(&Config{
 			DIDExchClient:        &mockdidexchange.MockClient{},
 			Storage:              memStorage(),
-			AriesStorageProvider: &mockAriesContextProvider{},
+			AriesContextProvider: agent(t),
 			PresentProofClient:   &mockpresentproof.MockClient{},
 		})
 		require.NoError(t, err)
@@ -1752,7 +1761,7 @@ func TestCHAPIResponseHandler(t *testing.T) {
 		c, err := New(&Config{
 			DIDExchClient:        &mockdidexchange.MockClient{},
 			Storage:              memStorage(),
-			AriesStorageProvider: &mockAriesContextProvider{},
+			AriesContextProvider: agent(t),
 			PresentProofClient:   &mockpresentproof.MockClient{},
 		})
 		require.NoError(t, err)
@@ -1767,7 +1776,7 @@ func TestCHAPIResponseHandler(t *testing.T) {
 		c, err := New(&Config{
 			DIDExchClient:        &mockdidexchange.MockClient{},
 			Storage:              memStorage(),
-			AriesStorageProvider: &mockAriesContextProvider{},
+			AriesContextProvider: agent(t),
 			PresentProofClient:   &mockpresentproof.MockClient{},
 		})
 		require.NoError(t, err)
@@ -1780,10 +1789,15 @@ func TestCHAPIResponseHandler(t *testing.T) {
 	})
 
 	t.Run("bad request if issuer did doc is malformed", func(t *testing.T) {
-		invitationID := uuid.New().String()
+		relyingParty, subject, _ := trio(t)
 		rpPublicDID := newDID(t).String()
-		rpPeerDID := newPeerDID(t)
-		invalid := newPeerDID(t)
+		rpDID := newPeerDID(t, relyingParty)
+		subjectDID := newPeerDID(t, subject)
+
+		simulateDIDExchange(t, relyingParty, rpDID, subject, subjectDID)
+
+		invitationID := uuid.New().String()
+		invalid := newPeerDID(t, agent(t))
 
 		invalid.Context = nil
 		invalid.Service = nil
@@ -1799,16 +1813,18 @@ func TestCHAPIResponseHandler(t *testing.T) {
 		}
 
 		vp := newPresentationSubmissionVP(t,
+			subject,
+			subjectDID,
 			&presexch.PresentationSubmission{DescriptorMap: []*presexch.InputDescriptorMapping{{
 				ID:   definitions.InputDescriptors[0].ID,
 				Path: "$.verifiableCredential[0]",
 			}}},
-			newUserAuthorizationVC(t, newPeerDID(t).ID, rpPeerDID, invalid))
+			newAuthorizationVC(t, subjectDID.ID, rpDID, invalid))
 
 		c, err := New(&Config{
 			DIDExchClient:        &mockdidexchange.MockClient{},
 			Storage:              memStorage(),
-			AriesStorageProvider: &mockAriesContextProvider{},
+			AriesContextProvider: relyingParty,
 			PresentProofClient:   &mockpresentproof.MockClient{},
 		})
 		require.NoError(t, err)
@@ -1816,7 +1832,7 @@ func TestCHAPIResponseHandler(t *testing.T) {
 		storePut(t, c.transientStore, invitationID, &consentRequestCtx{
 			InvitationID:  invitationID,
 			RPPublicDID:   rpPublicDID,
-			RPPairwiseDID: rpPeerDID.ID,
+			RPPairwiseDID: rpDID.ID,
 			PD:            definitions,
 		})
 
@@ -1826,9 +1842,15 @@ func TestCHAPIResponseHandler(t *testing.T) {
 	})
 
 	t.Run("internal server error if error creating didcomm connection", func(t *testing.T) {
+		relyingParty, subject, _ := trio(t)
 		invitationID := uuid.New().String()
 		rpPublicDID := newDID(t).String()
-		rpPeerDID := newPeerDID(t)
+		rpPeerDID := newPeerDID(t, relyingParty)
+		subjectDID := newPeerDID(t, subject)
+		issuerDID := newPeerDID(t, agent(t))
+
+		simulateDIDExchange(t, relyingParty, rpPeerDID, subject, subjectDID)
+
 		definitions := &presexch.PresentationDefinitions{
 			InputDescriptors: []*presexch.InputDescriptor{{
 				ID: uuid.New().String(),
@@ -1838,11 +1860,13 @@ func TestCHAPIResponseHandler(t *testing.T) {
 			}},
 		}
 		vp := newPresentationSubmissionVP(t,
+			subject,
+			subjectDID,
 			&presexch.PresentationSubmission{DescriptorMap: []*presexch.InputDescriptorMapping{{
 				ID:   definitions.InputDescriptors[0].ID,
 				Path: "$.verifiableCredential[0]",
 			}}},
-			newUserAuthorizationVC(t, newPeerDID(t).ID, rpPeerDID, newPeerDID(t)))
+			newAuthorizationVC(t, subjectDID.ID, rpPeerDID, issuerDID))
 
 		c, err := New(&Config{
 			DIDExchClient: &mockdidexchange.MockClient{
@@ -1850,13 +1874,9 @@ func TestCHAPIResponseHandler(t *testing.T) {
 					return "", errors.New("test")
 				},
 			},
-			Storage: memStorage(),
-			AriesStorageProvider: &mockAriesContextProvider{
-				store: &ariesmockstorage.MockStoreProvider{
-					Store: &ariesmockstorage.MockStore{},
-				},
-			},
-			PresentProofClient: &mockpresentproof.MockClient{},
+			Storage:              memStorage(),
+			AriesContextProvider: relyingParty,
+			PresentProofClient:   &mockpresentproof.MockClient{},
 		})
 		require.NoError(t, err)
 
@@ -1873,9 +1893,15 @@ func TestCHAPIResponseHandler(t *testing.T) {
 	})
 
 	t.Run("internal server error if cannot send request-presentation", func(t *testing.T) {
+		relyingParty, subject, _ := trio(t)
 		invitationID := uuid.New().String()
 		rpPublicDID := newDID(t).String()
-		rpPeerDID := newPeerDID(t)
+		rpPeerDID := newPeerDID(t, relyingParty)
+		subjectDID := newPeerDID(t, subject)
+		issuerDID := newPeerDID(t, agent(t))
+
+		simulateDIDExchange(t, relyingParty, rpPeerDID, subject, subjectDID)
+
 		definitions := &presexch.PresentationDefinitions{
 			InputDescriptors: []*presexch.InputDescriptor{{
 				ID: uuid.New().String(),
@@ -1885,16 +1911,18 @@ func TestCHAPIResponseHandler(t *testing.T) {
 			}},
 		}
 		vp := newPresentationSubmissionVP(t,
+			subject,
+			subjectDID,
 			&presexch.PresentationSubmission{DescriptorMap: []*presexch.InputDescriptorMapping{{
 				ID:   definitions.InputDescriptors[0].ID,
 				Path: "$.verifiableCredential[0]",
 			}}},
-			newUserAuthorizationVC(t, newPeerDID(t).ID, rpPeerDID, newPeerDID(t)))
+			newAuthorizationVC(t, subjectDID.ID, rpPeerDID, issuerDID))
 
 		c, err := New(&Config{
 			DIDExchClient:        &mockdidexchange.MockClient{},
 			Storage:              memStorage(),
-			AriesStorageProvider: &mockAriesContextProvider{},
+			AriesContextProvider: relyingParty,
 			PresentProofClient: &mockpresentproof.MockClient{
 				RequestPresentationFunc: func(*presentproof.RequestPresentation, string, string) (string, error) {
 					return "", errors.New("test")
@@ -1916,11 +1944,15 @@ func TestCHAPIResponseHandler(t *testing.T) {
 	})
 
 	t.Run("internal server error if cannot update consent request context in transient storage", func(t *testing.T) {
+		relyingParty, subject, issuer := trio(t)
 		invitationID := uuid.New().String()
 		rpPublicDID := newDID(t).String()
-		rpPeerDID := newPeerDID(t)
-		issuerPeerDID := newPeerDID(t)
-		userPeerDID := newDID(t).String()
+		rpPeerDID := newPeerDID(t, relyingParty)
+		issuerDID := newPeerDID(t, issuer)
+		subjectDID := newPeerDID(t, subject)
+
+		simulateDIDExchange(t, relyingParty, rpPeerDID, subject, subjectDID)
+
 		thid := uuid.New().String()
 		definitions := &presexch.PresentationDefinitions{
 			InputDescriptors: []*presexch.InputDescriptor{
@@ -1938,9 +1970,11 @@ func TestCHAPIResponseHandler(t *testing.T) {
 				},
 			},
 		}
-		authz := newUserAuthorizationVC(t, userPeerDID, rpPeerDID, issuerPeerDID)
-		degree := newUniversityDegreeVC(t)
+		authz := newAuthorizationVC(t, subjectDID.ID, rpPeerDID, issuerDID)
+		degree := newUniversityDegreeVC(t, issuer, issuerDID)
 		vp := newPresentationSubmissionVP(t,
+			subject,
+			subjectDID,
 			&presexch.PresentationSubmission{DescriptorMap: []*presexch.InputDescriptorMapping{
 				{
 					ID:   definitions.InputDescriptors[0].ID,
@@ -1958,13 +1992,13 @@ func TestCHAPIResponseHandler(t *testing.T) {
 		mockStorage.Transient = &mockstorage.Provider{
 			Store: &mockstorage.MockStore{
 				Store: map[string][]byte{
-					invitationID: toBytes(t, &consentRequestCtx{
+					invitationID: marshal(t, &consentRequestCtx{
 						InvitationID: invitationID,
 						PD:           definitions,
 						CR: &admin.GetConsentRequestOK{
 							Payload: &models.ConsentRequest{Challenge: uuid.New().String()},
 						},
-						UserDID:       userPeerDID,
+						UserDID:       subjectDID.ID,
 						RPPublicDID:   rpPublicDID,
 						RPPairwiseDID: rpPeerDID.ID,
 					}),
@@ -1976,7 +2010,7 @@ func TestCHAPIResponseHandler(t *testing.T) {
 		c, err := New(&Config{
 			DIDExchClient:        &mockdidexchange.MockClient{},
 			Storage:              mockStorage,
-			AriesStorageProvider: &mockAriesContextProvider{},
+			AriesContextProvider: relyingParty,
 			PresentProofClient: &mockpresentproof.MockClient{
 				RequestPresentationFunc: func(request *presentproof.RequestPresentation, myDID, theirDID string) (string, error) {
 					return thid, nil
@@ -1998,14 +2032,61 @@ func TestCHAPIResponseHandler(t *testing.T) {
 	})
 }
 
+func TestToMarshalledVP(t *testing.T) {
+	t.Run("error if cannot resolve rp tenant's DID", func(t *testing.T) {
+		relyingParty, issuer, subject := trio(t)
+		rpDID := newPeerDID(t, relyingParty)
+		issuerDID := newPeerDID(t, issuer)
+		subjectDID := newPeerDID(t, subject)
+
+		o, err := New(&Config{
+			DIDExchClient:        &mockdidexchange.MockClient{},
+			PresentProofClient:   &mockpresentproof.MockClient{},
+			Storage:              memStorage(),
+			AriesContextProvider: agent(t),
+		})
+		require.NoError(t, err)
+
+		authZ := newAuthorizationVC(t, subjectDID.ID, rpDID, issuerDID)
+
+		_, err = o.toMarshalledVP(authZ, newPeerDID(t, agent(t)).ID)
+		require.Error(t, err)
+	})
+
+	t.Run("error if rp tenant's DID does not declare an authentication method", func(t *testing.T) {
+		relyingParty, issuer, subject := trio(t)
+		issuerDID := newPeerDID(t, issuer)
+		subjectDID := newPeerDID(t, subject)
+		rpDID := newPeerDID(t, agent(t))
+		rpDID.Authentication = nil
+		err := relyingParty.VDRIRegistry().Store(rpDID)
+		require.NoError(t, err)
+
+		o, err := New(&Config{
+			DIDExchClient:        &mockdidexchange.MockClient{},
+			PresentProofClient:   &mockpresentproof.MockClient{},
+			Storage:              memStorage(),
+			AriesContextProvider: relyingParty,
+		})
+		require.NoError(t, err)
+
+		authZ := newAuthorizationVC(t, subjectDID.ID, rpDID, issuerDID)
+
+		_, err = o.toMarshalledVP(authZ, rpDID.ID)
+		require.Error(t, err)
+	})
+}
+
 func TestGetPresentationResponseResultHandler(t *testing.T) {
 	t.Run("returns redirectURL if user data has been collected", func(t *testing.T) {
+		relyingParty, issuer, _ := trio(t)
+		issuerDID := newPeerDID(t, issuer)
 		redirectURL := "http://hydra.example.com/accept"
 		invitationID := uuid.New().String()
 		thid := uuid.New().String()
 
 		local := map[string][]byte{
-			uuid.New().String(): marshal(t, newUniversityDegreeVC(t)),
+			uuid.New().String(): marshal(t, newUniversityDegreeVC(t, issuer, issuerDID)),
 		}
 
 		remote := map[string]string{
@@ -2015,7 +2096,7 @@ func TestGetPresentationResponseResultHandler(t *testing.T) {
 		o, err := New(&Config{
 			DIDExchClient:        &mockdidexchange.MockClient{},
 			Storage:              memStorage(),
-			AriesStorageProvider: &mockAriesContextProvider{},
+			AriesContextProvider: relyingParty,
 			PresentProofClient:   &mockpresentproof.MockClient{},
 			Hydra: &stubHydra{
 				acceptConsentRequestFunc: func(*admin.AcceptConsentRequestParams) (*admin.AcceptConsentRequestOK, error) {
@@ -2039,7 +2120,7 @@ func TestGetPresentationResponseResultHandler(t *testing.T) {
 		})
 
 		// simulate response from remote issuer
-		storePut(t, o.transientStore, thid, newCreditCardStatementVC(t))
+		storePut(t, o.transientStore, thid, newCreditCardStatementVC(t, issuer, issuerDID))
 
 		w := httptest.NewRecorder()
 		o.getPresentationResponseResultHandler(w, newGetPresentationResponseResult(invitationID))
@@ -2058,7 +2139,7 @@ func TestGetPresentationResponseResultHandler(t *testing.T) {
 		o, err := New(&Config{
 			DIDExchClient:        &mockdidexchange.MockClient{},
 			Storage:              memStorage(),
-			AriesStorageProvider: &mockAriesContextProvider{},
+			AriesContextProvider: agent(t),
 			PresentProofClient:   &mockpresentproof.MockClient{},
 			Hydra:                &stubHydra{},
 		})
@@ -2074,7 +2155,7 @@ func TestGetPresentationResponseResultHandler(t *testing.T) {
 		o, err := New(&Config{
 			DIDExchClient:        &mockdidexchange.MockClient{},
 			Storage:              memStorage(),
-			AriesStorageProvider: &mockAriesContextProvider{},
+			AriesContextProvider: agent(t),
 			PresentProofClient:   &mockpresentproof.MockClient{},
 			Hydra:                &stubHydra{},
 		})
@@ -2087,11 +2168,13 @@ func TestGetPresentationResponseResultHandler(t *testing.T) {
 	})
 
 	t.Run("internal server error if remote threadID not found", func(t *testing.T) {
+		issuer := agent(t)
+		issuerDID := newPeerDID(t, issuer)
 		invitationID := uuid.New().String()
 		thid := uuid.New().String()
 
 		local := map[string][]byte{
-			uuid.New().String(): marshal(t, newUniversityDegreeVC(t)),
+			uuid.New().String(): marshal(t, newUniversityDegreeVC(t, issuer, issuerDID)),
 		}
 
 		remote := map[string]string{
@@ -2101,7 +2184,7 @@ func TestGetPresentationResponseResultHandler(t *testing.T) {
 		o, err := New(&Config{
 			DIDExchClient:        &mockdidexchange.MockClient{},
 			Storage:              memStorage(),
-			AriesStorageProvider: &mockAriesContextProvider{},
+			AriesContextProvider: agent(t),
 			PresentProofClient:   &mockpresentproof.MockClient{},
 			Hydra:                &stubHydra{},
 		})
@@ -2116,7 +2199,7 @@ func TestGetPresentationResponseResultHandler(t *testing.T) {
 		})
 
 		// simulate response from remote issuer
-		storePut(t, o.transientStore, uuid.New().String(), newCreditCardStatementVC(t))
+		storePut(t, o.transientStore, uuid.New().String(), newCreditCardStatementVC(t, issuer, issuerDID))
 
 		w := httptest.NewRecorder()
 		o.getPresentationResponseResultHandler(w, newGetPresentationResponseResult(invitationID))
@@ -2139,7 +2222,7 @@ func TestGetPresentationResponseResultHandler(t *testing.T) {
 		o, err := New(&Config{
 			DIDExchClient:        &mockdidexchange.MockClient{},
 			Storage:              memStorage(),
-			AriesStorageProvider: &mockAriesContextProvider{},
+			AriesContextProvider: agent(t),
 			PresentProofClient:   &mockpresentproof.MockClient{},
 			Hydra:                &stubHydra{},
 		})
@@ -2154,7 +2237,9 @@ func TestGetPresentationResponseResultHandler(t *testing.T) {
 		})
 
 		// simulate response from remote issuer
-		storePut(t, o.transientStore, thid, newCreditCardStatementVC(t))
+		issuer := agent(t)
+		issuerDID := newPeerDID(t, issuer)
+		storePut(t, o.transientStore, thid, newCreditCardStatementVC(t, issuer, issuerDID))
 
 		w := httptest.NewRecorder()
 		o.getPresentationResponseResultHandler(w, newGetPresentationResponseResult(invitationID))
@@ -2163,11 +2248,13 @@ func TestGetPresentationResponseResultHandler(t *testing.T) {
 	})
 
 	t.Run("internal server error if cannot parse remote credential", func(t *testing.T) {
+		issuer := agent(t)
+		issuerDID := newPeerDID(t, issuer)
 		invitationID := uuid.New().String()
 		thid := uuid.New().String()
 
 		local := map[string][]byte{
-			uuid.New().String(): marshal(t, newUniversityDegreeVC(t)),
+			uuid.New().String(): marshal(t, newUniversityDegreeVC(t, issuer, issuerDID)),
 		}
 
 		remote := map[string]string{
@@ -2177,7 +2264,7 @@ func TestGetPresentationResponseResultHandler(t *testing.T) {
 		o, err := New(&Config{
 			DIDExchClient:        &mockdidexchange.MockClient{},
 			Storage:              memStorage(),
-			AriesStorageProvider: &mockAriesContextProvider{},
+			AriesContextProvider: agent(t),
 			PresentProofClient:   &mockpresentproof.MockClient{},
 			Hydra:                &stubHydra{},
 		})
@@ -2192,7 +2279,7 @@ func TestGetPresentationResponseResultHandler(t *testing.T) {
 		})
 
 		// simulate response from remote issuer
-		remoteVC := newCreditCardStatementVC(t)
+		remoteVC := newCreditCardStatementVC(t, issuer, issuerDID)
 		remoteVC.Types = nil
 		remoteVC.Context = nil
 		storePut(t, o.transientStore, thid, remoteVC)
@@ -2204,11 +2291,13 @@ func TestGetPresentationResponseResultHandler(t *testing.T) {
 	})
 
 	t.Run("bad gateway error if hydra fails to accept consent", func(t *testing.T) {
+		relyingParty, issuer, _ := trio(t)
+		issuerDID := newPeerDID(t, issuer)
 		invitationID := uuid.New().String()
 		thid := uuid.New().String()
 
 		local := map[string][]byte{
-			uuid.New().String(): marshal(t, newUniversityDegreeVC(t)),
+			uuid.New().String(): marshal(t, newUniversityDegreeVC(t, issuer, issuerDID)),
 		}
 
 		remote := map[string]string{
@@ -2218,7 +2307,7 @@ func TestGetPresentationResponseResultHandler(t *testing.T) {
 		o, err := New(&Config{
 			DIDExchClient:        &mockdidexchange.MockClient{},
 			Storage:              memStorage(),
-			AriesStorageProvider: &mockAriesContextProvider{},
+			AriesContextProvider: relyingParty,
 			PresentProofClient:   &mockpresentproof.MockClient{},
 			Hydra: &stubHydra{
 				acceptConsentRequestFunc: func(*admin.AcceptConsentRequestParams) (*admin.AcceptConsentRequestOK, error) {
@@ -2242,7 +2331,7 @@ func TestGetPresentationResponseResultHandler(t *testing.T) {
 		})
 
 		// simulate response from remote issuer
-		storePut(t, o.transientStore, thid, newCreditCardStatementVC(t))
+		storePut(t, o.transientStore, thid, newCreditCardStatementVC(t, issuer, issuerDID))
 
 		w := httptest.NewRecorder()
 		o.getPresentationResponseResultHandler(w, newGetPresentationResponseResult(invitationID))
@@ -2253,19 +2342,25 @@ func TestGetPresentationResponseResultHandler(t *testing.T) {
 
 func TestHandleIssuerPresentationMsg(t *testing.T) {
 	t.Run("valid response", func(t *testing.T) {
+		relyingParty, issuer, _ := trio(t)
+		rpDID := newPeerDID(t, relyingParty)
+		issuerDID := newPeerDID(t, issuer)
+
+		simulateDIDExchange(t, relyingParty, rpDID, issuer, issuerDID)
+
 		o, err := New(&Config{
 			DIDExchClient:        &mockdidexchange.MockClient{},
 			Storage:              memStorage(),
-			AriesStorageProvider: &mockAriesContextProvider{},
+			AriesContextProvider: relyingParty,
 			PresentProofClient:   &mockpresentproof.MockClient{},
 		})
 		require.NoError(t, err)
 
 		thid := uuid.New().String()
-		expected := newCreditCardStatementVC(t)
+		expected := newCreditCardStatementVC(t, issuer, issuerDID)
 
 		err = o.handleIssuerPresentationMsg(
-			newIssuerResponse(t, thid, newPresentationSubmissionVP(t, nil, expected)))
+			newIssuerResponse(t, thid, newPresentationSubmissionVP(t, issuer, issuerDID, nil, expected)))
 		require.NoError(t, err)
 
 		bits, err := o.transientStore.Get(thid)
@@ -2281,7 +2376,7 @@ func TestHandleIssuerPresentationMsg(t *testing.T) {
 		o, err := New(&Config{
 			DIDExchClient:        &mockdidexchange.MockClient{},
 			Storage:              memStorage(),
-			AriesStorageProvider: &mockAriesContextProvider{},
+			AriesContextProvider: agent(t),
 			PresentProofClient:   &mockpresentproof.MockClient{},
 		})
 		require.NoError(t, err)
@@ -2294,7 +2389,7 @@ func TestHandleIssuerPresentationMsg(t *testing.T) {
 		o, err := New(&Config{
 			DIDExchClient:        &mockdidexchange.MockClient{},
 			Storage:              memStorage(),
-			AriesStorageProvider: &mockAriesContextProvider{},
+			AriesContextProvider: agent(t),
 			PresentProofClient:   &mockpresentproof.MockClient{},
 		})
 		require.NoError(t, err)
@@ -2313,7 +2408,7 @@ func TestHandleIssuerPresentationMsg(t *testing.T) {
 		o, err := New(&Config{
 			DIDExchClient:        &mockdidexchange.MockClient{},
 			Storage:              memStorage(),
-			AriesStorageProvider: &mockAriesContextProvider{},
+			AriesContextProvider: agent(t),
 			PresentProofClient:   &mockpresentproof.MockClient{},
 		})
 		require.NoError(t, err)
@@ -2339,7 +2434,7 @@ func TestHandleIssuerPresentationMsg(t *testing.T) {
 		o, err := New(&Config{
 			DIDExchClient:        &mockdidexchange.MockClient{},
 			Storage:              memStorage(),
-			AriesStorageProvider: &mockAriesContextProvider{},
+			AriesContextProvider: agent(t),
 			PresentProofClient:   &mockpresentproof.MockClient{},
 		})
 		require.NoError(t, err)
@@ -2352,6 +2447,9 @@ func TestHandleIssuerPresentationMsg(t *testing.T) {
 	})
 
 	t.Run("error on transient store PUT error", func(t *testing.T) {
+		issuer := agent(t)
+		issuerDID := newPeerDID(t, issuer)
+
 		mockStorage := memStorage()
 		mockStorage.Transient = &mockstorage.Provider{
 			Store: &mockstorage.MockStore{
@@ -2363,16 +2461,16 @@ func TestHandleIssuerPresentationMsg(t *testing.T) {
 		o, err := New(&Config{
 			DIDExchClient:        &mockdidexchange.MockClient{},
 			Storage:              mockStorage,
-			AriesStorageProvider: &mockAriesContextProvider{},
+			AriesContextProvider: agent(t),
 			PresentProofClient:   &mockpresentproof.MockClient{},
 		})
 		require.NoError(t, err)
 
 		thid := uuid.New().String()
-		expected := newCreditCardStatementVC(t)
+		expected := newCreditCardStatementVC(t, issuer, issuerDID)
 
 		err = o.handleIssuerPresentationMsg(
-			newIssuerResponse(t, thid, newPresentationSubmissionVP(t, nil, expected)))
+			newIssuerResponse(t, thid, newPresentationSubmissionVP(t, issuer, issuerDID, nil, expected)))
 		require.Error(t, err)
 	})
 }
@@ -2381,7 +2479,7 @@ func TestUserInfoHandler(t *testing.T) {
 	c, err := New(&Config{
 		DIDExchClient:        &mockdidexchange.MockClient{},
 		Storage:              memStorage(),
-		AriesStorageProvider: &mockAriesContextProvider{},
+		AriesContextProvider: agent(t),
 		PresentProofClient:   &mockpresentproof.MockClient{},
 	})
 	require.NoError(t, err)
@@ -2416,7 +2514,7 @@ func TestCreateRPTenant(t *testing.T) {
 				Persistent: store,
 				Transient:  memstore.NewProvider(),
 			},
-			AriesStorageProvider: &mockAriesContextProvider{},
+			AriesContextProvider: agent(t),
 			Hydra: &stubHydra{
 				createOauth2ClientFunc: func(params *admin.CreateOAuth2ClientParams) (*admin.CreateOAuth2ClientCreated, error) {
 					require.Contains(t, strings.Split(params.Body.Scope, " "), oidc.ScopeOpenID)
@@ -2483,7 +2581,7 @@ func TestCreateRPTenant(t *testing.T) {
 			o, err := New(&Config{
 				DIDExchClient:        &mockdidexchange.MockClient{},
 				Storage:              memStorage(),
-				AriesStorageProvider: &mockAriesContextProvider{},
+				AriesContextProvider: agent(t),
 				Hydra: &stubHydra{
 					createOauth2ClientFunc: func(*admin.CreateOAuth2ClientParams) (*admin.CreateOAuth2ClientCreated, error) {
 						return &admin.CreateOAuth2ClientCreated{Payload: &models.OAuth2Client{}}, nil
@@ -2517,7 +2615,7 @@ func TestCreateRPTenant(t *testing.T) {
 				Persistent: store,
 				Transient:  memstore.NewProvider(),
 			},
-			AriesStorageProvider: &mockAriesContextProvider{},
+			AriesContextProvider: agent(t),
 			Hydra: &stubHydra{
 				createOauth2ClientFunc: func(*admin.CreateOAuth2ClientParams) (*admin.CreateOAuth2ClientCreated, error) {
 					return &admin.CreateOAuth2ClientCreated{
@@ -2546,7 +2644,7 @@ func TestCreateRPTenant(t *testing.T) {
 				},
 				Transient: memstore.NewProvider(),
 			},
-			AriesStorageProvider: &mockAriesContextProvider{},
+			AriesContextProvider: agent(t),
 			Hydra: &stubHydra{
 				createOauth2ClientFunc: func(*admin.CreateOAuth2ClientParams) (*admin.CreateOAuth2ClientCreated, error) {
 					return &admin.CreateOAuth2ClientCreated{
@@ -2576,7 +2674,7 @@ func TestCreateRPTenant(t *testing.T) {
 				},
 				Transient: memstore.NewProvider(),
 			},
-			AriesStorageProvider: &mockAriesContextProvider{},
+			AriesContextProvider: agent(t),
 			Hydra: &stubHydra{
 				createOauth2ClientFunc: func(*admin.CreateOAuth2ClientParams) (*admin.CreateOAuth2ClientCreated, error) {
 					return &admin.CreateOAuth2ClientCreated{
@@ -2606,7 +2704,7 @@ func TestCreateRPTenant(t *testing.T) {
 				},
 				Transient: memstore.NewProvider(),
 			},
-			AriesStorageProvider: &mockAriesContextProvider{},
+			AriesContextProvider: agent(t),
 			Hydra: &stubHydra{
 				createOauth2ClientFunc: func(*admin.CreateOAuth2ClientParams) (*admin.CreateOAuth2ClientCreated, error) {
 					return nil, errors.New("test")
@@ -2634,7 +2732,7 @@ func TestCreateRPTenant(t *testing.T) {
 				},
 				Transient: memstore.NewProvider(),
 			},
-			AriesStorageProvider: &mockAriesContextProvider{},
+			AriesContextProvider: agent(t),
 			Hydra: &stubHydra{
 				createOauth2ClientFunc: func(*admin.CreateOAuth2ClientParams) (*admin.CreateOAuth2ClientCreated, error) {
 					return &admin.CreateOAuth2ClientCreated{
@@ -2672,7 +2770,7 @@ func TestCreateRPTenant(t *testing.T) {
 				Persistent: store,
 				Transient:  memstore.NewProvider(),
 			},
-			AriesStorageProvider: &mockAriesContextProvider{},
+			AriesContextProvider: agent(t),
 			Hydra: &stubHydra{
 				createOauth2ClientFunc: func(params *admin.CreateOAuth2ClientParams) (*admin.CreateOAuth2ClientCreated, error) {
 					require.Contains(t, strings.Split(params.Body.Scope, " "), oidc.ScopeOpenID)
@@ -2951,41 +3049,8 @@ func (s *stubPublicDIDCreator) Create() (*did.Doc, error) {
 	return s.createValue, s.createErr
 }
 
-type mockAriesContextProvider struct {
-	store   ariesstorage.Provider
-	tstore  ariesstorage.Provider
-	vdriReg vdriapi.Registry
-}
-
-func (m *mockAriesContextProvider) StorageProvider() ariesstorage.Provider {
-	if m.store != nil {
-		return m.store
-	}
-
-	return ariesmockstorage.NewMockStoreProvider()
-}
-
-func (m *mockAriesContextProvider) ProtocolStateStorageProvider() ariesstorage.Provider {
-	if m.tstore != nil {
-		return m.tstore
-	}
-
-	return ariesmockstorage.NewMockStoreProvider()
-}
-
-func (m *mockAriesContextProvider) VDRIRegistry() vdriapi.Registry {
-	return m.vdriReg
-}
-
-func toBytes(t *testing.T, v interface{}) []byte {
+func marshal(t *testing.T, v interface{}) []byte {
 	bits, err := json.Marshal(v)
-	require.NoError(t, err)
-
-	return bits
-}
-
-func marshal(t *testing.T, vp json.Marshaler) []byte {
-	bits, err := json.Marshal(vp)
 	require.NoError(t, err)
 
 	return bits
@@ -3020,7 +3085,7 @@ func checkPresentationDefinitionAttachment(
 	bits, err := request.RequestPresentationsAttach[0].Data.Fetch()
 	require.NoError(t, err)
 
-	vp, err := verifiable.ParsePresentation(bits, verifiable.WithDisabledPresentationProofCheck())
+	vp, err := verifiable.ParsePresentation(bits, verifiable.WithPresDisabledProofCheck())
 	require.NoError(t, err)
 
 	require.Len(t, vp.Credentials(), 1)

@@ -9,6 +9,7 @@ package rp
 import (
 	"bytes"
 	"context"
+	"crypto/tls"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -27,14 +28,18 @@ import (
 	"github.com/cucumber/godog"
 	"github.com/google/uuid"
 	"github.com/hyperledger/aries-framework-go/pkg/client/outofband"
+	"github.com/hyperledger/aries-framework-go/pkg/doc/did"
 	"github.com/hyperledger/aries-framework-go/pkg/doc/verifiable"
+	"github.com/hyperledger/aries-framework-go/pkg/kms"
 	"github.com/ory/hydra-client-go/client"
 	"github.com/ory/hydra-client-go/client/admin"
 	"github.com/ory/hydra-client-go/models"
 	"github.com/trustbloc/edge-core/pkg/log"
+	trustblocdid "github.com/trustbloc/trustbloc-did-method/pkg/did"
 	trustblocvdri "github.com/trustbloc/trustbloc-did-method/pkg/vdri/trustbloc"
 	"golang.org/x/oauth2"
 
+	"github.com/trustbloc/edge-adapter/pkg/crypto"
 	"github.com/trustbloc/edge-adapter/pkg/presentationex"
 	"github.com/trustbloc/edge-adapter/pkg/presexch"
 	"github.com/trustbloc/edge-adapter/pkg/restapi/rp/operation"
@@ -50,6 +55,8 @@ const (
 	hydraPublicURL      = "https://localhost:4444/"
 	governanceCtx       = "https://trustbloc.github.io/context/governance/context.jsonld"
 	governanceVCCTXSize = 3
+
+	trustblocDIDMethodDomain = "testnet.trustbloc.local"
 )
 
 const relyingPartyResultsPageSimulation = "Your credentials have been received!"
@@ -113,8 +120,8 @@ func (s *Steps) RegisterSteps(g *godog.Suite) {
 	g.Step(`^"([^"]*)" accepts the didcomm invitation from "([^"]*)"$`, s.walletAcceptsDIDCommInvitation)
 	g.Step(`^"([^"]*)" connects with the RP adapter "([^"]*)"$`, s.validateConnection)
 	g.Step(`^"([^"]*)" and "([^"]*)" have a didcomm connection$`, s.connectAgents)
-	g.Step(`^an rp tenant with label "([^"]*)" and scopes "([^"]*)" that requests the "([^"]*)" scope from the "([^"]*)"`, s.didexchangeFlow)                                        //nolint:lll
-	g.Step(`^the "([^"]*)" provides a authorization credential via CHAPI that contains the DIDs of rp "([^"]*)" and issuer "([^"]*)"$`, s.walletRespondsWithAuthorizationCredential) //nolint:lll
+	g.Step(`^an rp tenant with label "([^"]*)" and scopes "([^"]*)" that requests the "([^"]*)" scope from the "([^"]*)"`, s.didexchangeFlow)                                         //nolint:lll
+	g.Step(`^the "([^"]*)" provides an authorization credential via CHAPI that contains the DIDs of rp "([^"]*)" and issuer "([^"]*)"$`, s.walletRespondsWithAuthorizationCredential) //nolint:lll
 	g.Step(`^"([^"]*)" responds to "([^"]*)" with the user's data$`, s.issuerRepliesWithUserData)
 	g.Step(`^the user is redirected to the rp tenant "([^"]*)"$`, s.userRedirectBackToTenant)
 	g.Step(`^the rp tenant "([^"]*)" retrieves the user data from the rp adapter$`, s.rpTenantRetrievesUserData)
@@ -203,6 +210,62 @@ func (s *Steps) resolveDID(label string) error {
 	}
 
 	return nil
+}
+
+func (s *Steps) newTrustBlocDID(agentID string) (*did.Doc, error) {
+	keys := [3]struct {
+		keyID string
+		bits  []byte
+	}{}
+
+	var err error
+
+	for i := range keys {
+		keys[i].keyID, keys[i].bits, err = s.controller.CreateKey(agentID, kms.ED25519Type)
+		if err != nil {
+			return nil, fmt.Errorf("'%s' failed to create a new key set: %w", agentID, err)
+		}
+	}
+
+	trustblocClient := trustblocdid.New(trustblocdid.WithTLSConfig(&tls.Config{RootCAs: s.context.TLSConfig().RootCAs}))
+
+	didDoc, err := trustblocClient.CreateDID(
+		trustblocDIDMethodDomain,
+		trustblocdid.WithPublicKey(&trustblocdid.PublicKey{
+			ID:       keys[0].keyID,
+			Type:     trustblocdid.JWSVerificationKey2020,
+			Encoding: trustblocdid.PublicKeyEncodingJwk,
+			KeyType:  trustblocdid.Ed25519KeyType,
+			Purpose:  []string{trustblocdid.KeyPurposeGeneral, trustblocdid.KeyPurposeAuth, trustblocdid.KeyPurposeAssertion},
+			Value:    keys[0].bits,
+		}),
+		trustblocdid.WithPublicKey(&trustblocdid.PublicKey{
+			ID:       keys[1].keyID,
+			Encoding: trustblocdid.PublicKeyEncodingJwk,
+			KeyType:  trustblocdid.Ed25519KeyType,
+			Value:    keys[1].bits,
+			Recovery: true,
+		}),
+		trustblocdid.WithPublicKey(&trustblocdid.PublicKey{
+			ID:       keys[2].keyID,
+			Encoding: trustblocdid.PublicKeyEncodingJwk,
+			KeyType:  trustblocdid.Ed25519KeyType,
+			Value:    keys[2].bits,
+			Update:   true,
+		}),
+	)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create new trustbloc did: %w", err)
+	}
+
+	friendlyName := uuid.New().String()
+
+	err = s.controller.SaveDID(agentID, friendlyName, didDoc)
+	if err != nil {
+		return nil, fmt.Errorf("failed to save new trustbloc did: %w", err)
+	}
+
+	return didDoc, nil
 }
 
 func (s *Steps) lookupClientID(label string) error {
@@ -531,7 +594,7 @@ func (s *Steps) didexchangeFlow(tenantID, scopesStr, scope, walletID string) err
 func (s *Steps) walletRespondsWithAuthorizationCredential(wallet, tenant, issuer string) error {
 	submissionVP, err := s.walletCreatesAuthorizationCredential(wallet, tenant, issuer)
 	if err != nil {
-		return fmt.Errorf("failed to create presentation submission VP : %w", err)
+		return fmt.Errorf("'%s' failed to create presentation submission VP : %w", wallet, err)
 	}
 
 	vpBytes, err := submissionVP.MarshalJSON()
@@ -565,6 +628,7 @@ func (s *Steps) walletRespondsWithAuthorizationCredential(wallet, tenant, issuer
 	return nil
 }
 
+// nolint:funlen,gocyclo
 func (s *Steps) walletCreatesAuthorizationCredential(wallet, tenant, issuer string) (*verifiable.Presentation, error) {
 	walletTenantConn, err := s.controller.GetConnectionBetweenAgents(wallet, tenant)
 	if err != nil {
@@ -591,16 +655,26 @@ func (s *Steps) walletCreatesAuthorizationCredential(wallet, tenant, issuer stri
 		return nil, fmt.Errorf("%s failed to create a connection to %s : %w", issuer, tenant, err)
 	}
 
-	subjectDID := walletTenantConn.MyDID
-
-	authzVC, err := newUserAuthorizationVC(subjectDID, rpDID, issuerDID)
+	authzVC, err := newUserAuthorizationVC(walletTenantConn.MyDID, rpDID, issuerDID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create user authorization credential : %w", err)
+	}
+
+	// TODO the authZ credential the wallet is passing to the RP is currently signed by the issuer
+	signedAuthzVC, err := s.controller.SignCredential(issuer, issuerDID.ID, authzVC)
+	if err != nil {
+		return nil, fmt.Errorf("'%s' failed to sign the authZ VC: %w", issuer, err)
 	}
 
 	localCred, err := s.findCred(tenant, localCredentials)
 	if err != nil {
 		return nil, fmt.Errorf("'%s' failed to find a remote test credential: %w", issuer, err)
+	}
+
+	// TODO this credential should ideally be signed by a different issuer
+	signedLocalCred, err := s.controller.SignCredential(issuer, issuerDID.ID, localCred)
+	if err != nil {
+		return nil, fmt.Errorf("'%s' failed to sign the local VC: %w", issuer, err)
 	}
 
 	tenantCtx := s.tenantCtx[tenant]
@@ -618,28 +692,68 @@ func (s *Steps) walletCreatesAuthorizationCredential(wallet, tenant, issuer stri
 				},
 			},
 		},
-		authzVC, localCred,
+		signedAuthzVC, signedLocalCred,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create presentation submission VP : %w", err)
 	}
 
-	return submissionVP, nil
+	// TODO the wallet should not be signing their presentation submission with a TB DID:
+	//  https://github.com/trustbloc/edge-agent/issues/322
+	signingDID, err := s.newTrustBlocDID(wallet)
+	if err != nil {
+		return nil, fmt.Errorf("'%s' failed to create a new trustbloc did for signing the vp: %w", wallet, err)
+	}
+
+	verificationMethod, err := crypto.GetVerificationMethodFromDID(signingDID, did.Authentication)
+	if err != nil {
+		return nil, fmt.Errorf(
+			"'%s' failed to produce a verification method from did %s: %w", wallet, signingDID.ID, err)
+	}
+
+	signedSubmissionVP, err := s.controller.GeneratePresentation(wallet, signingDID.ID, verificationMethod, submissionVP)
+	if err != nil {
+		return nil, fmt.Errorf("'%s' failed to sign their presentation submission VP with did %s: %w",
+			walletTenantConn.MyDID, wallet, err)
+	}
+
+	return signedSubmissionVP, nil
 }
 
 func (s *Steps) issuerRepliesWithUserData(issuer, tenant string) error {
-	// TODO the issuer should sign this VC: https://github.com/trustbloc/edge-adapter/issues/269
 	remoteCred, err := s.findCred(tenant, remoteCredentials)
 	if err != nil {
 		return fmt.Errorf("'%s' failed to find a remote test credential: %w", issuer, err)
 	}
 
-	vp, err := newPresentationSubmissionVP(nil, remoteCred)
+	// TODO - the issuer adapter is incorrectly using their public TB DID to sign presentations:
+	//  https://github.com/trustbloc/edge-adapter/issues/302
+	signingDID, err := s.newTrustBlocDID(issuer)
+	if err != nil {
+		return fmt.Errorf("'%s' failed to create a new trustbloc DID: %w", issuer, err)
+	}
+
+	signedRemoteCred, err := s.controller.SignCredential(issuer, signingDID.ID, remoteCred)
+	if err != nil {
+		return fmt.Errorf("'%s' failed to sign remote credential: %w", issuer, err)
+	}
+
+	vp, err := newPresentationSubmissionVP(nil, signedRemoteCred)
 	if err != nil {
 		return fmt.Errorf("failed to create verifiable presentation : %w", err)
 	}
 
-	err = s.controller.AcceptRequestPresentation(issuer, vp)
+	verificationMethod, err := crypto.GetVerificationMethodFromDID(signingDID, did.Authentication)
+	if err != nil {
+		return fmt.Errorf("'%s' failed to get a verMethod from did %s: %w", issuer, signingDID.ID, err)
+	}
+
+	signedVP, err := s.controller.GeneratePresentation(issuer, signingDID.ID, verificationMethod, vp)
+	if err != nil {
+		return fmt.Errorf("'%s' failed to sign vp: %w", issuer, err)
+	}
+
+	err = s.controller.AcceptRequestPresentation(issuer, signedVP)
 	if err != nil {
 		return fmt.Errorf("%s failed to accept request-presentation : %w", issuer, err)
 	}

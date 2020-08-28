@@ -12,6 +12,7 @@ import (
 
 	"github.com/hyperledger/aries-framework-go/pkg/doc/did"
 	"github.com/hyperledger/aries-framework-go/pkg/kms"
+	"github.com/mr-tron/base58"
 	trustblocdid "github.com/trustbloc/trustbloc-did-method/pkg/did"
 )
 
@@ -21,13 +22,7 @@ type trustblocDIDClient interface {
 
 // KeyManager creates keys.
 type KeyManager interface {
-	Create(kms.KeyType) (string, interface{}, error)
-	ExportPubKeyBytes(string) ([]byte, error)
-}
-
-// LegacyKeyManager is the aries framework's legacy key manager.
-type LegacyKeyManager interface {
-	CreateKeySet() (string, string, error)
+	CreateAndExportPubKeyBytes(kt kms.KeyType) (string, []byte, error)
 }
 
 // TrustblocDIDCreator creates did:trustbloc DIDs.
@@ -35,18 +30,16 @@ type TrustblocDIDCreator struct {
 	blocDomain        string
 	didcommInboundURL string
 	km                KeyManager
-	legacyKMS         LegacyKeyManager
 	tblocDIDs         trustblocDIDClient
 }
 
 // NewTrustblocDIDCreator returns a new TrustblocDIDCreator.
 func NewTrustblocDIDCreator(blocDomain, didcommInboundURL string,
-	km KeyManager, legacyKMS LegacyKeyManager, rootCAs *x509.CertPool) *TrustblocDIDCreator {
+	km KeyManager, rootCAs *x509.CertPool) *TrustblocDIDCreator {
 	return &TrustblocDIDCreator{
 		blocDomain:        blocDomain,
 		didcommInboundURL: didcommInboundURL,
 		km:                km,
-		legacyKMS:         legacyKMS,
 		tblocDIDs:         trustblocdid.New(trustblocdid.WithTLSConfig(&tls.Config{RootCAs: rootCAs})),
 	}
 }
@@ -58,9 +51,9 @@ func (p *TrustblocDIDCreator) Create() (*did.Doc, error) {
 		return nil, fmt.Errorf("failed to create public keys : %w", err)
 	}
 
-	_, didcommRecipientKey, err := p.legacyKMS.CreateKeySet()
+	_, didcommRecipientKey, err := p.km.CreateAndExportPubKeyBytes(kms.ED25519Type)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create keyset with legacy kms : %w", err)
+		return nil, fmt.Errorf("kms failed to create keyset: %w", err)
 	}
 
 	publicDID, err := p.tblocDIDs.CreateDID(
@@ -72,7 +65,7 @@ func (p *TrustblocDIDCreator) Create() (*did.Doc, error) {
 			ID:              "didcomm",
 			Type:            "did-communication",
 			Priority:        0,
-			RecipientKeys:   []string{didcommRecipientKey},
+			RecipientKeys:   []string{base58.Encode(didcommRecipientKey)},
 			ServiceEndpoint: p.didcommInboundURL,
 		}),
 	)
@@ -92,14 +85,9 @@ func (p *TrustblocDIDCreator) newPublicKeys() ([3]*trustblocdid.PublicKey, error
 	for i := range keys {
 		var err error
 
-		keys[i].keyID, _, err = p.km.Create(kms.ED25519Type)
+		keys[i].keyID, keys[i].bits, err = p.km.CreateAndExportPubKeyBytes(kms.ED25519Type)
 		if err != nil {
 			return [3]*trustblocdid.PublicKey{}, fmt.Errorf("failed to create key : %w", err)
-		}
-
-		keys[i].bits, err = p.km.ExportPubKeyBytes(keys[i].keyID)
-		if err != nil {
-			return [3]*trustblocdid.PublicKey{}, fmt.Errorf("failed to export public key bytes : %w", err)
 		}
 	}
 
