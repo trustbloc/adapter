@@ -620,9 +620,15 @@ func (s *Steps) walletRespondsWithAuthorizationCredential(wallet, tenant, issuer
 
 	defer bddutil.CloseResponseBody(resp.Body)
 
+	respContents, err := ioutil.ReadAll(resp.Body)
+	if err != nil {
+		return fmt.Errorf("failed to read rp adapter response contents: %w", err)
+	}
+
 	if resp.StatusCode != http.StatusAccepted {
 		return fmt.Errorf(
-			"'%s' returned an unexpected status code. got: %d, want: %d", tenant, resp.StatusCode, http.StatusAccepted)
+			"'%s' returned an unexpected status code. got: %d, want: %d, message: %s",
+			tenant, resp.StatusCode, http.StatusAccepted, respContents)
 	}
 
 	return nil
@@ -800,12 +806,13 @@ func (s *Steps) findCred(
 	return cred, nil
 }
 
+// nolint:funlen,gocyclo
 func (s *Steps) userRedirectBackToTenant(tenant string) error {
 	tenantCtx := s.tenantCtx[tenant]
 
 	result := &operation.HandleCHAPIResponseResult{}
 
-	err := backoff.Retry(
+	err := backoff.RetryNotify(
 		func() error {
 			req := fmt.Sprintf("%s/presentations/result?h=%s", rpAdapterURL, tenantCtx.invitationID)
 
@@ -816,19 +823,29 @@ func (s *Steps) userRedirectBackToTenant(tenant string) error {
 
 			defer bddutil.CloseResponseBody(resp.Body)
 
-			if resp.StatusCode != http.StatusOK {
-				return fmt.Errorf(
-					"unexpected status from '%s': got: %d, want: %d", tenant, resp.StatusCode, http.StatusOK)
+			respContents, serviceErr := ioutil.ReadAll(resp.Body)
+			if serviceErr != nil {
+				return fmt.Errorf("failed to read the response contents: %w", serviceErr)
 			}
 
-			serviceErr = json.NewDecoder(resp.Body).Decode(result)
+			if resp.StatusCode != http.StatusOK {
+				return fmt.Errorf(
+					"unexpected status from '%s': got: %d, want: %d, contents: %s",
+					tenant, resp.StatusCode, http.StatusOK, respContents)
+			}
+
+			serviceErr = json.NewDecoder(bytes.NewReader(respContents)).Decode(result)
 			if serviceErr != nil {
-				return fmt.Errorf("failed to decode response from '%s': %w", tenant, serviceErr)
+				return fmt.Errorf("failed to decode response [%s] from '%s': %w", respContents, tenant, serviceErr)
 			}
 
 			return nil
 		},
-		backoff.WithMaxRetries(backoff.NewConstantBackOff(time.Second), 3),
+		backoff.WithMaxRetries(backoff.NewConstantBackOff(time.Second), 20),
+		func(err error, duration time.Duration) {
+			fmt.Printf("failed to fetch redirectURL from the rp adapter. Error=[%s]. Will retry in %s.\n",
+				err.Error(), duration)
+		},
 	)
 	if err != nil {
 		return err
