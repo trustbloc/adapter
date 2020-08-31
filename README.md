@@ -2,7 +2,7 @@
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](https://raw.githubusercontent.com/trustbloc/edge-adapter/master/LICENSE)
 [![Godocs](https://img.shields.io/badge/godoc-reference-blue.svg)](https://godoc.org/github.com/trustbloc/edge-adapter)
 
-[![Build Status](https://dev.azure.com/trustbloc/edge/_apis/build/status/trustbloc.edge-adapter?branchName=master)](https://dev.azure.com/trustbloc/edge/_build/latest?definitionId=27&branchName=master)
+[![Build Status](https://dev.azure.com/trustbloc/edge/_apis/build/status/trustbloc.edge-adapter?branchName=master)](https://dev.azure.com/trustbloc/edge/_build/latest?definitionId=41&branchName=master)
 [![codecov](https://codecov.io/gh/trustbloc/edge-adapter/branch/master/graph/badge.svg)](https://codecov.io/gh/trustbloc/edge-adapter)
 [![Go Report Card](https://goreportcard.com/badge/github.com/trustbloc/edge-adapter)](https://goreportcard.com/report/github.com/trustbloc/edge-adapter)
 
