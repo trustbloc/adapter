@@ -3040,6 +3040,10 @@ func (s *stubStore) Delete(k string) error {
 	panic("implement me")
 }
 
+func (s *stubStore) GetAll() (map[string][]byte, error) {
+	panic("implement me")
+}
+
 type stubPublicDIDCreator struct {
 	createValue *did.Doc
 	createErr   error

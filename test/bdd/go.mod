@@ -12,16 +12,15 @@ require (
 	github.com/cucumber/godog v0.9.0
 	github.com/fsouza/go-dockerclient v1.6.5
 	github.com/google/uuid v1.1.1
-	github.com/gorilla/mux v1.7.4
-	github.com/hyperledger/aries-framework-go v0.1.4-0.20200827170810-92a1bcd9fd85
+	github.com/hyperledger/aries-framework-go v0.1.4
 	github.com/ory/hydra-client-go v1.4.10
 	github.com/piprate/json-gold v0.3.0
 	github.com/pkg/errors v0.9.1
 	github.com/sirupsen/logrus v1.6.0
 	github.com/tidwall/gjson v1.6.0
 	github.com/trustbloc/edge-adapter v0.0.0
-	github.com/trustbloc/edge-core v0.1.4-0.20200814194611-5f3b95f18b63
-	github.com/trustbloc/trustbloc-did-method v0.1.4-0.20200818182202-98bfa3941500
+	github.com/trustbloc/edge-core v0.1.4
+	github.com/trustbloc/trustbloc-did-method v0.1.4
 	golang.org/x/oauth2 v0.0.0-20190604053449-0f29369cfe45
 )
 
