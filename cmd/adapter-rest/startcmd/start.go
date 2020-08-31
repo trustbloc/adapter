@@ -659,9 +659,8 @@ func addRPHandlers(
 			parameters.trustblocDomain,
 			parameters.didCommParameters.inboundHostExternal,
 			ctx.KMS(),
-			ctx.LegacyKMS(),
 			rootCAs),
-		AriesStorageProvider: ctx,
+		AriesContextProvider: ctx,
 		GovernanceProvider:   governanceProv,
 		PresentProofClient:   presentProofClient,
 	})
@@ -711,7 +710,6 @@ func addIssuerHandlers(parameters *adapterRestParameters, ariesCtx ariespai.CtxP
 			parameters.trustblocDomain,
 			parameters.didCommParameters.inboundHostExternal,
 			ariesCtx.KMS(),
-			ariesCtx.LegacyKMS(),
 			rootCAs,
 		),
 		TLSConfig:          &tls.Config{RootCAs: rootCAs},
@@ -842,8 +840,13 @@ func createAriesAgent(parameters *adapterRestParameters, tlsConfig *tls.Config) 
 		opts = append(opts, defaults.WithStorePath(parameters.didCommParameters.dbPath))
 	}
 
-	inboundTransportOpt := defaults.WithInboundHTTPAddr(parameters.didCommParameters.inboundHostInternal,
-		parameters.didCommParameters.inboundHostExternal)
+	// TODO - enable TLS on aries inbound transports: https://github.com/trustbloc/edge-adapter/issues/303
+	inboundTransportOpt := defaults.WithInboundHTTPAddr(
+		parameters.didCommParameters.inboundHostInternal,
+		parameters.didCommParameters.inboundHostExternal,
+		"",
+		"",
+	)
 
 	opts = append(opts, inboundTransportOpt)
 

@@ -8,6 +8,7 @@ package crypto
 
 import (
 	"fmt"
+	"strings"
 
 	ariescrypto "github.com/hyperledger/aries-framework-go/pkg/crypto"
 	"github.com/hyperledger/aries-framework-go/pkg/doc/did"
@@ -64,6 +65,7 @@ func (c *Crypto) SignCredential(vc *verifiable.Credential, signingKeyID string) 
 }
 
 // SignPresentation signs a presentation.
+// TODO should inject jsonld document loader: https://github.com/trustbloc/edge-adapter/issues/306
 func (c *Crypto) SignPresentation(vp *verifiable.Presentation, signingKeyID string) (*verifiable.Presentation, error) {
 	signingCtx, err := c.getLinkedDataProofContext(signingKeyID, Ed25519Signature2018, Authentication)
 	if err != nil {
@@ -121,7 +123,22 @@ func (c *Crypto) validateDIDDoc(signingKeyID, proofPurpose string) error {
 
 // validateProofPurpose validates the proof purpose.
 func validateProofPurpose(proofPurpose, method string, didDoc *did.Doc) error {
+	const idParts = 2
+
 	vmMatched := false
+
+	// TODO remove this workaround when we are working with did docs that have correct verification method IDs:
+	//  - aries framework: https://github.com/hyperledger/aries-framework-go/issues/2145
+	//  - trustbloc did method: https://github.com/trustbloc/trustbloc-did-method/issues/169
+	if strings.HasPrefix(method, "did:peer") {
+		parts := strings.Split(method, "#")
+
+		if len(parts) != idParts {
+			return fmt.Errorf("method [%s] expected to be in did#keyID format", method)
+		}
+
+		method = "#" + parts[1]
+	}
 
 	switch proofPurpose {
 	case AssertionMethod:

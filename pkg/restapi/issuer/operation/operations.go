@@ -233,20 +233,6 @@ func (o *Operation) createIssuerProfileHandler(rw http.ResponseWriter, req *http
 		return
 	}
 
-	if len(newDidDoc.AssertionMethod) == 0 {
-		commhttp.WriteErrorResponseWithLog(rw, http.StatusInternalServerError,
-			"missing assertionMethod in public did", profileEndpoint, logger)
-
-		return
-	}
-
-	if len(newDidDoc.Authentication) == 0 {
-		commhttp.WriteErrorResponseWithLog(rw, http.StatusInternalServerError,
-			"missing authentication in public did", profileEndpoint, logger)
-
-		return
-	}
-
 	if o.governanceProvider != nil {
 		_, err = o.governanceProvider.IssueCredential(newDidDoc.ID, data.ID)
 		if err != nil {
@@ -258,7 +244,14 @@ func (o *Operation) createIssuerProfileHandler(rw http.ResponseWriter, req *http
 		}
 	}
 
-	profileData := mapProfileReqToData(data, newDidDoc)
+	profileData, err := mapProfileReqToData(data, newDidDoc)
+	if err != nil {
+		commhttp.WriteErrorResponseWithLog(rw, http.StatusInternalServerError,
+			fmt.Sprintf("failed to map request to issuer profile: %s", err.Error()),
+			profileEndpoint, logger)
+
+		return
+	}
 
 	err = o.profileStore.SaveProfile(profileData)
 	if err != nil {
@@ -1048,7 +1041,7 @@ func fetchAuthorizationCred(msg service.DIDCommAction, vdriRegistry vdri.Registr
 
 	vp, err := verifiable.ParsePresentation(
 		reqJSON,
-		verifiable.WithDisabledPresentationProofCheck(),
+		verifiable.WithPresPublicKeyFetcher(verifiable.NewDIDKeyResolver(vdriRegistry).PublicKeyFetcher()),
 	)
 	if err != nil {
 		return nil, fmt.Errorf("parse presentation : %w", err)
@@ -1149,7 +1142,17 @@ func unmarshalSubject(data []byte) (map[string]interface{}, error) {
 	return subject, nil
 }
 
-func mapProfileReqToData(data *ProfileDataRequest, didDoc *did.Doc) *issuer.ProfileData {
+func mapProfileReqToData(data *ProfileDataRequest, didDoc *did.Doc) (*issuer.ProfileData, error) {
+	authMethod, err := crypto.GetVerificationMethodFromDID(didDoc, did.Authentication)
+	if err != nil {
+		return nil, fmt.Errorf("failed to fetch authentication method: %w", err)
+	}
+
+	assertionMethod, err := crypto.GetVerificationMethodFromDID(didDoc, did.AssertionMethod)
+	if err != nil {
+		return nil, fmt.Errorf("failed to fetch assertion method: %w", err)
+	}
+
 	created := time.Now().UTC()
 
 	return &issuer.ProfileData{
@@ -1158,8 +1161,8 @@ func mapProfileReqToData(data *ProfileDataRequest, didDoc *did.Doc) *issuer.Prof
 		SupportedVCContexts:         data.SupportedVCContexts,
 		URL:                         data.URL,
 		SupportsAssuranceCredential: data.SupportsAssuranceCredential,
-		CredentialSigningKey:        didDoc.AssertionMethod[0].PublicKey.ID,
-		PresentationSigningKey:      didDoc.Authentication[0].PublicKey.ID,
+		CredentialSigningKey:        assertionMethod,
+		PresentationSigningKey:      authMethod,
 		CreatedAt:                   &created,
-	}
+	}, nil
 }

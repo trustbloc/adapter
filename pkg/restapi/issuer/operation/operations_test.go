@@ -33,7 +33,6 @@ import (
 	mocksvc "github.com/hyperledger/aries-framework-go/pkg/mock/didcomm/protocol/didexchange"
 	mockroute "github.com/hyperledger/aries-framework-go/pkg/mock/didcomm/protocol/mediator"
 	mockkms "github.com/hyperledger/aries-framework-go/pkg/mock/kms"
-	mocklegacykms "github.com/hyperledger/aries-framework-go/pkg/mock/kms/legacykms"
 	mockprovider "github.com/hyperledger/aries-framework-go/pkg/mock/provider"
 	mockstore "github.com/hyperledger/aries-framework-go/pkg/mock/storage"
 	mockvdri "github.com/hyperledger/aries-framework-go/pkg/mock/vdri"
@@ -200,13 +199,16 @@ func TestCreateProfile(t *testing.T) {
 
 		// missing authentication
 		didDoc := mockdiddoc.GetMockDIDDoc("did:example:123yz")
+		auth := didDoc.Authentication
 		didDoc.Authentication = nil
 		ops.publicDIDCreator = &stubPublicDIDCreator{createValue: didDoc}
 
 		rr = serveHTTP(t, getHandler(t, ops, endpoint).Handle(), http.MethodPost, endpoint, vReqBytes)
 
 		require.Equal(t, http.StatusInternalServerError, rr.Code)
-		require.Contains(t, rr.Body.String(), "missing authentication in public did")
+		require.Contains(t, rr.Body.String(), "failed to fetch authentication method")
+
+		didDoc.Authentication = auth
 
 		// missing assertionMethod
 		didDoc.AssertionMethod = nil
@@ -214,7 +216,7 @@ func TestCreateProfile(t *testing.T) {
 		rr = serveHTTP(t, getHandler(t, ops, endpoint).Handle(), http.MethodPost, endpoint, vReqBytes)
 
 		require.Equal(t, http.StatusInternalServerError, rr.Code)
-		require.Contains(t, rr.Body.String(), "missing assertionMethod in public did")
+		require.Contains(t, rr.Body.String(), "failed to fetch assertion method")
 	})
 
 	t.Run("create profile - error", func(t *testing.T) {
@@ -374,7 +376,7 @@ func TestConnectWallet(t *testing.T) {
 				presentproofsvc.Name:    &presentproof.MockPresentProofSvc{},
 				outofbandsvc.Name:       &mockoutofband.MockService{},
 			},
-			LegacyKMSValue:       &mocklegacykms.CloseableKMS{CreateKeyErr: errors.New("key generation error")},
+			KMSValue:             &mockkms.KeyManager{CrAndExportPubKeyErr: errors.New("key generation error")},
 			ServiceEndpointValue: "endpoint",
 		}
 
@@ -1080,7 +1082,6 @@ func TestDIDCommListeners(t *testing.T) {
 						presentproofsvc.Name:    &presentproof.MockPresentProofSvc{},
 						outofbandsvc.Name:       &mockoutofband.MockService{},
 					},
-					LegacyKMSValue:       &mocklegacykms.CloseableKMS{CreateEncryptionKeyValue: "sample-key"},
 					ServiceEndpointValue: "endpoint",
 					VDRIRegistryValue: &mockvdri.MockVDRIRegistry{
 						CreateErr: errors.New("did create error"),
@@ -2009,7 +2010,6 @@ func getAriesCtx() aries.CtxProvider {
 			presentproofsvc.Name:    &presentproof.MockPresentProofSvc{},
 			outofbandsvc.Name:       &mockoutofband.MockService{},
 		},
-		LegacyKMSValue:       &mocklegacykms.CloseableKMS{CreateEncryptionKeyValue: "sample-key"},
 		KMSValue:             &mockkms.KeyManager{ImportPrivateKeyErr: fmt.Errorf("error import priv key")},
 		CryptoValue:          &mockcrypto.Crypto{},
 		ServiceEndpointValue: "endpoint",

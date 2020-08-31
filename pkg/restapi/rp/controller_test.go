@@ -8,9 +8,9 @@ package rp
 import (
 	"testing"
 
-	vdriapi "github.com/hyperledger/aries-framework-go/pkg/framework/aries/api/vdri"
-	ariesmockstorage "github.com/hyperledger/aries-framework-go/pkg/mock/storage"
-	ariesstorage "github.com/hyperledger/aries-framework-go/pkg/storage"
+	"github.com/hyperledger/aries-framework-go/pkg/framework/aries"
+	ariesctx "github.com/hyperledger/aries-framework-go/pkg/framework/context"
+	"github.com/hyperledger/aries-framework-go/pkg/storage/mem"
 	"github.com/stretchr/testify/require"
 	"github.com/trustbloc/edge-core/pkg/storage/memstore"
 
@@ -27,7 +27,7 @@ func TestController_New(t *testing.T) {
 				Persistent: memstore.NewProvider(),
 				Transient:  memstore.NewProvider(),
 			},
-			AriesStorageProvider: &mockAriesContextProvider{},
+			AriesContextProvider: agent(t),
 			PresentProofClient:   &mockpresentproof.MockClient{},
 		})
 		require.NoError(t, err)
@@ -38,28 +38,17 @@ func TestController_New(t *testing.T) {
 	})
 }
 
-type mockAriesContextProvider struct {
-	store   ariesstorage.Provider
-	tstore  ariesstorage.Provider
-	vdriReg vdriapi.Registry
-}
+func agent(t *testing.T) *ariesctx.Provider {
+	t.Helper()
 
-func (m *mockAriesContextProvider) StorageProvider() ariesstorage.Provider {
-	if m.store != nil {
-		return m.store
-	}
+	a, err := aries.New(
+		aries.WithStoreProvider(mem.NewProvider()),
+		aries.WithProtocolStateStoreProvider(mem.NewProvider()),
+	)
+	require.NoError(t, err)
 
-	return ariesmockstorage.NewMockStoreProvider()
-}
+	ctx, err := a.Context()
+	require.NoError(t, err)
 
-func (m *mockAriesContextProvider) ProtocolStateStorageProvider() ariesstorage.Provider {
-	if m.tstore != nil {
-		return m.tstore
-	}
-
-	return ariesmockstorage.NewMockStoreProvider()
-}
-
-func (m *mockAriesContextProvider) VDRIRegistry() vdriapi.Registry {
-	return m.vdriReg
+	return ctx
 }

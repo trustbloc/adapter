@@ -18,13 +18,12 @@ import (
 	"sync"
 	"time"
 
-	"github.com/trustbloc/edge-adapter/pkg/vc"
-
 	"github.com/coreos/go-oidc"
 	"github.com/google/uuid"
 	"github.com/hyperledger/aries-framework-go/pkg/client/didexchange"
 	"github.com/hyperledger/aries-framework-go/pkg/client/outofband"
 	"github.com/hyperledger/aries-framework-go/pkg/client/presentproof"
+	ariescrypto "github.com/hyperledger/aries-framework-go/pkg/crypto"
 	"github.com/hyperledger/aries-framework-go/pkg/didcomm/common/service"
 	"github.com/hyperledger/aries-framework-go/pkg/didcomm/protocol/decorator"
 	didexchangesvc "github.com/hyperledger/aries-framework-go/pkg/didcomm/protocol/didexchange"
@@ -32,6 +31,7 @@ import (
 	"github.com/hyperledger/aries-framework-go/pkg/doc/did"
 	"github.com/hyperledger/aries-framework-go/pkg/doc/verifiable"
 	"github.com/hyperledger/aries-framework-go/pkg/framework/aries/api/vdri"
+	"github.com/hyperledger/aries-framework-go/pkg/kms"
 	ariesstorage "github.com/hyperledger/aries-framework-go/pkg/storage"
 	"github.com/hyperledger/aries-framework-go/pkg/store/connection"
 	"github.com/ory/hydra-client-go/client/admin"
@@ -39,10 +39,12 @@ import (
 	"github.com/trustbloc/edge-core/pkg/log"
 	"github.com/trustbloc/edge-core/pkg/storage"
 
+	"github.com/trustbloc/edge-adapter/pkg/crypto"
 	"github.com/trustbloc/edge-adapter/pkg/db/rp"
 	"github.com/trustbloc/edge-adapter/pkg/internal/common/support"
 	"github.com/trustbloc/edge-adapter/pkg/presexch"
 	commhttp "github.com/trustbloc/edge-adapter/pkg/restapi/internal/common/http"
+	"github.com/trustbloc/edge-adapter/pkg/vc"
 )
 
 // API endpoints.
@@ -132,6 +134,8 @@ type AriesContextProvider interface {
 	StorageProvider() ariesstorage.Provider
 	ProtocolStateStorageProvider() ariesstorage.Provider
 	VDRIRegistry() vdri.Registry
+	KMS() kms.KeyManager
+	Crypto() ariescrypto.Crypto
 }
 
 // Storage config.
@@ -173,8 +177,10 @@ func New(config *Config) (*Operation, error) {
 		publicDIDCreator:       config.PublicDIDCreator,
 		ppClient:               config.PresentProofClient,
 		ppActions:              make(chan service.DIDCommAction),
-		vdriReg:                config.AriesStorageProvider.VDRIRegistry(),
+		vdriReg:                config.AriesContextProvider.VDRIRegistry(),
 		governanceProvider:     config.GovernanceProvider,
+		km:                     config.AriesContextProvider.KMS(),
+		ariesCrypto:            config.AriesContextProvider.Crypto(),
 	}
 
 	err := o.didClient.RegisterActionEvent(o.didActions)
@@ -192,7 +198,7 @@ func New(config *Config) (*Operation, error) {
 		return nil, fmt.Errorf("failed to open relying party store : %w", err)
 	}
 
-	o.connections, err = connection.NewRecorder(config.AriesStorageProvider)
+	o.connections, err = connection.NewRecorder(config.AriesContextProvider)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create a connection recorder : %w", err)
 	}
@@ -226,7 +232,7 @@ type Config struct {
 	OOBClient              OOBClient
 	DIDExchClient          DIDClient
 	PublicDIDCreator       PublicDIDCreator
-	AriesStorageProvider   AriesContextProvider
+	AriesContextProvider   AriesContextProvider
 	PresentProofClient     PresentProofClient
 	Storage                *Storage
 	GovernanceProvider     GovernanceProvider
@@ -256,6 +262,8 @@ type Operation struct {
 	vdriReg                vdri.Registry
 	transientStore         storage.Store
 	governanceProvider     GovernanceProvider
+	km                     kms.KeyManager
+	ariesCrypto            ariescrypto.Crypto
 }
 
 // GetRESTHandlers get all controller API handler available for this service.
@@ -818,7 +826,7 @@ func (o *Operation) requestRemoteCredential(authz *verifiable.Credential,
 			crCtx.RPPairwiseDID, issuerDID.ID, err)
 	}
 
-	vpBytes, err := o.toMarshalledVP(authz)
+	vpBytes, err := o.toMarshalledVP(authz, crCtx.RPPairwiseDID)
 	if err != nil {
 		return "", fmt.Errorf("failed to convert authz credential to verifiable presentation: %w", err)
 	}
@@ -1242,13 +1250,28 @@ func (o *Operation) createOAuth2Client(scopes []string, callback string) (*admin
 }
 
 // TODO add an LD proof that contains the issuer's challenge: https://github.com/trustbloc/edge-adapter/issues/145
-func (o *Operation) toMarshalledVP(authZ *verifiable.Credential) ([]byte, error) {
+func (o *Operation) toMarshalledVP(authZ *verifiable.Credential, signingDID string) ([]byte, error) {
 	vp, err := authZ.Presentation()
 	if err != nil {
 		return nil, fmt.Errorf("failed to convert authz credential to presentation: %w", err)
 	}
 
-	return json.Marshal(vp)
+	rpDIDDoc, err := o.vdriReg.Resolve(signingDID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to resolve rp did %s: %w", signingDID, err)
+	}
+
+	verificationMethod, err := crypto.GetVerificationMethodFromDID(rpDIDDoc, did.Authentication)
+	if err != nil {
+		return nil, fmt.Errorf("failed to obtain a verification method from rp did %s: %w", signingDID, err)
+	}
+
+	signedVP, err := crypto.New(o.km, o.ariesCrypto, o.vdriReg).SignPresentation(vp, verificationMethod)
+	if err != nil {
+		return nil, fmt.Errorf("failed to sign authZ vp with verMethod %s: %w", verificationMethod, err)
+	}
+
+	return json.Marshal(signedVP)
 }
 
 func removeOIDCScope(scopes []string) []string {

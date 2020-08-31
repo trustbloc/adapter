@@ -10,10 +10,10 @@ require (
 	github.com/cenkalti/backoff v2.2.1+incompatible
 	github.com/google/uuid v1.1.1
 	github.com/gorilla/mux v1.7.4
-	github.com/hyperledger/aries-framework-go v0.1.4-0.20200724143028-ea4069806833
+	github.com/hyperledger/aries-framework-go v0.1.4-0.20200827170810-92a1bcd9fd85
 	github.com/rs/cors v1.7.0
 	github.com/spf13/cobra v1.0.0
-	github.com/stretchr/testify v1.5.1
+	github.com/stretchr/testify v1.6.1
 	github.com/trustbloc/edge-adapter v0.0.0-00010101000000-000000000000
 	github.com/trustbloc/edge-core v0.1.4-0.20200814194611-5f3b95f18b63
 )
