@@ -13,7 +13,11 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strings"
+	"time"
 
+	docdid "github.com/hyperledger/aries-framework-go/pkg/doc/did"
+	vdriapi "github.com/hyperledger/aries-framework-go/pkg/framework/aries/api/vdri"
 	log "github.com/sirupsen/logrus"
 )
 
@@ -49,6 +53,29 @@ func CloseResponseBody(respBody io.Closer) {
 	if err != nil {
 		log.Errorf("Failed to close response body: %s", err.Error())
 	}
+}
+
+// ResolveDID waits for the DID to become available for resolution.
+func ResolveDID(vdriRegistry vdriapi.Registry, did string, maxRetry int) (*docdid.Doc, error) {
+	var didDoc *docdid.Doc
+
+	for i := 1; i <= maxRetry; i++ {
+		var err error
+		didDoc, err = vdriRegistry.Resolve(did)
+
+		if err != nil {
+			if !strings.Contains(err.Error(), "DID does not exist") {
+				return nil, err
+			}
+
+			fmt.Printf("did %s not found will retry %d of %d\n", did, i, maxRetry)
+			time.Sleep(3 * time.Second) // nolint:gomnd
+
+			continue
+		}
+	}
+
+	return didDoc, nil
 }
 
 // GetDIDConnectRequestKey key for storing DID Connect request.
