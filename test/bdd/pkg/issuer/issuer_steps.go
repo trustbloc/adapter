@@ -9,6 +9,7 @@ package issuer
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io/ioutil"
 	"net/http"
@@ -100,6 +101,7 @@ func (e *Steps) createProfile(id, name, issuerURL, supportedVCContexts, supports
 	return nil
 }
 
+// nolint:funlen,gomnd,gocyclo
 func (e *Steps) retrieveProfile(id, name, issuerURL, supportedVCContexts, supportsAssuranceCredStr string) error {
 	resp, err := bddutil.HTTPDo(http.MethodGet, //nolint: bodyclose
 		fmt.Sprintf(issuerAdapterURL+"/profile/%s", id), "", "", nil, e.bddContext.TLSConfig())
@@ -147,6 +149,25 @@ func (e *Steps) retrieveProfile(id, name, issuerURL, supportedVCContexts, suppor
 	if profileResponse.SupportsAssuranceCredential != supportsAssuranceCred {
 		return fmt.Errorf("profile supports assurance cred url doesn't match : expected=%t actual=%t",
 			supportsAssuranceCred, profileResponse.SupportsAssuranceCredential)
+	}
+
+	if profileResponse.CredentialSigningKey == "" {
+		return errors.New("credential signing key can't be empty")
+	}
+
+	if profileResponse.PresentationSigningKey == "" {
+		return errors.New("presentation signing key can't be empty")
+	}
+
+	didKeyIDSplit := strings.Split(profileResponse.CredentialSigningKey, "#")
+
+	if len(didKeyIDSplit) != 2 {
+		return fmt.Errorf("invalid did key id : expected=%d actual=%d", 2, len(didKeyIDSplit))
+	}
+
+	_, err = bddutil.ResolveDID(e.bddContext.VDRI, didKeyIDSplit[0], 10)
+	if err != nil {
+		return fmt.Errorf("did resolution failied for id=%s err : %w", didKeyIDSplit[0], err)
 	}
 
 	return nil
