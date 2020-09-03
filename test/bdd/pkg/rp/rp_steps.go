@@ -260,6 +260,11 @@ func (s *Steps) newTrustBlocDID(agentID string) (*did.Doc, error) {
 
 	friendlyName := uuid.New().String()
 
+	_, err = bddutil.ResolveDID(s.context.VDRI, didDoc.ID, 10)
+	if err != nil {
+		return nil, fmt.Errorf("failed to resolve did=%s err: %w", didDoc.ID, err)
+	}
+
 	err = s.controller.SaveDID(agentID, friendlyName, didDoc)
 	if err != nil {
 		return nil, fmt.Errorf("failed to save new trustbloc did: %w", err)
