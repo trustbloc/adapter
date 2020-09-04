@@ -475,7 +475,7 @@ func (o *Operation) getCHAPIRequestHandler(rw http.ResponseWriter, req *http.Req
 }
 
 func (o *Operation) createReferenceCredential(token string, profile *issuer.ProfileData) ([]byte, error) {
-	vc, err := o.createCredential(token, profile, false)
+	vc, err := o.createCredential(getUserDataURL(profile.URL), token, profile.CredentialSigningKey, false, profile)
 	if err != nil {
 		return nil, fmt.Errorf("create credential : %w", err)
 	}
@@ -725,12 +725,23 @@ func (o *Operation) handleRequestPresentation(msg service.DIDCommAction) (interf
 		return nil, fmt.Errorf("fetch issuer profile : %w", err)
 	}
 
-	vp, err := o.generateUserPresentation(authorizationCredHandle, profile)
+	issuerDIDDoc, err := o.vdriRegistry.Resolve(authorizationCredHandle.IssuerDID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to resolve issuer did %s: %w", authorizationCredHandle.IssuerDID, err)
+	}
+
+	vp, err := o.generateUserPresentation(authorizationCredHandle, profile, issuerDIDDoc)
 	if err != nil {
 		return nil, err
 	}
 
-	vp, err = o.vccrypto.SignPresentation(vp, profile.PresentationSigningKey)
+	verificationMethod, err := crypto.GetVerificationMethodFromDID(issuerDIDDoc, did.Authentication)
+	if err != nil {
+		return nil, fmt.Errorf("failed to obtain a authentication verification method from issuer did %s: %w",
+			authorizationCredHandle.IssuerDID, err)
+	}
+
+	vp, err = o.vccrypto.SignPresentation(vp, verificationMethod)
 	if err != nil {
 		return nil, fmt.Errorf("sign presentation : %w", err)
 	}
@@ -744,20 +755,29 @@ func (o *Operation) handleRequestPresentation(msg service.DIDCommAction) (interf
 	}), nil
 }
 
-func (o *Operation) createCredential(token string, profile *issuer.ProfileData, authZReq bool) (*verifiable.Credential, error) { // nolint:lll,funlen,gocyclo
+func (o *Operation) createRemoteCredential(token, signingKey string, profile *issuer.ProfileData) (*verifiable.Credential, error) { // nolint:lll
+	assuranceCred := false
+	url := getUserDataURL(profile.URL)
+
+	if profile.SupportsAssuranceCredential {
+		assuranceCred = true
+		url = getAssuranceDataURL(profile.URL)
+	}
+
+	vc, err := o.createCredential(url, token, signingKey, assuranceCred, profile)
+	if err != nil {
+		return nil, fmt.Errorf("sign vc : %w", err)
+	}
+
+	return vc, nil
+}
+
+func (o *Operation) createCredential(url, token, signingKey string, assuranceCred bool, profile *issuer.ProfileData) (*verifiable.Credential, error) { // nolint:lll,funlen,gocyclo
 	dataReq := &UserDataReq{Token: token}
 
 	reqBytes, err := json.Marshal(dataReq)
 	if err != nil {
 		return nil, err
-	}
-
-	assuranceCred := false
-	url := getUserDataURL(profile.URL)
-
-	if authZReq && profile.SupportsAssuranceCredential {
-		assuranceCred = true
-		url = getAssuranceDataURL(profile.URL)
 	}
 
 	req, err := http.NewRequest(http.MethodPost, url, bytes.NewBuffer(reqBytes))
@@ -822,18 +842,24 @@ func (o *Operation) createCredential(token string, profile *issuer.ProfileData, 
 		cred.CustomFields["referenceVCID"] = refCredData.ID
 	}
 
-	vc, err := o.vccrypto.SignCredential(cred, profile.CredentialSigningKey)
+	vc, err := o.vccrypto.SignCredential(cred, signingKey)
 	if err != nil {
-		return nil, fmt.Errorf("sign vc : %w", err)
+		return nil, fmt.Errorf("sign user data vc : %w", err)
 	}
 
 	return vc, nil
 }
 
-func (o *Operation) generateUserPresentation(handle *AuthorizationCredentialHandle, profile *issuer.ProfileData) (*verifiable.Presentation, error) { // nolint: lll
-	vc, err := o.createCredential(handle.Token, profile, true)
+func (o *Operation) generateUserPresentation(handle *AuthorizationCredentialHandle, profile *issuer.ProfileData, issuerDIDDoc *did.Doc) (*verifiable.Presentation, error) { // nolint: lll
+	verificationMethod, err := crypto.GetVerificationMethodFromDID(issuerDIDDoc, did.AssertionMethod)
 	if err != nil {
-		return nil, fmt.Errorf("sign vc : %w", err)
+		return nil, fmt.Errorf("failed to obtain a assertion verification method from issuer did %s: %w",
+			issuerDIDDoc.ID, err)
+	}
+
+	vc, err := o.createRemoteCredential(handle.Token, verificationMethod, profile)
+	if err != nil {
+		return nil, fmt.Errorf("create remote data credential : %w", err)
 	}
 
 	return issuervc.CreatePresentation(vc)

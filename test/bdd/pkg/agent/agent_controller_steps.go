@@ -519,6 +519,11 @@ func (a *Steps) fetchCredential(agentID, issuerID string) error { // nolint: fun
 
 	issuerDIDDoc.ID = authorizationData.IssuerDIDDoc.ID
 
+	err = a.bddContext.VDRI.Store(issuerDIDDoc)
+	if err != nil {
+		return err
+	}
+
 	connID, err := a.CreateConnection(agentID, authorizationData.RPDIDDoc.ID, uuid.New().String(), issuerDIDDoc)
 	if err != nil {
 		return err
