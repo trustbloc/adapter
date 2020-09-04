@@ -12,8 +12,10 @@ import (
 
 	vdriapi "github.com/hyperledger/aries-framework-go/pkg/framework/aries/api/vdri"
 	"github.com/hyperledger/aries-framework-go/pkg/framework/context"
+	mockstore "github.com/hyperledger/aries-framework-go/pkg/mock/storage"
 	vdripkg "github.com/hyperledger/aries-framework-go/pkg/vdri"
 	"github.com/hyperledger/aries-framework-go/pkg/vdri/httpbinding"
+	"github.com/hyperledger/aries-framework-go/pkg/vdri/peer"
 	tlsutils "github.com/trustbloc/edge-core/pkg/utils/tls"
 	"github.com/trustbloc/trustbloc-did-method/pkg/vdri/trustbloc"
 )
@@ -67,6 +69,15 @@ func createVDRI(didResolverURL string) (vdriapi.Registry, error) {
 		return nil, fmt.Errorf("failed to create new vdri provider: %w", err)
 	}
 
-	return vdripkg.New(vdriProvider, vdripkg.WithVDRI(trustbloc.New(trustbloc.WithResolverURL(didResolverURL))),
-		vdripkg.WithVDRI(didResolverVDRI)), nil
+	p, err := peer.New(mockstore.NewMockStoreProvider())
+	if err != nil {
+		return nil, fmt.Errorf("create new vdri peer failed: %w", err)
+	}
+
+	return vdripkg.New(
+		vdriProvider,
+		vdripkg.WithVDRI(p),
+		vdripkg.WithVDRI(trustbloc.New(trustbloc.WithResolverURL(didResolverURL))),
+		vdripkg.WithVDRI(didResolverVDRI),
+	), nil
 }
