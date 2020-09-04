@@ -25,3 +25,9 @@ Issuer Adapter
 CREATE USER 'issueradapter'@'%' IDENTIFIED BY 'issueradapter-secret-pw';
 GRANT ALL PRIVILEGES ON `issueradapter\_%` . * TO 'issueradapter'@'%';
 
+/*
+Aries
+*/
+CREATE USER 'aries'@'%' IDENTIFIED BY 'aries-secret-pw';
+GRANT ALL PRIVILEGES ON * . * TO 'aries'@'%';
+
