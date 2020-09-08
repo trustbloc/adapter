@@ -369,26 +369,6 @@ func TestStartCmdDIDComm(t *testing.T) {
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "didcomm inbound host is mandatory")
 	})
-
-	t.Run("test start didcomm - empty inbound host", func(t *testing.T) {
-		startCmd := GetStartCmd(&mockServer{})
-
-		args := []string{
-			"--" + modeFlagName, issuerMode,
-			"--" + hostURLFlagName, "localhost:8080",
-			"--" + didCommInboundHostFlagName, randomURL(),
-			"--" + datasourceNameFlagName, "mem://test",
-			"--" + datasourceTimeoutFlagName, "30",
-		}
-		startCmd.SetArgs(args)
-
-		err := startCmd.Execute()
-		require.NoError(t, err)
-
-		err = startCmd.Execute()
-		require.Error(t, err)
-		require.Contains(t, err.Error(), "aries-framework - failed to initialize framework")
-	})
 }
 
 func TestAdapterModes(t *testing.T) {
@@ -457,6 +437,28 @@ func TestAdapterModes(t *testing.T) {
 		err := startCmd.Execute()
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "invalid mode : invalidMode")
+	})
+
+	t.Run("test adapter mode - store errors", func(t *testing.T) {
+		parameters := &adapterRestParameters{
+			dsnParams: &dsnParams{},
+		}
+
+		err := addIssuerHandlers(parameters, nil, nil, nil)
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "failed to init storage provider : invalid dbURL")
+
+		_, _, err = initRPAdapterEdgeStores("", 10)
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "failed to init edge persistent storage: invalid dbURL")
+
+		_, err = initEdgeStore("invaldidb://test", 10, "")
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "unsupported storage driver: invaldidb")
+
+		_, err = initAriesStore("invaldidb://test", 10, "")
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "unsupported storage driver: invaldidb")
 	})
 }
 
