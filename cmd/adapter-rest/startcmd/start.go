@@ -29,6 +29,9 @@ import (
 	"github.com/hyperledger/aries-framework-go/pkg/framework/aries"
 	"github.com/hyperledger/aries-framework-go/pkg/framework/aries/defaults"
 	ariesctx "github.com/hyperledger/aries-framework-go/pkg/framework/context"
+	ariesstorage "github.com/hyperledger/aries-framework-go/pkg/storage"
+	ariesmem "github.com/hyperledger/aries-framework-go/pkg/storage/mem"
+	ariesmysql "github.com/hyperledger/aries-framework-go/pkg/storage/mysql"
 	"github.com/hyperledger/aries-framework-go/pkg/vdri/httpbinding"
 	"github.com/rs/cors"
 	"github.com/spf13/cobra"
@@ -179,6 +182,7 @@ const (
 	rpAdapterTransientStorePrefix  = "rpadapter_txn"
 	issuerAdapterStorePrefix       = "issueradapter"
 	tokenLength                    = 2
+	sleep                          = 1 * time.Second
 )
 
 // nolint:gochecknoglobals
@@ -188,6 +192,16 @@ var supportedEdgeStorageProviders = map[string]func(string, string) (storage.Pro
 	},
 	"mem": func(_, _ string) (storage.Provider, error) { // nolint:unparam
 		return memstore.NewProvider(), nil
+	},
+}
+
+// nolint:gochecknoglobals
+var supportedAriesStorageProviders = map[string]func(string, string) (ariesstorage.Provider, error){
+	"mysql": func(dsn, prefix string) (ariesstorage.Provider, error) {
+		return ariesmysql.NewProvider(dsn, ariesmysql.WithDBPrefix(prefix))
+	},
+	"mem": func(_, _ string) (ariesstorage.Provider, error) { // nolint:unparam
+		return ariesmem.NewProvider(), nil
 	},
 }
 
@@ -570,19 +584,24 @@ func startAdapterService(parameters *adapterRestParameters, srv server) error {
 		router.HandleFunc(handler.Path(), handler.Handle()).Methods(handler.Method())
 	}
 
-	ariesCtx, err := createAriesAgent(parameters, &tls.Config{RootCAs: rootCAs})
-	if err != nil {
-		return err
-	}
-
 	// add endpoints
 	switch parameters.mode {
 	case rpMode:
+		ariesCtx, err := createAriesAgent(parameters, &tls.Config{RootCAs: rootCAs}, rpAdapterPersistentStorePrefix)
+		if err != nil {
+			return err
+		}
+
 		err = addRPHandlers(parameters, ariesCtx, router, rootCAs)
 		if err != nil {
 			return fmt.Errorf("failed to add rp-adapter handlers : %w", err)
 		}
 	case issuerMode:
+		ariesCtx, err := createAriesAgent(parameters, &tls.Config{RootCAs: rootCAs}, issuerAdapterStorePrefix)
+		if err != nil {
+			return err
+		}
+
 		err = addIssuerHandlers(parameters, ariesCtx, router, rootCAs)
 		if err != nil {
 			return fmt.Errorf("failed to add issuer-adapter handlers : %w", err)
@@ -776,26 +795,73 @@ func initRPAdapterEdgeStores(dbURL string, timeout uint64) (persistent, transien
 	return persistent, transient, nil
 }
 
-func initEdgeStore(dbURL string, timeout uint64, prefix string) (storage.Provider, error) {
+func getDBParams(dbURL string) (driver, dsn string, err error) {
 	const (
-		sleep    = 1 * time.Second
 		urlParts = 2
 	)
 
+	parsed := strings.SplitN(dbURL, ":", urlParts)
+
+	if len(parsed) != urlParts {
+		return "", "", fmt.Errorf("invalid dbURL %s", dbURL)
+	}
+
+	driver = parsed[0]
+	dsn = strings.TrimPrefix(parsed[1], "//")
+
+	return driver, dsn, nil
+}
+
+func retry(fn func() error, timeout uint64) error {
 	numRetries := uint64(datasourceTimeoutDefault)
 
 	if timeout != 0 {
 		numRetries = timeout
 	}
 
-	parsed := strings.SplitN(dbURL, ":", urlParts)
+	return backoff.RetryNotify(
+		fn,
+		backoff.WithMaxRetries(backoff.NewConstantBackOff(sleep), numRetries),
+		func(retryErr error, t time.Duration) {
+			logger.Warnf(
+				"failed to connect to storage, will sleep for %s before trying again : %s\n",
+				t, retryErr)
+		},
+	)
+}
 
-	if len(parsed) != urlParts {
-		return nil, fmt.Errorf("invalid dbURL %s", dbURL)
+// nolint: dupl
+func initAriesStore(dbURL string, timeout uint64, prefix string) (ariesstorage.Provider, error) {
+	driver, dsn, err := getDBParams(dbURL)
+	if err != nil {
+		return nil, err
 	}
 
-	driver := parsed[0]
-	dsn := strings.TrimPrefix(parsed[1], "//")
+	providerFunc, supported := supportedAriesStorageProviders[driver]
+	if !supported {
+		return nil, fmt.Errorf("unsupported storage driver: %s", driver)
+	}
+
+	var store ariesstorage.Provider
+
+	err = retry(func() error {
+		var openErr error
+		store, openErr = providerFunc(dsn, prefix)
+		return openErr
+	}, timeout)
+	if err != nil {
+		return nil, fmt.Errorf("ariesstore init - failed to connect to storage at %s : %w", dsn, err)
+	}
+
+	return store, nil
+}
+
+// nolint: dupl
+func initEdgeStore(dbURL string, timeout uint64, prefix string) (storage.Provider, error) {
+	driver, dsn, err := getDBParams(dbURL)
+	if err != nil {
+		return nil, err
+	}
 
 	providerFunc, supported := supportedEdgeStorageProviders[driver]
 	if !supported {
@@ -804,24 +870,31 @@ func initEdgeStore(dbURL string, timeout uint64, prefix string) (storage.Provide
 
 	var store storage.Provider
 
-	err := backoff.RetryNotify(
-		func() error {
-			var openErr error
-			store, openErr = providerFunc(dsn, prefix)
-			return openErr
-		},
-		backoff.WithMaxRetries(backoff.NewConstantBackOff(sleep), numRetries),
-		func(retryErr error, t time.Duration) {
-			logger.Warnf(
-				"failed to connect to storage, will sleep for %s before trying again : %s\n",
-				t, retryErr)
-		},
-	)
+	err = retry(func() error {
+		var openErr error
+		store, openErr = providerFunc(dsn, prefix)
+		return openErr
+	}, timeout)
 	if err != nil {
-		return nil, fmt.Errorf("failed to connect to storage at %s : %w", dsn, err)
+		return nil, fmt.Errorf("edgestore init - failed to connect to storage at %s : %w", dsn, err)
 	}
 
 	return store, nil
+}
+
+func initAriesStores(dbURL string, timeout uint64, dbPrefix string) (persistent,
+	protocolStateStore ariesstorage.Provider, err error) {
+	persistent, err = initAriesStore(dbURL, timeout, dbPrefix+"_aries")
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to init aries persistent storage: %w", err)
+	}
+
+	protocolStateStore, err = initAriesStore(dbURL, timeout, dbPrefix+"_ariesps")
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to init aries protocol state storage: %w", err)
+	}
+
+	return persistent, protocolStateStore, nil
 }
 
 func acceptsDID(method string) bool {
@@ -829,7 +902,7 @@ func acceptsDID(method string) bool {
 	return method == "trustbloc"
 }
 
-func createAriesAgent(parameters *adapterRestParameters, tlsConfig *tls.Config) (*ariesctx.Provider, error) {
+func createAriesAgent(parameters *adapterRestParameters, tlsConfig *tls.Config, dbPrefix string) (*ariesctx.Provider, error) { // nolint:lll
 	var opts []aries.Option
 
 	if parameters.didCommParameters.inboundHostInternal == "" {
@@ -866,6 +939,13 @@ func createAriesAgent(parameters *adapterRestParameters, tlsConfig *tls.Config) 
 
 		opts = append(opts, aries.WithVDRI(universalResolverVDRI))
 	}
+
+	store, tStore, err := initAriesStores(parameters.dsnParams.dsn, parameters.dsnParams.timeout, dbPrefix)
+	if err != nil {
+		return nil, fmt.Errorf("failed to init edge storage: %w", err)
+	}
+
+	opts = append(opts, aries.WithStoreProvider(store), aries.WithProtocolStateStoreProvider(tStore))
 
 	framework, err := aries.New(opts...)
 	if err != nil {
