@@ -572,8 +572,6 @@ func startAdapterService(parameters *adapterRestParameters, srv server) error {
 		return err
 	}
 
-	logger.Debugf("root ca's %v", rootCAs)
-
 	router := mux.NewRouter()
 
 	// add health check endpoint
