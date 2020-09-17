@@ -40,7 +40,10 @@ func NewTrustblocDIDCreator(blocDomain, didcommInboundURL string,
 		blocDomain:        blocDomain,
 		didcommInboundURL: didcommInboundURL,
 		km:                km,
-		tblocDIDs:         trustblocdid.New(trustblocdid.WithTLSConfig(&tls.Config{RootCAs: rootCAs})),
+		tblocDIDs: trustblocdid.New(trustblocdid.WithTLSConfig(&tls.Config{
+			RootCAs:    rootCAs,
+			MinVersion: tls.VersionTLS12,
+		})),
 	}
 }
 

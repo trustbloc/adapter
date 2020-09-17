@@ -227,7 +227,9 @@ func (s *Steps) newTrustBlocDID(agentID string) (*did.Doc, error) {
 		}
 	}
 
-	trustblocClient := trustblocdid.New(trustblocdid.WithTLSConfig(&tls.Config{RootCAs: s.context.TLSConfig().RootCAs}))
+	trustblocClient := trustblocdid.New(trustblocdid.WithTLSConfig(&tls.Config{
+		RootCAs: s.context.TLSConfig().RootCAs, MinVersion: tls.VersionTLS12,
+	}))
 
 	didDoc, err := trustblocClient.CreateDID(
 		trustblocDIDMethodDomain,

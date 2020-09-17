@@ -45,7 +45,7 @@ func NewBDDContext(caCertPath string) (*BDDContext, error) {
 
 	return &BDDContext{
 		Store:     make(map[string]string),
-		tlsConfig: &tls.Config{RootCAs: rootCAs},
+		tlsConfig: &tls.Config{RootCAs: rootCAs, MinVersion: tls.VersionTLS12},
 		VDRI:      vdri,
 	}, nil
 }
