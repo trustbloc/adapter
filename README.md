@@ -16,6 +16,9 @@ The edge adapter contains following components.
 - [Issuer Adapter](./docs/issuer/README.md)
 - [Relying Party (RP) Adapter](./docs/rp/README.md) 
 
+## Build
+To build from source see [here](docs/build.md).
+
 ## Contributing
 Thank you for your interest in contributing. Please see our [community contribution guidelines](https://github.com/trustbloc/community/blob/master/CONTRIBUTING.md) for more information.
 

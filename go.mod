@@ -4,7 +4,7 @@
 
 module github.com/trustbloc/edge-adapter
 
-go 1.14
+go 1.15
 
 require (
 	github.com/PaesslerAG/gval v1.0.1
