@@ -13,7 +13,7 @@ MOCK_ISSUER_IMAGE_NAME ?= mock-issuer
 
 # Tool commands (overridable)
 ALPINE_VER ?= 3.12
-GO_VER ?= 1.14
+GO_VER ?= 1.15
 GOBIN_PATH=$(abspath .)/.build/bin
 
 .PHONY: all

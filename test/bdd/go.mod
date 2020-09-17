@@ -4,7 +4,7 @@
 
 module github.com/trustbloc/edge-adapter/test/bdd
 
-go 1.14
+go 1.15
 
 require (
 	github.com/cenkalti/backoff v2.2.1+incompatible

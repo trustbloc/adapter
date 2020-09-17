@@ -72,7 +72,7 @@ const (
 
 	datasourceTimeoutFlagName  = "dsn-timeout"
 	datasourceTimeoutFlagUsage = "Total time in seconds to wait until the datasource is available before giving up." +
-		" Default: " + string(datasourceTimeoutDefault) + " seconds." +
+		" Default: " + string(rune(datasourceTimeoutDefault)) + " seconds." +
 		" Alternatively, this can be set with the following environment variable: " + datasourceTimeoutEnvKey
 	datasourceTimeoutEnvKey  = "ADAPTER_REST_DSN_TIMEOUT"
 	datasourceTimeoutDefault = 30
@@ -463,7 +463,7 @@ func getDsnParams(cmd *cobra.Command) (*dsnParams, error) {
 	}
 
 	if timeout == "" {
-		timeout = string(datasourceTimeoutDefault)
+		timeout = string(rune(datasourceTimeoutDefault))
 	}
 
 	t, err := strconv.Atoi(timeout)
