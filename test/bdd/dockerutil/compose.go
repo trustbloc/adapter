@@ -152,7 +152,7 @@ func (c *Composition) GenerateLogs(dir, logName string) error {
 		return err
 	}
 
-	f, err := os.OpenFile(logName, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0600)
+	f, err := os.OpenFile(logName, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0600) // nolint: gosec
 	if err != nil {
 		return err
 	}

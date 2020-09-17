@@ -14,11 +14,10 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/piprate/json-gold/ld"
-	"github.com/stretchr/testify/require"
-
 	"github.com/hyperledger/aries-framework-go/pkg/doc/util"
 	"github.com/hyperledger/aries-framework-go/pkg/doc/verifiable"
+	"github.com/piprate/json-gold/ld"
+	"github.com/stretchr/testify/require"
 )
 
 func TestPresentationDefinitions_Match(t *testing.T) {

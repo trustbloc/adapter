@@ -10,7 +10,6 @@ import (
 	"testing"
 
 	"github.com/hyperledger/aries-framework-go/pkg/doc/verifiable"
-
 	"github.com/stretchr/testify/require"
 )
 

@@ -585,7 +585,8 @@ func startAdapterService(parameters *adapterRestParameters, srv server) error {
 	// add endpoints
 	switch parameters.mode {
 	case rpMode:
-		ariesCtx, err := createAriesAgent(parameters, &tls.Config{RootCAs: rootCAs}, rpAdapterPersistentStorePrefix)
+		ariesCtx, err := createAriesAgent(parameters, &tls.Config{RootCAs: rootCAs, MinVersion: tls.VersionTLS12},
+			rpAdapterPersistentStorePrefix)
 		if err != nil {
 			return err
 		}
@@ -595,7 +596,8 @@ func startAdapterService(parameters *adapterRestParameters, srv server) error {
 			return fmt.Errorf("failed to add rp-adapter handlers : %w", err)
 		}
 	case issuerMode:
-		ariesCtx, err := createAriesAgent(parameters, &tls.Config{RootCAs: rootCAs}, issuerAdapterStorePrefix)
+		ariesCtx, err := createAriesAgent(parameters, &tls.Config{RootCAs: rootCAs, MinVersion: tls.VersionTLS12},
+			issuerAdapterStorePrefix)
 		if err != nil {
 			return err
 		}
@@ -729,7 +731,7 @@ func addIssuerHandlers(parameters *adapterRestParameters, ariesCtx ariespai.CtxP
 			ariesCtx.KMS(),
 			rootCAs,
 		),
-		TLSConfig:          &tls.Config{RootCAs: rootCAs},
+		TLSConfig:          &tls.Config{RootCAs: rootCAs, MinVersion: tls.VersionTLS12},
 		GovernanceProvider: governanceProv,
 	})
 

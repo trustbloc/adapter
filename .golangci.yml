@@ -78,6 +78,10 @@ linters:
     - prealloc
     - testpackage
     - goerr113
+    - nlreturn
+    - godot
+    - gofumpt
+    - noctx
 
 issues:
   exclude-use-default: false

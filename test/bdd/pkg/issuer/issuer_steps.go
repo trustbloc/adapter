@@ -17,9 +17,8 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/google/uuid"
-
 	"github.com/cucumber/godog"
+	"github.com/google/uuid"
 
 	issuerprofile "github.com/trustbloc/edge-adapter/pkg/profile/issuer"
 	"github.com/trustbloc/edge-adapter/pkg/restapi/issuer/operation"
