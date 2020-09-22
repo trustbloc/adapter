@@ -6,11 +6,9 @@ SPDX-License-Identifier: Apache-2.0
 package bdd
 
 import (
-	"bytes"
 	"flag"
 	"fmt"
 	"os"
-	"os/exec"
 	"strconv"
 	"strings"
 	"testing"
@@ -54,13 +52,13 @@ func TestMain(m *testing.M) {
 	os.Exit(status)
 }
 
-func runBDDTests(tags, format string) int { //nolint: gocognit,gocyclo
+func runBDDTests(tags, format string) int { //nolint: gocognit
 	return godog.RunWithOptions("godogs", func(s *godog.Suite) {
 		var composition []*dockerutil.Composition
 		var composeFiles = []string{"./fixtures/adapter-rest", "./fixtures/didcomm",
 			"./fixtures/did-trustbloc", "./fixtures/integration"}
 		s.BeforeSuite(func() {
-			if os.Getenv("DISABLE_COMPOSITION") != "true" { // nolint: nestif
+			if os.Getenv("DISABLE_COMPOSITION") != "true" {
 				// Need a unique name, but docker does not allow '-' in names
 				composeProjectName := strings.ReplaceAll(generateUUID(), "-", "")
 
@@ -82,28 +80,7 @@ func runBDDTests(tags, format string) int { //nolint: gocognit,gocyclo
 					}
 				}
 
-				fmt.Printf("*** testSleep=%d, %s", testSleep, "about to start discovery servers")
-				println()
-				time.Sleep(time.Second * time.Duration(testSleep))
-
-				// create config files
-				out, err := execCMD("./generate_config.sh")
-
-				println("out:", out)
-
-				if err != nil {
-					println("err:", err.Error())
-					panic(err.Error())
-				}
-
-				newComposition, err := dockerutil.NewComposition(
-					composeProjectName, "discovery-compose.yml", "./fixtures/did-trustbloc")
-				if err != nil {
-					panic(fmt.Sprintf("Error composing system in BDD context: %s", err))
-				}
-				composition = append(composition, newComposition)
-
-				fmt.Printf("*** testSleep=%d, %s", testSleep, "waiting for all servers")
+				fmt.Printf("*** testSleep=%d", testSleep)
 				println()
 				time.Sleep(time.Second * time.Duration(testSleep))
 			}
@@ -156,27 +133,4 @@ func FeatureContext(s *godog.Suite) {
 	issuer.NewSteps(bddContext).RegisterSteps(s)
 	rp.NewSteps(bddContext).RegisterSteps(s)
 	agent.NewSteps(bddContext).RegisterSteps(s)
-}
-
-func execCMD(command string, args ...string) (string, error) {
-	cmd := exec.Command(command, args...) // nolint: gosec
-
-	var out bytes.Buffer
-
-	var er bytes.Buffer
-
-	cmd.Stdout = &out
-	cmd.Stderr = &er
-
-	err := cmd.Start()
-	if err != nil {
-		return "", fmt.Errorf(er.String())
-	}
-
-	err = cmd.Wait()
-	if err != nil {
-		return "", fmt.Errorf(er.String())
-	}
-
-	return out.String(), nil
 }
