@@ -12,7 +12,7 @@ require (
 	github.com/cucumber/godog v0.9.0
 	github.com/fsouza/go-dockerclient v1.6.5
 	github.com/google/uuid v1.1.1
-	github.com/hyperledger/aries-framework-go v0.1.5-0.20200904153313-0e08dc3311d4
+	github.com/hyperledger/aries-framework-go v0.1.5-0.20201002141934-47a2ea3afd67
 	github.com/ory/hydra-client-go v1.4.10
 	github.com/piprate/json-gold v0.3.0
 	github.com/pkg/errors v0.9.1

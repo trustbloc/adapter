@@ -10,7 +10,7 @@ require (
 	github.com/cenkalti/backoff v2.2.1+incompatible
 	github.com/google/uuid v1.1.1
 	github.com/gorilla/mux v1.7.4
-	github.com/hyperledger/aries-framework-go v0.1.5-0.20200904153313-0e08dc3311d4
+	github.com/hyperledger/aries-framework-go v0.1.5-0.20201002141934-47a2ea3afd67
 	github.com/rs/cors v1.7.0
 	github.com/spf13/cobra v1.0.0
 	github.com/stretchr/testify v1.6.1
