@@ -640,7 +640,10 @@ func (o *Operation) handleRequestCredential(msg service.DIDCommAction) (interfac
 		return nil, err
 	}
 
-	newDidDoc, err := o.vdriRegistry.Create("peer", vdri.WithServiceEndpoint(o.serviceEndpoint))
+	newDidDoc, err := o.vdriRegistry.Create(
+		"peer",
+		vdri.WithServices(did.Service{ServiceEndpoint: o.serviceEndpoint}),
+	)
 	if err != nil {
 		return nil, fmt.Errorf("create new issuer did : %w", err)
 	}

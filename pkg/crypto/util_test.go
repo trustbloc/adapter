@@ -55,8 +55,7 @@ func newPeerDID(t *testing.T) *did.Doc {
 
 	d, err := ctx.VDRIRegistry().Create(
 		"peer",
-		vdri.WithServiceEndpoint("http://agent.example.com/didcomm"),
-		vdri.WithServiceType("did-communication"),
+		vdri.WithServices(did.Service{ServiceEndpoint: "http://agent.example.com/didcomm", Type: "did-communication"}),
 	)
 	require.NoError(t, err)
 

@@ -84,8 +84,7 @@ func newPeerDID(t *testing.T, agent *ariesctx.Provider) *did.Doc {
 
 	d, err := agent.VDRIRegistry().Create(
 		"peer",
-		vdriapi.WithServiceType("did-communication"),
-		vdriapi.WithServiceEndpoint("http://agent.example.com/didcomm"),
+		vdriapi.WithServices(did.Service{ServiceEndpoint: "http://agent.example.com/didcomm", Type: "did-communication"}),
 	)
 	require.NoError(t, err)
 
