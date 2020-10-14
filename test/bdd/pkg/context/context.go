@@ -77,7 +77,8 @@ func createVDRI(didResolverURL string) (vdriapi.Registry, error) {
 	return vdripkg.New(
 		vdriProvider,
 		vdripkg.WithVDRI(p),
-		vdripkg.WithVDRI(trustbloc.New(trustbloc.WithResolverURL(didResolverURL))),
+		vdripkg.WithVDRI(trustbloc.New(trustbloc.WithResolverURL(didResolverURL),
+			trustbloc.WithDomain("testnet.trustbloc.local"))),
 		vdripkg.WithVDRI(didResolverVDRI),
 	), nil
 }

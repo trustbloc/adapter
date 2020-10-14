@@ -13,6 +13,7 @@ import (
 	"fmt"
 	"io/ioutil"
 	"net/http"
+	"strings"
 
 	"github.com/trustbloc/edge-core/pkg/log"
 	"github.com/trustbloc/edge-core/pkg/storage"
@@ -26,6 +27,7 @@ const (
 	storeName                     = "governance"
 	governanceVCKey               = "%s_governance_vc"
 	vcsGovernanceRequestTokenName = "vcs_governance" //nolint: gosec
+	didParts                      = 4
 )
 
 type httpClient interface {
@@ -43,11 +45,12 @@ type Provider struct {
 	httpClient       httpClient
 	store            storage.Store
 	requestTokens    map[string]string
+	domain           string
 }
 
 // New return new provider for governance provider.
 func New(governanceVCSUrl string, tlsConfig *tls.Config, s storage.Provider,
-	requestTokens map[string]string) (*Provider, error) {
+	requestTokens map[string]string, domain string) (*Provider, error) {
 	err := s.CreateStore(storeName)
 	if err != nil && !errors.Is(err, storage.ErrDuplicateStore) {
 		return nil, fmt.Errorf("failed to create store: %w", err)
@@ -60,7 +63,7 @@ func New(governanceVCSUrl string, tlsConfig *tls.Config, s storage.Provider,
 
 	return &Provider{governanceVCSUrl: governanceVCSUrl,
 		httpClient: &http.Client{Transport: &http.Transport{TLSClientConfig: tlsConfig}}, store: store,
-		requestTokens: requestTokens}, nil
+		requestTokens: requestTokens, domain: domain}, nil
 }
 
 // IssueCredential issue credential.
@@ -68,13 +71,26 @@ func (p *Provider) IssueCredential(didID, profileID string) ([]byte, error) {
 	_, err := p.GetCredential(profileID)
 	if err != nil {
 		if errors.Is(err, storage.ErrValueNotFound) {
-			return p.issueCredential(didID, profileID)
+			return p.issueCredential(p.replaceCanonicalDIDWithDomainDID(didID), profileID)
 		}
 
 		return nil, err
 	}
 
 	return nil, fmt.Errorf("governance vc already issued")
+}
+
+func (p *Provider) replaceCanonicalDIDWithDomainDID(didID string) string {
+	if strings.HasPrefix(didID, "did:trustbloc") {
+		split := strings.Split(didID, ":")
+		if len(split) == didParts {
+			domainDIDID := fmt.Sprintf("%s:%s:%s:%s", split[0], split[1], p.domain, split[3])
+
+			return domainDIDID
+		}
+	}
+
+	return didID
 }
 
 func (p *Provider) issueCredential(didID, profileID string) ([]byte, error) {

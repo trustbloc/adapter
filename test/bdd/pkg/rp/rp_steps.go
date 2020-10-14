@@ -185,6 +185,7 @@ func (s *Steps) resolveDID(label string) error {
 	vdri := trustblocvdri.New(
 		trustblocvdri.WithTLSConfig(s.context.TLSConfig()),
 		trustblocvdri.WithResolverURL(resolverURL),
+		trustblocvdri.WithDomain("testnet.trustbloc.local"),
 	)
 
 	const (

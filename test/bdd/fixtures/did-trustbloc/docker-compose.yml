@@ -86,7 +86,8 @@ services:
     environment:
       - SIDETREE_MOCK_HOST=0.0.0.0
       - SIDETREE_MOCK_PORT=48326
-      - SIDETREE_MOCK_DID_NAMESPACE=did:trustbloc:testnet.trustbloc.local
+      - SIDETREE_MOCK_DID_NAMESPACE=did:trustbloc:2M5ym
+      - SIDETREE_MOCK_DID_ALIASES=did:trustbloc:testnet.trustbloc.local
       - VIRTUAL_HOST=sidetree-mock.trustbloc.local
       - VIRTUAL_PORT=48326
       - SIDETREE_MOCK_TLS_CERTIFICATE=/etc/sidetree/tls/ec-pubCert.pem
