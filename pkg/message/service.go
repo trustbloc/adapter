@@ -20,11 +20,9 @@ import (
 
 // Msg svc constants.
 const (
-	msgTypeBaseURI        = "https://trustbloc.github.io/blinded-routing/1.0"
-	peerDIDDocReq         = msgTypeBaseURI + "/diddoc-req"
-	peerDIDDocResp        = msgTypeBaseURI + "/diddoc-resp"
-	peerDIDDocReqPurpose  = "diddoc-req"
-	peerDIDDocRespPurpose = "diddoc-resp"
+	msgTypeBaseURI = "https://trustbloc.github.io/blinded-routing/1.0"
+	peerDIDDocReq  = msgTypeBaseURI + "/diddoc-req"
+	peerDIDDocResp = msgTypeBaseURI + "/diddoc-resp"
 )
 
 var logger = log.New("edge-adapter/msgsvc")
@@ -62,7 +60,7 @@ func New(config *Config) (*Service, error) {
 
 	msgCh := make(chan service.DIDCommMsg, 1)
 
-	msgSvc := newMsgSvc("create-connection", peerDIDDocReq, peerDIDDocReqPurpose, msgCh)
+	msgSvc := newMsgSvc("create-connection", peerDIDDocReq, msgCh)
 
 	err := config.MsgRegistrar.Register(msgSvc)
 	if err != nil {
@@ -89,10 +87,9 @@ func (o *Service) didCommMsgListener(ch <-chan service.DIDCommMsg) {
 
 		if err != nil {
 			msgMap = service.NewDIDCommMsgMap(&DIDDocResp{
-				ID:      uuid.New().String(),
-				Type:    peerDIDDocResp,
-				Purpose: []string{peerDIDDocRespPurpose},
-				Data:    &DIDDocRespData{ErrorMsg: err.Error()},
+				ID:   uuid.New().String(),
+				Type: msg.Type(),
+				Data: &DIDDocRespData{ErrorMsg: err.Error()},
 			})
 
 			logger.Errorf("msgType=[%s] id=[%s] errMsg=[%s]", msg.Type(), msg.ID(), err.Error())
@@ -123,9 +120,8 @@ func (o *Service) handleDIDDocReq() (service.DIDCommMsgMap, error) {
 
 	// send the did doc
 	return service.NewDIDCommMsgMap(&DIDDocResp{
-		ID:      uuid.New().String(),
-		Type:    peerDIDDocResp,
-		Purpose: []string{peerDIDDocRespPurpose},
-		Data:    &DIDDocRespData{DIDDoc: docBytes},
+		ID:   uuid.New().String(),
+		Type: peerDIDDocResp,
+		Data: &DIDDocRespData{DIDDoc: docBytes},
 	}), nil
 }

@@ -23,6 +23,7 @@ import (
 	"github.com/hyperledger/aries-framework-go/pkg/client/outofband"
 	"github.com/hyperledger/aries-framework-go/pkg/client/presentproof"
 	"github.com/hyperledger/aries-framework-go/pkg/didcomm/common/service"
+	"github.com/hyperledger/aries-framework-go/pkg/didcomm/messaging/msghandler"
 	"github.com/hyperledger/aries-framework-go/pkg/didcomm/protocol/decorator"
 	issuecredsvc "github.com/hyperledger/aries-framework-go/pkg/didcomm/protocol/issuecredential"
 	presentproofsvc "github.com/hyperledger/aries-framework-go/pkg/didcomm/protocol/presentproof"
@@ -37,6 +38,7 @@ import (
 	"github.com/trustbloc/edge-adapter/pkg/aries"
 	"github.com/trustbloc/edge-adapter/pkg/crypto"
 	"github.com/trustbloc/edge-adapter/pkg/internal/common/support"
+	"github.com/trustbloc/edge-adapter/pkg/message"
 	"github.com/trustbloc/edge-adapter/pkg/profile/issuer"
 	commhttp "github.com/trustbloc/edge-adapter/pkg/restapi/internal/common/http"
 	adaptervc "github.com/trustbloc/edge-adapter/pkg/vc"
@@ -102,6 +104,8 @@ type GovernanceProvider interface {
 // Config defines configuration for issuer operations.
 type Config struct {
 	AriesCtx           aries.CtxProvider
+	AriesMessenger     service.Messenger
+	MsgRegistrar       *msghandler.Registrar
 	UIEndpoint         string
 	StoreProvider      storage.Provider
 	PublicDIDCreator   PublicDIDCreator
@@ -153,6 +157,17 @@ func New(config *Config) (*Operation, error) { // nolint:funlen
 		return nil, fmt.Errorf("failed to initialize connection lookup : %w", err)
 	}
 
+	msgSvc, err := message.New(&message.Config{
+		VDRIRegistry:      config.AriesCtx.VDRIRegistry(),
+		AriesMessenger:    config.AriesMessenger,
+		MsgRegistrar:      config.MsgRegistrar,
+		DIDExchangeClient: didExClient,
+		ServiceEndpoint:   config.AriesCtx.ServiceEndpoint(),
+	})
+	if err != nil {
+		return nil, fmt.Errorf("create message service : %w", err)
+	}
+
 	vccrypto := crypto.New(config.AriesCtx.KMS(), config.AriesCtx.Crypto(), config.AriesCtx.VDRIRegistry())
 
 	op := &Operation{
@@ -171,6 +186,7 @@ func New(config *Config) (*Operation, error) { // nolint:funlen
 		publicDIDCreator:   config.PublicDIDCreator,
 		governanceProvider: config.GovernanceProvider,
 		httpClient:         &http.Client{Transport: &http.Transport{TLSClientConfig: config.TLSConfig}},
+		msgSvc:             msgSvc,
 	}
 
 	go op.didCommActionListener(actionCh)
@@ -199,6 +215,7 @@ type Operation struct {
 	publicDIDCreator   PublicDIDCreator
 	httpClient         httpClient
 	governanceProvider GovernanceProvider
+	msgSvc             *message.Service
 }
 
 // GetRESTHandlers get all controller API handler available for this service.

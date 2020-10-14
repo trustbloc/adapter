@@ -35,7 +35,6 @@ import (
 	"github.com/hyperledger/aries-framework-go/pkg/store/connection"
 	"github.com/stretchr/testify/require"
 	"github.com/trustbloc/edge-core/pkg/storage"
-	"github.com/trustbloc/edge-core/pkg/storage/memstore"
 	mockstorage "github.com/trustbloc/edge-core/pkg/storage/mockstore"
 
 	mockconn "github.com/trustbloc/edge-adapter/pkg/internal/mock/connection"
@@ -55,10 +54,7 @@ const (
 
 func TestNew(t *testing.T) {
 	t.Run("test new - success", func(t *testing.T) {
-		c, err := New(&Config{
-			AriesCtx:      getAriesCtx(),
-			StoreProvider: memstore.NewProvider(),
-		})
+		c, err := New(config())
 		require.NoError(t, err)
 
 		require.Equal(t, 5, len(c.GetRESTHandlers()))
@@ -111,12 +107,7 @@ func TestNew(t *testing.T) {
 }
 
 func TestCreateProfile(t *testing.T) {
-	op, err := New(&Config{
-		AriesCtx:           getAriesCtx(),
-		StoreProvider:      memstore.NewProvider(),
-		PublicDIDCreator:   &stubPublicDIDCreator{createValue: mockdiddoc.GetMockDIDDoc("did:example:def567")},
-		GovernanceProvider: &mockgovernance.MockProvider{},
-	})
+	op, err := New(config())
 	require.NoError(t, err)
 
 	endpoint := profileEndpoint
@@ -142,16 +133,13 @@ func TestCreateProfile(t *testing.T) {
 	})
 
 	t.Run("create profile - failed to issue governance vc", func(t *testing.T) {
-		op, err := New(&Config{
-			AriesCtx:         getAriesCtx(),
-			StoreProvider:    memstore.NewProvider(),
-			PublicDIDCreator: &stubPublicDIDCreator{createValue: mockdiddoc.GetMockDIDDoc("did:example:def567")},
-			GovernanceProvider: &mockgovernance.MockProvider{
-				IssueCredentialFunc: func(didID, profileID string) ([]byte, error) {
-					return nil, fmt.Errorf("failed to issue governance vc")
-				}},
-		})
+		op, err := New(config())
 		require.NoError(t, err)
+
+		op.governanceProvider = &mockgovernance.MockProvider{
+			IssueCredentialFunc: func(didID, profileID string) ([]byte, error) {
+				return nil, fmt.Errorf("failed to issue governance vc")
+			}}
 
 		h := getHandler(t, op, endpoint)
 
@@ -174,12 +162,10 @@ func TestCreateProfile(t *testing.T) {
 	})
 
 	t.Run("create profile - did creation failure", func(t *testing.T) {
-		ops, err := New(&Config{
-			AriesCtx:         getAriesCtx(),
-			StoreProvider:    memstore.NewProvider(),
-			PublicDIDCreator: &stubPublicDIDCreator{createErr: errors.New("did create error")},
-		})
+		ops, err := New(config())
 		require.NoError(t, err)
+
+		ops.publicDIDCreator = &stubPublicDIDCreator{createErr: errors.New("did create error")}
 
 		vReq := &ProfileDataRequest{}
 
@@ -227,10 +213,7 @@ func TestCreateProfile(t *testing.T) {
 }
 
 func TestGetProfile(t *testing.T) {
-	op, err := New(&Config{
-		AriesCtx:      getAriesCtx(),
-		StoreProvider: memstore.NewProvider(),
-	})
+	op, err := New(config())
 	require.NoError(t, err)
 
 	endpoint := getProfileEndpoint
@@ -280,13 +263,10 @@ func TestConnectWallet(t *testing.T) {
 	require.NoError(t, err)
 
 	t.Run("test connect wallet - success", func(t *testing.T) {
-		c, err := New(&Config{
-			AriesCtx:      getAriesCtx(),
-			StoreProvider: memstore.NewProvider(),
-			UIEndpoint:    uiEndpoint,
-		})
+		c, err := New(config())
 		require.NoError(t, err)
 
+		c.uiEndpoint = uiEndpoint
 		c.httpClient = &mockHTTPClient{
 			respValue: &http.Response{
 				StatusCode: http.StatusOK, Body: ioutil.NopCloser(bytes.NewReader(tknRespBytes)),
@@ -308,11 +288,7 @@ func TestConnectWallet(t *testing.T) {
 	})
 
 	t.Run("test connect wallet - profile doesn't exists", func(t *testing.T) {
-		c, err := New(&Config{
-			AriesCtx:      getAriesCtx(),
-			StoreProvider: memstore.NewProvider(),
-			UIEndpoint:    uiEndpoint,
-		})
+		c, err := New(config())
 		require.NoError(t, err)
 
 		c.httpClient = &mockHTTPClient{
@@ -332,11 +308,7 @@ func TestConnectWallet(t *testing.T) {
 	})
 
 	t.Run("test connect wallet - no state in the url", func(t *testing.T) {
-		c, err := New(&Config{
-			AriesCtx:      getAriesCtx(),
-			StoreProvider: memstore.NewProvider(),
-			UIEndpoint:    uiEndpoint,
-		})
+		c, err := New(config())
 		require.NoError(t, err)
 
 		c.httpClient = &mockHTTPClient{
@@ -360,7 +332,8 @@ func TestConnectWallet(t *testing.T) {
 	})
 
 	t.Run("test connect wallet - failed to create invitation", func(t *testing.T) {
-		ariesCtx := &mockprovider.Provider{
+		config := config()
+		config.AriesCtx = &mockprovider.Provider{
 			ProtocolStateStorageProviderValue: mockstore.NewMockStoreProvider(),
 			StorageProviderValue:              mockstore.NewMockStoreProvider(),
 			ServiceMap: map[string]interface{}{
@@ -374,11 +347,7 @@ func TestConnectWallet(t *testing.T) {
 			ServiceEndpointValue: "endpoint",
 		}
 
-		c, err := New(&Config{
-			AriesCtx:      ariesCtx,
-			StoreProvider: memstore.NewProvider(),
-			UIEndpoint:    uiEndpoint,
-		})
+		c, err := New(config)
 		require.NoError(t, err)
 
 		c.httpClient = &mockHTTPClient{
@@ -402,11 +371,7 @@ func TestConnectWallet(t *testing.T) {
 	})
 
 	t.Run("test connect wallet - txn data store error", func(t *testing.T) {
-		c, err := New(&Config{
-			AriesCtx:      getAriesCtx(),
-			StoreProvider: memstore.NewProvider(),
-			UIEndpoint:    uiEndpoint,
-		})
+		c, err := New(config())
 		require.NoError(t, err)
 
 		c.httpClient = &mockHTTPClient{
@@ -435,11 +400,7 @@ func TestConnectWallet(t *testing.T) {
 	})
 
 	t.Run("test connect wallet - retrieve token errors", func(t *testing.T) {
-		c, err := New(&Config{
-			AriesCtx:      getAriesCtx(),
-			StoreProvider: memstore.NewProvider(),
-			UIEndpoint:    uiEndpoint,
-		})
+		c, err := New(config())
 		require.NoError(t, err)
 
 		c.httpClient = &mockHTTPClient{
@@ -498,10 +459,7 @@ func TestConnectWallet(t *testing.T) {
 }
 
 func TestValidateWalletResponse(t *testing.T) {
-	c, err := New(&Config{
-		AriesCtx:      getAriesCtx(),
-		StoreProvider: memstore.NewProvider(),
-	})
+	c, err := New(config())
 	require.NoError(t, err)
 
 	profileID := "profile1"
@@ -711,11 +669,7 @@ func TestValidateWalletResponse(t *testing.T) {
 	})
 
 	t.Run("test validate response - success", func(t *testing.T) {
-		ops, err := New(&Config{
-			AriesCtx:      getAriesCtx(),
-			StoreProvider: memstore.NewProvider(),
-			//StoreProvider: &mockstorage.Provider{ErrCreateStore: errors.New("error creating the store")},
-		})
+		ops, err := New(config())
 		require.NoError(t, err)
 
 		ops.connectionLookup = &mockconn.MockConnectionsLookup{
@@ -757,14 +711,12 @@ func TestValidateWalletResponse(t *testing.T) {
 
 func TestCHAPIRequest(t *testing.T) {
 	t.Run("test fetch chapi request - success", func(t *testing.T) {
-		c, err := New(&Config{
-			AriesCtx:      getAriesCtx(),
-			StoreProvider: memstore.NewProvider(),
-			GovernanceProvider: &mockgovernance.MockProvider{GetCredentialFunc: func(profileID string) ([]byte, error) {
-				return []byte(`{"key":"value"}`), nil
-			}},
-		})
+		c, err := New(config())
 		require.NoError(t, err)
+
+		c.governanceProvider = &mockgovernance.MockProvider{GetCredentialFunc: func(profileID string) ([]byte, error) {
+			return []byte(`{"key":"value"}`), nil
+		}}
 
 		t.Run("without assurance support", func(t *testing.T) {
 			profile := createProfileData("profile1")
@@ -826,14 +778,12 @@ func TestCHAPIRequest(t *testing.T) {
 	})
 
 	t.Run("test get governance - failed", func(t *testing.T) {
-		c, err := New(&Config{
-			AriesCtx:      getAriesCtx(),
-			StoreProvider: memstore.NewProvider(),
-			GovernanceProvider: &mockgovernance.MockProvider{GetCredentialFunc: func(profileID string) ([]byte, error) {
-				return nil, fmt.Errorf("failed to get vc")
-			}},
-		})
+		c, err := New(config())
 		require.NoError(t, err)
+
+		c.governanceProvider = &mockgovernance.MockProvider{GetCredentialFunc: func(profileID string) ([]byte, error) {
+			return nil, fmt.Errorf("failed to get vc")
+		}}
 
 		profile := createProfileData("profile1")
 
@@ -853,10 +803,7 @@ func TestCHAPIRequest(t *testing.T) {
 	})
 
 	t.Run("test fetch invitation - no txnID in the url query", func(t *testing.T) {
-		c, err := New(&Config{
-			AriesCtx:      getAriesCtx(),
-			StoreProvider: memstore.NewProvider(),
-		})
+		c, err := New(config())
 		require.NoError(t, err)
 
 		getCHAPIRequestHandler := getHandler(t, c, getCHAPIRequestEndpoint)
@@ -868,10 +815,7 @@ func TestCHAPIRequest(t *testing.T) {
 	})
 
 	t.Run("test fetch invitation - invalid txnID", func(t *testing.T) {
-		c, err := New(&Config{
-			AriesCtx:      getAriesCtx(),
-			StoreProvider: memstore.NewProvider(),
-		})
+		c, err := New(config())
 		require.NoError(t, err)
 
 		getCHAPIRequestHandler := getHandler(t, c, getCHAPIRequestEndpoint)
@@ -884,10 +828,7 @@ func TestCHAPIRequest(t *testing.T) {
 	})
 
 	t.Run("test fetch invitation - profile not found", func(t *testing.T) {
-		c, err := New(&Config{
-			AriesCtx:      getAriesCtx(),
-			StoreProvider: memstore.NewProvider(),
-		})
+		c, err := New(config())
 		require.NoError(t, err)
 
 		profile := createProfileData("profile1")
@@ -904,10 +845,7 @@ func TestCHAPIRequest(t *testing.T) {
 	})
 
 	t.Run("test fetch chapi request with assurance - error", func(t *testing.T) {
-		c, err := New(&Config{
-			AriesCtx:      getAriesCtx(),
-			StoreProvider: memstore.NewProvider(),
-		})
+		c, err := New(config())
 		require.NoError(t, err)
 
 		profile := createProfileData("profile2")
@@ -977,10 +915,7 @@ func TestIssueCredentialHandler(t *testing.T) {
 	t.Run("test didcomm actions - unsupported message", func(t *testing.T) {
 		actionCh := make(chan service.DIDCommAction, 1)
 
-		c, err := New(&Config{
-			AriesCtx:      getAriesCtx(),
-			StoreProvider: memstore.NewProvider(),
-		})
+		c, err := New(config())
 		require.NoError(t, err)
 
 		go c.didCommActionListener(actionCh)
@@ -1009,10 +944,7 @@ func TestIssueCredentialHandler(t *testing.T) {
 		t.Run("test request issue cred - success", func(t *testing.T) {
 			actionCh := make(chan service.DIDCommAction, 1)
 
-			c, err := New(&Config{
-				AriesCtx:      getAriesCtx(),
-				StoreProvider: memstore.NewProvider(),
-			})
+			c, err := New(config())
 			require.NoError(t, err)
 
 			connID := uuid.New().String()
@@ -1065,24 +997,24 @@ func TestIssueCredentialHandler(t *testing.T) {
 		t.Run("test request issue cred - did creation failure", func(t *testing.T) {
 			actionCh := make(chan service.DIDCommAction, 1)
 
-			c, err := New(&Config{
-				AriesCtx: &mockprovider.Provider{
-					ProtocolStateStorageProviderValue: mockstore.NewMockStoreProvider(),
-					StorageProviderValue:              mockstore.NewMockStoreProvider(),
-					ServiceMap: map[string]interface{}{
-						didexchange.DIDExchange: &mocksvc.MockDIDExchangeSvc{},
-						mediator.Coordination:   &mockroute.MockMediatorSvc{},
-						issuecredsvc.Name:       &issuecredential.MockIssueCredentialSvc{},
-						presentproofsvc.Name:    &presentproof.MockPresentProofSvc{},
-						outofbandsvc.Name:       &mockoutofband.MockService{},
-					},
-					ServiceEndpointValue: "endpoint",
-					VDRIRegistryValue: &mockvdri.MockVDRIRegistry{
-						CreateErr: errors.New("did create error"),
-					},
+			config := config()
+			config.AriesCtx = &mockprovider.Provider{
+				ProtocolStateStorageProviderValue: mockstore.NewMockStoreProvider(),
+				StorageProviderValue:              mockstore.NewMockStoreProvider(),
+				ServiceMap: map[string]interface{}{
+					didexchange.DIDExchange: &mocksvc.MockDIDExchangeSvc{},
+					mediator.Coordination:   &mockroute.MockMediatorSvc{},
+					issuecredsvc.Name:       &issuecredential.MockIssueCredentialSvc{},
+					presentproofsvc.Name:    &presentproof.MockPresentProofSvc{},
+					outofbandsvc.Name:       &mockoutofband.MockService{},
 				},
-				StoreProvider: memstore.NewProvider(),
-			})
+				ServiceEndpointValue: "endpoint",
+				VDRIRegistryValue: &mockvdri.MockVDRIRegistry{
+					CreateErr: errors.New("did create error"),
+				},
+			}
+
+			c, err := New(config)
 			require.NoError(t, err)
 
 			go c.didCommActionListener(actionCh)
@@ -1110,10 +1042,7 @@ func TestIssueCredentialHandler(t *testing.T) {
 		t.Run("test request issue cred - validation failures", func(t *testing.T) {
 			actionCh := make(chan service.DIDCommAction, 1)
 
-			c, err := New(&Config{
-				AriesCtx:      getAriesCtx(),
-				StoreProvider: memstore.NewProvider(),
-			})
+			c, err := New(config())
 			require.NoError(t, err)
 
 			go c.didCommActionListener(actionCh)
@@ -1309,10 +1238,7 @@ func TestPresentProofHandler(t *testing.T) {
 		t.Run("test request presentation - success", func(t *testing.T) {
 			actionCh := make(chan service.DIDCommAction, 1)
 
-			c, err := New(&Config{
-				AriesCtx:      getAriesCtx(),
-				StoreProvider: memstore.NewProvider(),
-			})
+			c, err := New(config())
 			require.NoError(t, err)
 
 			c.httpClient = &mockHTTPClient{
@@ -1384,10 +1310,7 @@ func TestPresentProofHandler(t *testing.T) {
 		t.Run("test request presentation - success (assurance flow)", func(t *testing.T) {
 			actionCh := make(chan service.DIDCommAction, 1)
 
-			c, err := New(&Config{
-				AriesCtx:      getAriesCtx(),
-				StoreProvider: memstore.NewProvider(),
-			})
+			c, err := New(config())
 			require.NoError(t, err)
 
 			c.httpClient = &mockHTTPClient{
@@ -1470,10 +1393,7 @@ func TestPresentProofHandler(t *testing.T) {
 		t.Run("test request presentation - failures", func(t *testing.T) {
 			actionCh := make(chan service.DIDCommAction, 1)
 
-			c, err := New(&Config{
-				AriesCtx:      getAriesCtx(),
-				StoreProvider: memstore.NewProvider(),
-			})
+			c, err := New(config())
 			require.NoError(t, err)
 
 			go c.didCommActionListener(actionCh)
@@ -1776,10 +1696,7 @@ func TestPresentProofHandler(t *testing.T) {
 		t.Run("test request presentation - issuer user data fetch failures", func(t *testing.T) {
 			actionCh := make(chan service.DIDCommAction, 1)
 
-			c, err := New(&Config{
-				AriesCtx:      getAriesCtx(),
-				StoreProvider: memstore.NewProvider(),
-			})
+			c, err := New(config())
 			require.NoError(t, err)
 
 			go c.didCommActionListener(actionCh)
@@ -1907,10 +1824,7 @@ func TestPresentProofHandler(t *testing.T) {
 		t.Run("test request presentation - failures (assurance flow)", func(t *testing.T) {
 			actionCh := make(chan service.DIDCommAction, 1)
 
-			c, err := New(&Config{
-				AriesCtx:      getAriesCtx(),
-				StoreProvider: memstore.NewProvider(),
-			})
+			c, err := New(config())
 			require.NoError(t, err)
 
 			c.httpClient = &mockHTTPClient{
@@ -1985,10 +1899,7 @@ func TestPresentProofHandler(t *testing.T) {
 }
 
 func TestGetConnectionIDFromEvent(t *testing.T) {
-	c, err := New(&Config{
-		AriesCtx:      getAriesCtx(),
-		StoreProvider: memstore.NewProvider(),
-	})
+	c, err := New(config())
 	require.NoError(t, err)
 
 	connID := uuid.New().String()

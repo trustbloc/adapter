@@ -20,12 +20,11 @@ func TestNewMsgSvc(t *testing.T) {
 	purpose := "msg-123"
 	msgCh := make(chan service.DIDCommMsg)
 
-	msgSvc := newMsgSvc(name, msgType, purpose, msgCh)
+	msgSvc := newMsgSvc(name, msgType, msgCh)
 	require.Equal(t, name, msgSvc.Name())
 
 	require.True(t, msgSvc.Accept(msgType, []string{purpose, "purpose2"}))
 	require.False(t, msgSvc.Accept(purpose, []string{purpose}))
-	require.False(t, msgSvc.Accept(msgType, []string{"purpose2"}))
 	require.False(t, msgSvc.Accept("", nil))
 
 	done := make(chan struct{})

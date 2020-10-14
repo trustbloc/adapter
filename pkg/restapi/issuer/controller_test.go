@@ -8,6 +8,7 @@ package issuer
 import (
 	"testing"
 
+	"github.com/hyperledger/aries-framework-go/pkg/didcomm/messaging/msghandler"
 	"github.com/hyperledger/aries-framework-go/pkg/didcomm/protocol/didexchange"
 	issuecredsvc "github.com/hyperledger/aries-framework-go/pkg/didcomm/protocol/issuecredential"
 	"github.com/hyperledger/aries-framework-go/pkg/didcomm/protocol/mediator"
@@ -21,6 +22,7 @@ import (
 	"github.com/trustbloc/edge-core/pkg/storage/memstore"
 
 	"github.com/trustbloc/edge-adapter/pkg/internal/mock/issuecredential"
+	"github.com/trustbloc/edge-adapter/pkg/internal/mock/messenger"
 	"github.com/trustbloc/edge-adapter/pkg/internal/mock/outofband"
 	"github.com/trustbloc/edge-adapter/pkg/internal/mock/presentproof"
 	"github.com/trustbloc/edge-adapter/pkg/restapi/issuer/operation"
@@ -41,8 +43,10 @@ func TestNew(t *testing.T) {
 		}
 
 		controller, err := New(&operation.Config{
-			AriesCtx:      ariesCtx,
-			StoreProvider: memstore.NewProvider(),
+			AriesCtx:       ariesCtx,
+			StoreProvider:  memstore.NewProvider(),
+			MsgRegistrar:   msghandler.NewRegistrar(),
+			AriesMessenger: &messenger.MockMessenger{},
 		})
 		require.NoError(t, err)
 		require.NotNil(t, controller)

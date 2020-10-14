@@ -443,7 +443,7 @@ func TestAdapterModes(t *testing.T) {
 			dsnParams: &dsnParams{},
 		}
 
-		err := addIssuerHandlers(parameters, nil, nil, nil)
+		err := addIssuerHandlers(parameters, nil, nil, nil, nil)
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "failed to init storage provider : invalid dbURL")
 
