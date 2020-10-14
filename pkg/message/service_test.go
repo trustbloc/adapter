@@ -90,7 +90,6 @@ func TestDIDCommMsgListener(t *testing.T) {
 
 				require.Contains(t, didDoc.ID, "did:")
 				require.Equal(t, pMsg.Type, peerDIDDocResp)
-				require.Equal(t, pMsg.Purpose, []string{peerDIDDocRespPurpose})
 
 				done <- struct{}{}
 
@@ -102,9 +101,8 @@ func TestDIDCommMsgListener(t *testing.T) {
 		go c.didCommMsgListener(msgCh)
 
 		msgCh <- service.NewDIDCommMsgMap(DIDDocReq{
-			ID:      uuid.New().String(),
-			Type:    peerDIDDocReq,
-			Purpose: []string{peerDIDDocReqPurpose},
+			ID:   uuid.New().String(),
+			Type: peerDIDDocReq,
 		})
 
 		select {

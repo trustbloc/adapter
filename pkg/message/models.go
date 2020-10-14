@@ -10,17 +10,15 @@ import "encoding/json"
 
 // DIDDocReq model.
 type DIDDocReq struct {
-	ID      string   `json:"@id"`
-	Type    string   `json:"@type"`
-	Purpose []string `json:"~purpose"`
+	ID   string `json:"@id"`
+	Type string `json:"@type"`
 }
 
 // DIDDocResp model.
 type DIDDocResp struct {
-	ID      string          `json:"@id"`
-	Type    string          `json:"@type"`
-	Purpose []string        `json:"~purpose"`
-	Data    *DIDDocRespData `json:"data"`
+	ID   string          `json:"@id"`
+	Type string          `json:"@type"`
+	Data *DIDDocRespData `json:"data"`
 }
 
 // DIDDocRespData model for error data in DIDDocResp.

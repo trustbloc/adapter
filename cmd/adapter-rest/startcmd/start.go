@@ -25,10 +25,11 @@ import (
 	"github.com/hyperledger/aries-framework-go/pkg/client/outofband"
 	"github.com/hyperledger/aries-framework-go/pkg/client/presentproof"
 	arieslog "github.com/hyperledger/aries-framework-go/pkg/common/log"
+	"github.com/hyperledger/aries-framework-go/pkg/didcomm/messaging/msghandler"
 	arieshttp "github.com/hyperledger/aries-framework-go/pkg/didcomm/transport/http"
 	"github.com/hyperledger/aries-framework-go/pkg/framework/aries"
+	"github.com/hyperledger/aries-framework-go/pkg/framework/aries/api"
 	"github.com/hyperledger/aries-framework-go/pkg/framework/aries/defaults"
-	ariesctx "github.com/hyperledger/aries-framework-go/pkg/framework/context"
 	ariesstorage "github.com/hyperledger/aries-framework-go/pkg/storage"
 	ariesmem "github.com/hyperledger/aries-framework-go/pkg/storage/mem"
 	ariesmysql "github.com/hyperledger/aries-framework-go/pkg/storage/mysql"
@@ -42,7 +43,6 @@ import (
 	cmdutils "github.com/trustbloc/edge-core/pkg/utils/cmd"
 	tlsutils "github.com/trustbloc/edge-core/pkg/utils/tls"
 
-	ariespai "github.com/trustbloc/edge-adapter/pkg/aries"
 	"github.com/trustbloc/edge-adapter/pkg/did"
 	"github.com/trustbloc/edge-adapter/pkg/governance"
 	"github.com/trustbloc/edge-adapter/pkg/hydra"
@@ -582,27 +582,29 @@ func startAdapterService(parameters *adapterRestParameters, srv server) error {
 		router.HandleFunc(handler.Path(), handler.Handle()).Methods(handler.Method())
 	}
 
+	msgRegistrar := msghandler.NewRegistrar()
+
 	// add endpoints
 	switch parameters.mode {
 	case rpMode:
-		ariesCtx, err := createAriesAgent(parameters, &tls.Config{RootCAs: rootCAs, MinVersion: tls.VersionTLS12},
-			rpAdapterPersistentStorePrefix)
+		framework, err := createAriesAgent(parameters, &tls.Config{RootCAs: rootCAs, MinVersion: tls.VersionTLS12},
+			rpAdapterPersistentStorePrefix, msgRegistrar)
 		if err != nil {
 			return err
 		}
 
-		err = addRPHandlers(parameters, ariesCtx, router, rootCAs)
+		err = addRPHandlers(parameters, framework, router, rootCAs)
 		if err != nil {
 			return fmt.Errorf("failed to add rp-adapter handlers : %w", err)
 		}
 	case issuerMode:
-		ariesCtx, err := createAriesAgent(parameters, &tls.Config{RootCAs: rootCAs, MinVersion: tls.VersionTLS12},
-			issuerAdapterStorePrefix)
+		framework, err := createAriesAgent(parameters, &tls.Config{RootCAs: rootCAs, MinVersion: tls.VersionTLS12},
+			issuerAdapterStorePrefix, msgRegistrar)
 		if err != nil {
 			return err
 		}
 
-		err = addIssuerHandlers(parameters, ariesCtx, router, rootCAs)
+		err = addIssuerHandlers(parameters, framework, router, rootCAs, msgRegistrar)
 		if err != nil {
 			return fmt.Errorf("failed to add issuer-adapter handlers : %w", err)
 		}
@@ -621,7 +623,7 @@ func startAdapterService(parameters *adapterRestParameters, srv server) error {
 
 // nolint:funlen,gocyclo
 func addRPHandlers(
-	parameters *adapterRestParameters, ctx ariespai.CtxProvider, router *mux.Router, rootCAs *x509.CertPool) error {
+	parameters *adapterRestParameters, framework *aries.Aries, router *mux.Router, rootCAs *x509.CertPool) error {
 	presentationExProvider, err := getPresentationExchangeProvider(parameters.presentationDefinitionsFile)
 	if err != nil {
 		return err
@@ -630,6 +632,11 @@ func addRPHandlers(
 	hydraURL, err := url.Parse(parameters.hydraURL)
 	if err != nil {
 		return err
+	}
+
+	ctx, err := framework.Context()
+	if err != nil {
+		return fmt.Errorf("aries-framework - failed to get aries context : %w", err)
 	}
 
 	oobClient, err := outofband.New(ctx)
@@ -701,8 +708,8 @@ func addRPHandlers(
 	return nil
 }
 
-func addIssuerHandlers(parameters *adapterRestParameters, ariesCtx ariespai.CtxProvider, router *mux.Router,
-	rootCAs *x509.CertPool) error {
+func addIssuerHandlers(parameters *adapterRestParameters, framework *aries.Aries, router *mux.Router,
+	rootCAs *x509.CertPool, msgRegistrar *msghandler.Registrar) error {
 	store, err := initEdgeStore(parameters.dsnParams.dsn, parameters.dsnParams.timeout, issuerAdapterStorePrefix)
 	if err != nil {
 		return fmt.Errorf("failed to init storage provider : %w", err)
@@ -720,11 +727,18 @@ func addIssuerHandlers(parameters *adapterRestParameters, ariesCtx ariespai.CtxP
 		}
 	}
 
+	ariesCtx, err := framework.Context()
+	if err != nil {
+		return fmt.Errorf("aries-framework - failed to get aries context : %w", err)
+	}
+
 	// add issuer endpoints
 	issuerService, err := issuer.New(&issuerops.Config{
-		AriesCtx:      ariesCtx,
-		UIEndpoint:    uiEndpoint,
-		StoreProvider: store,
+		AriesCtx:       ariesCtx,
+		AriesMessenger: framework.Messenger(),
+		MsgRegistrar:   msgRegistrar,
+		UIEndpoint:     uiEndpoint,
+		StoreProvider:  store,
 		PublicDIDCreator: did.NewTrustblocDIDCreator(
 			parameters.trustblocDomain,
 			parameters.didCommParameters.inboundHostExternal,
@@ -902,7 +916,8 @@ func acceptsDID(method string) bool {
 	return method == "trustbloc"
 }
 
-func createAriesAgent(parameters *adapterRestParameters, tlsConfig *tls.Config, dbPrefix string) (*ariesctx.Provider, error) { // nolint:lll
+func createAriesAgent(parameters *adapterRestParameters, tlsConfig *tls.Config, dbPrefix string,
+	msgRegistrar api.MessageServiceProvider) (*aries.Aries, error) {
 	var opts []aries.Option
 
 	if parameters.didCommParameters.inboundHostInternal == "" {
@@ -921,14 +936,10 @@ func createAriesAgent(parameters *adapterRestParameters, tlsConfig *tls.Config, 
 		"",
 	)
 
-	opts = append(opts, inboundTransportOpt)
-
 	outbound, err := arieshttp.NewOutbound(arieshttp.WithOutboundTLSConfig(tlsConfig))
 	if err != nil {
 		return nil, fmt.Errorf("aries-framework - failed to create outbound tranpsort opts : %w", err)
 	}
-
-	opts = append(opts, aries.WithOutboundTransports(outbound))
 
 	if parameters.universalResolverURL != "" {
 		universalResolverVDRI, resErr := httpbinding.New(parameters.universalResolverURL,
@@ -945,19 +956,20 @@ func createAriesAgent(parameters *adapterRestParameters, tlsConfig *tls.Config, 
 		return nil, fmt.Errorf("failed to init edge storage: %w", err)
 	}
 
-	opts = append(opts, aries.WithStoreProvider(store), aries.WithProtocolStateStoreProvider(tStore))
+	opts = append(opts,
+		inboundTransportOpt,
+		aries.WithOutboundTransports(outbound),
+		aries.WithStoreProvider(store),
+		aries.WithProtocolStateStoreProvider(tStore),
+		aries.WithMessageServiceProvider(msgRegistrar),
+	)
 
 	framework, err := aries.New(opts...)
 	if err != nil {
 		return nil, fmt.Errorf("aries-framework - failed to initialize framework : %w", err)
 	}
 
-	ctx, err := framework.Context()
-	if err != nil {
-		return nil, fmt.Errorf("aries-framework - failed to get aries context : %w", err)
-	}
-
-	return ctx, nil
+	return framework, nil
 }
 
 func getPresentationExchangeProvider(configFile string) (*presentationex.Provider, error) {
