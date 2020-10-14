@@ -658,7 +658,7 @@ func addRPHandlers(
 		var errNew error
 
 		governanceProv, errNew = newGovernanceProvider(parameters.governanceVCSURL, rootCAs, store,
-			parameters.requestTokens)
+			parameters.requestTokens, parameters.trustblocDomain)
 		if errNew != nil {
 			return errNew
 		}
@@ -714,7 +714,7 @@ func addIssuerHandlers(parameters *adapterRestParameters, ariesCtx ariespai.CtxP
 		var errNew error
 
 		governanceProv, errNew = newGovernanceProvider(parameters.governanceVCSURL, rootCAs, store,
-			parameters.requestTokens)
+			parameters.requestTokens, parameters.trustblocDomain)
 		if errNew != nil {
 			return errNew
 		}
@@ -754,9 +754,9 @@ func addIssuerHandlers(parameters *adapterRestParameters, ariesCtx ariespai.CtxP
 }
 
 func newGovernanceProvider(governanceVCSURL string, rootCAs *x509.CertPool,
-	store storage.Provider, requestTokens map[string]string) (*governance.Provider, error) {
+	store storage.Provider, requestTokens map[string]string, domain string) (*governance.Provider, error) {
 	return governance.New(governanceVCSURL, &tls.Config{RootCAs: rootCAs}, store,
-		requestTokens)
+		requestTokens, domain)
 }
 
 func uiHandler(
