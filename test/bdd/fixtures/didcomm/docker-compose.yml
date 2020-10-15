@@ -20,6 +20,7 @@ services:
       - ARIESD_DATABASE_PREFIX=aries_wallet
       - ARIESD_DEFAULT_LABEL=aries-wallet
       - ARIESD_HTTP_RESOLVER=trustbloc@http://did.rest.example.com:8072/1.0/identifiers
+      - ARIESD_WEBHOOK_URL=http://wallet-webhook-mock.example.com:${WALLET_WEBHOOK_PORT}
     ports:
       - ${WALLET_AGENT_INBOUND_PORT}:${WALLET_AGENT_INBOUND_PORT}
       - ${WALLET_AGENT_API_PORT}:${WALLET_AGENT_API_PORT}
@@ -28,6 +29,18 @@ services:
       adapter-rest_bdd_net:
         aliases:
           - wallet.mock.example.com
+
+  wallet-webhook-mock.example.com:
+    container_name: wallet-webhook-mock.example.com
+    image: ${MOCK_WEBHOOK_IMAGE}:${MOCK_WEBHOOK_IMAGE_TAG}
+    environment:
+      - WEBHOOK_PORT=${WALLET_WEBHOOK_PORT}
+    ports:
+      - ${WALLET_WEBHOOK_PORT}:${WALLET_WEBHOOK_PORT}
+    networks:
+      adapter-rest_bdd_net:
+        aliases:
+          - wallet-webhook-mock.example.com
 
   issuer.adapter.mock.example.com:
     container_name: issuer.adapter.mock.example.com

@@ -9,7 +9,8 @@ DOCKER_OUTPUT_NS   ?= docker.pkg.github.com
 ADAPTER_REST_BASE_IMAGE_NAME ?= trustbloc/edge-adapter/adapter-rest-base
 ISSUER_ADAPTER_REST_IMAGE_NAME   ?= trustbloc/edge-adapter/issuer-adapter-rest
 RP_ADAPTER_REST_IMAGE_NAME   ?= trustbloc/edge-adapter/rp-adapter-rest
-MOCK_ISSUER_IMAGE_NAME ?= mock-issuer
+MOCK_ISSUER_IMAGE_NAME ?= trustbloc/edge-adapter/mock-issuer
+MOCK_WEBHOOK_IMAGE_NAME ?= trustbloc/edge-adapter/mock-webhook
 
 # Tool commands (overridable)
 ALPINE_VER ?= 3.12
@@ -77,7 +78,7 @@ unit-test:
 	@scripts/check_unit.sh
 
 .PHONY: bdd-test
-bdd-test: clean rp-adapter-rest-docker issuer-adapter-rest-docker mock-issuer-docker generate-test-config generate-test-keys
+bdd-test: clean rp-adapter-rest-docker issuer-adapter-rest-docker mock-issuer-docker mock-webhook-docker generate-test-config generate-test-keys
 	@scripts/check_integration.sh
 
 .PHONY: generate-test-config
@@ -96,12 +97,27 @@ generate-test-keys: clean
 mock-issuer:
 	@echo "Building mock issuer server"
 	@mkdir -p ./.build/bin
-	@go build -o ./.build/bin/issuer-server test/bdd/cmd/issuer/main.go
+	@go build -o ./.build/bin/issuer-server test/mock/cmd/issuer/main.go
 
 .PHONY: mock-issuer-docker
 mock-issuer-docker:
 	@echo "Building mock issuer server docker image"
-	@docker build -f ./images/mock/issuer/Dockerfile --no-cache -t $(DOCKER_OUTPUT_NS)/$(MOCK_ISSUER_IMAGE_NAME):latest \
+	@docker build -f ./test/mock/images/issuer/Dockerfile --no-cache -t $(DOCKER_OUTPUT_NS)/$(MOCK_ISSUER_IMAGE_NAME):latest \
+	--build-arg GO_VER=$(GO_VER) \
+	--build-arg ALPINE_VER=$(ALPINE_VER) \
+	--build-arg GO_TAGS=$(GO_TAGS) \
+	--build-arg GOPROXY=$(GOPROXY) .
+
+.PHONY: mock-webhook
+mock-webhook:
+	@echo "Building mock webhook server"
+	@mkdir -p ./build/bin
+	@go build -o ./build/bin/webhook-server test/mock/cmd/webhook/main.go
+
+.PHONY: mock-webhook-docker
+mock-webhook-docker:
+	@echo "Building mock webhook server docker image"
+	@docker build -f ./test/mock/images/webhook/Dockerfile --no-cache -t $(DOCKER_OUTPUT_NS)/$(MOCK_WEBHOOK_IMAGE_NAME):latest \
 	--build-arg GO_VER=$(GO_VER) \
 	--build-arg ALPINE_VER=$(ALPINE_VER) \
 	--build-arg GO_TAGS=$(GO_TAGS) \
