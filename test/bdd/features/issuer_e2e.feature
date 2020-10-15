@@ -8,10 +8,13 @@
 @issuer_adapter
 Feature: Issuer Adapter e2e
 
+  Background: Setup External Agent
+    Given "Wallet" agent is running on "localhost" port "9081" with webhook "http://localhost:9083" and controller "http://localhost:9082"
+
+  @issuer_adapter_core
   Scenario Outline: Issuer adapter features
     Given Issuer Profile with id "<profileID>", name "<profileName>", issuerURL "<issuerURL>", supportedVCContexts "<supportedVCContexts>" and supportsAssuranceCred "<supportsAssuranceCred>"
     And   Retrieved profile with id "<profileID>" contains name "<profileName>", issuerURL "<issuerURL>", supportedVCContexts "<supportedVCContexts>" and supportsAssuranceCred "<supportsAssuranceCred>"
-    Given "Wallet" agent is running on "localhost" port "9081" with controller "http://localhost:9082"
     Then  Issuer adapter shows the wallet connect UI when the issuer "<profileID>" wants to connect to the wallet
     And   Issuer adapter ("<profileID>") creates DIDComm connection invitation for "Wallet"
     ## Mocking CHAPI flow here
@@ -25,3 +28,14 @@ Feature: Issuer Adapter e2e
       | prCard          | PRCard Issuer                         | http://issuer.example.com:9080/prCard             | https://w3id.org/citizenship/v3                                                      | false                   | PermanentResidentCard   |                   |
       | creditCard      | CreditCard Issuer                     | http://issuer.example.com:9080/creditCard         | https://trustbloc.github.io/context/vc/examples/credit-card-v1.jsonld                | false                   | CreditCardStatement     |                   |
       | driversLicense  | Drivers License wth Evidence Issuer   | http://issuer.example.com:9080/driversLicense     | https://trustbloc.github.io/context/vc/examples/driver-license-evidence-v1.jsonld    | true                    | DrivingLicenseEvidence  | mDL               |
+
+  @issuer_adapter_routing
+  Scenario: Blinded Routing
+    Given Issuer Profile with id "profileBlindedRouting", name "Blinded Routing", issuerURL "http://issuer.example.com:9080/prCard", supportedVCContexts "https://w3id.org/citizenship/v3 " and supportsAssuranceCred "false"
+    And   Retrieved profile with id "profileBlindedRouting" contains name "Blinded Routing", issuerURL "http://issuer.example.com:9080/prCard", supportedVCContexts "https://w3id.org/citizenship/v3" and supportsAssuranceCred "false"
+    Then  Issuer adapter shows the wallet connect UI when the issuer "profileBlindedRouting" wants to connect to the wallet
+    And   Issuer adapter ("profileBlindedRouting") creates DIDComm connection invitation for "Wallet"
+    Then  "Wallet" with blinded routing support receives the DIDConnect request from Issuer adapter ("profileBlindedRouting")
+    # TODO wallet asks to create connection with issuers by sending peerDIDDoc to router
+    # TODO wallet sends routers peerDIDDoc to issuer
+    # TODO wallet responds to issuer DIDConnect request

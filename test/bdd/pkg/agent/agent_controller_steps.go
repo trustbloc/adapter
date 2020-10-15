@@ -28,12 +28,14 @@ import (
 	didexcmd "github.com/hyperledger/aries-framework-go/pkg/controller/command/didexchange"
 	issuecredcmd "github.com/hyperledger/aries-framework-go/pkg/controller/command/issuecredential"
 	kmscmd "github.com/hyperledger/aries-framework-go/pkg/controller/command/kms"
+	"github.com/hyperledger/aries-framework-go/pkg/controller/command/messaging"
 	oobcmd "github.com/hyperledger/aries-framework-go/pkg/controller/command/outofband"
 	presentproofcmd "github.com/hyperledger/aries-framework-go/pkg/controller/command/presentproof"
 	vdricmd "github.com/hyperledger/aries-framework-go/pkg/controller/command/vdri"
 	verifiablecmd "github.com/hyperledger/aries-framework-go/pkg/controller/command/verifiable"
 	kms2 "github.com/hyperledger/aries-framework-go/pkg/controller/rest/kms"
 	"github.com/hyperledger/aries-framework-go/pkg/controller/rest/vdri"
+	"github.com/hyperledger/aries-framework-go/pkg/didcomm/common/service"
 	"github.com/hyperledger/aries-framework-go/pkg/didcomm/protocol/decorator"
 	issuecredsvc "github.com/hyperledger/aries-framework-go/pkg/didcomm/protocol/issuecredential"
 	presentproofsvc "github.com/hyperledger/aries-framework-go/pkg/didcomm/protocol/presentproof"
@@ -45,6 +47,7 @@ import (
 	"github.com/hyperledger/aries-framework-go/pkg/kms"
 	"github.com/trustbloc/edge-core/pkg/log"
 
+	msgsvc "github.com/trustbloc/edge-adapter/pkg/message"
 	issuerops "github.com/trustbloc/edge-adapter/pkg/restapi/issuer/operation"
 	adaptervc "github.com/trustbloc/edge-adapter/pkg/vc"
 	"github.com/trustbloc/edge-adapter/pkg/vc/issuer"
@@ -60,7 +63,7 @@ const (
 	createOOBInvPath = oobOperationID + "/create-invitation"
 
 	connOperationID      = "/connections"
-	connectionsByIDPath  = connOperationID + "/{id}"
+	connectionsByIDPath  = connOperationID + "/%s"
 	createConnectionPath = connOperationID + "/create"
 
 	issueCredOperationID = "/issuecredential"
@@ -81,6 +84,18 @@ const (
 	verifiableOperationID    = "/verifiable"
 	signCredentialPath       = verifiableOperationID + "/signcredential"
 	generatePresentationPath = verifiableOperationID + "/presentation/generate"
+
+	// msg service paths.
+	msgServiceOperationID = "/message"
+	msgServiceList        = msgServiceOperationID + "/services"
+	registerMsgService    = msgServiceOperationID + "/register-service"
+	unregisterMsgService  = msgServiceOperationID + "/unregister-service"
+	sendNewMsg            = msgServiceOperationID + "/send"
+
+	// webhook.
+	checkForTopics               = "/checktopics"
+	pullTopicsWaitInMilliSec     = 200
+	pullTopicsAttemptsBeforeFail = 500 / pullTopicsWaitInMilliSec
 
 	governanceCtx       = "https://trustbloc.github.io/context/governance/context.jsonld"
 	governanceVCCTXSize = 3
@@ -114,12 +129,15 @@ func NewSteps(ctx *context.BDDContext) *Steps {
 func (a *Steps) RegisterSteps(s *godog.Suite) {
 	s.Step(`^"([^"]*)" agent is running on "([^"]*)" port "([^"]*)" with controller "([^"]*)"$`,
 		a.ValidateAgentConnection)
+	s.Step(`^"([^"]*)" agent is running on "([^"]*)" port "([^"]*)" with webhook "([^"]*)" and controller "([^"]*)"$`,
+		a.validateAgentConnectionWithWebhook)
 	s.Step(`^"([^"]*)" validates the supportedVCContexts "([^"]*)" in connect request from Issuer adapter \("([^"]*)"\) along with primary credential type "([^"]*)" in case of supportsAssuranceCred "([^"]*)" and responds within "([^"]*)" seconds$`, // nolint: lll
 		a.handleDIDCommConnectRequest)
 	s.Step(`^"([^"]*)" sends request credential message and receives credential from the issuer \("([^"]*)"\)$`,
 		a.fetchCredential)
 	s.Step(`^"([^"]*)" sends present proof request message to the the issuer \("([^"]*)"\) and validates that the vc inside vp contains type "([^"]*)" along with supportsAssuranceCred "([^"]*)" validation$`, // nolint: lll
 		a.fetchPresentation)
+	s.Step(`^"([^"]*)" with blinded routing support receives the DIDConnect request from Issuer adapter \("([^"]*)"\)$`, a.didConnectReqWithRouting) // nolint: lll
 }
 
 // ValidateAgentConnection checks if the controller agent is running.
@@ -139,6 +157,27 @@ func (a *Steps) ValidateAgentConnection(agentID, inboundHost, inboundPort, contr
 	return nil
 }
 
+func (a *Steps) validateAgentConnectionWithWebhook(agentID, inboundHost,
+	inboundPort, webhookURL, controllerURL string) error {
+	if err := a.checkAgentIsRunning(agentID, controllerURL); err != nil {
+		return err
+	}
+
+	// verify inbound
+	if err := a.healthCheck(fmt.Sprintf("http://%s:%s", inboundHost, inboundPort)); err != nil {
+		logger.Debugf("Unable to reach inbound '%s' for agent '%s', cause : %s", controllerURL, agentID, err)
+		return err
+	}
+
+	if err := a.checkWebhookIsRunning(agentID, webhookURL); err != nil {
+		return err
+	}
+
+	logger.Debugf("Agent '%s' running inbound on '%s' and port '%s'", agentID, inboundHost, inboundPort)
+
+	return nil
+}
+
 func (a *Steps) checkAgentIsRunning(agentID, controllerURL string) error {
 	// verify controller
 	err := a.healthCheck(controllerURL)
@@ -150,6 +189,21 @@ func (a *Steps) checkAgentIsRunning(agentID, controllerURL string) error {
 	logger.Debugf("Agent '%s' running controller '%s'", agentID, controllerURL)
 
 	a.ControllerURLs[agentID] = controllerURL
+
+	return nil
+}
+
+func (a *Steps) checkWebhookIsRunning(agentID, webhookURL string) error {
+	// verify controller
+	err := a.healthCheck(webhookURL)
+	if err != nil {
+		logger.Debugf("Unable to reach webhook '%s' for agent '%s', cause : %s", webhookURL, agentID, err)
+		return err
+	}
+
+	logger.Debugf("Agent '%s' running webhook '%s'", agentID, webhookURL)
+
+	a.WebhookURLs[agentID] = webhookURL
 
 	return nil
 }
@@ -267,6 +321,50 @@ func (a *Steps) handleDIDCommConnectRequest(agentID, supportedVCContexts, issuer
 	return nil
 }
 
+func (a *Steps) didConnectReqWithRouting(agentID, issuerID string) error {
+	didConnReq := a.bddContext.Store[bddutil.GetDIDConnectRequestKey(issuerID, agentID)]
+
+	request := &issuerops.CHAPIRequest{}
+
+	err := json.Unmarshal([]byte(didConnReq), request)
+	if err != nil {
+		return err
+	}
+
+	connectionID, err := a.AcceptOOBInvitation(agentID, request.DIDCommInvitation, issuerID)
+	if err != nil {
+		return err
+	}
+
+	err = validateConnection(a.ControllerURLs[agentID], connectionID, completedState)
+	if err != nil {
+		return err
+	}
+
+	// send request to adapter for fetching the peerDIDDoc
+	msgSvcName := uuid.New().String()
+
+	// register for message service
+	err = registerCreateConnMsgServices(a.ControllerURLs[agentID], msgSvcName)
+	if err != nil {
+		return err
+	}
+
+	// send message
+	err = sendDIDDocReq(a.ControllerURLs[agentID], connectionID)
+	if err != nil {
+		return fmt.Errorf("failed to send message : %w", err)
+	}
+
+	// get the response
+	_, err = getDIDDocResp(a.WebhookURLs[agentID], msgSvcName)
+	if err != nil {
+		return fmt.Errorf("parse adapter did document: %w", err)
+	}
+
+	return nil
+}
+
 // ValidateConnection retrieves the agent's connection record and tests whether its state is completed.
 func (a *Steps) ValidateConnection(agentID, connID string) (*didexchange.Connection, error) {
 	conn, err := a.getConnection(agentID, connID)
@@ -370,7 +468,7 @@ func (a *Steps) getConnection(agentID, connectionID string) (*didexchange.Connec
 	var response didexcmd.QueryConnectionResponse
 
 	err := sendHTTP(http.MethodGet,
-		destination+strings.Replace(connectionsByIDPath, "{id}", connectionID, 1), nil, &response)
+		destination+fmt.Sprintf(connectionsByIDPath, connectionID), nil, &response)
 	if err != nil {
 		logger.Errorf("Failed to perform receive invitation, cause : %s", err)
 		return nil, err
@@ -1191,4 +1289,214 @@ func sendHTTP(method, destination string, message []byte, result interface{}) er
 	}
 
 	return json.Unmarshal(data, result)
+}
+
+func registerCreateConnMsgServices(controllerURL, msgSvcName string) error {
+	// unregister all the msg services (to clear older data)
+	err := unregisterAllMsgServices(controllerURL)
+	if err != nil {
+		return err
+	}
+
+	// register create conn msg service
+	params := messaging.RegisterMsgSvcArgs{
+		Name: msgSvcName,
+		Type: "https://trustbloc.github.io/blinded-routing/1.0/diddoc-resp",
+	}
+
+	reqBytes, err := json.Marshal(params)
+	if err != nil {
+		return err
+	}
+
+	err = sendHTTP(http.MethodPost, controllerURL+registerMsgService, reqBytes, nil)
+	if err != nil {
+		return err
+	}
+
+	// verify if the msg service created successfully
+	result, err := getServicesList(controllerURL)
+	if err != nil {
+		return err
+	}
+
+	var found bool
+
+	for _, svcName := range result {
+		if svcName == msgSvcName {
+			found = true
+
+			break
+		}
+	}
+
+	if !found {
+		return fmt.Errorf("registered service not found : name=%s", msgSvcName)
+	}
+
+	return nil
+}
+
+func getServicesList(controllerURL string) ([]string, error) {
+	result := &messaging.RegisteredServicesResponse{}
+
+	err := sendHTTP(http.MethodGet, controllerURL+msgServiceList, nil, result)
+	if err != nil {
+		return nil, fmt.Errorf("get message service list : %w", err)
+	}
+
+	return result.Names, nil
+}
+
+func unregisterAllMsgServices(controllerURL string) error {
+	svcNames, err := getServicesList(controllerURL)
+	if err != nil {
+		return fmt.Errorf("unregister message services : %w", err)
+	}
+
+	for _, svcName := range svcNames {
+		params := messaging.UnregisterMsgSvcArgs{
+			Name: svcName,
+		}
+
+		reqBytes, err := json.Marshal(params)
+		if err != nil {
+			return err
+		}
+
+		err = sendHTTP(http.MethodPost, controllerURL+unregisterMsgService, reqBytes, nil)
+		if err != nil {
+			return fmt.Errorf("unregister message services : %w", err)
+		}
+	}
+
+	return nil
+}
+
+func sendDIDDocReq(controllerURL, connID string) error {
+	msg := &msgsvc.DIDDocReq{
+		ID:   uuid.New().String(),
+		Type: "https://trustbloc.github.io/blinded-routing/1.0/diddoc-req",
+	}
+
+	rawBytes, err := json.Marshal(msg)
+	if err != nil {
+		return fmt.Errorf("failed to get raw message bytes:  %w", err)
+	}
+
+	request := &messaging.SendNewMessageArgs{
+		ConnectionID: connID,
+		MessageBody:  rawBytes,
+	}
+
+	reqBytes, err := json.Marshal(request)
+	if err != nil {
+		return err
+	}
+
+	// call controller to send message
+	err = sendHTTP(http.MethodPost, controllerURL+sendNewMsg, reqBytes, nil)
+	if err != nil {
+		return fmt.Errorf("failed to send message : %w", err)
+	}
+
+	return nil
+}
+
+func getDIDDocResp(controllerURL, msgSvcName string) (*did.Doc, error) {
+	webhookMsg, err := pullMsgFromWebhookURL(controllerURL, msgSvcName)
+	if err != nil {
+		return nil, fmt.Errorf("failed to pull incoming message from webhook : %w", err)
+	}
+
+	// validate the response
+	var message struct {
+		Message msgsvc.DIDDocResp `json:"message"`
+	}
+
+	err = webhookMsg.Decode(&message)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read message: %w", err)
+	}
+
+	if message.Message.Data == nil {
+		return nil, errors.New("no data received from the adapter")
+	}
+
+	if message.Message.Data.ErrorMsg != "" {
+		return nil, fmt.Errorf("error received from the route : %s", message.Message.Data.ErrorMsg)
+	}
+
+	if message.Message.Data.DIDDoc == nil {
+		return nil, errors.New("no did document received from the adapter")
+	}
+
+	doc, err := did.ParseDocument(message.Message.Data.DIDDoc)
+	if err != nil {
+		return nil, fmt.Errorf("parse adapter did document: %w", err)
+	}
+
+	return doc, nil
+}
+
+func validateConnection(controllerURL, connID, state string) error {
+	const (
+		sleep      = 1 * time.Second
+		numRetries = 30
+	)
+
+	return backoff.RetryNotify(
+		func() error {
+			var openErr error
+
+			var result didexcmd.QueryConnectionResponse
+			if err := sendHTTP(http.MethodGet, controllerURL+fmt.Sprintf(connectionsByIDPath, connID),
+				nil, &result); err != nil {
+				return err
+			}
+
+			if result.Result.State != state {
+				return fmt.Errorf("expected=%s actual=%s", state, result.Result.State)
+			}
+
+			return openErr
+		},
+		backoff.WithMaxRetries(backoff.NewConstantBackOff(sleep), uint64(numRetries)),
+		func(retryErr error, t time.Duration) {
+			logger.Warnf(
+				"validate connection : sleeping for %s before trying again : %s\n",
+				t, retryErr)
+		},
+	)
+}
+
+func pullMsgFromWebhookURL(webhookURL, topic string) (*service.DIDCommMsgMap, error) {
+	var incoming struct {
+		ID      string                `json:"id"`
+		Topic   string                `json:"topic"`
+		Message service.DIDCommMsgMap `json:"message"`
+	}
+
+	// try to pull recently pushed topics from webhook
+	for i := 0; i < pullTopicsAttemptsBeforeFail; {
+		err := sendHTTP(http.MethodGet, webhookURL+checkForTopics,
+			nil, &incoming)
+		if err != nil {
+			return nil, fmt.Errorf("failed pull topics from webhook, cause : %w", err)
+		}
+
+		if incoming.Topic != topic {
+			continue
+		}
+
+		if len(incoming.Message) > 0 {
+			return &incoming.Message, nil
+		}
+
+		i++
+
+		time.Sleep(pullTopicsWaitInMilliSec * time.Millisecond)
+	}
+
+	return nil, fmt.Errorf("exhausted all [%d] attempts to pull topic from webhook", pullTopicsAttemptsBeforeFail)
 }
