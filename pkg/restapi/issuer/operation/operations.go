@@ -163,6 +163,7 @@ func New(config *Config) (*Operation, error) { // nolint:funlen
 		MsgRegistrar:      config.MsgRegistrar,
 		DIDExchangeClient: didExClient,
 		ServiceEndpoint:   config.AriesCtx.ServiceEndpoint(),
+		TransientStore:    config.StoreProvider,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("create message service : %w", err)
