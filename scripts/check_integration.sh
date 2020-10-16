@@ -7,7 +7,6 @@
 set -e
 
 declare -a tests=(
-   "healthcheck"
    "issuer_adapter"
    "rp_adapter"
 )

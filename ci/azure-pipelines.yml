@@ -42,7 +42,7 @@ jobs:
     pool:
       vmImage: ubuntu-18.04
     strategy:
-      parallel: 3
+      parallel: 2
     timeoutInMinutes: 30
     steps:
       - template: azp-dependencies.yml
