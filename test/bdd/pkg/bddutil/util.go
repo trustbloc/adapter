@@ -12,14 +12,17 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"io/ioutil"
 	"net/http"
 	"strings"
 	"time"
 
 	docdid "github.com/hyperledger/aries-framework-go/pkg/doc/did"
 	vdriapi "github.com/hyperledger/aries-framework-go/pkg/framework/aries/api/vdri"
-	log "github.com/sirupsen/logrus"
+	"github.com/trustbloc/edge-core/pkg/log"
 )
+
+var logger = log.New("hub-router/bddutil")
 
 // HTTPDo util to send http requests.
 func HTTPDo(method, url, contentType, token string, body io.Reader, tlsConfig *tls.Config) (*http.Response, error) {
@@ -51,7 +54,7 @@ func ExpectedStatusCodeError(expected, actual int, respBytes []byte) error {
 func CloseResponseBody(respBody io.Closer) {
 	err := respBody.Close()
 	if err != nil {
-		log.Errorf("Failed to close response body: %s", err.Error())
+		logger.Errorf("Failed to close response body: %s", err.Error())
 	}
 }
 
@@ -117,4 +120,42 @@ func StringsContains(val string, slice []string) bool {
 	}
 
 	return false
+}
+
+// SendHTTP util to send http requests.
+func SendHTTP(method, destination string, message []byte, result interface{}) error {
+	// create request
+	req, err := http.NewRequest(method, destination, bytes.NewBuffer(message))
+	if err != nil {
+		return fmt.Errorf("failed to create new http '%s' request for '%s', cause: %s", method, destination, err)
+	}
+
+	// set headers
+	req.Header.Set("Content-Type", "application/json")
+
+	// send http request
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return fmt.Errorf("failed to get response from '%s', cause :%s", destination, err)
+	}
+
+	defer CloseResponseBody(resp.Body)
+
+	data, err := ioutil.ReadAll(resp.Body)
+	if err != nil {
+		return fmt.Errorf("unable to read response from '%s', cause :%s", destination, err)
+	}
+
+	logger.Debugf("Got response from '%s' [method: %s], response payload: %s", destination, method, string(data))
+
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("failed to get successful response from '%s', unexpected status code [%d], "+
+			"and message [%s]", destination, resp.StatusCode, string(data))
+	}
+
+	if result == nil {
+		return nil
+	}
+
+	return json.Unmarshal(data, result)
 }

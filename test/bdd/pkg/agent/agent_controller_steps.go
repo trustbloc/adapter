@@ -7,12 +7,10 @@ SPDX-License-Identifier: Apache-2.0
 package agent
 
 import (
-	"bytes"
 	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io/ioutil"
 	"net/http"
 	"strconv"
 	"strings"
@@ -28,7 +26,6 @@ import (
 	didexcmd "github.com/hyperledger/aries-framework-go/pkg/controller/command/didexchange"
 	issuecredcmd "github.com/hyperledger/aries-framework-go/pkg/controller/command/issuecredential"
 	kmscmd "github.com/hyperledger/aries-framework-go/pkg/controller/command/kms"
-	"github.com/hyperledger/aries-framework-go/pkg/controller/command/messaging"
 	oobcmd "github.com/hyperledger/aries-framework-go/pkg/controller/command/outofband"
 	presentproofcmd "github.com/hyperledger/aries-framework-go/pkg/controller/command/presentproof"
 	vdricmd "github.com/hyperledger/aries-framework-go/pkg/controller/command/vdri"
@@ -47,7 +44,6 @@ import (
 	"github.com/hyperledger/aries-framework-go/pkg/kms"
 	"github.com/trustbloc/edge-core/pkg/log"
 
-	msgsvc "github.com/trustbloc/edge-adapter/pkg/message"
 	issuerops "github.com/trustbloc/edge-adapter/pkg/restapi/issuer/operation"
 	adaptervc "github.com/trustbloc/edge-adapter/pkg/vc"
 	"github.com/trustbloc/edge-adapter/pkg/vc/issuer"
@@ -85,13 +81,6 @@ const (
 	signCredentialPath       = verifiableOperationID + "/signcredential"
 	generatePresentationPath = verifiableOperationID + "/presentation/generate"
 
-	// msg service paths.
-	msgServiceOperationID = "/message"
-	msgServiceList        = msgServiceOperationID + "/services"
-	registerMsgService    = msgServiceOperationID + "/register-service"
-	unregisterMsgService  = msgServiceOperationID + "/unregister-service"
-	sendNewMsg            = msgServiceOperationID + "/send"
-
 	// webhook.
 	checkForTopics               = "/checktopics"
 	pullTopicsWaitInMilliSec     = 200
@@ -101,7 +90,7 @@ const (
 	governanceVCCTXSize = 3
 )
 
-var logger = log.New("edge-adapter/tests")
+var logger = log.New("edge-adapter/agent")
 
 // Steps contains steps for aries agent.
 type Steps struct {
@@ -421,7 +410,7 @@ func (a *Steps) createInvitation(agent string) (*outofband.Invitation, error) {
 
 	var resp oobcmd.CreateInvitationResponse
 
-	err = sendHTTP(http.MethodPost, destination+createOOBInvPath, request, &resp)
+	err = bddutil.SendHTTP(http.MethodPost, destination+createOOBInvPath, request, &resp)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create invitation, cause : %s", err)
 	}
@@ -446,7 +435,7 @@ func (a *Steps) AcceptOOBInvitation(agentID string, invitation *outofband.Invita
 
 	var result oobcmd.AcceptInvitationResponse
 
-	err = sendHTTP(http.MethodPost, destination+acceptOOBInvPath, request, &result)
+	err = bddutil.SendHTTP(http.MethodPost, destination+acceptOOBInvPath, request, &result)
 	if err != nil {
 		return "", fmt.Errorf("'%s' failed to accept oob invitation : %w", agentID, err)
 	}
@@ -467,7 +456,7 @@ func (a *Steps) getConnection(agentID, connectionID string) (*didexchange.Connec
 	// call controller
 	var response didexcmd.QueryConnectionResponse
 
-	err := sendHTTP(http.MethodGet,
+	err := bddutil.SendHTTP(http.MethodGet,
 		destination+fmt.Sprintf(connectionsByIDPath, connectionID), nil, &response)
 	if err != nil {
 		logger.Errorf("Failed to perform receive invitation, cause : %s", err)
@@ -486,7 +475,7 @@ func (a *Steps) GetConnectionBetweenAgents(agentA, agentB string) (*didexchange.
 
 	var resp didexcmd.QueryConnectionsResponse
 
-	err := sendHTTP(http.MethodGet, destination+connOperationID, nil, &resp)
+	err := bddutil.SendHTTP(http.MethodGet, destination+connOperationID, nil, &resp)
 	if err != nil {
 		return nil, fmt.Errorf("%s failed to query connection records : %w", agentA, err)
 	}
@@ -526,7 +515,7 @@ func (a *Steps) CreateConnection(agent, myDID, label string, theirDID *did.Doc) 
 
 	var resp didexcmd.ConnectionIDArg
 
-	err = sendHTTP(http.MethodPost, destination+createConnectionPath, request, &resp)
+	err = bddutil.SendHTTP(http.MethodPost, destination+createConnectionPath, request, &resp)
 	if err != nil {
 		return "", fmt.Errorf("%s failed to create connection : %w", agent, err)
 	}
@@ -583,7 +572,7 @@ func (a *Steps) fetchCredential(agentID, issuerID string) error { // nolint: fun
 		return fmt.Errorf("failed marshal issue-credential send request : %w", err)
 	}
 
-	err = sendHTTP(http.MethodPost, controllerURL+sendCredRequest, reqBytes, nil)
+	err = bddutil.SendHTTP(http.MethodPost, controllerURL+sendCredRequest, reqBytes, nil)
 	if err != nil {
 		return fmt.Errorf("[issue-credential] failed to send request : %w", err)
 	}
@@ -710,7 +699,7 @@ func (a *Steps) ResolveDID(agent, didID string) (*did.Doc, error) {
 
 	var resp vdricmd.Document
 
-	err := sendHTTP(http.MethodGet, destination, nil, &resp)
+	err := bddutil.SendHTTP(http.MethodGet, destination, nil, &resp)
 	if err != nil {
 		return nil, fmt.Errorf("%s failed to fetch did=%s : %w", agent, didID, err)
 	}
@@ -740,7 +729,7 @@ func (a *Steps) SaveDID(agent, friendlyName string, d *did.Doc) error {
 
 	requestURL := a.ControllerURLs[agent] + vdri.SaveDIDPath
 
-	err = sendHTTP(http.MethodPost, requestURL, request, nil)
+	err = bddutil.SendHTTP(http.MethodPost, requestURL, request, nil)
 	if err != nil {
 		return fmt.Errorf("failed to save did at url %s: %w", requestURL, err)
 	}
@@ -781,7 +770,8 @@ func (a *Steps) AcceptRequestPresentation(agent string, presentation *verifiable
 
 	acceptRequestURL := fmt.Sprintf(destination+acceptRequestPresentation, piid)
 
-	return sendHTTP(http.MethodPost, acceptRequestURL, request, &presentproofcmd.AcceptRequestPresentationResponse{})
+	return bddutil.SendHTTP(http.MethodPost, acceptRequestURL, request,
+		&presentproofcmd.AcceptRequestPresentationResponse{})
 }
 
 // SignCredential signs the credential.
@@ -806,7 +796,7 @@ func (a *Steps) SignCredential(agent, signingDID string, cred *verifiable.Creden
 
 	response := &verifiablecmd.SignCredentialResponse{}
 
-	err = sendHTTP(http.MethodPost, destination+signCredentialPath, request, response)
+	err = bddutil.SendHTTP(http.MethodPost, destination+signCredentialPath, request, response)
 	if err != nil {
 		return nil, fmt.Errorf("'%s' failed to sign credential: %w", agent, err)
 	}
@@ -862,7 +852,7 @@ func (a *Steps) GeneratePresentation(agent, signingDID, verificationMethod strin
 
 	response := &verifiablecmd.Presentation{}
 
-	err = sendHTTP(http.MethodPost, destinationURL+generatePresentationPath, request, response)
+	err = bddutil.SendHTTP(http.MethodPost, destinationURL+generatePresentationPath, request, response)
 	if err != nil {
 		return nil, fmt.Errorf("'%s' failed to generate their own presentation: %w", agent, err)
 	}
@@ -887,7 +877,7 @@ func (a *Steps) CreateKey(agent string, t kms.KeyType) (id string, key []byte, e
 
 	response := &kmscmd.CreateKeySetResponse{}
 
-	err = sendHTTP(http.MethodPost, requestURL, request, response)
+	err = bddutil.SendHTTP(http.MethodPost, requestURL, request, response)
 	if err != nil {
 		return "", nil, fmt.Errorf("failed to execute createKeySet request to %s: %w", requestURL, err)
 	}
@@ -919,7 +909,7 @@ func sendPresentationRequest(conn *didexchange.Connection, vp *verifiable.Presen
 		return err
 	}
 
-	err = sendHTTP(http.MethodPost, controllerURL+sendRequestPresentation, reqBytes, nil)
+	err = bddutil.SendHTTP(http.MethodPost, controllerURL+sendRequestPresentation, reqBytes, nil)
 	if err != nil {
 		return err
 	}
@@ -937,7 +927,7 @@ func acceptCredential(piid, credentialName, controllerURL string) error {
 		return fmt.Errorf("failed to perform approve request : %w", err)
 	}
 
-	err = sendHTTP(http.MethodPost, controllerURL+fmt.Sprintf(acceptCredentialPath, piid), reqBytes, nil)
+	err = bddutil.SendHTTP(http.MethodPost, controllerURL+fmt.Sprintf(acceptCredentialPath, piid), reqBytes, nil)
 	if err != nil {
 		return fmt.Errorf("failed to perform approve request : %w", err)
 	}
@@ -966,7 +956,7 @@ func getCredential(credentialName, controllerURL string, vdriReg vdriapi.Registr
 			Name string `json:"name"`
 		}
 
-		err = sendHTTP(http.MethodGet,
+		err = bddutil.SendHTTP(http.MethodGet,
 			fmt.Sprintf("%s/verifiable/credential/name/%s", controllerURL, credentialName), nil, &result)
 		if err != nil {
 			time.Sleep(retryDelay)
@@ -977,7 +967,7 @@ func getCredential(credentialName, controllerURL string, vdriReg vdriapi.Registr
 			VC string `json:"verifiableCredential"`
 		}
 
-		err = sendHTTP(http.MethodGet,
+		err = bddutil.SendHTTP(http.MethodGet,
 			fmt.Sprintf("%s/verifiable/credential/%s", controllerURL,
 				base64.StdEncoding.EncodeToString([]byte(result.ID))), nil, &getVCResp)
 		if err != nil {
@@ -1043,7 +1033,7 @@ func acceptPresentation(piid, presentationName, controllerURL string) error {
 		return err
 	}
 
-	err = sendHTTP(http.MethodPost, controllerURL+fmt.Sprintf(acceptPresentationPath, piid), acceptReqBytes, nil)
+	err = bddutil.SendHTTP(http.MethodPost, controllerURL+fmt.Sprintf(acceptPresentationPath, piid), acceptReqBytes, nil)
 	if err != nil {
 		return err
 	}
@@ -1065,7 +1055,7 @@ func validatePresentation(presentationName, controllerURL string) (string, error
 		}
 
 		var result verifiablecmd.RecordResult
-		if err := sendHTTP(http.MethodGet, controllerURL+"/verifiable/presentations", nil, &result); err != nil {
+		if err := bddutil.SendHTTP(http.MethodGet, controllerURL+"/verifiable/presentations", nil, &result); err != nil {
 			return "", err
 		}
 
@@ -1088,7 +1078,7 @@ func (a *Steps) validateIssuerVC(id, agentID, controllerURL, expectedScope strin
 	vdriReg vdriapi.Registry) error {
 	var vpResult verifiablecmd.Presentation
 
-	if err := sendHTTP(http.MethodGet,
+	if err := bddutil.SendHTTP(http.MethodGet,
 		controllerURL+"/verifiable/presentation/"+base64.StdEncoding.EncodeToString([]byte(id)),
 		nil, &vpResult); err != nil {
 		return err
@@ -1169,7 +1159,7 @@ func actionPIID(endpoint, urlPath string) (string, error) {
 			Actions []issuecredsvc.Action `json:"actions"`
 		}
 
-		err := sendHTTP(http.MethodGet, endpoint+urlPath, nil, &result)
+		err := bddutil.SendHTTP(http.MethodGet, endpoint+urlPath, nil, &result)
 		if err != nil {
 			return "", fmt.Errorf("failed to get action PIID: %w", err)
 		}
@@ -1254,191 +1244,6 @@ func getExtCreateConnKey(agentID string) string {
 	return agentID + "-ext"
 }
 
-func sendHTTP(method, destination string, message []byte, result interface{}) error {
-	// create request
-	req, err := http.NewRequest(method, destination, bytes.NewBuffer(message))
-	if err != nil {
-		return fmt.Errorf("failed to create new http '%s' request for '%s', cause: %s", method, destination, err)
-	}
-
-	// set headers
-	req.Header.Set("Content-Type", "application/json")
-
-	// send http request
-	resp, err := http.DefaultClient.Do(req) //nolint: bodyclose
-	if err != nil {
-		return fmt.Errorf("failed to get response from '%s', cause :%s", destination, err)
-	}
-
-	defer bddutil.CloseResponseBody(resp.Body)
-
-	data, err := ioutil.ReadAll(resp.Body)
-	if err != nil {
-		return fmt.Errorf("unable to read response from '%s', cause :%s", destination, err)
-	}
-
-	logger.Debugf("Got response from '%s' [method: %s], response payload: %s", destination, method, string(data))
-
-	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("failed to get successful response from '%s', unexpected status code [%d], "+
-			"and message [%s]", destination, resp.StatusCode, string(data))
-	}
-
-	if result == nil {
-		return nil
-	}
-
-	return json.Unmarshal(data, result)
-}
-
-func registerCreateConnMsgServices(controllerURL, msgSvcName string) error {
-	// unregister all the msg services (to clear older data)
-	err := unregisterAllMsgServices(controllerURL)
-	if err != nil {
-		return err
-	}
-
-	// register create conn msg service
-	params := messaging.RegisterMsgSvcArgs{
-		Name: msgSvcName,
-		Type: "https://trustbloc.github.io/blinded-routing/1.0/diddoc-resp",
-	}
-
-	reqBytes, err := json.Marshal(params)
-	if err != nil {
-		return err
-	}
-
-	err = sendHTTP(http.MethodPost, controllerURL+registerMsgService, reqBytes, nil)
-	if err != nil {
-		return err
-	}
-
-	// verify if the msg service created successfully
-	result, err := getServicesList(controllerURL)
-	if err != nil {
-		return err
-	}
-
-	var found bool
-
-	for _, svcName := range result {
-		if svcName == msgSvcName {
-			found = true
-
-			break
-		}
-	}
-
-	if !found {
-		return fmt.Errorf("registered service not found : name=%s", msgSvcName)
-	}
-
-	return nil
-}
-
-func getServicesList(controllerURL string) ([]string, error) {
-	result := &messaging.RegisteredServicesResponse{}
-
-	err := sendHTTP(http.MethodGet, controllerURL+msgServiceList, nil, result)
-	if err != nil {
-		return nil, fmt.Errorf("get message service list : %w", err)
-	}
-
-	return result.Names, nil
-}
-
-func unregisterAllMsgServices(controllerURL string) error {
-	svcNames, err := getServicesList(controllerURL)
-	if err != nil {
-		return fmt.Errorf("unregister message services : %w", err)
-	}
-
-	for _, svcName := range svcNames {
-		params := messaging.UnregisterMsgSvcArgs{
-			Name: svcName,
-		}
-
-		reqBytes, err := json.Marshal(params)
-		if err != nil {
-			return err
-		}
-
-		err = sendHTTP(http.MethodPost, controllerURL+unregisterMsgService, reqBytes, nil)
-		if err != nil {
-			return fmt.Errorf("unregister message services : %w", err)
-		}
-	}
-
-	return nil
-}
-
-func sendDIDDocReq(controllerURL, connID string) error {
-	msg := &msgsvc.DIDDocReq{
-		ID:   uuid.New().String(),
-		Type: "https://trustbloc.github.io/blinded-routing/1.0/diddoc-req",
-	}
-
-	rawBytes, err := json.Marshal(msg)
-	if err != nil {
-		return fmt.Errorf("failed to get raw message bytes:  %w", err)
-	}
-
-	request := &messaging.SendNewMessageArgs{
-		ConnectionID: connID,
-		MessageBody:  rawBytes,
-	}
-
-	reqBytes, err := json.Marshal(request)
-	if err != nil {
-		return err
-	}
-
-	// call controller to send message
-	err = sendHTTP(http.MethodPost, controllerURL+sendNewMsg, reqBytes, nil)
-	if err != nil {
-		return fmt.Errorf("failed to send message : %w", err)
-	}
-
-	return nil
-}
-
-func getDIDDocResp(controllerURL, msgSvcName string) (*did.Doc, error) {
-	webhookMsg, err := pullMsgFromWebhookURL(controllerURL, msgSvcName)
-	if err != nil {
-		return nil, fmt.Errorf("failed to pull incoming message from webhook : %w", err)
-	}
-
-	// validate the response
-	var message struct {
-		Message msgsvc.DIDDocResp `json:"message"`
-	}
-
-	err = webhookMsg.Decode(&message)
-	if err != nil {
-		return nil, fmt.Errorf("failed to read message: %w", err)
-	}
-
-	if message.Message.Data == nil {
-		return nil, errors.New("no data received from the adapter")
-	}
-
-	if message.Message.Data.ErrorMsg != "" {
-		return nil, fmt.Errorf("error received from the route : %s", message.Message.Data.ErrorMsg)
-	}
-
-	if message.Message.Data.DIDDoc == nil {
-		return nil, errors.New("no did document received from the adapter")
-	}
-
-	doc, err := did.ParseDocument(message.Message.Data.DIDDoc)
-	if err != nil {
-		return nil, fmt.Errorf("parse adapter did document: %w", err)
-	}
-
-	return doc, nil
-}
-
 func validateConnection(controllerURL, connID, state string) error {
 	const (
 		sleep      = 1 * time.Second
@@ -1450,7 +1255,7 @@ func validateConnection(controllerURL, connID, state string) error {
 			var openErr error
 
 			var result didexcmd.QueryConnectionResponse
-			if err := sendHTTP(http.MethodGet, controllerURL+fmt.Sprintf(connectionsByIDPath, connID),
+			if err := bddutil.SendHTTP(http.MethodGet, controllerURL+fmt.Sprintf(connectionsByIDPath, connID),
 				nil, &result); err != nil {
 				return err
 			}
@@ -1479,7 +1284,7 @@ func pullMsgFromWebhookURL(webhookURL, topic string) (*service.DIDCommMsgMap, er
 
 	// try to pull recently pushed topics from webhook
 	for i := 0; i < pullTopicsAttemptsBeforeFail; {
-		err := sendHTTP(http.MethodGet, webhookURL+checkForTopics,
+		err := bddutil.SendHTTP(http.MethodGet, webhookURL+checkForTopics,
 			nil, &incoming)
 		if err != nil {
 			return nil, fmt.Errorf("failed pull topics from webhook, cause : %w", err)
