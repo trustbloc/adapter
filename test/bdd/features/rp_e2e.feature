@@ -11,6 +11,11 @@ Feature: RP Adapter
     Given the "Mock Wallet" is running on "localhost" port "9081" with controller "http://localhost:9082"
     And the "Mock Issuer Adapter" is running on "localhost" port "10010" with controller "http://localhost:10011"
 
+  @rp_adapter_healthcheck
+  Scenario: RP adapter healthcheck
+    When an HTTP GET is sent to "https://localhost:8070/healthcheck"
+    Then the JSON path "status" of the response equals "success"
+
   Scenario: Register relying party
     When a request is sent to create an RP tenant with label "test-tenant" and scopes "credit_card_stmt:remote"
     Then the trustbloc DID of the tenant with label "test-tenant" is resolvable

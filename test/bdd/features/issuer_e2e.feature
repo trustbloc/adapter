@@ -11,6 +11,11 @@ Feature: Issuer Adapter e2e
   Background: Setup External Agent
     Given "Wallet" agent is running on "localhost" port "9081" with webhook "http://localhost:9083" and controller "http://localhost:9082"
 
+  @issuer_adapter_healthcheck
+  Scenario: Issuer adapter healthcheck
+    When an HTTP GET is sent to "https://localhost:9070/healthcheck"
+    Then the JSON path "status" of the response equals "success"
+
   @issuer_adapter_core
   Scenario Outline: Issuer adapter features
     Given Issuer Profile with id "<profileID>", name "<profileName>", issuerURL "<issuerURL>", supportedVCContexts "<supportedVCContexts>" and supportsAssuranceCred "<supportsAssuranceCred>"
