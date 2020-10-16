@@ -24,15 +24,15 @@ Feature: Issuer Adapter e2e
     ## Mocking RP present proof call here (wallet calls instead of RP here)
     Then  "Wallet" sends present proof request message to the the issuer ("<profileID>") and validates that the vc inside vp contains type "<authZFlowVCType>" along with supportsAssuranceCred "<supportsAssuranceCred>" validation
     Examples:
-      | profileID       | profileName                           | issuerURL                                         | supportedVCContexts                                                                  | supportsAssuranceCred   | authZFlowVCType         | primaryVCType     |
-      | prCard          | PRCard Issuer                         | http://issuer.example.com:9080/prCard             | https://w3id.org/citizenship/v3                                                      | false                   | PermanentResidentCard   |                   |
-      | creditCard      | CreditCard Issuer                     | http://issuer.example.com:9080/creditCard         | https://trustbloc.github.io/context/vc/examples/credit-card-v1.jsonld                | false                   | CreditCardStatement     |                   |
-      | driversLicense  | Drivers License wth Evidence Issuer   | http://issuer.example.com:9080/driversLicense     | https://trustbloc.github.io/context/vc/examples/driver-license-evidence-v1.jsonld    | true                    | DrivingLicenseEvidence  | mDL               |
+      | profileID       | profileName                           | issuerURL                                      | supportedVCContexts                                                                  | supportsAssuranceCred   | authZFlowVCType         | primaryVCType     |
+      | prCard          | PRCard Issuer                         | http://mock-issuer.com:9080/prCard             | https://w3id.org/citizenship/v3                                                      | false                   | PermanentResidentCard   |                   |
+      | creditCard      | CreditCard Issuer                     | http://mock-issuer.com:9080/creditCard         | https://trustbloc.github.io/context/vc/examples/credit-card-v1.jsonld                | false                   | CreditCardStatement     |                   |
+      | driversLicense  | Drivers License wth Evidence Issuer   | http://mock-issuer.com:9080/driversLicense     | https://trustbloc.github.io/context/vc/examples/driver-license-evidence-v1.jsonld    | true                    | DrivingLicenseEvidence  | mDL               |
 
   @issuer_adapter_routing
   Scenario: Blinded Routing
-    Given Issuer Profile with id "profileBlindedRouting", name "Blinded Routing", issuerURL "http://issuer.example.com:9080/prCard", supportedVCContexts "https://w3id.org/citizenship/v3 " and supportsAssuranceCred "false"
-    And   Retrieved profile with id "profileBlindedRouting" contains name "Blinded Routing", issuerURL "http://issuer.example.com:9080/prCard", supportedVCContexts "https://w3id.org/citizenship/v3" and supportsAssuranceCred "false"
+    Given Issuer Profile with id "profileBlindedRouting", name "Blinded Routing", issuerURL "http://mock-issuer.com:9080/prCard", supportedVCContexts "https://w3id.org/citizenship/v3 " and supportsAssuranceCred "false"
+    And   Retrieved profile with id "profileBlindedRouting" contains name "Blinded Routing", issuerURL "http://mock-issuer.com:9080/prCard", supportedVCContexts "https://w3id.org/citizenship/v3" and supportsAssuranceCred "false"
     Then  Issuer adapter shows the wallet connect UI when the issuer "profileBlindedRouting" wants to connect to the wallet
     And   Issuer adapter ("profileBlindedRouting") creates DIDComm connection invitation for "Wallet"
     Then  "Wallet" with blinded routing support receives the DIDConnect request from Issuer adapter ("profileBlindedRouting")
