@@ -16,7 +16,7 @@ import (
 	"github.com/hyperledger/aries-framework-go/pkg/didcomm/protocol/decorator"
 	"github.com/hyperledger/aries-framework-go/pkg/doc/did"
 	mockdiddoc "github.com/hyperledger/aries-framework-go/pkg/mock/diddoc"
-	mockvdri "github.com/hyperledger/aries-framework-go/pkg/mock/vdri"
+	mockvdr "github.com/hyperledger/aries-framework-go/pkg/mock/vdr"
 	"github.com/stretchr/testify/require"
 	mockstorage "github.com/trustbloc/edge-core/pkg/storage/mockstore"
 
@@ -198,7 +198,7 @@ func TestDIDDocReq(t *testing.T) {
 		config := config()
 
 		done := make(chan struct{})
-		config.VDRIRegistry = &mockvdri.MockVDRIRegistry{CreateErr: errors.New("create did error")}
+		config.VDRIRegistry = &mockvdr.MockVDRegistry{CreateErr: errors.New("create did error")}
 		config.AriesMessenger = &messenger.MockMessenger{
 			ReplyToFunc: func(msgID string, msg service.DIDCommMsgMap) error {
 				pMsg := &ErrorResp{}
@@ -348,7 +348,7 @@ func TestConnReq(t *testing.T) {
 		config := config()
 
 		done := make(chan struct{})
-		config.VDRIRegistry = &mockvdri.MockVDRIRegistry{CreateErr: errors.New("create did error")}
+		config.VDRIRegistry = &mockvdr.MockVDRegistry{CreateErr: errors.New("create did error")}
 
 		c, err := New(config)
 		require.NoError(t, err)

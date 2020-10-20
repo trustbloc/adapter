@@ -15,7 +15,7 @@ import (
 	"github.com/hyperledger/aries-framework-go/pkg/didcomm/common/service"
 	"github.com/hyperledger/aries-framework-go/pkg/didcomm/messaging/msghandler"
 	"github.com/hyperledger/aries-framework-go/pkg/doc/did"
-	"github.com/hyperledger/aries-framework-go/pkg/framework/aries/api/vdri"
+	"github.com/hyperledger/aries-framework-go/pkg/framework/aries/api/vdr"
 	"github.com/trustbloc/edge-core/pkg/log"
 	"github.com/trustbloc/edge-core/pkg/storage"
 )
@@ -46,7 +46,7 @@ type Config struct {
 	ServiceEndpoint   string
 	AriesMessenger    service.Messenger
 	MsgRegistrar      *msghandler.Registrar
-	VDRIRegistry      vdri.Registry
+	VDRIRegistry      vdr.Registry
 	TransientStore    storage.Provider
 }
 
@@ -54,7 +54,7 @@ type Config struct {
 type Service struct {
 	didExchange  DIDExchange
 	messenger    service.Messenger
-	vdriRegistry vdri.Registry
+	vdriRegistry vdr.Registry
 	endpoint     string
 	tStore       storage.Store
 }
@@ -136,7 +136,7 @@ func (o *Service) didCommMsgListener(ch <-chan service.DIDCommMsg) {
 
 func (o *Service) handleDIDDocReq(msg service.DIDCommMsg) (service.DIDCommMsgMap, error) {
 	// create peer DID
-	newDidDoc, err := o.vdriRegistry.Create("peer", vdri.WithServices(did.Service{ServiceEndpoint: o.endpoint}))
+	newDidDoc, err := o.vdriRegistry.Create("peer", vdr.WithServices(did.Service{ServiceEndpoint: o.endpoint}))
 	if err != nil {
 		return nil, fmt.Errorf("create new peer did : %w", err)
 	}

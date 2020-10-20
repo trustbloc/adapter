@@ -32,7 +32,7 @@ import (
 	mockkms "github.com/hyperledger/aries-framework-go/pkg/mock/kms"
 	mockprovider "github.com/hyperledger/aries-framework-go/pkg/mock/provider"
 	mockstore "github.com/hyperledger/aries-framework-go/pkg/mock/storage"
-	mockvdri "github.com/hyperledger/aries-framework-go/pkg/mock/vdri"
+	mockvdri "github.com/hyperledger/aries-framework-go/pkg/mock/vdr"
 	"github.com/stretchr/testify/require"
 	"github.com/trustbloc/edge-core/pkg/storage/memstore"
 
@@ -62,7 +62,7 @@ func getAriesCtx() aries.CtxProvider {
 		KMSValue:             &mockkms.KeyManager{ImportPrivateKeyErr: fmt.Errorf("error import priv key")},
 		CryptoValue:          &mockcrypto.Crypto{},
 		ServiceEndpointValue: "endpoint",
-		VDRIRegistryValue: &mockvdri.MockVDRIRegistry{
+		VDRegistryValue: &mockvdri.MockVDRegistry{
 			CreateValue:  mockdiddoc.GetMockDIDDoc("did:example:def567"),
 			ResolveValue: mockdiddoc.GetMockDIDDoc("did:example:def567"),
 		},

@@ -28,10 +28,10 @@ import (
 	kmscmd "github.com/hyperledger/aries-framework-go/pkg/controller/command/kms"
 	oobcmd "github.com/hyperledger/aries-framework-go/pkg/controller/command/outofband"
 	presentproofcmd "github.com/hyperledger/aries-framework-go/pkg/controller/command/presentproof"
-	vdricmd "github.com/hyperledger/aries-framework-go/pkg/controller/command/vdri"
+	vdricmd "github.com/hyperledger/aries-framework-go/pkg/controller/command/vdr"
 	verifiablecmd "github.com/hyperledger/aries-framework-go/pkg/controller/command/verifiable"
 	kms2 "github.com/hyperledger/aries-framework-go/pkg/controller/rest/kms"
-	"github.com/hyperledger/aries-framework-go/pkg/controller/rest/vdri"
+	"github.com/hyperledger/aries-framework-go/pkg/controller/rest/vdr"
 	"github.com/hyperledger/aries-framework-go/pkg/didcomm/common/service"
 	"github.com/hyperledger/aries-framework-go/pkg/didcomm/protocol/decorator"
 	issuecredsvc "github.com/hyperledger/aries-framework-go/pkg/didcomm/protocol/issuecredential"
@@ -40,7 +40,7 @@ import (
 	"github.com/hyperledger/aries-framework-go/pkg/doc/signature/suite/ed25519signature2018"
 	"github.com/hyperledger/aries-framework-go/pkg/doc/util"
 	"github.com/hyperledger/aries-framework-go/pkg/doc/verifiable"
-	vdriapi "github.com/hyperledger/aries-framework-go/pkg/framework/aries/api/vdri"
+	vdriapi "github.com/hyperledger/aries-framework-go/pkg/framework/aries/api/vdr"
 	"github.com/hyperledger/aries-framework-go/pkg/kms"
 	"github.com/trustbloc/edge-core/pkg/log"
 
@@ -73,9 +73,9 @@ const (
 	acceptPresentationPath    = presentProofOperationID + "/%s/accept-presentation"
 	presentProofActions       = presentProofOperationID + "/actions"
 
-	vdriOperationID = "/vdri"
-	vdriDIDPath     = vdriOperationID + "/did"
-	resolveDIDPath  = vdriDIDPath + "/resolve/%s"
+	vdrOperationID = "/vdr"
+	vdrDIDPath     = vdrOperationID + "/did"
+	resolveDIDPath = vdrDIDPath + "/resolve/%s"
 
 	verifiableOperationID    = "/verifiable"
 	signCredentialPath       = verifiableOperationID + "/signcredential"
@@ -727,7 +727,7 @@ func (a *Steps) SaveDID(agent, friendlyName string, d *did.Doc) error {
 		return fmt.Errorf("failed to marshal request to save did doc: %w", err)
 	}
 
-	requestURL := a.ControllerURLs[agent] + vdri.SaveDIDPath
+	requestURL := a.ControllerURLs[agent] + vdr.SaveDIDPath
 
 	err = bddutil.SendHTTP(http.MethodPost, requestURL, request, nil)
 	if err != nil {

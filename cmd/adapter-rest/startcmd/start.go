@@ -33,7 +33,7 @@ import (
 	ariesstorage "github.com/hyperledger/aries-framework-go/pkg/storage"
 	ariesmem "github.com/hyperledger/aries-framework-go/pkg/storage/mem"
 	ariesmysql "github.com/hyperledger/aries-framework-go/pkg/storage/mysql"
-	"github.com/hyperledger/aries-framework-go/pkg/vdri/httpbinding"
+	"github.com/hyperledger/aries-framework-go/pkg/vdr/httpbinding"
 	"github.com/rs/cors"
 	"github.com/spf13/cobra"
 	"github.com/trustbloc/edge-core/pkg/log"
@@ -948,7 +948,7 @@ func createAriesAgent(parameters *adapterRestParameters, tlsConfig *tls.Config, 
 			return nil, fmt.Errorf("failed to create new universal resolver vdri: %w", resErr)
 		}
 
-		opts = append(opts, aries.WithVDRI(universalResolverVDRI))
+		opts = append(opts, aries.WithVDR(universalResolverVDRI))
 	}
 
 	store, tStore, err := initAriesStores(parameters.dsnParams.dsn, parameters.dsnParams.timeout, dbPrefix)

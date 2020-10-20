@@ -30,7 +30,7 @@ import (
 	"github.com/hyperledger/aries-framework-go/pkg/doc/did"
 	"github.com/hyperledger/aries-framework-go/pkg/doc/util"
 	"github.com/hyperledger/aries-framework-go/pkg/doc/verifiable"
-	"github.com/hyperledger/aries-framework-go/pkg/framework/aries/api/vdri"
+	"github.com/hyperledger/aries-framework-go/pkg/framework/aries/api/vdr"
 	"github.com/hyperledger/aries-framework-go/pkg/store/connection"
 	"github.com/trustbloc/edge-core/pkg/log"
 	"github.com/trustbloc/edge-core/pkg/storage"
@@ -158,7 +158,7 @@ func New(config *Config) (*Operation, error) { // nolint:funlen
 	}
 
 	msgSvc, err := message.New(&message.Config{
-		VDRIRegistry:      config.AriesCtx.VDRIRegistry(),
+		VDRIRegistry:      config.AriesCtx.VDRegistry(),
 		AriesMessenger:    config.AriesMessenger,
 		MsgRegistrar:      config.MsgRegistrar,
 		DIDExchangeClient: didExClient,
@@ -169,7 +169,7 @@ func New(config *Config) (*Operation, error) { // nolint:funlen
 		return nil, fmt.Errorf("create message service : %w", err)
 	}
 
-	vccrypto := crypto.New(config.AriesCtx.KMS(), config.AriesCtx.Crypto(), config.AriesCtx.VDRIRegistry())
+	vccrypto := crypto.New(config.AriesCtx.KMS(), config.AriesCtx.Crypto(), config.AriesCtx.VDRegistry())
 
 	op := &Operation{
 		oobClient:          oobClient,
@@ -181,7 +181,7 @@ func New(config *Config) (*Operation, error) { // nolint:funlen
 		txnStore:           txnStore,
 		tokenStore:         tokenStore,
 		connectionLookup:   connectionLookup,
-		vdriRegistry:       config.AriesCtx.VDRIRegistry(),
+		vdriRegistry:       config.AriesCtx.VDRegistry(),
 		serviceEndpoint:    config.AriesCtx.ServiceEndpoint(),
 		vccrypto:           vccrypto,
 		publicDIDCreator:   config.PublicDIDCreator,
@@ -210,7 +210,7 @@ type Operation struct {
 	txnStore           storage.Store
 	tokenStore         storage.Store
 	connectionLookup   connections
-	vdriRegistry       vdri.Registry
+	vdriRegistry       vdr.Registry
 	vccrypto           adaptervc.Crypto
 	serviceEndpoint    string
 	publicDIDCreator   PublicDIDCreator
@@ -660,7 +660,7 @@ func (o *Operation) handleRequestCredential(msg service.DIDCommAction) (interfac
 
 	newDidDoc, err := o.vdriRegistry.Create(
 		"peer",
-		vdri.WithServices(did.Service{ServiceEndpoint: o.serviceEndpoint}),
+		vdr.WithServices(did.Service{ServiceEndpoint: o.serviceEndpoint}),
 	)
 	if err != nil {
 		return nil, fmt.Errorf("create new issuer did : %w", err)
@@ -1068,7 +1068,7 @@ func fetchAuthorizationCreReq(msg service.DIDCommAction) (*AuthorizationCredenti
 	return authorizationCreReq, nil
 }
 
-func fetchAuthorizationCred(msg service.DIDCommAction, vdriRegistry vdri.Registry) (*verifiable.Credential, error) {
+func fetchAuthorizationCred(msg service.DIDCommAction, vdriRegistry vdr.Registry) (*verifiable.Credential, error) {
 	credReq := &presentproofsvc.RequestPresentation{}
 
 	err := msg.Message.Decode(credReq)
