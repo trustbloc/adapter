@@ -2059,7 +2059,7 @@ func TestToMarshalledVP(t *testing.T) {
 		subjectDID := newPeerDID(t, subject)
 		rpDID := newPeerDID(t, agent(t))
 		rpDID.Authentication = nil
-		err := relyingParty.VDRIRegistry().Store(rpDID)
+		err := relyingParty.VDRegistry().Store(rpDID)
 		require.NoError(t, err)
 
 		o, err := New(&Config{

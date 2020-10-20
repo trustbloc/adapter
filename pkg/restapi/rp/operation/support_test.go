@@ -12,7 +12,7 @@ import (
 	"github.com/hyperledger/aries-framework-go/pkg/doc/did"
 	"github.com/hyperledger/aries-framework-go/pkg/doc/verifiable"
 	"github.com/hyperledger/aries-framework-go/pkg/framework/aries"
-	vdriapi "github.com/hyperledger/aries-framework-go/pkg/framework/aries/api/vdri"
+	vdrapi "github.com/hyperledger/aries-framework-go/pkg/framework/aries/api/vdr"
 	ariesctx "github.com/hyperledger/aries-framework-go/pkg/framework/context"
 	"github.com/hyperledger/aries-framework-go/pkg/storage/mem"
 	"github.com/stretchr/testify/require"
@@ -48,7 +48,7 @@ func signVP(t *testing.T,
 	verificationMethod, err := crypto2.GetVerificationMethodFromDID(signingDID, did.Authentication)
 	require.NoError(t, err)
 
-	vp, err = crypto2.New(agent.KMS(), agent.Crypto(), agent.VDRIRegistry()).SignPresentation(vp, verificationMethod)
+	vp, err = crypto2.New(agent.KMS(), agent.Crypto(), agent.VDRegistry()).SignPresentation(vp, verificationMethod)
 	require.NoError(t, err)
 
 	return vp
@@ -62,7 +62,7 @@ func signVC(t *testing.T,
 	verificationMethod, err := crypto2.GetVerificationMethodFromDID(signingDID, did.AssertionMethod)
 	require.NoError(t, err)
 
-	vc, err = crypto2.New(agent.KMS(), agent.Crypto(), agent.VDRIRegistry()).SignCredential(vc, verificationMethod)
+	vc, err = crypto2.New(agent.KMS(), agent.Crypto(), agent.VDRegistry()).SignCredential(vc, verificationMethod)
 	require.NoError(t, err)
 
 	return vc
@@ -72,19 +72,19 @@ func simulateDIDExchange(t *testing.T,
 	agentA *ariesctx.Provider, didA *did.Doc, agentB *ariesctx.Provider, didB *did.Doc) {
 	t.Helper()
 
-	err := agentA.VDRIRegistry().Store(didB)
+	err := agentA.VDRegistry().Store(didB)
 	require.NoError(t, err)
 
-	err = agentB.VDRIRegistry().Store(didA)
+	err = agentB.VDRegistry().Store(didA)
 	require.NoError(t, err)
 }
 
 func newPeerDID(t *testing.T, agent *ariesctx.Provider) *did.Doc {
 	t.Helper()
 
-	d, err := agent.VDRIRegistry().Create(
+	d, err := agent.VDRegistry().Create(
 		"peer",
-		vdriapi.WithServices(did.Service{ServiceEndpoint: "http://agent.example.com/didcomm", Type: "did-communication"}),
+		vdrapi.WithServices(did.Service{ServiceEndpoint: "http://agent.example.com/didcomm", Type: "did-communication"}),
 	)
 	require.NoError(t, err)
 

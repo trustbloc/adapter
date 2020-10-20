@@ -18,7 +18,7 @@ import (
 	"time"
 
 	docdid "github.com/hyperledger/aries-framework-go/pkg/doc/did"
-	vdriapi "github.com/hyperledger/aries-framework-go/pkg/framework/aries/api/vdri"
+	vdriapi "github.com/hyperledger/aries-framework-go/pkg/framework/aries/api/vdr"
 	"github.com/trustbloc/edge-core/pkg/log"
 )
 

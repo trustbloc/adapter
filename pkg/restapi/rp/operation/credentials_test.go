@@ -83,7 +83,7 @@ func TestParseWalletResponse(t *testing.T) {
 					},
 				},
 			},
-			relyingParty.VDRIRegistry(),
+			relyingParty.VDRegistry(),
 			marshal(t, vp))
 		require.NoError(t, err)
 		require.Contains(t, actualLocal, localID)
@@ -121,7 +121,7 @@ func TestParseWalletResponse(t *testing.T) {
 					},
 				}},
 			},
-			relyingParty.VDRIRegistry(),
+			relyingParty.VDRegistry(),
 			marshal(t, vp))
 		require.True(t, errors.Is(err, errInvalidCredential))
 	})
@@ -151,7 +151,7 @@ func TestParseWalletResponse(t *testing.T) {
 			newUserAuthorizationVCMissingIssuerDIDDoc(t, subjectDID.ID, rpDID))
 		_, _, err := parseWalletResponse(
 			definitions,
-			relyingParty.VDRIRegistry(),
+			relyingParty.VDRegistry(),
 			marshal(t, vp))
 		require.True(t, errors.Is(err, errInvalidCredential))
 	})
@@ -179,7 +179,7 @@ func TestParseWalletResponse(t *testing.T) {
 				Path: "$.verifiableCredential[0]",
 			}}},
 			newUserAuthorizationVCMissingIssuerDIDDoc(t, subjectDID.ID, rpDID))
-		_, _, err := parseWalletResponse(definitions, relyingParty.VDRIRegistry(), marshal(t, vp))
+		_, _, err := parseWalletResponse(definitions, relyingParty.VDRegistry(), marshal(t, vp))
 		require.True(t, errors.Is(err, errInvalidCredential))
 	})
 }
@@ -201,7 +201,7 @@ func TestParseIssuerResponse(t *testing.T) {
 					JSON: expectedVP,
 				},
 			}},
-		}, relyingParty.VDRIRegistry())
+		}, relyingParty.VDRegistry())
 		require.NoError(t, err)
 		require.Equal(t, expectedVC.Subject, actualVC.Subject)
 	})
@@ -249,7 +249,7 @@ func TestParseIssuerResponse(t *testing.T) {
 					JSON: newPresentationSubmissionVP(t, issuer, issuerDID, nil),
 				},
 			}},
-		}, relyingParty.VDRIRegistry())
+		}, relyingParty.VDRegistry())
 		require.True(t, errors.Is(err, errInvalidCredential))
 	})
 }

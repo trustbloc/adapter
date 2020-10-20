@@ -31,7 +31,7 @@ import (
 	mockkms "github.com/hyperledger/aries-framework-go/pkg/mock/kms"
 	mockprovider "github.com/hyperledger/aries-framework-go/pkg/mock/provider"
 	mockstore "github.com/hyperledger/aries-framework-go/pkg/mock/storage"
-	mockvdri "github.com/hyperledger/aries-framework-go/pkg/mock/vdri"
+	mockvdr "github.com/hyperledger/aries-framework-go/pkg/mock/vdr"
 	"github.com/hyperledger/aries-framework-go/pkg/store/connection"
 	"github.com/stretchr/testify/require"
 	"github.com/trustbloc/edge-core/pkg/storage"
@@ -1009,7 +1009,7 @@ func TestIssueCredentialHandler(t *testing.T) {
 					outofbandsvc.Name:       &mockoutofband.MockService{},
 				},
 				ServiceEndpointValue: "endpoint",
-				VDRIRegistryValue: &mockvdri.MockVDRIRegistry{
+				VDRegistryValue: &mockvdr.MockVDRegistry{
 					CreateErr: errors.New("did create error"),
 				},
 			}
@@ -1606,7 +1606,7 @@ func TestPresentProofHandler(t *testing.T) {
 			// assertionMethod not present
 			didDocument.AssertionMethod = nil
 
-			c.vdriRegistry = &mockvdri.MockVDRIRegistry{
+			c.vdriRegistry = &mockvdr.MockVDRegistry{
 				ResolveValue: didDocument,
 			}
 
@@ -1633,7 +1633,7 @@ func TestPresentProofHandler(t *testing.T) {
 			didDocument = mockdiddoc.GetMockDIDDoc("did:example:def567")
 			didDocument.Authentication = nil
 
-			c.vdriRegistry = &mockvdri.MockVDRIRegistry{
+			c.vdriRegistry = &mockvdr.MockVDRegistry{
 				ResolveValue: didDocument,
 			}
 
@@ -1663,7 +1663,7 @@ func TestPresentProofHandler(t *testing.T) {
 			}
 
 			// issuer did not found
-			c.vdriRegistry = &mockvdri.MockVDRIRegistry{
+			c.vdriRegistry = &mockvdr.MockVDRegistry{
 				ResolveErr: errors.New("did not found"),
 			}
 

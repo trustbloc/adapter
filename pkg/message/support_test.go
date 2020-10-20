@@ -8,7 +8,7 @@ package message
 
 import (
 	"github.com/hyperledger/aries-framework-go/pkg/didcomm/messaging/msghandler"
-	mockvdri "github.com/hyperledger/aries-framework-go/pkg/mock/vdri"
+	mockvdr "github.com/hyperledger/aries-framework-go/pkg/mock/vdr"
 	"github.com/trustbloc/edge-core/pkg/storage/memstore"
 
 	mockdidex "github.com/trustbloc/edge-adapter/pkg/internal/mock/didexchange"
@@ -21,7 +21,7 @@ func config() *Config {
 		ServiceEndpoint:   "",
 		AriesMessenger:    &messenger.MockMessenger{},
 		MsgRegistrar:      msghandler.NewRegistrar(),
-		VDRIRegistry:      &mockvdri.MockVDRIRegistry{},
+		VDRIRegistry:      &mockvdr.MockVDRegistry{},
 		TransientStore:    memstore.NewProvider(),
 	}
 }

@@ -30,7 +30,7 @@ import (
 	presentproofsvc "github.com/hyperledger/aries-framework-go/pkg/didcomm/protocol/presentproof"
 	"github.com/hyperledger/aries-framework-go/pkg/doc/did"
 	"github.com/hyperledger/aries-framework-go/pkg/doc/verifiable"
-	"github.com/hyperledger/aries-framework-go/pkg/framework/aries/api/vdri"
+	vdrapi "github.com/hyperledger/aries-framework-go/pkg/framework/aries/api/vdr"
 	"github.com/hyperledger/aries-framework-go/pkg/kms"
 	ariesstorage "github.com/hyperledger/aries-framework-go/pkg/storage"
 	"github.com/hyperledger/aries-framework-go/pkg/store/connection"
@@ -133,7 +133,7 @@ type GovernanceProvider interface {
 type AriesContextProvider interface {
 	StorageProvider() ariesstorage.Provider
 	ProtocolStateStorageProvider() ariesstorage.Provider
-	VDRIRegistry() vdri.Registry
+	VDRegistry() vdrapi.Registry
 	KMS() kms.KeyManager
 	Crypto() ariescrypto.Crypto
 }
@@ -177,7 +177,7 @@ func New(config *Config) (*Operation, error) {
 		publicDIDCreator:       config.PublicDIDCreator,
 		ppClient:               config.PresentProofClient,
 		ppActions:              make(chan service.DIDCommAction),
-		vdriReg:                config.AriesContextProvider.VDRIRegistry(),
+		vdrReg:                 config.AriesContextProvider.VDRegistry(),
 		governanceProvider:     config.GovernanceProvider,
 		km:                     config.AriesContextProvider.KMS(),
 		ariesCrypto:            config.AriesContextProvider.Crypto(),
@@ -259,7 +259,7 @@ type Operation struct {
 	connections            *connection.Recorder
 	ppClient               PresentProofClient
 	ppActions              chan service.DIDCommAction
-	vdriReg                vdri.Registry
+	vdrReg                 vdrapi.Registry
 	transientStore         storage.Store
 	governanceProvider     GovernanceProvider
 	km                     kms.KeyManager
@@ -747,7 +747,7 @@ func (o *Operation) chapiResponseHandler(w http.ResponseWriter, r *http.Request)
 	// TODO save user Consent VC https://github.com/trustbloc/edge-adapter/issues/92
 	// TODO validate the user consent credential (expected rp and user DIDs, etc.)
 
-	local, remote, err := parseWalletResponse(crCtx.PD, o.vdriReg, request.VerifiablePresentation)
+	local, remote, err := parseWalletResponse(crCtx.PD, o.vdrReg, request.VerifiablePresentation)
 	if err != nil {
 		if errors.Is(err, errInvalidCredential) {
 			handleError(w, http.StatusBadRequest, fmt.Sprintf("malformed credentials: %s", err.Error()))
@@ -1124,7 +1124,7 @@ func (o *Operation) handleIssuerPresentationMsg(msg service.DIDCommMsg) error {
 
 	logger.Debugf("handling present-proof message: %+v", presentation)
 
-	userData, err := parseIssuerResponse(presentation, o.vdriReg)
+	userData, err := parseIssuerResponse(presentation, o.vdrReg)
 	if err != nil {
 		return fmt.Errorf("failed to parse verifiable presentation for threadID=%s: %w", thid, err)
 	}
@@ -1256,7 +1256,7 @@ func (o *Operation) toMarshalledVP(authZ *verifiable.Credential, signingDID stri
 		return nil, fmt.Errorf("failed to convert authz credential to presentation: %w", err)
 	}
 
-	rpDIDDoc, err := o.vdriReg.Resolve(signingDID)
+	rpDIDDoc, err := o.vdrReg.Resolve(signingDID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to resolve rp did %s: %w", signingDID, err)
 	}
@@ -1266,7 +1266,7 @@ func (o *Operation) toMarshalledVP(authZ *verifiable.Credential, signingDID stri
 		return nil, fmt.Errorf("failed to obtain a verification method from rp did %s: %w", signingDID, err)
 	}
 
-	signedVP, err := crypto.New(o.km, o.ariesCrypto, o.vdriReg).SignPresentation(vp, verificationMethod)
+	signedVP, err := crypto.New(o.km, o.ariesCrypto, o.vdrReg).SignPresentation(vp, verificationMethod)
 	if err != nil {
 		return nil, fmt.Errorf("failed to sign authZ vp with verMethod %s: %w", verificationMethod, err)
 	}
