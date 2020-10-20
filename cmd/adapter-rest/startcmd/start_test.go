@@ -119,7 +119,6 @@ func TestStartCmdWithMissingArg(t *testing.T) {
 			"--" + datasourceNameFlagName, "mem://tests",
 			"--" + datasourceTimeoutFlagName, "30",
 			"--" + didCommInboundHostFlagName, randomURL(),
-			"--" + didCommDBPathFlagName, generateTempDir(t),
 			"--" + trustblocDomainFlagName, "http://example.trustbloc.com",
 			"--" + universalResolverURLFlagName, "http://uniresolver.trustbloc.com",
 		}
@@ -144,7 +143,6 @@ func TestStartCmdWithMissingArg(t *testing.T) {
 			"--" + datasourceNameFlagName, "mem://tests",
 			"--" + datasourceTimeoutFlagName, "30",
 			"--" + didCommInboundHostFlagName, randomURL(),
-			"--" + didCommDBPathFlagName, generateTempDir(t),
 			"--" + trustblocDomainFlagName, "http://example.trustbloc.com",
 			"--" + universalResolverURLFlagName, "http://uniresolver.trustbloc.com",
 		}
@@ -167,7 +165,6 @@ func TestStartCmdWithMissingArg(t *testing.T) {
 			"--" + datasourceNameFlagName, "mem://tests",
 			"--" + datasourceTimeoutFlagName, "30",
 			"--" + didCommInboundHostFlagName, randomURL(),
-			"--" + didCommDBPathFlagName, generateTempDir(t),
 			"--" + trustblocDomainFlagName, "http://example.trustbloc.com",
 			"--" + universalResolverURLFlagName, "http://uniresolver.trustbloc.com",
 		}
@@ -210,7 +207,6 @@ func TestStartCmdValidArgs(t *testing.T) {
 		"--" + datasourceNameFlagName, "mem://tests",
 		"--" + datasourceTimeoutFlagName, "30",
 		"--" + didCommInboundHostFlagName, randomURL(),
-		"--" + didCommDBPathFlagName, generateTempDir(t),
 		"--" + trustblocDomainFlagName, "http://example.trustbloc.com",
 		"--" + universalResolverURLFlagName, "http://uniresolver.trustbloc.com",
 		"--" + requestTokensFlagName, "token1=tk1",
@@ -235,7 +231,6 @@ func TestStartCmdValidArgsEnvVar(t *testing.T) {
 	args := []string{
 		"--" + modeFlagName, "rp",
 		"--" + didCommInboundHostFlagName, randomURL(),
-		"--" + didCommDBPathFlagName, generateTempDir(t),
 		"--" + datasourceNameFlagName, "mem://test",
 		"--" + datasourceTimeoutFlagName, "30",
 	}
@@ -263,7 +258,6 @@ func TestStartCmdDatasourceURL(t *testing.T) {
 		args := []string{
 			"--" + modeFlagName, "rp",
 			"--" + didCommInboundHostFlagName, randomURL(),
-			"--" + didCommDBPathFlagName, generateTempDir(t),
 			"--" + datasourceNameFlagName, "unsupported://test",
 		}
 		startCmd.SetArgs(args)
@@ -289,7 +283,6 @@ func TestStartCmdDatasourceURL(t *testing.T) {
 		args := []string{
 			"--" + modeFlagName, "rp",
 			"--" + didCommInboundHostFlagName, randomURL(),
-			"--" + didCommDBPathFlagName, generateTempDir(t),
 			"--" + datasourceNameFlagName, "invalid",
 			"--" + datasourceTimeoutFlagName, "30",
 		}
@@ -316,7 +309,6 @@ func TestStartCmdDatasourceURL(t *testing.T) {
 		args := []string{
 			"--" + modeFlagName, "rp",
 			"--" + didCommInboundHostFlagName, randomURL(),
-			"--" + didCommDBPathFlagName, generateTempDir(t),
 			"--" + datasourceNameFlagName, "mem://test",
 		}
 		startCmd.SetArgs(args)
@@ -332,15 +324,12 @@ func TestStartCmdDatasourceURL(t *testing.T) {
 
 func TestStartCmdDIDComm(t *testing.T) {
 	t.Run("test start didcomm - success", func(t *testing.T) {
-		path := generateTempDir(t)
-
 		startCmd := GetStartCmd(&mockServer{})
 
 		args := []string{
 			"--" + modeFlagName, issuerMode,
 			"--" + hostURLFlagName, "localhost:8080",
 			"--" + didCommInboundHostFlagName, randomURL(),
-			"--" + didCommDBPathFlagName, path,
 			"--" + datasourceNameFlagName, "mem://test",
 			"--" + datasourceTimeoutFlagName, "30",
 		}
@@ -351,14 +340,11 @@ func TestStartCmdDIDComm(t *testing.T) {
 	})
 
 	t.Run("test start didcomm - empty inbound host", func(t *testing.T) {
-		path := generateTempDir(t)
-
 		startCmd := GetStartCmd(&mockServer{})
 
 		args := []string{
 			"--" + modeFlagName, issuerMode,
 			"--" + hostURLFlagName, "localhost:8080",
-			"--" + didCommDBPathFlagName, path,
 			"--" + datasourceNameFlagName, "mem://test",
 			"--" + datasourceTimeoutFlagName, "30",
 		}
@@ -387,7 +373,6 @@ func TestAdapterModes(t *testing.T) {
 			"--" + hostURLFlagName, "localhost:8080",
 			"--" + presentationDefinitionsFlagName, file.Name(),
 			"--" + didCommInboundHostFlagName, randomURL(),
-			"--" + didCommDBPathFlagName, generateTempDir(t),
 			"--" + datasourceNameFlagName, "mem://test",
 			"--" + datasourceTimeoutFlagName, "30",
 			"--" + governanceVCSURLFlagName, "http://example.vcs.com",
@@ -399,8 +384,6 @@ func TestAdapterModes(t *testing.T) {
 	})
 
 	t.Run("test adapter mode - issuer", func(t *testing.T) {
-		path := generateTempDir(t)
-
 		startCmd := GetStartCmd(&mockServer{})
 
 		testInboundHostURL := randomURL()
@@ -409,7 +392,6 @@ func TestAdapterModes(t *testing.T) {
 			"--" + modeFlagName, issuerMode,
 			"--" + hostURLFlagName, "localhost:8080",
 			"--" + didCommInboundHostFlagName, testInboundHostURL,
-			"--" + didCommDBPathFlagName, path,
 			"--" + datasourceNameFlagName, "mem://test",
 			"--" + datasourceTimeoutFlagName, "30",
 			"--" + governanceVCSURLFlagName, "http://example.vcs.com",
@@ -427,7 +409,6 @@ func TestAdapterModes(t *testing.T) {
 			"--" + modeFlagName, "invalidMode",
 			"--" + hostURLFlagName, "localhost:8080",
 			"--" + didCommInboundHostFlagName, randomURL(),
-			"--" + didCommDBPathFlagName, generateTempDir(t),
 			"--" + datasourceNameFlagName, "mem://test",
 			"--" + datasourceTimeoutFlagName, "30",
 		}
@@ -558,20 +539,4 @@ func getRandomPort() (int, error) {
 	}
 
 	return listener.Addr().(*net.TCPAddr).Port, nil
-}
-
-func generateTempDir(t testing.TB) string {
-	path, err := ioutil.TempDir("", "db")
-	if err != nil {
-		t.Fatalf("Failed to create leveldb directory: %s", err)
-	}
-
-	t.Cleanup(func() {
-		err := os.RemoveAll(path)
-		if err != nil {
-			t.Fatalf("Failed to clear leveldb directory: %s", err)
-		}
-	})
-
-	return path
 }
