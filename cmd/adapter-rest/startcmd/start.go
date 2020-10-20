@@ -21,6 +21,7 @@ import (
 
 	"github.com/cenkalti/backoff"
 	"github.com/gorilla/mux"
+	ariesmysql "github.com/hyperledger/aries-framework-go-ext/component/storage/mysql"
 	"github.com/hyperledger/aries-framework-go/pkg/client/didexchange"
 	"github.com/hyperledger/aries-framework-go/pkg/client/outofband"
 	"github.com/hyperledger/aries-framework-go/pkg/client/presentproof"
@@ -32,7 +33,6 @@ import (
 	"github.com/hyperledger/aries-framework-go/pkg/framework/aries/defaults"
 	ariesstorage "github.com/hyperledger/aries-framework-go/pkg/storage"
 	ariesmem "github.com/hyperledger/aries-framework-go/pkg/storage/mem"
-	ariesmysql "github.com/hyperledger/aries-framework-go/pkg/storage/mysql"
 	"github.com/hyperledger/aries-framework-go/pkg/vdr/httpbinding"
 	"github.com/rs/cors"
 	"github.com/spf13/cobra"
@@ -136,12 +136,6 @@ const (
 		" If not provided, then the internal inbound host will be used here." +
 		" Alternatively, this can be set with the following environment variable: " + didCommInboundHostExternalEnvKey
 
-	// db path
-	didCommDBPathFlagName  = "didcomm-db-path"
-	didCommDBPathEnvKey    = "ADAPTER_REST_DIDCOMM_DB_PATH"
-	didCommDBPathFlagUsage = "Path to database." +
-		" Alternatively, this can be set with the following environment variable: " + didCommDBPathEnvKey
-
 	trustblocDomainFlagName  = "dids-trustbloc-domain"
 	trustblocDomainEnvKey    = "ADAPTER_REST_TRUSTBLOC_DOMAIN"
 	trustblocDomainFlagUsage = "URL to the did:trustbloc consortium's domain." +
@@ -215,7 +209,6 @@ type tlsParameters struct {
 type didCommParameters struct {
 	inboundHostInternal string
 	inboundHostExternal string
-	dbPath              string
 }
 
 type dsnParams struct {
@@ -489,15 +482,9 @@ func getDIDCommParams(cmd *cobra.Command) (*didCommParameters, error) {
 		return nil, err
 	}
 
-	dbPath, err := cmdutils.GetUserSetVarFromString(cmd, didCommDBPathFlagName, didCommDBPathEnvKey, true)
-	if err != nil {
-		return nil, err
-	}
-
 	return &didCommParameters{
 		inboundHostInternal: inboundHostInternal,
 		inboundHostExternal: inboundHostExternal,
-		dbPath:              dbPath,
 	}, nil
 }
 
@@ -558,7 +545,6 @@ func createFlags(startCmd *cobra.Command) {
 	// didcomm
 	startCmd.Flags().StringP(didCommInboundHostFlagName, "", "", didCommInboundHostFlagUsage)
 	startCmd.Flags().StringP(didCommInboundHostExternalFlagName, "", "", didCommInboundHostExternalFlagUsage)
-	startCmd.Flags().StringP(didCommDBPathFlagName, "", "", didCommDBPathFlagUsage)
 
 	startCmd.Flags().StringP(trustblocDomainFlagName, "", "", trustblocDomainFlagUsage)
 	startCmd.Flags().StringP(universalResolverURLFlagName, universalResolverURLFlagShorthand, "",
@@ -922,10 +908,6 @@ func createAriesAgent(parameters *adapterRestParameters, tlsConfig *tls.Config, 
 
 	if parameters.didCommParameters.inboundHostInternal == "" {
 		return nil, errors.New("didcomm inbound host is mandatory")
-	}
-
-	if parameters.didCommParameters.dbPath != "" {
-		opts = append(opts, defaults.WithStorePath(parameters.didCommParameters.dbPath))
 	}
 
 	// TODO - enable TLS on aries inbound transports: https://github.com/trustbloc/edge-adapter/issues/303

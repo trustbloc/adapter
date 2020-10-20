@@ -35,6 +35,6 @@ func (m *MockMessenger) SendToDestination(_ service.DIDCommMsgMap, _ string, _ *
 }
 
 // ReplyToNested reply to nested message.
-func (m *MockMessenger) ReplyToNested(_ string, _ service.DIDCommMsgMap, _, _ string) error {
+func (m *MockMessenger) ReplyToNested(_ service.DIDCommMsgMap, _ *service.NestedReplyOpts) error {
 	return nil
 }

@@ -14,8 +14,7 @@ services:
       - ARIESD_API_HOST=${WALLET_AGENT_HOST}:${WALLET_AGENT_API_PORT}
       - ARIESD_INBOUND_HOST=http@${WALLET_AGENT_HOST}:${WALLET_AGENT_INBOUND_PORT}
       - ARIESD_INBOUND_HOST_EXTERNAL=http@http://mock-wallet.com:${WALLET_AGENT_INBOUND_PORT}
-      - ARIESD_DATABASE_TYPE=mysql
-      - ARIESD_DATABASE_URL=aries:aries-secret-pw@tcp(mysql:3306)/
+      - ARIESD_DATABASE_TYPE=leveldb
       - ARIESD_DATABASE_PREFIX=aries_wallet
       - ARIESD_DEFAULT_LABEL=aries-wallet
       - ARIESD_HTTP_RESOLVER=trustbloc@http://did.rest.example.com:8072/1.0/identifiers
@@ -48,8 +47,7 @@ services:
       - ARIESD_API_HOST=${ISSUER_AGENT_HOST}:${ISSUER_AGENT_API_PORT}
       - ARIESD_INBOUND_HOST=http@${ISSUER_AGENT_HOST}:${ISSUER_AGENT_INBOUND_PORT}
       - ARIESD_INBOUND_HOST_EXTERNAL=http@http://mock-issuer-adapter.com:${ISSUER_AGENT_INBOUND_PORT}
-      - ARIESD_DATABASE_TYPE=mysql
-      - ARIESD_DATABASE_URL=aries:aries-secret-pw@tcp(mysql:3306)/
+      - ARIESD_DATABASE_TYPE=leveldb
       - ARIESD_DATABASE_PREFIX=issuer_adapter_mock
       - ARIESD_DEFAULT_LABEL=issuer-adapter
       - ARIESD_AUTO_ACCEPT=true
