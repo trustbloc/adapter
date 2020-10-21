@@ -20,6 +20,7 @@ require (
 	github.com/tidwall/gjson v1.6.0
 	github.com/trustbloc/edge-adapter v0.0.0
 	github.com/trustbloc/edge-core v0.1.5-0.20200916124536-c32454a16108
+	github.com/trustbloc/hub-router v0.0.0-20201020154059-98b4c2ce5008
 	github.com/trustbloc/trustbloc-did-method v0.1.5-0.20201020134433-7a5917ab71d7
 	golang.org/x/oauth2 v0.0.0-20190604053449-0f29369cfe45
 )

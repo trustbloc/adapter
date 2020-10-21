@@ -126,7 +126,7 @@ func (a *Steps) RegisterSteps(s *godog.Suite) {
 		a.fetchCredential)
 	s.Step(`^"([^"]*)" sends present proof request message to the the issuer \("([^"]*)"\) and validates that the vc inside vp contains type "([^"]*)" along with supportsAssuranceCred "([^"]*)" validation$`, // nolint: lll
 		a.fetchPresentation)
-	s.Step(`^"([^"]*)" with blinded routing support receives the DIDConnect request from Issuer adapter \("([^"]*)"\)$`, a.didConnectReqWithRouting) // nolint: lll
+	s.Step(`^"([^"]*)" with blinded routing support\("([^"]*)"\) receives the DIDConnect request from Issuer adapter \("([^"]*)"\)$`, a.didConnectReqWithRouting) // nolint: lll
 }
 
 // ValidateAgentConnection checks if the controller agent is running.
@@ -310,7 +310,7 @@ func (a *Steps) handleDIDCommConnectRequest(agentID, supportedVCContexts, issuer
 	return nil
 }
 
-func (a *Steps) didConnectReqWithRouting(agentID, issuerID string) error {
+func (a *Steps) didConnectReqWithRouting(agentID, routerURL, issuerID string) error {
 	didConnReq := a.bddContext.Store[bddutil.GetDIDConnectRequestKey(issuerID, agentID)]
 
 	request := &issuerops.CHAPIRequest{}
@@ -330,25 +330,35 @@ func (a *Steps) didConnectReqWithRouting(agentID, issuerID string) error {
 		return err
 	}
 
-	// send request to adapter for fetching the peerDIDDoc
-	msgSvcName := uuid.New().String()
-
-	// register for message service
-	err = registerCreateConnMsgServices(a.ControllerURLs[agentID], msgSvcName)
+	// unregister all the msg services (to clear older data)
+	err = unregisterAllMsgServices(a.ControllerURLs[agentID])
 	if err != nil {
 		return err
 	}
 
-	// send message
-	err = sendDIDDocReq(a.ControllerURLs[agentID], connectionID)
+	// send request to adapter for fetching the peerDIDDoc
+	// issuer adapter - wallet
+	msgID, adapterDIDDoc, err := adapterDIDDocReq(a.ControllerURLs[agentID], a.WebhookURLs[agentID], connectionID)
 	if err != nil {
-		return fmt.Errorf("failed to send message : %w", err)
+		return fmt.Errorf("adapter did doc : %w", err)
 	}
 
-	// get the response
-	_, err = getDIDDocResp(a.WebhookURLs[agentID], msgSvcName)
+	// create a connection with router
+	routerConnID, err := a.connectWithRouter(agentID, routerURL)
 	if err != nil {
-		return fmt.Errorf("parse adapter did document: %w", err)
+		return fmt.Errorf("connect to router: %w", err)
+	}
+
+	// wallet to router
+	routerDIDDoc, err := routerConnReq(a.ControllerURLs[agentID], a.WebhookURLs[agentID], routerConnID, adapterDIDDoc)
+	if err != nil {
+		return fmt.Errorf("router connection req : %w", err)
+	}
+
+	// wallet to issuer
+	err = adapterCreateConnReq(a.ControllerURLs[agentID], a.WebhookURLs[agentID], msgID, routerDIDDoc)
+	if err != nil {
+		return fmt.Errorf("adapter connection req : %w", err)
 	}
 
 	return nil
@@ -1304,4 +1314,28 @@ func pullMsgFromWebhookURL(webhookURL, topic string) (*service.DIDCommMsgMap, er
 	}
 
 	return nil, fmt.Errorf("exhausted all [%d] attempts to pull topic from webhook", pullTopicsAttemptsBeforeFail)
+}
+
+func (a *Steps) connectWithRouter(agentID, routerURL string) (string, error) {
+	var routerInvitation struct {
+		Invitation *outofband.Invitation `json:"invitation"`
+	}
+
+	err := bddutil.SendHTTP(http.MethodGet, routerURL+"/didcomm/invitation",
+		nil, &routerInvitation)
+	if err != nil {
+		return "", err
+	}
+
+	connectionID, err := a.AcceptOOBInvitation(agentID, routerInvitation.Invitation, "router")
+	if err != nil {
+		return "", err
+	}
+
+	err = validateConnection(a.ControllerURLs[agentID], connectionID, completedState)
+	if err != nil {
+		return "", err
+	}
+
+	return connectionID, nil
 }

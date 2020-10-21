@@ -7,6 +7,32 @@ version: '2'
 
 services:
 
+  hub-router.com:
+    container_name: hub-router.com
+    image: ${HUB_ROUTER_IMAGE}:${HUB_ROUTER_IMAGE_TAG}
+    environment:
+      - HUB_ROUTER_HOST_URL=0.0.0.0:${HUB_ROUTER_PORT}
+      - HUB_ROUTER_DIDCOMM_HTTP_HOST=0.0.0.0:${HUB_ROUTER_DIDCOMM_HTTP_PORT}
+      - HUB_ROUTER_DIDCOMM_HTTP_HOST_EXTERNAL=http://hub-router.com:${HUB_ROUTER_DIDCOMM_HTTP_PORT}
+      - HUB_ROUTER_DIDCOMM_WS_HOST=0.0.0.0:${HUB_ROUTER_DIDCOMM_WS_PORT}
+      - HUB_ROUTER_DIDCOMM_WS_HOST_EXTERNAL=ws://hub-router.com:${HUB_ROUTER_DIDCOMM_WS_PORT}
+      - HUB_ROUTER_DSN_PERSISTENT=mem://test
+      - HUB_ROUTER_DSN_TRANSIENT=mem://test
+      - HUB_ROUTER_DSN_TIMEOUT=45
+      - HUB_ROUTER_LOGLEVEL=INFO
+    ports:
+      - ${HUB_ROUTER_PORT}:${HUB_ROUTER_PORT}
+      - ${HUB_ROUTER_DIDCOMM_HTTP_PORT}:${HUB_ROUTER_DIDCOMM_HTTP_PORT}
+      - ${HUB_ROUTER_DIDCOMM_WS_PORT}:${HUB_ROUTER_DIDCOMM_WS_PORT}
+    entrypoint: ""
+    command: /bin/sh -c "hub-router start"
+    volumes:
+      - ../keys/tls:/etc/tls
+    networks:
+      adapter-rest_bdd_net:
+        aliases:
+          - hub-router.com
+
   mock-wallet.com:
     container_name: mock-wallet.com
     image: ${ARIES_AGENT_REST_IMAGE}:${ARIES_AGENT_REST_IMAGE_TAG}
@@ -19,6 +45,8 @@ services:
       - ARIESD_DEFAULT_LABEL=aries-wallet
       - ARIESD_HTTP_RESOLVER=trustbloc@http://did.rest.example.com:8072/1.0/identifiers
       - ARIESD_WEBHOOK_URL=http://webhook.mock-wallet.com:${WALLET_WEBHOOK_PORT}
+      - ARIESD_OUTBOUND_TRANSPORT=http,ws
+      - ARIESD_TRANSPORT_RETURN_ROUTE=all
     ports:
       - ${WALLET_AGENT_INBOUND_PORT}:${WALLET_AGENT_INBOUND_PORT}
       - ${WALLET_AGENT_API_PORT}:${WALLET_AGENT_API_PORT}

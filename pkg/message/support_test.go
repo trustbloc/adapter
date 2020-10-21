@@ -12,12 +12,14 @@ import (
 	"github.com/trustbloc/edge-core/pkg/storage/memstore"
 
 	mockdidex "github.com/trustbloc/edge-adapter/pkg/internal/mock/didexchange"
+	mockmediator "github.com/trustbloc/edge-adapter/pkg/internal/mock/mediator"
 	"github.com/trustbloc/edge-adapter/pkg/internal/mock/messenger"
 )
 
 func config() *Config {
 	return &Config{
 		DIDExchangeClient: &mockdidex.MockClient{},
+		MediatorClient:    &mockmediator.MockClient{},
 		ServiceEndpoint:   "",
 		AriesMessenger:    &messenger.MockMessenger{},
 		MsgRegistrar:      msghandler.NewRegistrar(),
