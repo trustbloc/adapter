@@ -97,7 +97,7 @@ func routerConnReq(controllerURL, webhookURL, connectionID string, adapterDIDDoc
 	// wallet - router
 	// register for message service
 	err := registerCreateConnMsgServices(controllerURL, msgSvcName,
-		"https://trustbloc.github.io/blinded-routing/1.0/create-conn-resp")
+		"https://trustbloc.dev/blinded-routing/1.0/create-conn-resp")
 	if err != nil {
 		return nil, err
 	}
@@ -109,9 +109,8 @@ func routerConnReq(controllerURL, webhookURL, connectionID string, adapterDIDDoc
 
 	// send message
 	err = sendMessage(controllerURL, connectionID, &routerops.CreateConnReq{
-		ID:      uuid.New().String(),
-		Type:    "https://trustbloc.github.io/blinded-routing/1.0/create-conn-req",
-		Purpose: []string{"create-conn-req"},
+		ID:   uuid.New().String(),
+		Type: "https://trustbloc.dev/blinded-routing/1.0/create-conn-req",
 		Data: &routerops.CreateConnReqData{
 			DIDDoc: docBytes,
 		},
