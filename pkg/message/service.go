@@ -22,11 +22,11 @@ import (
 
 // Msg svc constants.
 const (
-	msgTypeBaseURI = "https://trustbloc.github.io/blinded-routing/1.0"
-	peerDIDDocReq  = msgTypeBaseURI + "/diddoc-req"
-	peerDIDDocResp = msgTypeBaseURI + "/diddoc-resp"
-	connReq        = msgTypeBaseURI + "/conn-req"
-	connResp       = msgTypeBaseURI + "/conn-resp"
+	msgTypeBaseURI    = "https://trustbloc.dev/blinded-routing/1.0"
+	didDocReq         = msgTypeBaseURI + "/diddoc-req"
+	didDocResp        = msgTypeBaseURI + "/diddoc-resp"
+	registerRouteReq  = msgTypeBaseURI + "/register-route-req"
+	registerRouteResp = msgTypeBaseURI + "/register-route-resp"
 )
 
 const (
@@ -40,9 +40,15 @@ type DIDExchange interface {
 	CreateConnection(myDID string, theirDID *did.Doc, options ...didexchange.ConnectionOption) (string, error)
 }
 
+// Mediator client.
+type Mediator interface {
+	Register(connectionID string) error
+}
+
 // Config holds configuration.
 type Config struct {
 	DIDExchangeClient DIDExchange
+	MediatorClient    Mediator
 	ServiceEndpoint   string
 	AriesMessenger    service.Messenger
 	MsgRegistrar      *msghandler.Registrar
@@ -53,6 +59,7 @@ type Config struct {
 // Service svc.
 type Service struct {
 	didExchange  DIDExchange
+	mediator     Mediator
 	messenger    service.Messenger
 	vdriRegistry vdr.Registry
 	endpoint     string
@@ -68,6 +75,7 @@ func New(config *Config) (*Service, error) {
 
 	o := &Service{
 		didExchange:  config.DIDExchangeClient,
+		mediator:     config.MediatorClient,
 		messenger:    config.AriesMessenger,
 		vdriRegistry: config.VDRIRegistry,
 		endpoint:     config.ServiceEndpoint,
@@ -77,8 +85,8 @@ func New(config *Config) (*Service, error) {
 	msgCh := make(chan service.DIDCommMsg, 1)
 
 	err = config.MsgRegistrar.Register(
-		newMsgSvc("peer-diddoc-req", peerDIDDocReq, msgCh),
-		newMsgSvc("create-conn-req", peerDIDDocReq, msgCh),
+		newMsgSvc("diddoc-req", didDocReq, msgCh),
+		newMsgSvc("register-route-req", registerRouteReq, msgCh),
 	)
 	if err != nil {
 		return nil, fmt.Errorf("message service client: %w", err)
@@ -96,9 +104,9 @@ func (o *Service) didCommMsgListener(ch <-chan service.DIDCommMsg) {
 		var msgMap service.DIDCommMsgMap
 
 		switch msg.Type() {
-		case peerDIDDocReq:
+		case didDocReq:
 			msgMap, err = o.handleDIDDocReq(msg)
-		case connReq:
+		case registerRouteReq:
 			msgMap, err = o.handleConnReq(msg)
 		default:
 			err = fmt.Errorf("unsupported message service type : %s", msg.Type())
@@ -108,10 +116,10 @@ func (o *Service) didCommMsgListener(ch <-chan service.DIDCommMsg) {
 			msgType := msg.Type()
 
 			switch msg.Type() {
-			case peerDIDDocReq:
-				msgType = peerDIDDocResp
-			case connReq:
-				msgType = connResp
+			case didDocReq:
+				msgType = didDocResp
+			case registerRouteReq:
+				msgType = registerRouteResp
 			}
 
 			msgMap = service.NewDIDCommMsgMap(&ErrorResp{
@@ -154,7 +162,7 @@ func (o *Service) handleDIDDocReq(msg service.DIDCommMsg) (service.DIDCommMsgMap
 	// send the did doc
 	return service.NewDIDCommMsgMap(&DIDDocResp{
 		ID:   uuid.New().String(),
-		Type: peerDIDDocResp,
+		Type: didDocResp,
 		Data: &DIDDocRespData{
 			DIDDoc: docBytes,
 		},
@@ -187,16 +195,19 @@ func (o *Service) handleConnReq(msg service.DIDCommMsg) (service.DIDCommMsgMap, 
 		return nil, fmt.Errorf("fetch txn data : %w", err)
 	}
 
-	_, err = o.didExchange.CreateConnection(string(txnID), didDoc)
+	connID, err := o.didExchange.CreateConnection(string(txnID), didDoc)
 	if err != nil {
 		return nil, fmt.Errorf("create connection : %w", err)
 	}
 
-	// TODO https://github.com/trustbloc/edge-adapter/issues/342 register with router
+	err = o.mediator.Register(connID)
+	if err != nil {
+		return nil, fmt.Errorf("route registration : %w", err)
+	}
 
 	return service.NewDIDCommMsgMap(&ConnResp{
 		ID:   uuid.New().String(),
-		Type: connResp,
+		Type: registerRouteResp,
 	}), nil
 }
 

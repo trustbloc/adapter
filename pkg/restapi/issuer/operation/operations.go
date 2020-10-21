@@ -20,6 +20,7 @@ import (
 	"github.com/gorilla/mux"
 	"github.com/hyperledger/aries-framework-go/pkg/client/didexchange"
 	"github.com/hyperledger/aries-framework-go/pkg/client/issuecredential"
+	"github.com/hyperledger/aries-framework-go/pkg/client/mediator"
 	"github.com/hyperledger/aries-framework-go/pkg/client/outofband"
 	"github.com/hyperledger/aries-framework-go/pkg/client/presentproof"
 	"github.com/hyperledger/aries-framework-go/pkg/didcomm/common/service"
@@ -101,6 +102,10 @@ type GovernanceProvider interface {
 	GetCredential(profileID string) ([]byte, error)
 }
 
+type mediatorClientProvider interface {
+	Service(id string) (interface{}, error)
+}
+
 // Config defines configuration for issuer operations.
 type Config struct {
 	AriesCtx           aries.CtxProvider
@@ -114,10 +119,15 @@ type Config struct {
 }
 
 // New returns issuer rest instance.
-func New(config *Config) (*Operation, error) { // nolint:funlen
+func New(config *Config) (*Operation, error) { // nolint:funlen,gocyclo
 	oobClient, err := outofbandClient(config.AriesCtx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create aries outofband client : %w", err)
+	}
+
+	mediatorClient, err := mediatorClient(config.AriesCtx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create aries mediator client : %w", err)
 	}
 
 	didExClient, err := didExchangeClient(config.AriesCtx)
@@ -162,6 +172,7 @@ func New(config *Config) (*Operation, error) { // nolint:funlen
 		AriesMessenger:    config.AriesMessenger,
 		MsgRegistrar:      config.MsgRegistrar,
 		DIDExchangeClient: didExClient,
+		MediatorClient:    mediatorClient,
 		ServiceEndpoint:   config.AriesCtx.ServiceEndpoint(),
 		TransientStore:    config.StoreProvider,
 	})
@@ -973,6 +984,15 @@ func didExchangeClient(ariesCtx aries.CtxProvider) (*didexchange.Client, error) 
 	go service.AutoExecuteActionEvent(actionCh)
 
 	return didExClient, nil
+}
+
+func mediatorClient(prov mediatorClientProvider) (message.Mediator, error) {
+	c, err := mediator.New(prov)
+	if err != nil {
+		return nil, err
+	}
+
+	return c, err
 }
 
 func issueCredentialClient(prov issuecredential.Provider, actionCh chan service.DIDCommAction) (*issuecredential.Client, error) { // nolint: lll

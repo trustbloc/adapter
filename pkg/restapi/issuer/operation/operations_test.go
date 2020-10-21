@@ -104,6 +104,20 @@ func TestNew(t *testing.T) {
 		require.Contains(t, err.Error(), "error opening the store")
 		require.Nil(t, s)
 	})
+
+	t.Run("mediator client error", func(t *testing.T) {
+		config := config()
+		config.AriesCtx = &mockprovider.Provider{
+			ServiceMap: map[string]interface{}{
+				outofbandsvc.Name: &mockoutofband.MockService{},
+			},
+		}
+
+		c, err := New(config)
+		require.Nil(t, c)
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "failed to create aries mediator client")
+	})
 }
 
 func TestCreateProfile(t *testing.T) {

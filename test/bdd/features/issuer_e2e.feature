@@ -40,7 +40,4 @@ Feature: Issuer Adapter e2e
     And   Retrieved profile with id "profileBlindedRouting" contains name "Blinded Routing", issuerURL "http://mock-issuer.com:9080/prCard", supportedVCContexts "https://w3id.org/citizenship/v3" and supportsAssuranceCred "false"
     Then  Issuer adapter shows the wallet connect UI when the issuer "profileBlindedRouting" wants to connect to the wallet
     And   Issuer adapter ("profileBlindedRouting") creates DIDComm connection invitation for "Wallet"
-    Then  "Wallet" with blinded routing support receives the DIDConnect request from Issuer adapter ("profileBlindedRouting")
-    # TODO wallet asks to create connection with issuers by sending peerDIDDoc to router
-    # TODO wallet sends routers peerDIDDoc to issuer
-    # TODO wallet responds to issuer DIDConnect request
+    Then  "Wallet" with blinded routing support("http://localhost:9280") receives the DIDConnect request from Issuer adapter ("profileBlindedRouting")
