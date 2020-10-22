@@ -9,6 +9,8 @@ package route
 import (
 	"github.com/google/uuid"
 	"github.com/hyperledger/aries-framework-go/pkg/didcomm/messaging/msghandler"
+	"github.com/hyperledger/aries-framework-go/pkg/doc/did"
+	mockroute "github.com/hyperledger/aries-framework-go/pkg/mock/didcomm/protocol/mediator"
 	mockvdr "github.com/hyperledger/aries-framework-go/pkg/mock/vdr"
 	"github.com/trustbloc/edge-core/pkg/storage/memstore"
 
@@ -28,5 +30,18 @@ func config() *Config {
 		VDRIRegistry:      &mockvdr.MockVDRegistry{},
 		TransientStore:    memstore.NewProvider(),
 		ConnectionLookup:  &mockconn.MockConnectionsLookup{ConnIDByDIDs: uuid.New().String()},
+		MediatorSvc:       &mockroute.MockMediatorSvc{},
+	}
+}
+
+func getDIDDoc() *did.Doc {
+	return &did.Doc{
+		Service: []did.Service{
+			{
+				ID:            uuid.New().String(),
+				Type:          didCommServiceType,
+				RecipientKeys: []string{"1ert5", "x5356s"},
+			},
+		},
 	}
 }

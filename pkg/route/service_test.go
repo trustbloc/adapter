@@ -17,6 +17,7 @@ import (
 	"github.com/hyperledger/aries-framework-go/pkg/didcomm/protocol/decorator"
 	mediatorsvc "github.com/hyperledger/aries-framework-go/pkg/didcomm/protocol/mediator"
 	"github.com/hyperledger/aries-framework-go/pkg/doc/did"
+	mockroute "github.com/hyperledger/aries-framework-go/pkg/mock/didcomm/protocol/mediator"
 	mockdiddoc "github.com/hyperledger/aries-framework-go/pkg/mock/diddoc"
 	mockvdr "github.com/hyperledger/aries-framework-go/pkg/mock/vdr"
 	"github.com/stretchr/testify/require"
@@ -608,6 +609,17 @@ func TestGetDIDService(t *testing.T) {
 
 		routerEndpoint := "http://router.com"
 		keys := []string{"abc", "xyz"}
+		config.VDRIRegistry = &mockvdr.MockVDRegistry{CreateValue: &did.Doc{
+			Service: []did.Service{
+				{
+					ID:              uuid.New().String(),
+					Type:            didCommServiceType,
+					ServiceEndpoint: routerEndpoint,
+					RoutingKeys:     keys,
+					RecipientKeys:   []string{"1ert5", "x5356s"},
+				},
+			},
+		}}
 
 		mediatorConfig := mediatorsvc.NewConfig(routerEndpoint, keys)
 		config.MediatorClient = &mockmediator.MockClient{
@@ -623,14 +635,23 @@ func TestGetDIDService(t *testing.T) {
 		err = c.tStore.Put(connID, []byte(uuid.New().String()))
 		require.NoError(t, err)
 
-		didSvc, err := c.GetDIDService(connID)
+		doc, err := c.GetDIDDoc(connID)
 		require.NoError(t, err)
-		require.Equal(t, routerEndpoint, didSvc.ServiceEndpoint)
-		require.Equal(t, keys, didSvc.RoutingKeys)
+		require.Equal(t, routerEndpoint, doc.Service[0].ServiceEndpoint)
+		require.Equal(t, keys, doc.Service[0].RoutingKeys)
 	})
 
 	t.Run("success (default)", func(t *testing.T) {
 		config := config()
+		config.VDRIRegistry = &mockvdr.MockVDRegistry{CreateValue: &did.Doc{
+			Service: []did.Service{
+				{
+					ID:              uuid.New().String(),
+					Type:            didCommServiceType,
+					ServiceEndpoint: config.ServiceEndpoint,
+				},
+			},
+		}}
 
 		mediatorConfig := &mediatorsvc.Config{}
 		config.MediatorClient = &mockmediator.MockClient{
@@ -642,9 +663,9 @@ func TestGetDIDService(t *testing.T) {
 		c, err := New(config)
 		require.NoError(t, err)
 
-		didSvc, err := c.GetDIDService("")
+		doc, err := c.GetDIDDoc("")
 		require.NoError(t, err)
-		require.Equal(t, config.ServiceEndpoint, didSvc.ServiceEndpoint)
+		require.Equal(t, config.ServiceEndpoint, doc.Service[0].ServiceEndpoint)
 	})
 
 	t.Run("get config error (registered route)", func(t *testing.T) {
@@ -662,7 +683,7 @@ func TestGetDIDService(t *testing.T) {
 		err = c.tStore.Put(connID, []byte(uuid.New().String()))
 		require.NoError(t, err)
 
-		_, err = c.GetDIDService(connID)
+		_, err = c.GetDIDDoc(connID)
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "get mediator config")
 	})
@@ -679,8 +700,86 @@ func TestGetDIDService(t *testing.T) {
 		err = c.tStore.Put(connID, []byte(uuid.New().String()))
 		require.NoError(t, err)
 
-		_, err = c.GetDIDService(connID)
+		_, err = c.GetDIDDoc(connID)
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "get conn id to router conn id mapping")
+	})
+
+	t.Run("missing did-comm service type", func(t *testing.T) {
+		config := config()
+
+		config.VDRIRegistry = &mockvdr.MockVDRegistry{CreateValue: &did.Doc{
+			Service: []did.Service{
+				{
+					ID:   uuid.New().String(),
+					Type: "randomService",
+				},
+			},
+		}}
+
+		config.MediatorClient = &mockmediator.MockClient{
+			GetConfigFunc: func(connID string) (*mediatorsvc.Config, error) {
+				return &mediatorsvc.Config{}, nil
+			},
+		}
+
+		c, err := New(config)
+		require.NoError(t, err)
+
+		connID := uuid.New().String()
+		err = c.tStore.Put(connID, []byte(uuid.New().String()))
+		require.NoError(t, err)
+
+		_, err = c.GetDIDDoc(connID)
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "did document missing did-communication service type")
+	})
+
+	t.Run("did create error", func(t *testing.T) {
+		config := config()
+
+		config.VDRIRegistry = &mockvdr.MockVDRegistry{CreateErr: errors.New("create error")}
+
+		config.MediatorClient = &mockmediator.MockClient{
+			GetConfigFunc: func(connID string) (*mediatorsvc.Config, error) {
+				return &mediatorsvc.Config{}, nil
+			},
+		}
+
+		c, err := New(config)
+		require.NoError(t, err)
+
+		connID := uuid.New().String()
+		err = c.tStore.Put(connID, []byte(uuid.New().String()))
+		require.NoError(t, err)
+
+		_, err = c.GetDIDDoc(connID)
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "create new peer did")
+	})
+
+	t.Run("add key to router error", func(t *testing.T) {
+		config := config()
+
+		config.VDRIRegistry = &mockvdr.MockVDRegistry{CreateValue: getDIDDoc()}
+
+		config.MediatorClient = &mockmediator.MockClient{
+			GetConfigFunc: func(connID string) (*mediatorsvc.Config, error) {
+				return &mediatorsvc.Config{}, nil
+			},
+		}
+
+		config.MediatorSvc = &mockroute.MockMediatorSvc{AddKeyErr: errors.New("add key error")}
+
+		c, err := New(config)
+		require.NoError(t, err)
+
+		connID := uuid.New().String()
+		err = c.tStore.Put(connID, []byte(uuid.New().String()))
+		require.NoError(t, err)
+
+		_, err = c.GetDIDDoc(connID)
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "register did doc recipient key")
 	})
 }
