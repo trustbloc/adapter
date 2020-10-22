@@ -17,7 +17,7 @@ import (
 	"github.com/hyperledger/aries-framework-go/pkg/doc/did"
 	routerops "github.com/trustbloc/hub-router/pkg/restapi/operation"
 
-	msgsvc "github.com/trustbloc/edge-adapter/pkg/message"
+	routesvc "github.com/trustbloc/edge-adapter/pkg/route"
 	"github.com/trustbloc/edge-adapter/test/bdd/pkg/bddutil"
 )
 
@@ -79,7 +79,7 @@ func adapterDIDDocReq(controllerURL, webhookURL, connectionID string) (string, *
 	}
 
 	// send message
-	err = sendMessage(controllerURL, connectionID, &msgsvc.DIDDocReq{
+	err = sendMessage(controllerURL, connectionID, &routesvc.DIDDocReq{
 		ID:   uuid.New().String(),
 		Type: "https://trustbloc.dev/blinded-routing/1.0/diddoc-req",
 	})
@@ -140,10 +140,10 @@ func adapterCreateConnReq(controllerURL, webhookURL, msgID string, adapterDIDDoc
 	}
 
 	// send message
-	err = sendReply(controllerURL, msgID, &msgsvc.ConnReq{
+	err = sendReply(controllerURL, msgID, &routesvc.ConnReq{
 		ID:   uuid.New().String(),
 		Type: "https://trustbloc.dev/blinded-routing/1.0/register-route-req",
-		Data: &msgsvc.ConnReqData{
+		Data: &routesvc.ConnReqData{
 			DIDDoc: docBytes,
 		},
 	})
@@ -254,7 +254,7 @@ func getDIDDocResp(controllerURL, msgSvcName string) (string, *did.Doc, error) {
 
 	// validate the response
 	var message struct {
-		Message msgsvc.DIDDocResp `json:"message"`
+		Message routesvc.DIDDocResp `json:"message"`
 	}
 
 	err = webhookMsg.Decode(&message)
@@ -326,7 +326,7 @@ func getAdapterConnResp(controllerURL, msgSvcName string) error {
 
 	// validate the response
 	var message struct {
-		Message msgsvc.ErrorResp `json:"message"`
+		Message routesvc.ErrorResp `json:"message"`
 	}
 
 	err = webhookMsg.Decode(&message)

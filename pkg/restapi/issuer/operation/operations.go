@@ -39,9 +39,9 @@ import (
 	"github.com/trustbloc/edge-adapter/pkg/aries"
 	"github.com/trustbloc/edge-adapter/pkg/crypto"
 	"github.com/trustbloc/edge-adapter/pkg/internal/common/support"
-	"github.com/trustbloc/edge-adapter/pkg/message"
 	"github.com/trustbloc/edge-adapter/pkg/profile/issuer"
 	commhttp "github.com/trustbloc/edge-adapter/pkg/restapi/internal/common/http"
+	"github.com/trustbloc/edge-adapter/pkg/route"
 	adaptervc "github.com/trustbloc/edge-adapter/pkg/vc"
 	issuervc "github.com/trustbloc/edge-adapter/pkg/vc/issuer"
 )
@@ -106,6 +106,10 @@ type mediatorClientProvider interface {
 	Service(id string) (interface{}, error)
 }
 
+type routeService interface {
+	GetDIDService(connID string) (*did.Service, error)
+}
+
 // Config defines configuration for issuer operations.
 type Config struct {
 	AriesCtx           aries.CtxProvider
@@ -167,7 +171,7 @@ func New(config *Config) (*Operation, error) { // nolint:funlen,gocyclo
 		return nil, fmt.Errorf("failed to initialize connection lookup : %w", err)
 	}
 
-	msgSvc, err := message.New(&message.Config{
+	routeSvc, err := route.New(&route.Config{
 		VDRIRegistry:      config.AriesCtx.VDRegistry(),
 		AriesMessenger:    config.AriesMessenger,
 		MsgRegistrar:      config.MsgRegistrar,
@@ -175,6 +179,7 @@ func New(config *Config) (*Operation, error) { // nolint:funlen,gocyclo
 		MediatorClient:    mediatorClient,
 		ServiceEndpoint:   config.AriesCtx.ServiceEndpoint(),
 		TransientStore:    config.StoreProvider,
+		ConnectionLookup:  connectionLookup,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("create message service : %w", err)
@@ -198,7 +203,7 @@ func New(config *Config) (*Operation, error) { // nolint:funlen,gocyclo
 		publicDIDCreator:   config.PublicDIDCreator,
 		governanceProvider: config.GovernanceProvider,
 		httpClient:         &http.Client{Transport: &http.Transport{TLSClientConfig: config.TLSConfig}},
-		msgSvc:             msgSvc,
+		routeSvc:           routeSvc,
 	}
 
 	go op.didCommActionListener(actionCh)
@@ -227,7 +232,7 @@ type Operation struct {
 	publicDIDCreator   PublicDIDCreator
 	httpClient         httpClient
 	governanceProvider GovernanceProvider
-	msgSvc             *message.Service
+	routeSvc           routeService
 }
 
 // GetRESTHandlers get all controller API handler available for this service.
@@ -669,9 +674,14 @@ func (o *Operation) handleRequestCredential(msg service.DIDCommAction) (interfac
 		return nil, err
 	}
 
+	didSvc, err := o.routeSvc.GetDIDService(connID)
+	if err != nil {
+		return nil, fmt.Errorf("get did service : %w", err)
+	}
+
 	newDidDoc, err := o.vdriRegistry.Create(
 		"peer",
-		vdr.WithServices(did.Service{ServiceEndpoint: o.serviceEndpoint}),
+		vdr.WithServices(*didSvc),
 	)
 	if err != nil {
 		return nil, fmt.Errorf("create new issuer did : %w", err)
@@ -986,7 +996,7 @@ func didExchangeClient(ariesCtx aries.CtxProvider) (*didexchange.Client, error) 
 	return didExClient, nil
 }
 
-func mediatorClient(prov mediatorClientProvider) (message.Mediator, error) {
+func mediatorClient(prov mediatorClientProvider) (route.Mediator, error) {
 	c, err := mediator.New(prov)
 	if err != nil {
 		return nil, err
