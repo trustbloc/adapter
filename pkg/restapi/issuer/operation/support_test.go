@@ -298,6 +298,15 @@ func (s *mockVCCrypto) SignPresentation(*verifiable.Presentation, string) (*veri
 	return s.signVPValue, s.signVPErr
 }
 
+type mockRouteSvc struct {
+	GetDIDServiceValue *did.Service
+	GetDIDServiceErr   error
+}
+
+func (s *mockRouteSvc) GetDIDService(connID string) (*did.Service, error) {
+	return s.GetDIDServiceValue, s.GetDIDServiceErr
+}
+
 const (
 	vcFmt = `{
 	   "@context":[

@@ -1243,6 +1243,57 @@ func TestIssueCredentialHandler(t *testing.T) {
 			require.Contains(t, err.Error(), "rp did data is missing in authorization cred request")
 			require.Nil(t, cc)
 		})
+
+		t.Run("get service error", func(t *testing.T) {
+			actionCh := make(chan service.DIDCommAction, 1)
+
+			c, err := New(config())
+			require.NoError(t, err)
+
+			c.routeSvc = &mockRouteSvc{
+				GetDIDServiceErr: errors.New("get did service error"),
+			}
+
+			connID := uuid.New().String()
+			c.connectionLookup = &mockconn.MockConnectionsLookup{
+				ConnIDByDIDs: connID,
+			}
+
+			issuerID := uuid.New().String()
+
+			profile := createProfileData(issuerID)
+
+			err = c.profileStore.SaveProfile(profile)
+			require.NoError(t, err)
+
+			go c.didCommActionListener(actionCh)
+
+			done := make(chan struct{})
+
+			actionCh <- service.DIDCommAction{
+				Message: service.NewDIDCommMsgMap(issuecredsvc.RequestCredential{
+					Type: issuecredsvc.RequestCredentialMsgType,
+					RequestsAttach: []decorator.Attachment{
+						{Data: decorator.AttachmentData{
+							JSON: createAuthorizationCredReq(t, "did:example:xyz123",
+								mockdiddoc.GetMockDIDDoc("did:example:def567")),
+						}},
+					},
+				}),
+				Stop: func(err error) {
+					require.NotNil(t, err)
+					require.Contains(t, err.Error(), "get did service")
+					done <- struct{}{}
+				},
+				Properties: &actionEventEvent{},
+			}
+
+			select {
+			case <-done:
+			case <-time.After(65 * time.Second):
+				require.Fail(t, "tests are not validated due to timeout")
+			}
+		})
 	})
 }
 

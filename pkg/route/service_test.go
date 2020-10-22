@@ -4,7 +4,7 @@ Copyright SecureKey Technologies Inc. All Rights Reserved.
 SPDX-License-Identifier: Apache-2.0
 */
 
-package message
+package route
 
 import (
 	"errors"
@@ -15,12 +15,14 @@ import (
 	"github.com/hyperledger/aries-framework-go/pkg/client/didexchange"
 	"github.com/hyperledger/aries-framework-go/pkg/didcomm/common/service"
 	"github.com/hyperledger/aries-framework-go/pkg/didcomm/protocol/decorator"
+	mediatorsvc "github.com/hyperledger/aries-framework-go/pkg/didcomm/protocol/mediator"
 	"github.com/hyperledger/aries-framework-go/pkg/doc/did"
 	mockdiddoc "github.com/hyperledger/aries-framework-go/pkg/mock/diddoc"
 	mockvdr "github.com/hyperledger/aries-framework-go/pkg/mock/vdr"
 	"github.com/stretchr/testify/require"
 	mockstorage "github.com/trustbloc/edge-core/pkg/storage/mockstore"
 
+	mockconn "github.com/trustbloc/edge-adapter/pkg/internal/mock/connection"
 	mockdidex "github.com/trustbloc/edge-adapter/pkg/internal/mock/didexchange"
 	mockmediator "github.com/trustbloc/edge-adapter/pkg/internal/mock/mediator"
 	"github.com/trustbloc/edge-adapter/pkg/internal/mock/messenger"
@@ -72,12 +74,12 @@ func TestDIDCommMsgListener(t *testing.T) {
 			},
 		}
 
-		msgCh := make(chan service.DIDCommMsg, 1)
+		msgCh := make(chan routeMsg, 1)
 		go c.didCommMsgListener(msgCh)
 
-		msgCh <- service.NewDIDCommMsgMap(struct {
+		msgCh <- routeMsg{didCommMsg: service.NewDIDCommMsgMap(struct {
 			Type string `json:"@type,omitempty"`
-		}{Type: "unsupported-message-type"})
+		}{Type: "unsupported-message-type"})}
 
 		select {
 		case <-done:
@@ -96,12 +98,12 @@ func TestDIDCommMsgListener(t *testing.T) {
 			},
 		}
 
-		msgCh := make(chan service.DIDCommMsg, 1)
+		msgCh := make(chan routeMsg, 1)
 		go c.didCommMsgListener(msgCh)
 
-		msgCh <- service.NewDIDCommMsgMap(struct {
+		msgCh <- routeMsg{didCommMsg: service.NewDIDCommMsgMap(struct {
 			Type string `json:"@type,omitempty"`
-		}{Type: "unsupported-message-type"})
+		}{Type: "unsupported-message-type"})}
 	})
 
 	t.Run("did doc request", func(t *testing.T) {
@@ -128,13 +130,13 @@ func TestDIDCommMsgListener(t *testing.T) {
 			},
 		}
 
-		msgCh := make(chan service.DIDCommMsg, 1)
+		msgCh := make(chan routeMsg, 1)
 		go c.didCommMsgListener(msgCh)
 
-		msgCh <- service.NewDIDCommMsgMap(DIDDocReq{
+		msgCh <- routeMsg{didCommMsg: service.NewDIDCommMsgMap(DIDDocReq{
 			ID:   uuid.New().String(),
 			Type: didDocReq,
-		})
+		})}
 
 		select {
 		case <-done:
@@ -165,7 +167,7 @@ func TestDIDCommMsgListener(t *testing.T) {
 		c, err := New(config)
 		require.NoError(t, err)
 
-		msgCh := make(chan service.DIDCommMsg, 1)
+		msgCh := make(chan routeMsg, 1)
 		go c.didCommMsgListener(msgCh)
 
 		didDoc := mockdiddoc.GetMockDIDDoc()
@@ -177,7 +179,7 @@ func TestDIDCommMsgListener(t *testing.T) {
 		didDocBytes, err := didDoc.JSONBytes()
 		require.NoError(t, err)
 
-		msgCh <- service.NewDIDCommMsgMap(ConnReq{
+		msgCh <- routeMsg{didCommMsg: service.NewDIDCommMsgMap(ConnReq{
 			ID:   uuid.New().String(),
 			Type: registerRouteReq,
 			Thread: &decorator.Thread{
@@ -186,7 +188,7 @@ func TestDIDCommMsgListener(t *testing.T) {
 			Data: &ConnReqData{
 				DIDDoc: didDocBytes,
 			},
-		})
+		})}
 
 		select {
 		case <-done:
@@ -219,13 +221,13 @@ func TestDIDDocReq(t *testing.T) {
 		c, err := New(config)
 		require.NoError(t, err)
 
-		msgCh := make(chan service.DIDCommMsg, 1)
+		msgCh := make(chan routeMsg, 1)
 		go c.didCommMsgListener(msgCh)
 
-		msgCh <- service.NewDIDCommMsgMap(DIDDocReq{
+		msgCh <- routeMsg{didCommMsg: service.NewDIDCommMsgMap(DIDDocReq{
 			ID:   uuid.New().String(),
 			Type: didDocReq,
-		})
+		})}
 
 		select {
 		case <-done:
@@ -257,13 +259,13 @@ func TestDIDDocReq(t *testing.T) {
 
 		c.tStore = &mockstorage.MockStore{Store: make(map[string][]byte), ErrPut: errors.New("save error")}
 
-		msgCh := make(chan service.DIDCommMsg, 1)
+		msgCh := make(chan routeMsg, 1)
 		go c.didCommMsgListener(msgCh)
 
-		msgCh <- service.NewDIDCommMsgMap(DIDDocReq{
+		msgCh <- routeMsg{didCommMsg: service.NewDIDCommMsgMap(DIDDocReq{
 			ID:   uuid.New().String(),
 			Type: didDocReq,
-		})
+		})}
 
 		select {
 		case <-done:
@@ -293,13 +295,13 @@ func TestRegisterRouteReq(t *testing.T) { // nolint:gocyclo
 			},
 		}
 
-		msgCh := make(chan service.DIDCommMsg, 1)
+		msgCh := make(chan routeMsg, 1)
 		go c.didCommMsgListener(msgCh)
 
-		msgCh <- service.NewDIDCommMsgMap(ConnReq{
+		msgCh <- routeMsg{didCommMsg: service.NewDIDCommMsgMap(ConnReq{
 			ID:   uuid.New().String(),
 			Type: registerRouteReq,
-		})
+		})}
 
 		select {
 		case <-done:
@@ -329,16 +331,16 @@ func TestRegisterRouteReq(t *testing.T) { // nolint:gocyclo
 			},
 		}
 
-		msgCh := make(chan service.DIDCommMsg, 1)
+		msgCh := make(chan routeMsg, 1)
 		go c.didCommMsgListener(msgCh)
 
-		msgCh <- service.NewDIDCommMsgMap(ConnReq{
+		msgCh <- routeMsg{didCommMsg: service.NewDIDCommMsgMap(ConnReq{
 			ID:   uuid.New().String(),
 			Type: registerRouteReq,
 			Thread: &decorator.Thread{
 				PID: uuid.New().String(),
 			},
-		})
+		})}
 
 		select {
 		case <-done:
@@ -370,10 +372,10 @@ func TestRegisterRouteReq(t *testing.T) { // nolint:gocyclo
 			},
 		}
 
-		msgCh := make(chan service.DIDCommMsg, 1)
+		msgCh := make(chan routeMsg, 1)
 		go c.didCommMsgListener(msgCh)
 
-		msgCh <- service.NewDIDCommMsgMap(ConnReq{
+		msgCh <- routeMsg{didCommMsg: service.NewDIDCommMsgMap(ConnReq{
 			ID:   uuid.New().String(),
 			Type: registerRouteReq,
 			Thread: &decorator.Thread{
@@ -382,7 +384,7 @@ func TestRegisterRouteReq(t *testing.T) { // nolint:gocyclo
 			Data: &ConnReqData{
 				DIDDoc: []byte("invalid-did-doc"),
 			},
-		})
+		})}
 
 		select {
 		case <-done:
@@ -416,10 +418,10 @@ func TestRegisterRouteReq(t *testing.T) { // nolint:gocyclo
 		didDocBytes, err := didDoc.JSONBytes()
 		require.NoError(t, err)
 
-		msgCh := make(chan service.DIDCommMsg, 1)
+		msgCh := make(chan routeMsg, 1)
 		go c.didCommMsgListener(msgCh)
 
-		msgCh <- service.NewDIDCommMsgMap(ConnReq{
+		msgCh <- routeMsg{didCommMsg: service.NewDIDCommMsgMap(ConnReq{
 			ID:   uuid.New().String(),
 			Type: registerRouteReq,
 			Thread: &decorator.Thread{
@@ -428,7 +430,7 @@ func TestRegisterRouteReq(t *testing.T) { // nolint:gocyclo
 			Data: &ConnReqData{
 				DIDDoc: didDocBytes,
 			},
-		})
+		})}
 
 		select {
 		case <-done:
@@ -463,7 +465,7 @@ func TestRegisterRouteReq(t *testing.T) { // nolint:gocyclo
 		c, err := New(config)
 		require.NoError(t, err)
 
-		msgCh := make(chan service.DIDCommMsg, 1)
+		msgCh := make(chan routeMsg, 1)
 		go c.didCommMsgListener(msgCh)
 
 		didDoc := mockdiddoc.GetMockDIDDoc()
@@ -475,7 +477,7 @@ func TestRegisterRouteReq(t *testing.T) { // nolint:gocyclo
 		didDocBytes, err := didDoc.JSONBytes()
 		require.NoError(t, err)
 
-		msgCh <- service.NewDIDCommMsgMap(ConnReq{
+		msgCh <- routeMsg{didCommMsg: service.NewDIDCommMsgMap(ConnReq{
 			ID:   uuid.New().String(),
 			Type: registerRouteReq,
 			Thread: &decorator.Thread{
@@ -484,7 +486,7 @@ func TestRegisterRouteReq(t *testing.T) { // nolint:gocyclo
 			Data: &ConnReqData{
 				DIDDoc: didDocBytes,
 			},
-		})
+		})}
 
 		select {
 		case <-done:
@@ -517,7 +519,7 @@ func TestRegisterRouteReq(t *testing.T) { // nolint:gocyclo
 		c, err := New(config)
 		require.NoError(t, err)
 
-		msgCh := make(chan service.DIDCommMsg, 1)
+		msgCh := make(chan routeMsg, 1)
 		go c.didCommMsgListener(msgCh)
 
 		didDoc := mockdiddoc.GetMockDIDDoc()
@@ -529,7 +531,7 @@ func TestRegisterRouteReq(t *testing.T) { // nolint:gocyclo
 		didDocBytes, err := didDoc.JSONBytes()
 		require.NoError(t, err)
 
-		msgCh <- service.NewDIDCommMsgMap(ConnReq{
+		msgCh <- routeMsg{didCommMsg: service.NewDIDCommMsgMap(ConnReq{
 			ID:   uuid.New().String(),
 			Type: registerRouteReq,
 			Thread: &decorator.Thread{
@@ -538,12 +540,147 @@ func TestRegisterRouteReq(t *testing.T) { // nolint:gocyclo
 			Data: &ConnReqData{
 				DIDDoc: didDocBytes,
 			},
-		})
+		})}
 
 		select {
 		case <-done:
 		case <-time.After(5 * time.Second):
 			require.Fail(t, "tests are not validated due to timeout")
 		}
+	})
+
+	t.Run("connection id look up error", func(t *testing.T) {
+		config := config()
+		config.ConnectionLookup = &mockconn.MockConnectionsLookup{ConnIDByDIDsErr: errors.New("lookup error")}
+
+		done := make(chan struct{})
+		config.AriesMessenger = &messenger.MockMessenger{
+			ReplyToFunc: func(msgID string, msg service.DIDCommMsgMap) error {
+				pMsg := &ErrorResp{}
+				dErr := msg.Decode(pMsg)
+				require.NoError(t, dErr)
+				require.Equal(t, pMsg.Type, registerRouteResp)
+				require.Contains(t, pMsg.Data.ErrorMsg, "get connection by dids")
+
+				done <- struct{}{}
+
+				return nil
+			},
+		}
+
+		c, err := New(config)
+		require.NoError(t, err)
+
+		msgCh := make(chan routeMsg, 1)
+		go c.didCommMsgListener(msgCh)
+
+		didDoc := mockdiddoc.GetMockDIDDoc()
+		txnID := uuid.New().String()
+
+		err = c.tStore.Put(txnID, []byte(didDoc.ID))
+		require.NoError(t, err)
+
+		didDocBytes, err := didDoc.JSONBytes()
+		require.NoError(t, err)
+
+		msgCh <- routeMsg{didCommMsg: service.NewDIDCommMsgMap(ConnReq{
+			ID:   uuid.New().String(),
+			Type: registerRouteReq,
+			Thread: &decorator.Thread{
+				PID: txnID,
+			},
+			Data: &ConnReqData{
+				DIDDoc: didDocBytes,
+			},
+		})}
+
+		select {
+		case <-done:
+		case <-time.After(5 * time.Second):
+			require.Fail(t, "tests are not validated due to timeout")
+		}
+	})
+}
+
+func TestGetDIDService(t *testing.T) {
+	t.Run("success (registered route)", func(t *testing.T) {
+		config := config()
+
+		routerEndpoint := "http://router.com"
+		keys := []string{"abc", "xyz"}
+
+		mediatorConfig := mediatorsvc.NewConfig(routerEndpoint, keys)
+		config.MediatorClient = &mockmediator.MockClient{
+			GetConfigFunc: func(connID string) (*mediatorsvc.Config, error) {
+				return mediatorConfig, nil
+			},
+		}
+
+		c, err := New(config)
+		require.NoError(t, err)
+
+		connID := uuid.New().String()
+		err = c.tStore.Put(connID, []byte(uuid.New().String()))
+		require.NoError(t, err)
+
+		didSvc, err := c.GetDIDService(connID)
+		require.NoError(t, err)
+		require.Equal(t, routerEndpoint, didSvc.ServiceEndpoint)
+		require.Equal(t, keys, didSvc.RoutingKeys)
+	})
+
+	t.Run("success (default)", func(t *testing.T) {
+		config := config()
+
+		mediatorConfig := &mediatorsvc.Config{}
+		config.MediatorClient = &mockmediator.MockClient{
+			GetConfigFunc: func(connID string) (*mediatorsvc.Config, error) {
+				return mediatorConfig, nil
+			},
+		}
+
+		c, err := New(config)
+		require.NoError(t, err)
+
+		didSvc, err := c.GetDIDService("")
+		require.NoError(t, err)
+		require.Equal(t, config.ServiceEndpoint, didSvc.ServiceEndpoint)
+	})
+
+	t.Run("get config error (registered route)", func(t *testing.T) {
+		config := config()
+		config.MediatorClient = &mockmediator.MockClient{
+			GetConfigFunc: func(connID string) (*mediatorsvc.Config, error) {
+				return nil, errors.New("mediator config error")
+			},
+		}
+
+		c, err := New(config)
+		require.NoError(t, err)
+
+		connID := uuid.New().String()
+		err = c.tStore.Put(connID, []byte(uuid.New().String()))
+		require.NoError(t, err)
+
+		_, err = c.GetDIDService(connID)
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "get mediator config")
+	})
+
+	t.Run("store error", func(t *testing.T) {
+		config := config()
+
+		c, err := New(config)
+		require.NoError(t, err)
+
+		c.tStore = &mockstorage.MockStore{Store: make(map[string][]byte), ErrGet: errors.New("get error")}
+
+		connID := uuid.New().String()
+		err = c.tStore.Put(connID, []byte(uuid.New().String()))
+		require.NoError(t, err)
+
+		_, err = c.GetDIDService(connID)
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "get conn id to router conn id mapping")
 	})
 }

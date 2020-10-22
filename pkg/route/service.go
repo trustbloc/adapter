@@ -4,7 +4,7 @@ Copyright SecureKey Technologies Inc. All Rights Reserved.
 SPDX-License-Identifier: Apache-2.0
 */
 
-package message
+package route
 
 import (
 	"errors"
@@ -14,6 +14,7 @@ import (
 	"github.com/hyperledger/aries-framework-go/pkg/client/didexchange"
 	"github.com/hyperledger/aries-framework-go/pkg/didcomm/common/service"
 	"github.com/hyperledger/aries-framework-go/pkg/didcomm/messaging/msghandler"
+	mediatorsvc "github.com/hyperledger/aries-framework-go/pkg/didcomm/protocol/mediator"
 	"github.com/hyperledger/aries-framework-go/pkg/doc/did"
 	"github.com/hyperledger/aries-framework-go/pkg/framework/aries/api/vdr"
 	"github.com/trustbloc/edge-core/pkg/log"
@@ -43,6 +44,11 @@ type DIDExchange interface {
 // Mediator client.
 type Mediator interface {
 	Register(connectionID string) error
+	GetConfig(connID string) (*mediatorsvc.Config, error)
+}
+
+type connectionRecorder interface {
+	GetConnectionIDByDIDs(string, string) (string, error)
 }
 
 // Config holds configuration.
@@ -54,16 +60,18 @@ type Config struct {
 	MsgRegistrar      *msghandler.Registrar
 	VDRIRegistry      vdr.Registry
 	TransientStore    storage.Provider
+	ConnectionLookup  connectionRecorder
 }
 
 // Service svc.
 type Service struct {
-	didExchange  DIDExchange
-	mediator     Mediator
-	messenger    service.Messenger
-	vdriRegistry vdr.Registry
-	endpoint     string
-	tStore       storage.Store
+	didExchange      DIDExchange
+	mediator         Mediator
+	messenger        service.Messenger
+	vdriRegistry     vdr.Registry
+	endpoint         string
+	tStore           storage.Store
+	connectionLookup connectionRecorder
 }
 
 // New returns a new Service.
@@ -74,15 +82,16 @@ func New(config *Config) (*Service, error) {
 	}
 
 	o := &Service{
-		didExchange:  config.DIDExchangeClient,
-		mediator:     config.MediatorClient,
-		messenger:    config.AriesMessenger,
-		vdriRegistry: config.VDRIRegistry,
-		endpoint:     config.ServiceEndpoint,
-		tStore:       tStore,
+		didExchange:      config.DIDExchangeClient,
+		mediator:         config.MediatorClient,
+		messenger:        config.AriesMessenger,
+		vdriRegistry:     config.VDRIRegistry,
+		endpoint:         config.ServiceEndpoint,
+		tStore:           tStore,
+		connectionLookup: config.ConnectionLookup,
 	}
 
-	msgCh := make(chan service.DIDCommMsg, 1)
+	msgCh := make(chan routeMsg, 1)
 
 	err = config.MsgRegistrar.Register(
 		newMsgSvc("diddoc-req", didDocReq, msgCh),
@@ -97,25 +106,52 @@ func New(config *Config) (*Service, error) {
 	return o, nil
 }
 
-func (o *Service) didCommMsgListener(ch <-chan service.DIDCommMsg) {
+// GetDIDService returns the did svc block with router endpoint/keys if its registered, else returns default endpoint.
+func (o *Service) GetDIDService(connID string) (*did.Service, error) {
+	// get routers connection ID
+	routerConnID, err := o.tStore.Get(connID)
+	if err != nil && !errors.Is(err, storage.ErrValueNotFound) {
+		return nil, fmt.Errorf("get conn id to router conn id mapping: %w", err)
+	}
+
+	// TODO https://github.com/trustbloc/edge-adapter/issues/339 Enforce blinded routing (should throw
+	//  error if route is not registered)
+	if errors.Is(err, storage.ErrValueNotFound) {
+		return &did.Service{
+			ServiceEndpoint: o.endpoint,
+		}, nil
+	}
+
+	config, err := o.mediator.GetConfig(string(routerConnID))
+	if err != nil {
+		return nil, fmt.Errorf("get mediator config: %w", err)
+	}
+
+	return &did.Service{
+		ServiceEndpoint: config.Endpoint(),
+		RoutingKeys:     config.Keys(),
+	}, nil
+}
+
+func (o *Service) didCommMsgListener(ch <-chan routeMsg) {
 	for msg := range ch {
 		var err error
 
 		var msgMap service.DIDCommMsgMap
 
-		switch msg.Type() {
+		switch msg.didCommMsg.Type() {
 		case didDocReq:
-			msgMap, err = o.handleDIDDocReq(msg)
+			msgMap, err = o.handleDIDDocReq(msg.didCommMsg)
 		case registerRouteReq:
-			msgMap, err = o.handleConnReq(msg)
+			msgMap, err = o.handleRouteRegistration(msg)
 		default:
-			err = fmt.Errorf("unsupported message service type : %s", msg.Type())
+			err = fmt.Errorf("unsupported message service type : %s", msg.didCommMsg.Type())
 		}
 
 		if err != nil {
-			msgType := msg.Type()
+			msgType := msg.didCommMsg.Type()
 
-			switch msg.Type() {
+			switch msg.didCommMsg.Type() {
 			case didDocReq:
 				msgType = didDocResp
 			case registerRouteReq:
@@ -128,17 +164,18 @@ func (o *Service) didCommMsgListener(ch <-chan service.DIDCommMsg) {
 				Data: &ErrorRespData{ErrorMsg: err.Error()},
 			})
 
-			logger.Errorf("msgType=[%s] id=[%s] errMsg=[%s]", msg.Type(), msg.ID(), err.Error())
+			logger.Errorf("msgType=[%s] id=[%s] errMsg=[%s]", msg.didCommMsg.Type(), msg.didCommMsg.ID(), err.Error())
 		}
 
-		err = o.messenger.ReplyTo(msg.ID(), msgMap)
+		err = o.messenger.ReplyTo(msg.didCommMsg.ID(), msgMap)
 		if err != nil {
-			logger.Errorf("sendReply : msgType=[%s] id=[%s] errMsg=[%s]", msg.Type(), msg.ID(), err.Error())
+			logger.Errorf("sendReply : msgType=[%s] id=[%s] errMsg=[%s]",
+				msg.didCommMsg.Type(), msg.didCommMsg.ID(), err.Error())
 
 			continue
 		}
 
-		logger.Infof("msgType=[%s] id=[%s] msg=[%s]", msg.Type(), msg.ID(), "success")
+		logger.Infof("msgType=[%s] id=[%s] msg=[%s]", msg.didCommMsg.Type(), msg.didCommMsg.ID(), "success")
 	}
 }
 
@@ -169,15 +206,15 @@ func (o *Service) handleDIDDocReq(msg service.DIDCommMsg) (service.DIDCommMsgMap
 	}), nil
 }
 
-func (o *Service) handleConnReq(msg service.DIDCommMsg) (service.DIDCommMsgMap, error) {
+func (o *Service) handleRouteRegistration(msg routeMsg) (service.DIDCommMsgMap, error) { // nolint: gocyclo
 	pMsg := ConnReq{}
 
-	err := msg.Decode(&pMsg)
+	err := msg.didCommMsg.Decode(&pMsg)
 	if err != nil {
 		return nil, fmt.Errorf("parse didcomm message : %w", err)
 	}
 
-	if msg.ParentThreadID() == "" {
+	if msg.didCommMsg.ParentThreadID() == "" {
 		return nil, errors.New("parent thread id mandatory")
 	}
 
@@ -190,19 +227,29 @@ func (o *Service) handleConnReq(msg service.DIDCommMsg) (service.DIDCommMsgMap, 
 		return nil, fmt.Errorf("parse did doc : %w", err)
 	}
 
-	txnID, err := o.tStore.Get(msg.ParentThreadID())
+	txnID, err := o.tStore.Get(msg.didCommMsg.ParentThreadID())
 	if err != nil {
 		return nil, fmt.Errorf("fetch txn data : %w", err)
 	}
 
-	connID, err := o.didExchange.CreateConnection(string(txnID), didDoc)
+	routerConnID, err := o.didExchange.CreateConnection(string(txnID), didDoc)
 	if err != nil {
 		return nil, fmt.Errorf("create connection : %w", err)
 	}
 
-	err = o.mediator.Register(connID)
+	err = o.mediator.Register(routerConnID)
 	if err != nil {
 		return nil, fmt.Errorf("route registration : %w", err)
+	}
+
+	connID, err := o.connectionLookup.GetConnectionIDByDIDs(msg.myDID, msg.theirDID)
+	if err != nil {
+		return nil, fmt.Errorf("get connection by dids : %w", err)
+	}
+
+	err = o.tStore.Put(connID, []byte(routerConnID))
+	if err != nil {
+		return nil, fmt.Errorf("save connID to routerConnID mapping : %w", err)
 	}
 
 	return service.NewDIDCommMsgMap(&ConnResp{
