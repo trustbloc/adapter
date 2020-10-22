@@ -1244,14 +1244,14 @@ func TestIssueCredentialHandler(t *testing.T) {
 			require.Nil(t, cc)
 		})
 
-		t.Run("get service error", func(t *testing.T) {
+		t.Run("create did doc error", func(t *testing.T) {
 			actionCh := make(chan service.DIDCommAction, 1)
 
 			c, err := New(config())
 			require.NoError(t, err)
 
 			c.routeSvc = &mockRouteSvc{
-				GetDIDServiceErr: errors.New("get did service error"),
+				GetDIDDocErr: errors.New("create did"),
 			}
 
 			connID := uuid.New().String()
@@ -1282,7 +1282,7 @@ func TestIssueCredentialHandler(t *testing.T) {
 				}),
 				Stop: func(err error) {
 					require.NotNil(t, err)
-					require.Contains(t, err.Error(), "get did service")
+					require.Contains(t, err.Error(), "create new issuer did")
 					done <- struct{}{}
 				},
 				Properties: &actionEventEvent{},
@@ -1290,7 +1290,7 @@ func TestIssueCredentialHandler(t *testing.T) {
 
 			select {
 			case <-done:
-			case <-time.After(65 * time.Second):
+			case <-time.After(5 * time.Second):
 				require.Fail(t, "tests are not validated due to timeout")
 			}
 		})

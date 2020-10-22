@@ -299,12 +299,12 @@ func (s *mockVCCrypto) SignPresentation(*verifiable.Presentation, string) (*veri
 }
 
 type mockRouteSvc struct {
-	GetDIDServiceValue *did.Service
-	GetDIDServiceErr   error
+	GetDIDDocValue *did.Doc
+	GetDIDDocErr   error
 }
 
-func (s *mockRouteSvc) GetDIDService(connID string) (*did.Service, error) {
-	return s.GetDIDServiceValue, s.GetDIDServiceErr
+func (s *mockRouteSvc) GetDIDDoc(connID string) (*did.Doc, error) {
+	return s.GetDIDDocValue, s.GetDIDDocErr
 }
 
 const (

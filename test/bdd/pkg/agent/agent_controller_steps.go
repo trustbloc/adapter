@@ -310,7 +310,7 @@ func (a *Steps) handleDIDCommConnectRequest(agentID, supportedVCContexts, issuer
 	return nil
 }
 
-func (a *Steps) didConnectReqWithRouting(agentID, routerURL, issuerID string) error {
+func (a *Steps) didConnectReqWithRouting(agentID, routerURL, issuerID string) error { // nolint: funlen,gocyclo
 	didConnReq := a.bddContext.Store[bddutil.GetDIDConnectRequestKey(issuerID, agentID)]
 
 	request := &issuerops.CHAPIRequest{}
@@ -360,6 +360,40 @@ func (a *Steps) didConnectReqWithRouting(agentID, routerURL, issuerID string) er
 	if err != nil {
 		return fmt.Errorf("adapter connection req : %w", err)
 	}
+
+	conn, err := a.ValidateConnection(agentID, connectionID)
+	if err != nil {
+		return err
+	}
+
+	subject := issuer.DIDConnectCredentialSubject{
+		ID:              connectionID,
+		InviteeDID:      conn.MyDID,
+		InviterDID:      conn.TheirDID,
+		InviterLabel:    "my-label",
+		ThreadID:        conn.ThreadID,
+		ConnectionState: "completed",
+	}
+
+	vc := verifiable.Credential{
+		Context: []string{"https://www.w3.org/2018/credentials/v1"},
+		Types:   []string{"VerifiableCredential", issuer.DIDConnectCredentialType},
+		Issuer:  verifiable.Issuer{ID: "did:example:123"},
+		Issued:  util.NewTime(time.Now().UTC()),
+		Subject: subject,
+	}
+
+	vp, err := vc.Presentation()
+	if err != nil {
+		return err
+	}
+
+	vpJSON, err := vp.MarshalJSON()
+	if err != nil {
+		return err
+	}
+
+	a.bddContext.Store[bddutil.GetDIDConnectResponseKey(issuerID, agentID)] = string(vpJSON)
 
 	return nil
 }

@@ -31,7 +31,8 @@ const (
 )
 
 const (
-	txnStoreName = "msgsvc_txn"
+	txnStoreName       = "msgsvc_txn"
+	didCommServiceType = "did-communication"
 )
 
 var logger = log.New("edge-adapter/msgsvc")
@@ -61,6 +62,7 @@ type Config struct {
 	VDRIRegistry      vdr.Registry
 	TransientStore    storage.Provider
 	ConnectionLookup  connectionRecorder
+	MediatorSvc       mediatorsvc.ProtocolService
 }
 
 // Service svc.
@@ -72,6 +74,7 @@ type Service struct {
 	endpoint         string
 	tStore           storage.Store
 	connectionLookup connectionRecorder
+	mediatorSvc      mediatorsvc.ProtocolService
 }
 
 // New returns a new Service.
@@ -89,6 +92,8 @@ func New(config *Config) (*Service, error) {
 		endpoint:         config.ServiceEndpoint,
 		tStore:           tStore,
 		connectionLookup: config.ConnectionLookup,
+		// TODO https://github.com/trustbloc/edge-adapter/issues/361 use function from client
+		mediatorSvc: config.MediatorSvc,
 	}
 
 	msgCh := make(chan routeMsg, 1)
@@ -106,8 +111,9 @@ func New(config *Config) (*Service, error) {
 	return o, nil
 }
 
-// GetDIDService returns the did svc block with router endpoint/keys if its registered, else returns default endpoint.
-func (o *Service) GetDIDService(connID string) (*did.Service, error) {
+// GetDIDDoc returns the did doc with router endpoint/keys if its registered, else returns the doc
+// with default endpoint.
+func (o *Service) GetDIDDoc(connID string) (*did.Doc, error) {
 	// get routers connection ID
 	routerConnID, err := o.tStore.Get(connID)
 	if err != nil && !errors.Is(err, storage.ErrValueNotFound) {
@@ -117,9 +123,12 @@ func (o *Service) GetDIDService(connID string) (*did.Service, error) {
 	// TODO https://github.com/trustbloc/edge-adapter/issues/339 Enforce blinded routing (should throw
 	//  error if route is not registered)
 	if errors.Is(err, storage.ErrValueNotFound) {
-		return &did.Service{
-			ServiceEndpoint: o.endpoint,
-		}, nil
+		return o.vdriRegistry.Create(
+			"peer",
+			vdr.WithServices(did.Service{
+				ServiceEndpoint: o.endpoint,
+			}),
+		)
 	}
 
 	config, err := o.mediator.GetConfig(string(routerConnID))
@@ -127,10 +136,30 @@ func (o *Service) GetDIDService(connID string) (*did.Service, error) {
 		return nil, fmt.Errorf("get mediator config: %w", err)
 	}
 
-	return &did.Service{
-		ServiceEndpoint: config.Endpoint(),
-		RoutingKeys:     config.Keys(),
-	}, nil
+	newDidDoc, err := o.vdriRegistry.Create(
+		"peer",
+		vdr.WithServices(did.Service{
+			ServiceEndpoint: config.Endpoint(),
+			RoutingKeys:     config.Keys(),
+		}),
+	)
+	if err != nil {
+		return nil, fmt.Errorf("create new peer did : %w", err)
+	}
+
+	didSvc, ok := did.LookupService(newDidDoc, didCommServiceType)
+	if !ok {
+		return nil, fmt.Errorf("did document missing %s service type", didCommServiceType)
+	}
+
+	for _, val := range didSvc.RecipientKeys {
+		err = mediatorsvc.AddKeyToRouter(o.mediatorSvc, string(routerConnID), val)
+		if err != nil {
+			return nil, fmt.Errorf("register did doc recipient key : %w", err)
+		}
+	}
+
+	return newDidDoc, nil
 }
 
 func (o *Service) didCommMsgListener(ch <-chan routeMsg) {

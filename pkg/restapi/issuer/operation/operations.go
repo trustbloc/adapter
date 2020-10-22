@@ -27,6 +27,7 @@ import (
 	"github.com/hyperledger/aries-framework-go/pkg/didcomm/messaging/msghandler"
 	"github.com/hyperledger/aries-framework-go/pkg/didcomm/protocol/decorator"
 	issuecredsvc "github.com/hyperledger/aries-framework-go/pkg/didcomm/protocol/issuecredential"
+	mediatorsvc "github.com/hyperledger/aries-framework-go/pkg/didcomm/protocol/mediator"
 	presentproofsvc "github.com/hyperledger/aries-framework-go/pkg/didcomm/protocol/presentproof"
 	"github.com/hyperledger/aries-framework-go/pkg/doc/did"
 	"github.com/hyperledger/aries-framework-go/pkg/doc/util"
@@ -107,7 +108,7 @@ type mediatorClientProvider interface {
 }
 
 type routeService interface {
-	GetDIDService(connID string) (*did.Service, error)
+	GetDIDDoc(connID string) (*did.Doc, error)
 }
 
 // Config defines configuration for issuer operations.
@@ -171,6 +172,16 @@ func New(config *Config) (*Operation, error) { // nolint:funlen,gocyclo
 		return nil, fmt.Errorf("failed to initialize connection lookup : %w", err)
 	}
 
+	s, err := config.AriesCtx.Service(mediatorsvc.Coordination)
+	if err != nil {
+		return nil, err
+	}
+
+	mediatorSvc, ok := s.(mediatorsvc.ProtocolService)
+	if !ok {
+		return nil, errors.New("cast service to Route Service failed")
+	}
+
 	routeSvc, err := route.New(&route.Config{
 		VDRIRegistry:      config.AriesCtx.VDRegistry(),
 		AriesMessenger:    config.AriesMessenger,
@@ -180,6 +191,7 @@ func New(config *Config) (*Operation, error) { // nolint:funlen,gocyclo
 		ServiceEndpoint:   config.AriesCtx.ServiceEndpoint(),
 		TransientStore:    config.StoreProvider,
 		ConnectionLookup:  connectionLookup,
+		MediatorSvc:       mediatorSvc,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("create message service : %w", err)
@@ -674,15 +686,7 @@ func (o *Operation) handleRequestCredential(msg service.DIDCommAction) (interfac
 		return nil, err
 	}
 
-	didSvc, err := o.routeSvc.GetDIDService(connID)
-	if err != nil {
-		return nil, fmt.Errorf("get did service : %w", err)
-	}
-
-	newDidDoc, err := o.vdriRegistry.Create(
-		"peer",
-		vdr.WithServices(*didSvc),
-	)
+	newDidDoc, err := o.routeSvc.GetDIDDoc(connID)
 	if err != nil {
 		return nil, fmt.Errorf("create new issuer did : %w", err)
 	}
