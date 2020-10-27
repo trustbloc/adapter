@@ -25,7 +25,7 @@ the RP Adapter can then use to fetch the "normal" credentials.
 In all cases, once the RP Adapter has collected all credentials and verified requirements are met as per the
 original presentation definition, the End User's web browser will be redirected back to the Relying Party's origin.
 
-![overview](http://www.plantuml.com/plantuml/proxy?src=https://raw.githubusercontent.com/trustbloc/edge-adapter/master/docs/rp/integration/wallet_rpadapter_overview.puml)
+![overview](http://www.plantuml.com/plantuml/proxy?src=https://raw.githubusercontent.com/trustbloc/edge-adapter/master/docs/rp/integration/wallet_rpadapter_int_overview.puml)
 
 
 ## Requirements
