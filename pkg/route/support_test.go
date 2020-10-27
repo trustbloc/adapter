@@ -28,7 +28,7 @@ func config() *Config {
 		AriesMessenger:    &messenger.MockMessenger{},
 		MsgRegistrar:      msghandler.NewRegistrar(),
 		VDRIRegistry:      &mockvdr.MockVDRegistry{},
-		TransientStore:    memstore.NewProvider(),
+		Store:             memstore.NewProvider(),
 		ConnectionLookup:  &mockconn.MockConnectionsLookup{ConnIDByDIDs: uuid.New().String()},
 		MediatorSvc:       &mockroute.MockMediatorSvc{},
 	}

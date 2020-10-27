@@ -60,7 +60,7 @@ type Config struct {
 	AriesMessenger    service.Messenger
 	MsgRegistrar      *msghandler.Registrar
 	VDRIRegistry      vdr.Registry
-	TransientStore    storage.Provider
+	Store             storage.Provider
 	ConnectionLookup  connectionRecorder
 	MediatorSvc       mediatorsvc.ProtocolService
 }
@@ -72,14 +72,14 @@ type Service struct {
 	messenger        service.Messenger
 	vdriRegistry     vdr.Registry
 	endpoint         string
-	tStore           storage.Store
+	store            storage.Store
 	connectionLookup connectionRecorder
 	mediatorSvc      mediatorsvc.ProtocolService
 }
 
 // New returns a new Service.
 func New(config *Config) (*Service, error) {
-	tStore, err := getTxnStore(config.TransientStore)
+	store, err := getTxnStore(config.Store)
 	if err != nil {
 		return nil, fmt.Errorf("store: %w", err)
 	}
@@ -90,7 +90,7 @@ func New(config *Config) (*Service, error) {
 		messenger:        config.AriesMessenger,
 		vdriRegistry:     config.VDRIRegistry,
 		endpoint:         config.ServiceEndpoint,
-		tStore:           tStore,
+		store:            store,
 		connectionLookup: config.ConnectionLookup,
 		// TODO https://github.com/trustbloc/edge-adapter/issues/361 use function from client
 		mediatorSvc: config.MediatorSvc,
@@ -115,7 +115,7 @@ func New(config *Config) (*Service, error) {
 // with default endpoint.
 func (o *Service) GetDIDDoc(connID string) (*did.Doc, error) {
 	// get routers connection ID
-	routerConnID, err := o.tStore.Get(connID)
+	routerConnID, err := o.store.Get(connID)
 	if err != nil && !errors.Is(err, storage.ErrValueNotFound) {
 		return nil, fmt.Errorf("get conn id to router conn id mapping: %w", err)
 	}
@@ -215,7 +215,7 @@ func (o *Service) handleDIDDocReq(msg service.DIDCommMsg) (service.DIDCommMsgMap
 		return nil, fmt.Errorf("create new peer did : %w", err)
 	}
 
-	err = o.tStore.Put(msg.ID(), []byte(newDidDoc.ID))
+	err = o.store.Put(msg.ID(), []byte(newDidDoc.ID))
 	if err != nil {
 		return nil, fmt.Errorf("save txn data : %w", err)
 	}
@@ -256,7 +256,7 @@ func (o *Service) handleRouteRegistration(msg routeMsg) (service.DIDCommMsgMap, 
 		return nil, fmt.Errorf("parse did doc : %w", err)
 	}
 
-	txnID, err := o.tStore.Get(msg.didCommMsg.ParentThreadID())
+	txnID, err := o.store.Get(msg.didCommMsg.ParentThreadID())
 	if err != nil {
 		return nil, fmt.Errorf("fetch txn data : %w", err)
 	}
@@ -276,7 +276,7 @@ func (o *Service) handleRouteRegistration(msg routeMsg) (service.DIDCommMsgMap, 
 		return nil, fmt.Errorf("get connection by dids : %w", err)
 	}
 
-	err = o.tStore.Put(connID, []byte(routerConnID))
+	err = o.store.Put(connID, []byte(routerConnID))
 	if err != nil {
 		return nil, fmt.Errorf("save connID to routerConnID mapping : %w", err)
 	}

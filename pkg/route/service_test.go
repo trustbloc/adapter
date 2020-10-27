@@ -38,14 +38,14 @@ func TestNew(t *testing.T) {
 
 	t.Run("store error", func(t *testing.T) {
 		config := config()
-		config.TransientStore = &mockstorage.Provider{ErrCreateStore: errors.New("create db error")}
+		config.Store = &mockstorage.Provider{ErrCreateStore: errors.New("create db error")}
 
 		c, err := New(config)
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "store: create db error")
 		require.Empty(t, c)
 
-		config.TransientStore = &mockstorage.Provider{ErrOpenStoreHandle: errors.New("open db error")}
+		config.Store = &mockstorage.Provider{ErrOpenStoreHandle: errors.New("open db error")}
 
 		_, err = New(config)
 		require.Error(t, err)
@@ -174,7 +174,7 @@ func TestDIDCommMsgListener(t *testing.T) {
 		didDoc := mockdiddoc.GetMockDIDDoc()
 		txnID := uuid.New().String()
 
-		err = c.tStore.Put(txnID, []byte(didDoc.ID))
+		err = c.store.Put(txnID, []byte(didDoc.ID))
 		require.NoError(t, err)
 
 		didDocBytes, err := didDoc.JSONBytes()
@@ -258,7 +258,7 @@ func TestDIDDocReq(t *testing.T) {
 		c, err := New(config)
 		require.NoError(t, err)
 
-		c.tStore = &mockstorage.MockStore{Store: make(map[string][]byte), ErrPut: errors.New("save error")}
+		c.store = &mockstorage.MockStore{Store: make(map[string][]byte), ErrPut: errors.New("save error")}
 
 		msgCh := make(chan routeMsg, 1)
 		go c.didCommMsgListener(msgCh)
@@ -472,7 +472,7 @@ func TestRegisterRouteReq(t *testing.T) { // nolint:gocyclo
 		didDoc := mockdiddoc.GetMockDIDDoc()
 		txnID := uuid.New().String()
 
-		err = c.tStore.Put(txnID, []byte(didDoc.ID))
+		err = c.store.Put(txnID, []byte(didDoc.ID))
 		require.NoError(t, err)
 
 		didDocBytes, err := didDoc.JSONBytes()
@@ -526,7 +526,7 @@ func TestRegisterRouteReq(t *testing.T) { // nolint:gocyclo
 		didDoc := mockdiddoc.GetMockDIDDoc()
 		txnID := uuid.New().String()
 
-		err = c.tStore.Put(txnID, []byte(didDoc.ID))
+		err = c.store.Put(txnID, []byte(didDoc.ID))
 		require.NoError(t, err)
 
 		didDocBytes, err := didDoc.JSONBytes()
@@ -578,7 +578,7 @@ func TestRegisterRouteReq(t *testing.T) { // nolint:gocyclo
 		didDoc := mockdiddoc.GetMockDIDDoc()
 		txnID := uuid.New().String()
 
-		err = c.tStore.Put(txnID, []byte(didDoc.ID))
+		err = c.store.Put(txnID, []byte(didDoc.ID))
 		require.NoError(t, err)
 
 		didDocBytes, err := didDoc.JSONBytes()
@@ -632,7 +632,7 @@ func TestGetDIDService(t *testing.T) {
 		require.NoError(t, err)
 
 		connID := uuid.New().String()
-		err = c.tStore.Put(connID, []byte(uuid.New().String()))
+		err = c.store.Put(connID, []byte(uuid.New().String()))
 		require.NoError(t, err)
 
 		doc, err := c.GetDIDDoc(connID)
@@ -680,7 +680,7 @@ func TestGetDIDService(t *testing.T) {
 		require.NoError(t, err)
 
 		connID := uuid.New().String()
-		err = c.tStore.Put(connID, []byte(uuid.New().String()))
+		err = c.store.Put(connID, []byte(uuid.New().String()))
 		require.NoError(t, err)
 
 		_, err = c.GetDIDDoc(connID)
@@ -694,10 +694,10 @@ func TestGetDIDService(t *testing.T) {
 		c, err := New(config)
 		require.NoError(t, err)
 
-		c.tStore = &mockstorage.MockStore{Store: make(map[string][]byte), ErrGet: errors.New("get error")}
+		c.store = &mockstorage.MockStore{Store: make(map[string][]byte), ErrGet: errors.New("get error")}
 
 		connID := uuid.New().String()
-		err = c.tStore.Put(connID, []byte(uuid.New().String()))
+		err = c.store.Put(connID, []byte(uuid.New().String()))
 		require.NoError(t, err)
 
 		_, err = c.GetDIDDoc(connID)
@@ -727,7 +727,7 @@ func TestGetDIDService(t *testing.T) {
 		require.NoError(t, err)
 
 		connID := uuid.New().String()
-		err = c.tStore.Put(connID, []byte(uuid.New().String()))
+		err = c.store.Put(connID, []byte(uuid.New().String()))
 		require.NoError(t, err)
 
 		_, err = c.GetDIDDoc(connID)
@@ -750,7 +750,7 @@ func TestGetDIDService(t *testing.T) {
 		require.NoError(t, err)
 
 		connID := uuid.New().String()
-		err = c.tStore.Put(connID, []byte(uuid.New().String()))
+		err = c.store.Put(connID, []byte(uuid.New().String()))
 		require.NoError(t, err)
 
 		_, err = c.GetDIDDoc(connID)
@@ -775,7 +775,7 @@ func TestGetDIDService(t *testing.T) {
 		require.NoError(t, err)
 
 		connID := uuid.New().String()
-		err = c.tStore.Put(connID, []byte(uuid.New().String()))
+		err = c.store.Put(connID, []byte(uuid.New().String()))
 		require.NoError(t, err)
 
 		_, err = c.GetDIDDoc(connID)

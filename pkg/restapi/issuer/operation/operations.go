@@ -189,7 +189,7 @@ func New(config *Config) (*Operation, error) { // nolint:funlen,gocyclo
 		DIDExchangeClient: didExClient,
 		MediatorClient:    mediatorClient,
 		ServiceEndpoint:   config.AriesCtx.ServiceEndpoint(),
-		TransientStore:    config.StoreProvider,
+		Store:             config.StoreProvider,
 		ConnectionLookup:  connectionLookup,
 		MediatorSvc:       mediatorSvc,
 	})
