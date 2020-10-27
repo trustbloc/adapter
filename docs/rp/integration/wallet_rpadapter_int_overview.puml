@@ -1,0 +1,24 @@
+@startuml
+box
+  participant "User Agent" as wallet
+  actor "Web Browser" as user
+end box
+participant "Relying Party" as rp
+participant "RP Adapter" as rpa
+user --> rp : user navigates to service provider
+user --> rpa : service provider redirects the user to the adapter
+rpa -> user : request credentials
+user -> wallet : request credentials
+wallet -> wallet: get credentials
+wallet -> wallet : wrap credentials in presentation
+wallet -> user : presentation
+user -> rpa : presentation
+rpa -> rpa : validate presentation
+note right
+  The adapter will also
+  fetch credentials using
+  AuthorizationCredentials
+  if present.
+end note
+user --> rp : adapter redirects the user to the service provider
+@enduml

@@ -9,6 +9,6 @@ relying parties.
 * [Architecture](./architecture.md)
 * Integration Guides
   * [Integration Guide for Relying Parties](./integration/relying_parties.md)
-  * Wallets: TODO
+  * [Integration Guide for Wallets](./integration/wallets.md)
   * Identity Providers: TODO
 * [Standards & Technologies](./protocols.md)
