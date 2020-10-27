@@ -24,11 +24,14 @@ import (
 	"github.com/hyperledger/aries-framework-go/pkg/client/outofband"
 	"github.com/hyperledger/aries-framework-go/pkg/client/presentproof"
 	"github.com/hyperledger/aries-framework-go/pkg/didcomm/common/service"
+	"github.com/hyperledger/aries-framework-go/pkg/didcomm/messaging/msghandler"
 	"github.com/hyperledger/aries-framework-go/pkg/didcomm/protocol/decorator"
 	didexchangesvc "github.com/hyperledger/aries-framework-go/pkg/didcomm/protocol/didexchange"
+	"github.com/hyperledger/aries-framework-go/pkg/didcomm/protocol/mediator"
 	presentproofsvc "github.com/hyperledger/aries-framework-go/pkg/didcomm/protocol/presentproof"
 	"github.com/hyperledger/aries-framework-go/pkg/doc/did"
 	"github.com/hyperledger/aries-framework-go/pkg/doc/verifiable"
+	mockroute "github.com/hyperledger/aries-framework-go/pkg/mock/didcomm/protocol/mediator"
 	mockprovider "github.com/hyperledger/aries-framework-go/pkg/mock/provider"
 	ariesmockstorage "github.com/hyperledger/aries-framework-go/pkg/mock/storage"
 	"github.com/hyperledger/aries-framework-go/pkg/storage/mem"
@@ -43,6 +46,7 @@ import (
 	"github.com/trustbloc/edge-adapter/pkg/db/rp"
 	mockdidexchange "github.com/trustbloc/edge-adapter/pkg/internal/mock/didexchange"
 	mockgovernance "github.com/trustbloc/edge-adapter/pkg/internal/mock/governance"
+	"github.com/trustbloc/edge-adapter/pkg/internal/mock/messenger"
 	mockoutofband "github.com/trustbloc/edge-adapter/pkg/internal/mock/outofband"
 	mockpresentproof "github.com/trustbloc/edge-adapter/pkg/internal/mock/presentproof"
 	"github.com/trustbloc/edge-adapter/pkg/presexch"
@@ -55,30 +59,29 @@ const (
 
 func TestNew(t *testing.T) {
 	t.Run("registers for didcomm events", func(t *testing.T) {
-		relyingParty := agent(t)
 		registeredDIDExchActions := false
 		registeredPresentProofActions := false
 		registeredMsgs := false
-		_, err := New(&Config{
-			DIDExchClient: &mockdidexchange.MockClient{
-				ActionEventFunc: func(chan<- service.DIDCommAction) error {
-					registeredDIDExchActions = true
-					return nil
-				},
-				MsgEventFunc: func(chan<- service.StateMsg) error {
-					registeredMsgs = true
-					return nil
-				},
+
+		config := config(t)
+		config.DIDExchClient = &mockdidexchange.MockClient{
+			ActionEventFunc: func(chan<- service.DIDCommAction) error {
+				registeredDIDExchActions = true
+				return nil
 			},
-			Storage:              memStorage(),
-			AriesContextProvider: relyingParty,
-			PresentProofClient: &mockpresentproof.MockClient{
-				RegisterActionFunc: func(chan<- service.DIDCommAction) error {
-					registeredPresentProofActions = true
-					return nil
-				},
+			MsgEventFunc: func(chan<- service.StateMsg) error {
+				registeredMsgs = true
+				return nil
 			},
-		})
+		}
+		config.PresentProofClient = &mockpresentproof.MockClient{
+			RegisterActionFunc: func(chan<- service.DIDCommAction) error {
+				registeredPresentProofActions = true
+				return nil
+			},
+		}
+
+		_, err := New(config)
 		require.NoError(t, err)
 		require.True(t, registeredDIDExchActions)
 		require.True(t, registeredMsgs)
@@ -87,123 +90,149 @@ func TestNew(t *testing.T) {
 
 	t.Run("wraps error when didexchange actions registration fails", func(t *testing.T) {
 		expected := errors.New("test")
-		_, err := New(&Config{
-			DIDExchClient: &mockdidexchange.MockClient{
-				ActionEventFunc: func(chan<- service.DIDCommAction) error {
-					return expected
-				},
+
+		config := config(t)
+		config.DIDExchClient = &mockdidexchange.MockClient{
+			ActionEventFunc: func(chan<- service.DIDCommAction) error {
+				return expected
 			},
-			Storage:              memStorage(),
-			AriesContextProvider: agent(t),
-		})
+		}
+
+		_, err := New(config)
 		require.Error(t, err)
 		require.True(t, errors.Is(err, expected))
 	})
 
 	t.Run("wraps error when presentproof actions registration fails", func(t *testing.T) {
 		expected := errors.New("test")
-		_, err := New(&Config{
-			DIDExchClient: &mockdidexchange.MockClient{},
-			Storage:       memStorage(),
-			PresentProofClient: &mockpresentproof.MockClient{
-				RegisterActionFunc: func(chan<- service.DIDCommAction) error {
-					return expected
-				},
+
+		config := config(t)
+		config.PresentProofClient = &mockpresentproof.MockClient{
+			RegisterActionFunc: func(chan<- service.DIDCommAction) error {
+				return expected
 			},
-			AriesContextProvider: agent(t),
-		})
+		}
+
+		_, err := New(config)
 		require.Error(t, err)
 		require.True(t, errors.Is(err, expected))
 	})
 
 	t.Run("wraps error when state msg registration fails", func(t *testing.T) {
 		expected := errors.New("test")
-		_, err := New(&Config{
-			DIDExchClient: &mockdidexchange.MockClient{
-				MsgEventFunc: func(chan<- service.StateMsg) error {
-					return expected
-				},
+
+		config := config(t)
+		config.DIDExchClient = &mockdidexchange.MockClient{
+			MsgEventFunc: func(chan<- service.StateMsg) error {
+				return expected
 			},
-			Storage:              memStorage(),
-			AriesContextProvider: agent(t),
-		})
+		}
+
+		_, err := New(config)
 		require.Error(t, err)
 		require.True(t, errors.Is(err, expected))
 	})
 
 	t.Run("wraps error if cannot open store", func(t *testing.T) {
 		expected := errors.New("test")
-		_, err := New(&Config{
-			DIDExchClient: &mockdidexchange.MockClient{},
-			Storage: &Storage{
-				Persistent: &stubStorageProvider{storeCreateErr: expected},
-				Transient:  memstore.NewProvider(),
-			},
-			AriesContextProvider: agent(t),
-		})
+
+		config := config(t)
+		config.Storage = &Storage{
+			Persistent: &stubStorageProvider{storeCreateErr: expected},
+			Transient:  memstore.NewProvider(),
+		}
+
+		_, err := New(config)
 		require.Error(t, err)
 		require.True(t, errors.Is(err, expected))
 	})
 
 	t.Run("wraps error if cannot create transient store", func(t *testing.T) {
 		expected := errors.New("test")
-		_, err := New(&Config{
-			DIDExchClient:      &mockdidexchange.MockClient{},
-			PresentProofClient: &mockpresentproof.MockClient{},
-			Storage: &Storage{
-				Persistent: memstore.NewProvider(),
-				Transient:  &stubStorageProvider{storeCreateErr: expected},
-			},
-			AriesContextProvider: agent(t),
-		})
+
+		config := config(t)
+		config.Storage = &Storage{
+			Persistent: memstore.NewProvider(),
+			Transient:  &stubStorageProvider{storeCreateErr: expected},
+		}
+
+		_, err := New(config)
 		require.Error(t, err)
 		require.True(t, errors.Is(err, expected))
 	})
 
 	t.Run("wraps error if cannot create transient store", func(t *testing.T) {
 		expected := errors.New("test")
-		_, err := New(&Config{
-			DIDExchClient:      &mockdidexchange.MockClient{},
-			PresentProofClient: &mockpresentproof.MockClient{},
-			Storage: &Storage{
-				Persistent: memstore.NewProvider(),
-				Transient:  &stubStorageProvider{storeOpenErr: expected},
-			},
-			AriesContextProvider: agent(t),
-		})
+
+		config := config(t)
+		config.Storage = &Storage{
+			Persistent: memstore.NewProvider(),
+			Transient:  &stubStorageProvider{storeOpenErr: expected},
+		}
+
+		_, err := New(config)
 		require.Error(t, err)
 		require.True(t, errors.Is(err, expected))
 	})
 
 	t.Run("wraps error if cannot open aries transient store", func(t *testing.T) {
 		expected := errors.New("test")
-		_, err := New(&Config{
-			DIDExchClient: &mockdidexchange.MockClient{},
-			Storage:       memStorage(),
-			AriesContextProvider: &mockprovider.Provider{
-				ProtocolStateStorageProviderValue: &ariesmockstorage.MockStoreProvider{ErrOpenStoreHandle: expected},
-				StorageProviderValue:              mem.NewProvider(),
-			},
-		})
+
+		config := config(t)
+		config.AriesContextProvider = &mockprovider.Provider{
+			ProtocolStateStorageProviderValue: &ariesmockstorage.MockStoreProvider{ErrOpenStoreHandle: expected},
+			StorageProviderValue:              mem.NewProvider(),
+		}
+
+		_, err := New(config)
 		require.Error(t, err)
 		require.True(t, errors.Is(err, expected))
+	})
+
+	t.Run("create route service", func(t *testing.T) {
+		conf := config(t)
+		conf.AriesContextProvider = &mockprovider.Provider{
+			ProtocolStateStorageProviderValue: mem.NewProvider(),
+			StorageProviderValue:              mem.NewProvider(),
+		}
+
+		_, err := New(conf)
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "failed to cast mediator service")
+
+		conf.AriesContextProvider = &mockprovider.Provider{
+			ProtocolStateStorageProviderValue: mem.NewProvider(),
+			StorageProviderValue:              mem.NewProvider(),
+			ServiceErr:                        errors.New("invalid service"),
+		}
+
+		_, err = New(conf)
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "mediator service lookup")
+
+		conf = config(t)
+		conf.Storage.Transient = &mockstorage.Provider{
+			ErrOpenStoreHandle: errors.New("open error"),
+		}
+		_, err = createRouteSvc(conf, nil)
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "create service")
 	})
 }
 
 func Test_HandleDIDExchangeRequests(t *testing.T) {
 	t.Run("continues didcomm action for valid didexchange request", func(t *testing.T) {
 		var incoming chan<- service.DIDCommAction
-		o, err := New(&Config{
-			DIDExchClient: &mockdidexchange.MockClient{
-				ActionEventFunc: func(c chan<- service.DIDCommAction) error {
-					incoming = c
-					return nil
-				},
+
+		config := config(t)
+		config.DIDExchClient = &mockdidexchange.MockClient{
+			ActionEventFunc: func(c chan<- service.DIDCommAction) error {
+				incoming = c
+				return nil
 			},
-			Storage:              memStorage(),
-			AriesContextProvider: agent(t),
-			PresentProofClient:   &mockpresentproof.MockClient{},
-		})
+		}
+
+		o, err := New(config)
 		require.NoError(t, err)
 		require.NotNil(t, incoming)
 		invitationID := uuid.New().String()
@@ -232,17 +261,16 @@ func Test_HandleDIDExchangeRequests(t *testing.T) {
 
 	t.Run("stops didcomm action for invalid parentThreadID", func(t *testing.T) {
 		var incoming chan<- service.DIDCommAction
-		_, err := New(&Config{
-			DIDExchClient: &mockdidexchange.MockClient{
-				ActionEventFunc: func(c chan<- service.DIDCommAction) error {
-					incoming = c
-					return nil
-				},
+
+		config := config(t)
+		config.DIDExchClient = &mockdidexchange.MockClient{
+			ActionEventFunc: func(c chan<- service.DIDCommAction) error {
+				incoming = c
+				return nil
 			},
-			Storage:              memStorage(),
-			AriesContextProvider: agent(t),
-			PresentProofClient:   &mockpresentproof.MockClient{},
-		})
+		}
+
+		_, err := New(config)
 		require.NoError(t, err)
 		require.NotNil(t, incoming)
 		stopped := make(chan struct{})
@@ -269,17 +297,16 @@ func Test_HandleDIDExchangeRequests(t *testing.T) {
 
 	t.Run("stops didcomm action for invalid didcomm message type", func(t *testing.T) {
 		var incoming chan<- service.DIDCommAction
-		_, err := New(&Config{
-			DIDExchClient: &mockdidexchange.MockClient{
-				ActionEventFunc: func(c chan<- service.DIDCommAction) error {
-					incoming = c
-					return nil
-				},
+
+		config := config(t)
+		config.DIDExchClient = &mockdidexchange.MockClient{
+			ActionEventFunc: func(c chan<- service.DIDCommAction) error {
+				incoming = c
+				return nil
 			},
-			Storage:              memStorage(),
-			AriesContextProvider: agent(t),
-			PresentProofClient:   &mockpresentproof.MockClient{},
-		})
+		}
+
+		_, err := New(config)
 		require.NoError(t, err)
 		require.NotNil(t, incoming)
 		stopped := make(chan struct{})
@@ -331,8 +358,13 @@ func TestListenForConnectionCompleteEvents(t *testing.T) {
 					},
 				},
 				ProtocolStateStorageProviderValue: mem.NewProvider(),
+				ServiceMap: map[string]interface{}{
+					mediator.Coordination: &mockroute.MockMediatorSvc{},
+				},
 			},
 			PresentProofClient: &mockpresentproof.MockClient{},
+			MsgRegistrar:       msghandler.NewRegistrar(),
+			AriesMessenger:     &messenger.MockMessenger{},
 		})
 		require.NoError(t, err)
 		invitationID := uuid.New().String()
@@ -352,17 +384,16 @@ func TestListenForConnectionCompleteEvents(t *testing.T) {
 		t.Parallel()
 		skipped := true
 		var msgs chan<- service.StateMsg
-		_, err := New(&Config{
-			DIDExchClient: &mockdidexchange.MockClient{
-				MsgEventFunc: func(c chan<- service.StateMsg) error {
-					msgs = c
-					return nil
-				},
+
+		config := config(t)
+		config.DIDExchClient = &mockdidexchange.MockClient{
+			MsgEventFunc: func(c chan<- service.StateMsg) error {
+				msgs = c
+				return nil
 			},
-			Storage:              memStorage(),
-			AriesContextProvider: agent(t),
-			PresentProofClient:   &mockpresentproof.MockClient{},
-		})
+		}
+
+		_, err := New(config)
 		require.NoError(t, err)
 
 		msgs <- service.StateMsg{
@@ -384,17 +415,16 @@ func TestListenForConnectionCompleteEvents(t *testing.T) {
 		t.Parallel()
 		skipped := true
 		var msgs chan<- service.StateMsg
-		_, err := New(&Config{
-			DIDExchClient: &mockdidexchange.MockClient{
-				MsgEventFunc: func(c chan<- service.StateMsg) error {
-					msgs = c
-					return nil
-				},
+
+		config := config(t)
+		config.DIDExchClient = &mockdidexchange.MockClient{
+			MsgEventFunc: func(c chan<- service.StateMsg) error {
+				msgs = c
+				return nil
 			},
-			Storage:              memStorage(),
-			AriesContextProvider: agent(t),
-			PresentProofClient:   &mockpresentproof.MockClient{},
-		})
+		}
+
+		_, err := New(config)
 		require.NoError(t, err)
 
 		msgs <- service.StateMsg{
@@ -415,17 +445,16 @@ func TestListenForConnectionCompleteEvents(t *testing.T) {
 	t.Run("skips msgs with unrecognized invitation IDs", func(t *testing.T) {
 		t.Parallel()
 		var msgs chan<- service.StateMsg
-		_, err := New(&Config{
-			DIDExchClient: &mockdidexchange.MockClient{
-				MsgEventFunc: func(c chan<- service.StateMsg) error {
-					msgs = c
-					return nil
-				},
+
+		config := config(t)
+		config.DIDExchClient = &mockdidexchange.MockClient{
+			MsgEventFunc: func(c chan<- service.StateMsg) error {
+				msgs = c
+				return nil
 			},
-			Storage:              memStorage(),
-			AriesContextProvider: agent(t),
-			PresentProofClient:   &mockpresentproof.MockClient{},
-		})
+		}
+
+		_, err := New(config)
 		require.NoError(t, err)
 
 		msgs <- service.StateMsg{
@@ -438,24 +467,27 @@ func TestListenForConnectionCompleteEvents(t *testing.T) {
 	t.Run("skips if cannot fetch connection record", func(t *testing.T) {
 		t.Parallel()
 		var msgs chan<- service.StateMsg
-		o, err := New(&Config{
-			DIDExchClient: &mockdidexchange.MockClient{
-				MsgEventFunc: func(c chan<- service.StateMsg) error {
-					msgs = c
-					return nil
+
+		config := config(t)
+		config.DIDExchClient = &mockdidexchange.MockClient{
+			MsgEventFunc: func(c chan<- service.StateMsg) error {
+				msgs = c
+				return nil
+			},
+		}
+		config.AriesContextProvider = &mockprovider.Provider{
+			StorageProviderValue: &ariesmockstorage.MockStoreProvider{
+				Store: &ariesmockstorage.MockStore{
+					ErrGet: errors.New("test"),
 				},
 			},
-			Storage: memStorage(),
-			AriesContextProvider: &mockprovider.Provider{
-				StorageProviderValue: &ariesmockstorage.MockStoreProvider{
-					Store: &ariesmockstorage.MockStore{
-						ErrGet: errors.New("test"),
-					},
-				},
-				ProtocolStateStorageProviderValue: mem.NewProvider(),
+			ProtocolStateStorageProviderValue: mem.NewProvider(),
+			ServiceMap: map[string]interface{}{
+				mediator.Coordination: &mockroute.MockMediatorSvc{},
 			},
-			PresentProofClient: &mockpresentproof.MockClient{},
-		})
+		}
+
+		o, err := New(config)
 		require.NoError(t, err)
 		crCtx := &consentRequestCtx{InvitationID: uuid.New().String()}
 		storePut(t, o.transientStore, crCtx.InvitationID, crCtx)
@@ -475,12 +507,7 @@ func TestListenForConnectionCompleteEvents(t *testing.T) {
 }
 
 func TestGetRESTHandlers(t *testing.T) {
-	c, err := New(&Config{
-		DIDExchClient:        &mockdidexchange.MockClient{},
-		Storage:              memStorage(),
-		AriesContextProvider: agent(t),
-		PresentProofClient:   &mockpresentproof.MockClient{},
-	})
+	c, err := New(config(t))
 	require.NoError(t, err)
 
 	require.NotEmpty(t, c.GetRESTHandlers())
@@ -525,6 +552,8 @@ func TestHydraLoginHandlerIterOne(t *testing.T) {
 				},
 				AriesContextProvider: agent(t),
 				PresentProofClient:   &mockpresentproof.MockClient{},
+				MsgRegistrar:         msghandler.NewRegistrar(),
+				AriesMessenger:       &messenger.MockMessenger{},
 			})
 			require.NoError(t, err)
 			w := &httptest.ResponseRecorder{}
@@ -579,6 +608,8 @@ func TestHydraLoginHandlerIterOne(t *testing.T) {
 				},
 				AriesContextProvider: agent(t),
 				PresentProofClient:   &mockpresentproof.MockClient{},
+				MsgRegistrar:         msghandler.NewRegistrar(),
+				AriesMessenger:       &messenger.MockMessenger{},
 			})
 			require.NoError(t, err)
 			w := &httptest.ResponseRecorder{}
@@ -588,12 +619,7 @@ func TestHydraLoginHandlerIterOne(t *testing.T) {
 		})
 	})
 	t.Run("fails on missing login_challenge", func(t *testing.T) {
-		o, err := New(&Config{
-			DIDExchClient:        &mockdidexchange.MockClient{},
-			Storage:              memStorage(),
-			AriesContextProvider: agent(t),
-			PresentProofClient:   &mockpresentproof.MockClient{},
-		})
+		o, err := New(config(t))
 		require.NoError(t, err)
 		r := newHydraRequestNoChallenge(t)
 		r.URL.Query().Del("login_challenge")
@@ -612,6 +638,8 @@ func TestHydraLoginHandlerIterOne(t *testing.T) {
 			Storage:              memStorage(),
 			AriesContextProvider: agent(t),
 			PresentProofClient:   &mockpresentproof.MockClient{},
+			MsgRegistrar:         msghandler.NewRegistrar(),
+			AriesMessenger:       &messenger.MockMessenger{},
 		})
 		require.NoError(t, err)
 		w := &httptest.ResponseRecorder{}
@@ -637,6 +665,8 @@ func TestHydraLoginHandlerIterOne(t *testing.T) {
 			Storage:              memStorage(),
 			AriesContextProvider: agent(t),
 			PresentProofClient:   &mockpresentproof.MockClient{},
+			MsgRegistrar:         msghandler.NewRegistrar(),
+			AriesMessenger:       &messenger.MockMessenger{},
 		})
 		require.NoError(t, err)
 		w := &httptest.ResponseRecorder{}
@@ -681,6 +711,8 @@ func TestHydraLoginHandlerIterOne(t *testing.T) {
 			},
 			AriesContextProvider: agent(t),
 			PresentProofClient:   &mockpresentproof.MockClient{},
+			MsgRegistrar:         msghandler.NewRegistrar(),
+			AriesMessenger:       &messenger.MockMessenger{},
 		})
 		require.NoError(t, err)
 		w := &httptest.ResponseRecorder{}
@@ -719,6 +751,8 @@ func TestHydraLoginHandlerIterOne(t *testing.T) {
 			},
 			AriesContextProvider: agent(t),
 			PresentProofClient:   &mockpresentproof.MockClient{},
+			MsgRegistrar:         msghandler.NewRegistrar(),
+			AriesMessenger:       &messenger.MockMessenger{},
 		})
 		require.NoError(t, err)
 		w := &httptest.ResponseRecorder{}
@@ -751,6 +785,8 @@ func TestHydraLoginHandler(t *testing.T) {
 			Storage:              memStorage(),
 			AriesContextProvider: agent(t),
 			PresentProofClient:   &mockpresentproof.MockClient{},
+			MsgRegistrar:         msghandler.NewRegistrar(),
+			AriesMessenger:       &messenger.MockMessenger{},
 		})
 		require.NoError(t, err)
 
@@ -782,6 +818,8 @@ func TestHydraLoginHandler(t *testing.T) {
 			Storage:              memStorage(),
 			AriesContextProvider: agent(t),
 			PresentProofClient:   &mockpresentproof.MockClient{},
+			MsgRegistrar:         msghandler.NewRegistrar(),
+			AriesMessenger:       &messenger.MockMessenger{},
 		})
 		require.NoError(t, err)
 		w := &httptest.ResponseRecorder{}
@@ -790,12 +828,7 @@ func TestHydraLoginHandler(t *testing.T) {
 		require.Equal(t, w.Header().Get("Location"), redirectURL)
 	})
 	t.Run("fails on missing login_challenge", func(t *testing.T) {
-		o, err := New(&Config{
-			DIDExchClient:        &mockdidexchange.MockClient{},
-			Storage:              memStorage(),
-			AriesContextProvider: agent(t),
-			PresentProofClient:   &mockpresentproof.MockClient{},
-		})
+		o, err := New(config(t))
 		require.NoError(t, err)
 		r := newHydraRequestNoChallenge(t)
 		r.URL.Query().Del("login_challenge")
@@ -814,6 +847,8 @@ func TestHydraLoginHandler(t *testing.T) {
 			Storage:              memStorage(),
 			AriesContextProvider: agent(t),
 			PresentProofClient:   &mockpresentproof.MockClient{},
+			MsgRegistrar:         msghandler.NewRegistrar(),
+			AriesMessenger:       &messenger.MockMessenger{},
 		})
 		require.NoError(t, err)
 		w := &httptest.ResponseRecorder{}
@@ -838,6 +873,8 @@ func TestHydraLoginHandler(t *testing.T) {
 			Storage:              memStorage(),
 			AriesContextProvider: agent(t),
 			PresentProofClient:   &mockpresentproof.MockClient{},
+			MsgRegistrar:         msghandler.NewRegistrar(),
+			AriesMessenger:       &messenger.MockMessenger{},
 		})
 		require.NoError(t, err)
 		w := &httptest.ResponseRecorder{}
@@ -876,6 +913,8 @@ func TestOidcCallbackHandler(t *testing.T) {
 			},
 			AriesContextProvider: agent(t),
 			PresentProofClient:   &mockpresentproof.MockClient{},
+			MsgRegistrar:         msghandler.NewRegistrar(),
+			AriesMessenger:       &messenger.MockMessenger{},
 		})
 		require.NoError(t, err)
 
@@ -889,12 +928,7 @@ func TestOidcCallbackHandler(t *testing.T) {
 	})
 
 	t.Run("bad request on invalid state", func(t *testing.T) {
-		c, err := New(&Config{
-			DIDExchClient:        &mockdidexchange.MockClient{},
-			Storage:              memStorage(),
-			AriesContextProvider: agent(t),
-			PresentProofClient:   &mockpresentproof.MockClient{},
-		})
+		c, err := New(config(t))
 		require.NoError(t, err)
 
 		r := &httptest.ResponseRecorder{}
@@ -913,6 +947,8 @@ func TestOidcCallbackHandler(t *testing.T) {
 			Storage:              memStorage(),
 			AriesContextProvider: agent(t),
 			PresentProofClient:   &mockpresentproof.MockClient{},
+			MsgRegistrar:         msghandler.NewRegistrar(),
+			AriesMessenger:       &messenger.MockMessenger{},
 		})
 		require.NoError(t, err)
 
@@ -941,6 +977,8 @@ func TestOidcCallbackHandler(t *testing.T) {
 			Storage:              memStorage(),
 			AriesContextProvider: agent(t),
 			PresentProofClient:   &mockpresentproof.MockClient{},
+			MsgRegistrar:         msghandler.NewRegistrar(),
+			AriesMessenger:       &messenger.MockMessenger{},
 		})
 		require.NoError(t, err)
 
@@ -973,6 +1011,8 @@ func TestSaveUserAndRequest(t *testing.T) {
 			},
 			AriesContextProvider: agent(t),
 			PresentProofClient:   &mockpresentproof.MockClient{},
+			MsgRegistrar:         msghandler.NewRegistrar(),
+			AriesMessenger:       &messenger.MockMessenger{},
 		})
 		require.NoError(t, err)
 
@@ -1000,6 +1040,8 @@ func TestSaveUserAndRequest(t *testing.T) {
 			},
 			AriesContextProvider: agent(t),
 			PresentProofClient:   &mockpresentproof.MockClient{},
+			MsgRegistrar:         msghandler.NewRegistrar(),
+			AriesMessenger:       &messenger.MockMessenger{},
 		})
 		require.NoError(t, err)
 
@@ -1045,6 +1087,8 @@ func TestHydraConsentHandler(t *testing.T) {
 				},
 				AriesContextProvider: agent(t),
 				PresentProofClient:   &mockpresentproof.MockClient{},
+				MsgRegistrar:         msghandler.NewRegistrar(),
+				AriesMessenger:       &messenger.MockMessenger{},
 			})
 			require.NoError(t, err)
 
@@ -1064,12 +1108,7 @@ func TestHydraConsentHandler(t *testing.T) {
 		})
 
 		t.Run("bad request if consent challenge is missing", func(t *testing.T) {
-			c, err := New(&Config{
-				DIDExchClient:        &mockdidexchange.MockClient{},
-				Storage:              memStorage(),
-				AriesContextProvider: agent(t),
-				PresentProofClient:   &mockpresentproof.MockClient{},
-			})
+			c, err := New(config(t))
 			require.NoError(t, err)
 			w := &httptest.ResponseRecorder{}
 			c.hydraConsentHandler(w, newHydraRequestNoChallenge(t))
@@ -1085,6 +1124,8 @@ func TestHydraConsentHandler(t *testing.T) {
 				Storage:              memStorage(),
 				AriesContextProvider: agent(t),
 				PresentProofClient:   &mockpresentproof.MockClient{},
+				MsgRegistrar:         msghandler.NewRegistrar(),
+				AriesMessenger:       &messenger.MockMessenger{},
 			})
 			require.NoError(t, err)
 			w := &httptest.ResponseRecorder{}
@@ -1102,6 +1143,8 @@ func TestHydraConsentHandler(t *testing.T) {
 				Storage:                memStorage(),
 				AriesContextProvider:   agent(t),
 				PresentProofClient:     &mockpresentproof.MockClient{},
+				MsgRegistrar:           msghandler.NewRegistrar(),
+				AriesMessenger:         &messenger.MockMessenger{},
 			})
 			require.NoError(t, err)
 			w := &httptest.ResponseRecorder{}
@@ -1124,6 +1167,8 @@ func TestHydraConsentHandler(t *testing.T) {
 				Storage:              memStorage(),
 				AriesContextProvider: agent(t),
 				PresentProofClient:   &mockpresentproof.MockClient{},
+				MsgRegistrar:         msghandler.NewRegistrar(),
+				AriesMessenger:       &messenger.MockMessenger{},
 			})
 			require.NoError(t, err)
 			w := &httptest.ResponseRecorder{}
@@ -1169,6 +1214,8 @@ func TestHydraConsentHandler(t *testing.T) {
 			},
 			AriesContextProvider: agent(t),
 			PresentProofClient:   &mockpresentproof.MockClient{},
+			MsgRegistrar:         msghandler.NewRegistrar(),
+			AriesMessenger:       &messenger.MockMessenger{},
 		})
 		require.NoError(t, err)
 
@@ -1204,6 +1251,8 @@ func TestHydraConsentHandler(t *testing.T) {
 				Storage:                memStorage(),
 				AriesContextProvider:   agent(t),
 				PresentProofClient:     &mockpresentproof.MockClient{},
+				MsgRegistrar:           msghandler.NewRegistrar(),
+				AriesMessenger:         &messenger.MockMessenger{},
 			})
 			require.NoError(t, err)
 
@@ -1230,6 +1279,8 @@ func TestHydraConsentHandler(t *testing.T) {
 				Storage:              memStorage(),
 				AriesContextProvider: agent(t),
 				PresentProofClient:   &mockpresentproof.MockClient{},
+				MsgRegistrar:         msghandler.NewRegistrar(),
+				AriesMessenger:       &messenger.MockMessenger{},
 			})
 			require.NoError(t, err)
 
@@ -1242,12 +1293,7 @@ func TestHydraConsentHandler(t *testing.T) {
 
 func TestSaveConsentRequest(t *testing.T) {
 	t.Run("error if user connection does not exist", func(t *testing.T) {
-		c, err := New(&Config{
-			DIDExchClient:        &mockdidexchange.MockClient{},
-			Storage:              memStorage(),
-			AriesContextProvider: agent(t),
-			PresentProofClient:   &mockpresentproof.MockClient{},
-		})
+		c, err := New(config(t))
 		require.NoError(t, err)
 
 		err = c.updateUserConnection(&consentRequestCtx{
@@ -1276,6 +1322,8 @@ func TestSaveConsentRequest(t *testing.T) {
 			},
 			AriesContextProvider: agent(t),
 			PresentProofClient:   &mockpresentproof.MockClient{},
+			MsgRegistrar:         msghandler.NewRegistrar(),
+			AriesMessenger:       &messenger.MockMessenger{},
 		})
 		require.NoError(t, err)
 
@@ -1335,6 +1383,8 @@ func TestGetPresentationsRequest(t *testing.T) {
 			GovernanceProvider: &mockgovernance.MockProvider{GetCredentialFunc: func(profileID string) ([]byte, error) {
 				return []byte(`{"key":"value"}`), nil
 			}},
+			MsgRegistrar:   msghandler.NewRegistrar(),
+			AriesMessenger: &messenger.MockMessenger{},
 		})
 		require.NoError(t, err)
 
@@ -1410,6 +1460,8 @@ func TestGetPresentationsRequest(t *testing.T) {
 			GovernanceProvider: &mockgovernance.MockProvider{GetCredentialFunc: func(profileID string) ([]byte, error) {
 				return nil, fmt.Errorf("failed to get vc")
 			}},
+			MsgRegistrar:   msghandler.NewRegistrar(),
+			AriesMessenger: &messenger.MockMessenger{},
 		})
 		require.NoError(t, err)
 
@@ -1432,12 +1484,7 @@ func TestGetPresentationsRequest(t *testing.T) {
 	})
 
 	t.Run("bad request if handle is invalid", func(t *testing.T) {
-		c, err := New(&Config{
-			DIDExchClient:        &mockdidexchange.MockClient{},
-			Storage:              memStorage(),
-			AriesContextProvider: agent(t),
-			PresentProofClient:   &mockpresentproof.MockClient{},
-		})
+		c, err := New(config(t))
 		require.NoError(t, err)
 
 		r := httptest.NewRecorder()
@@ -1447,12 +1494,7 @@ func TestGetPresentationsRequest(t *testing.T) {
 	})
 
 	t.Run("bad request if handle is missing", func(t *testing.T) {
-		c, err := New(&Config{
-			DIDExchClient:        &mockdidexchange.MockClient{},
-			Storage:              memStorage(),
-			AriesContextProvider: agent(t),
-			PresentProofClient:   &mockpresentproof.MockClient{},
-		})
+		c, err := New(config(t))
 		require.NoError(t, err)
 
 		w := httptest.NewRecorder()
@@ -1488,6 +1530,8 @@ func TestGetPresentationsRequest(t *testing.T) {
 			DIDExchClient:        &mockdidexchange.MockClient{},
 			AriesContextProvider: agent(t),
 			PresentProofClient:   &mockpresentproof.MockClient{},
+			MsgRegistrar:         msghandler.NewRegistrar(),
+			AriesMessenger:       &messenger.MockMessenger{},
 		})
 		require.NoError(t, err)
 
@@ -1525,6 +1569,8 @@ func TestGetPresentationsRequest(t *testing.T) {
 			},
 			AriesContextProvider: agent(t),
 			PresentProofClient:   &mockpresentproof.MockClient{},
+			MsgRegistrar:         msghandler.NewRegistrar(),
+			AriesMessenger:       &messenger.MockMessenger{},
 		})
 		require.NoError(t, err)
 
@@ -1588,6 +1634,8 @@ func TestGetPresentationsRequest(t *testing.T) {
 			},
 			AriesContextProvider: agent(t),
 			PresentProofClient:   &mockpresentproof.MockClient{},
+			MsgRegistrar:         msghandler.NewRegistrar(),
+			AriesMessenger:       &messenger.MockMessenger{},
 		})
 		require.NoError(t, err)
 
@@ -1638,6 +1686,8 @@ func TestGetPresentationsRequest(t *testing.T) {
 			},
 			AriesContextProvider: agent(t),
 			PresentProofClient:   &mockpresentproof.MockClient{},
+			MsgRegistrar:         msghandler.NewRegistrar(),
+			AriesMessenger:       &messenger.MockMessenger{},
 		})
 		require.NoError(t, err)
 
@@ -1719,6 +1769,8 @@ func TestCHAPIResponseHandler(t *testing.T) {
 					return &admin.AcceptConsentRequestOK{Payload: &models.CompletedRequest{RedirectTo: redirectURL}}, nil
 				},
 			},
+			MsgRegistrar:   msghandler.NewRegistrar(),
+			AriesMessenger: &messenger.MockMessenger{},
 		})
 		require.NoError(t, err)
 
@@ -1743,12 +1795,7 @@ func TestCHAPIResponseHandler(t *testing.T) {
 	})
 
 	t.Run("bad request if body is malformed", func(t *testing.T) {
-		c, err := New(&Config{
-			DIDExchClient:        &mockdidexchange.MockClient{},
-			Storage:              memStorage(),
-			AriesContextProvider: agent(t),
-			PresentProofClient:   &mockpresentproof.MockClient{},
-		})
+		c, err := New(config(t))
 		require.NoError(t, err)
 
 		w := httptest.NewRecorder()
@@ -1758,12 +1805,7 @@ func TestCHAPIResponseHandler(t *testing.T) {
 	})
 
 	t.Run("bad request if invitationID is invalid", func(t *testing.T) {
-		c, err := New(&Config{
-			DIDExchClient:        &mockdidexchange.MockClient{},
-			Storage:              memStorage(),
-			AriesContextProvider: agent(t),
-			PresentProofClient:   &mockpresentproof.MockClient{},
-		})
+		c, err := New(config(t))
 		require.NoError(t, err)
 
 		w := httptest.NewRecorder()
@@ -1773,12 +1815,7 @@ func TestCHAPIResponseHandler(t *testing.T) {
 
 	t.Run("bad request if verifiable presentation is invalid", func(t *testing.T) {
 		invitationID := uuid.New().String()
-		c, err := New(&Config{
-			DIDExchClient:        &mockdidexchange.MockClient{},
-			Storage:              memStorage(),
-			AriesContextProvider: agent(t),
-			PresentProofClient:   &mockpresentproof.MockClient{},
-		})
+		c, err := New(config(t))
 		require.NoError(t, err)
 
 		storePut(t, c.transientStore, invitationID, &consentRequestCtx{InvitationID: invitationID})
@@ -1826,6 +1863,8 @@ func TestCHAPIResponseHandler(t *testing.T) {
 			Storage:              memStorage(),
 			AriesContextProvider: relyingParty,
 			PresentProofClient:   &mockpresentproof.MockClient{},
+			MsgRegistrar:         msghandler.NewRegistrar(),
+			AriesMessenger:       &messenger.MockMessenger{},
 		})
 		require.NoError(t, err)
 
@@ -1877,6 +1916,8 @@ func TestCHAPIResponseHandler(t *testing.T) {
 			Storage:              memStorage(),
 			AriesContextProvider: relyingParty,
 			PresentProofClient:   &mockpresentproof.MockClient{},
+			MsgRegistrar:         msghandler.NewRegistrar(),
+			AriesMessenger:       &messenger.MockMessenger{},
 		})
 		require.NoError(t, err)
 
@@ -1928,6 +1969,8 @@ func TestCHAPIResponseHandler(t *testing.T) {
 					return "", errors.New("test")
 				},
 			},
+			MsgRegistrar:   msghandler.NewRegistrar(),
+			AriesMessenger: &messenger.MockMessenger{},
 		})
 		require.NoError(t, err)
 
@@ -2023,6 +2066,8 @@ func TestCHAPIResponseHandler(t *testing.T) {
 					}, nil
 				},
 			},
+			MsgRegistrar:   msghandler.NewRegistrar(),
+			AriesMessenger: &messenger.MockMessenger{},
 		})
 		require.NoError(t, err)
 
@@ -2039,12 +2084,7 @@ func TestToMarshalledVP(t *testing.T) {
 		issuerDID := newPeerDID(t, issuer)
 		subjectDID := newPeerDID(t, subject)
 
-		o, err := New(&Config{
-			DIDExchClient:        &mockdidexchange.MockClient{},
-			PresentProofClient:   &mockpresentproof.MockClient{},
-			Storage:              memStorage(),
-			AriesContextProvider: agent(t),
-		})
+		o, err := New(config(t))
 		require.NoError(t, err)
 
 		authZ := newAuthorizationVC(t, subjectDID.ID, rpDID, issuerDID)
@@ -2062,12 +2102,7 @@ func TestToMarshalledVP(t *testing.T) {
 		err := relyingParty.VDRegistry().Store(rpDID)
 		require.NoError(t, err)
 
-		o, err := New(&Config{
-			DIDExchClient:        &mockdidexchange.MockClient{},
-			PresentProofClient:   &mockpresentproof.MockClient{},
-			Storage:              memStorage(),
-			AriesContextProvider: relyingParty,
-		})
+		o, err := New(config(t))
 		require.NoError(t, err)
 
 		authZ := newAuthorizationVC(t, subjectDID.ID, rpDID, issuerDID)
@@ -2103,6 +2138,8 @@ func TestGetPresentationResponseResultHandler(t *testing.T) {
 					return &admin.AcceptConsentRequestOK{Payload: &models.CompletedRequest{RedirectTo: redirectURL}}, nil
 				},
 			},
+			MsgRegistrar:   msghandler.NewRegistrar(),
+			AriesMessenger: &messenger.MockMessenger{},
 		})
 		require.NoError(t, err)
 
@@ -2136,13 +2173,7 @@ func TestGetPresentationResponseResultHandler(t *testing.T) {
 	})
 
 	t.Run("bad request error if handle query param is missing", func(t *testing.T) {
-		o, err := New(&Config{
-			DIDExchClient:        &mockdidexchange.MockClient{},
-			Storage:              memStorage(),
-			AriesContextProvider: agent(t),
-			PresentProofClient:   &mockpresentproof.MockClient{},
-			Hydra:                &stubHydra{},
-		})
+		o, err := New(config(t))
 		require.NoError(t, err)
 
 		w := httptest.NewRecorder()
@@ -2152,13 +2183,7 @@ func TestGetPresentationResponseResultHandler(t *testing.T) {
 	})
 
 	t.Run("bad request error if handle is invalid", func(t *testing.T) {
-		o, err := New(&Config{
-			DIDExchClient:        &mockdidexchange.MockClient{},
-			Storage:              memStorage(),
-			AriesContextProvider: agent(t),
-			PresentProofClient:   &mockpresentproof.MockClient{},
-			Hydra:                &stubHydra{},
-		})
+		o, err := New(config(t))
 		require.NoError(t, err)
 
 		w := httptest.NewRecorder()
@@ -2181,13 +2206,7 @@ func TestGetPresentationResponseResultHandler(t *testing.T) {
 			uuid.New().String(): thid,
 		}
 
-		o, err := New(&Config{
-			DIDExchClient:        &mockdidexchange.MockClient{},
-			Storage:              memStorage(),
-			AriesContextProvider: agent(t),
-			PresentProofClient:   &mockpresentproof.MockClient{},
-			Hydra:                &stubHydra{},
-		})
+		o, err := New(config(t))
 		require.NoError(t, err)
 
 		storePut(t, o.transientStore, invitationID, &consentRequestCtx{
@@ -2219,13 +2238,7 @@ func TestGetPresentationResponseResultHandler(t *testing.T) {
 			uuid.New().String(): thid,
 		}
 
-		o, err := New(&Config{
-			DIDExchClient:        &mockdidexchange.MockClient{},
-			Storage:              memStorage(),
-			AriesContextProvider: agent(t),
-			PresentProofClient:   &mockpresentproof.MockClient{},
-			Hydra:                &stubHydra{},
-		})
+		o, err := New(config(t))
 		require.NoError(t, err)
 
 		storePut(t, o.transientStore, invitationID, &consentRequestCtx{
@@ -2261,13 +2274,7 @@ func TestGetPresentationResponseResultHandler(t *testing.T) {
 			uuid.New().String(): thid,
 		}
 
-		o, err := New(&Config{
-			DIDExchClient:        &mockdidexchange.MockClient{},
-			Storage:              memStorage(),
-			AriesContextProvider: agent(t),
-			PresentProofClient:   &mockpresentproof.MockClient{},
-			Hydra:                &stubHydra{},
-		})
+		o, err := New(config(t))
 		require.NoError(t, err)
 
 		storePut(t, o.transientStore, invitationID, &consentRequestCtx{
@@ -2314,6 +2321,8 @@ func TestGetPresentationResponseResultHandler(t *testing.T) {
 					return nil, errors.New("test")
 				},
 			},
+			MsgRegistrar:   msghandler.NewRegistrar(),
+			AriesMessenger: &messenger.MockMessenger{},
 		})
 		require.NoError(t, err)
 
@@ -2353,6 +2362,8 @@ func TestHandleIssuerPresentationMsg(t *testing.T) {
 			Storage:              memStorage(),
 			AriesContextProvider: relyingParty,
 			PresentProofClient:   &mockpresentproof.MockClient{},
+			MsgRegistrar:         msghandler.NewRegistrar(),
+			AriesMessenger:       &messenger.MockMessenger{},
 		})
 		require.NoError(t, err)
 
@@ -2373,12 +2384,7 @@ func TestHandleIssuerPresentationMsg(t *testing.T) {
 	})
 
 	t.Run("error if invalid threadID", func(t *testing.T) {
-		o, err := New(&Config{
-			DIDExchClient:        &mockdidexchange.MockClient{},
-			Storage:              memStorage(),
-			AriesContextProvider: agent(t),
-			PresentProofClient:   &mockpresentproof.MockClient{},
-		})
+		o, err := New(config(t))
 		require.NoError(t, err)
 
 		err = o.handleIssuerPresentationMsg(service.NewDIDCommMsgMap(&presentproof.Presentation{}))
@@ -2386,12 +2392,7 @@ func TestHandleIssuerPresentationMsg(t *testing.T) {
 	})
 
 	t.Run("error on invalid presentation response", func(t *testing.T) {
-		o, err := New(&Config{
-			DIDExchClient:        &mockdidexchange.MockClient{},
-			Storage:              memStorage(),
-			AriesContextProvider: agent(t),
-			PresentProofClient:   &mockpresentproof.MockClient{},
-		})
+		o, err := New(config(t))
 		require.NoError(t, err)
 		thid := uuid.New().String()
 		msg := service.NewDIDCommMsgMap(&presentproof.Presentation{
@@ -2405,12 +2406,7 @@ func TestHandleIssuerPresentationMsg(t *testing.T) {
 	})
 
 	t.Run("error fetching attachment contents", func(t *testing.T) {
-		o, err := New(&Config{
-			DIDExchClient:        &mockdidexchange.MockClient{},
-			Storage:              memStorage(),
-			AriesContextProvider: agent(t),
-			PresentProofClient:   &mockpresentproof.MockClient{},
-		})
+		o, err := New(config(t))
 		require.NoError(t, err)
 		attachID := uuid.New().String()
 		msg := service.NewDIDCommMsgMap(&presentproof.Presentation{
@@ -2431,12 +2427,7 @@ func TestHandleIssuerPresentationMsg(t *testing.T) {
 	})
 
 	t.Run("error if response attachment contains an unparseable VP", func(t *testing.T) {
-		o, err := New(&Config{
-			DIDExchClient:        &mockdidexchange.MockClient{},
-			Storage:              memStorage(),
-			AriesContextProvider: agent(t),
-			PresentProofClient:   &mockpresentproof.MockClient{},
-		})
+		o, err := New(config(t))
 		require.NoError(t, err)
 
 		thid := uuid.New().String()
@@ -2463,6 +2454,8 @@ func TestHandleIssuerPresentationMsg(t *testing.T) {
 			Storage:              mockStorage,
 			AriesContextProvider: agent(t),
 			PresentProofClient:   &mockpresentproof.MockClient{},
+			MsgRegistrar:         msghandler.NewRegistrar(),
+			AriesMessenger:       &messenger.MockMessenger{},
 		})
 		require.NoError(t, err)
 
@@ -2476,12 +2469,7 @@ func TestHandleIssuerPresentationMsg(t *testing.T) {
 }
 
 func TestUserInfoHandler(t *testing.T) {
-	c, err := New(&Config{
-		DIDExchClient:        &mockdidexchange.MockClient{},
-		Storage:              memStorage(),
-		AriesContextProvider: agent(t),
-		PresentProofClient:   &mockpresentproof.MockClient{},
-	})
+	c, err := New(config(t))
 	require.NoError(t, err)
 
 	r := &httptest.ResponseRecorder{}
@@ -2533,6 +2521,8 @@ func TestCreateRPTenant(t *testing.T) {
 			PublicDIDCreator:   &stubPublicDIDCreator{createValue: &did.Doc{ID: expected.PublicDID}},
 			PresentProofClient: &mockpresentproof.MockClient{},
 			GovernanceProvider: &mockgovernance.MockProvider{},
+			MsgRegistrar:       msghandler.NewRegistrar(),
+			AriesMessenger:     &messenger.MockMessenger{},
 		})
 		require.NoError(t, err)
 
@@ -2589,6 +2579,8 @@ func TestCreateRPTenant(t *testing.T) {
 				},
 				PublicDIDCreator:   &stubPublicDIDCreator{createValue: &did.Doc{}},
 				PresentProofClient: &mockpresentproof.MockClient{},
+				MsgRegistrar:       msghandler.NewRegistrar(),
+				AriesMessenger:     &messenger.MockMessenger{},
 			})
 			require.NoError(t, err)
 
@@ -2624,6 +2616,8 @@ func TestCreateRPTenant(t *testing.T) {
 				},
 			},
 			PresentProofClient: &mockpresentproof.MockClient{},
+			MsgRegistrar:       msghandler.NewRegistrar(),
+			AriesMessenger:     &messenger.MockMessenger{},
 		})
 		require.NoError(t, err)
 		w := httptest.NewRecorder()
@@ -2653,6 +2647,8 @@ func TestCreateRPTenant(t *testing.T) {
 				},
 			},
 			PresentProofClient: &mockpresentproof.MockClient{},
+			MsgRegistrar:       msghandler.NewRegistrar(),
+			AriesMessenger:     &messenger.MockMessenger{},
 		})
 		require.NoError(t, err)
 		w := httptest.NewRecorder()
@@ -2684,6 +2680,8 @@ func TestCreateRPTenant(t *testing.T) {
 			},
 			PublicDIDCreator:   &stubPublicDIDCreator{createValue: &did.Doc{}},
 			PresentProofClient: &mockpresentproof.MockClient{},
+			MsgRegistrar:       msghandler.NewRegistrar(),
+			AriesMessenger:     &messenger.MockMessenger{},
 		})
 		require.NoError(t, err)
 		w := httptest.NewRecorder()
@@ -2711,6 +2709,8 @@ func TestCreateRPTenant(t *testing.T) {
 				},
 			},
 			PresentProofClient: &mockpresentproof.MockClient{},
+			MsgRegistrar:       msghandler.NewRegistrar(),
+			AriesMessenger:     &messenger.MockMessenger{},
 		})
 		require.NoError(t, err)
 		w := httptest.NewRecorder()
@@ -2742,6 +2742,8 @@ func TestCreateRPTenant(t *testing.T) {
 			},
 			PublicDIDCreator:   &stubPublicDIDCreator{createErr: errors.New("test")},
 			PresentProofClient: &mockpresentproof.MockClient{},
+			MsgRegistrar:       msghandler.NewRegistrar(),
+			AriesMessenger:     &messenger.MockMessenger{},
 		})
 		require.NoError(t, err)
 		w := httptest.NewRecorder()
@@ -2792,6 +2794,8 @@ func TestCreateRPTenant(t *testing.T) {
 				IssueCredentialFunc: func(didID, profileID string) ([]byte, error) {
 					return nil, fmt.Errorf("failed to issue governance vc")
 				}},
+			MsgRegistrar:   msghandler.NewRegistrar(),
+			AriesMessenger: &messenger.MockMessenger{},
 		})
 		require.NoError(t, err)
 

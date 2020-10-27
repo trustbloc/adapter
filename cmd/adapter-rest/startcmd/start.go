@@ -579,7 +579,7 @@ func startAdapterService(parameters *adapterRestParameters, srv server) error {
 			return err
 		}
 
-		err = addRPHandlers(parameters, framework, router, rootCAs)
+		err = addRPHandlers(parameters, framework, router, rootCAs, msgRegistrar)
 		if err != nil {
 			return fmt.Errorf("failed to add rp-adapter handlers : %w", err)
 		}
@@ -608,8 +608,8 @@ func startAdapterService(parameters *adapterRestParameters, srv server) error {
 }
 
 // nolint:funlen,gocyclo
-func addRPHandlers(
-	parameters *adapterRestParameters, framework *aries.Aries, router *mux.Router, rootCAs *x509.CertPool) error {
+func addRPHandlers(parameters *adapterRestParameters, framework *aries.Aries, router *mux.Router,
+	rootCAs *x509.CertPool, msgRegistrar *msghandler.Registrar) error {
 	presentationExProvider, err := getPresentationExchangeProvider(parameters.presentationDefinitionsFile)
 	if err != nil {
 		return err
@@ -673,6 +673,8 @@ func addRPHandlers(
 			ctx.KMS(),
 			rootCAs),
 		AriesContextProvider: ctx,
+		AriesMessenger:       framework.Messenger(),
+		MsgRegistrar:         msgRegistrar,
 		GovernanceProvider:   governanceProv,
 		PresentProofClient:   presentProofClient,
 	})

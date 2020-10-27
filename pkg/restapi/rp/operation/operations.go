@@ -21,12 +21,15 @@ import (
 	"github.com/coreos/go-oidc"
 	"github.com/google/uuid"
 	"github.com/hyperledger/aries-framework-go/pkg/client/didexchange"
+	"github.com/hyperledger/aries-framework-go/pkg/client/mediator"
 	"github.com/hyperledger/aries-framework-go/pkg/client/outofband"
 	"github.com/hyperledger/aries-framework-go/pkg/client/presentproof"
 	ariescrypto "github.com/hyperledger/aries-framework-go/pkg/crypto"
 	"github.com/hyperledger/aries-framework-go/pkg/didcomm/common/service"
+	"github.com/hyperledger/aries-framework-go/pkg/didcomm/messaging/msghandler"
 	"github.com/hyperledger/aries-framework-go/pkg/didcomm/protocol/decorator"
 	didexchangesvc "github.com/hyperledger/aries-framework-go/pkg/didcomm/protocol/didexchange"
+	mediatorsvc "github.com/hyperledger/aries-framework-go/pkg/didcomm/protocol/mediator"
 	presentproofsvc "github.com/hyperledger/aries-framework-go/pkg/didcomm/protocol/presentproof"
 	"github.com/hyperledger/aries-framework-go/pkg/doc/did"
 	"github.com/hyperledger/aries-framework-go/pkg/doc/verifiable"
@@ -44,6 +47,7 @@ import (
 	"github.com/trustbloc/edge-adapter/pkg/internal/common/support"
 	"github.com/trustbloc/edge-adapter/pkg/presexch"
 	commhttp "github.com/trustbloc/edge-adapter/pkg/restapi/internal/common/http"
+	"github.com/trustbloc/edge-adapter/pkg/route"
 	"github.com/trustbloc/edge-adapter/pkg/vc"
 )
 
@@ -123,6 +127,10 @@ type PublicDIDCreator interface {
 	Create() (*did.Doc, error)
 }
 
+type routeService interface {
+	GetDIDDoc(connID string) (*did.Doc, error)
+}
+
 // GovernanceProvider governance provider.
 type GovernanceProvider interface {
 	IssueCredential(didID, profileID string) ([]byte, error)
@@ -136,6 +144,8 @@ type AriesContextProvider interface {
 	VDRegistry() vdrapi.Registry
 	KMS() kms.KeyManager
 	Crypto() ariescrypto.Crypto
+	Service(id string) (interface{}, error)
+	ServiceEndpoint() string
 }
 
 // Storage config.
@@ -162,7 +172,7 @@ type userDataCollection struct {
 }
 
 // New returns CreateCredential instance.
-func New(config *Config) (*Operation, error) {
+func New(config *Config) (*Operation, error) { // nolint:funlen
 	o := &Operation{
 		presentationExProvider: config.PresentationExProvider,
 		hydra:                  config.Hydra,
@@ -213,6 +223,11 @@ func New(config *Config) (*Operation, error) {
 		return nil, fmt.Errorf("failed to open transient store : %w", err)
 	}
 
+	o.routeSvc, err = createRouteSvc(config, o.connections)
+	if err != nil {
+		return nil, fmt.Errorf("create route message service : %w", err)
+	}
+
 	go o.listenForIncomingConnections()
 
 	go o.listenForConnectionCompleteEvents()
@@ -236,6 +251,8 @@ type Config struct {
 	PresentProofClient     PresentProofClient
 	Storage                *Storage
 	GovernanceProvider     GovernanceProvider
+	AriesMessenger         service.Messenger
+	MsgRegistrar           *msghandler.Registrar
 }
 
 // TODO implement an eviction strategy for Operation.oidcStates and OIDC.consentRequests
@@ -264,6 +281,7 @@ type Operation struct {
 	governanceProvider     GovernanceProvider
 	km                     kms.KeyManager
 	ariesCrypto            ariescrypto.Crypto
+	routeSvc               routeService
 }
 
 // GetRESTHandlers get all controller API handler available for this service.
@@ -1313,4 +1331,38 @@ func marshalCreds(in map[string]*verifiable.Credential) (map[string][]byte, erro
 	}
 
 	return out, nil
+}
+
+func createRouteSvc(config *Config, connectionLookup *connection.Recorder) (routeService, error) {
+	s, err := config.AriesContextProvider.Service(mediatorsvc.Coordination)
+	if err != nil {
+		return nil, fmt.Errorf("mediator service lookup: %s", err)
+	}
+
+	mediatorSvc, ok := s.(mediatorsvc.ProtocolService)
+	if !ok {
+		return nil, errors.New("failed to cast mediator service")
+	}
+
+	mediatorClient, err := mediator.New(config.AriesContextProvider)
+	if err != nil {
+		return nil, err
+	}
+
+	routeSvc, err := route.New(&route.Config{
+		VDRIRegistry:      config.AriesContextProvider.VDRegistry(),
+		AriesMessenger:    config.AriesMessenger,
+		MsgRegistrar:      config.MsgRegistrar,
+		DIDExchangeClient: config.DIDExchClient,
+		MediatorClient:    mediatorClient,
+		ServiceEndpoint:   config.AriesContextProvider.ServiceEndpoint(),
+		Store:             config.Storage.Transient,
+		ConnectionLookup:  connectionLookup,
+		MediatorSvc:       mediatorSvc,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("create service : %w", err)
+	}
+
+	return routeSvc, nil
 }

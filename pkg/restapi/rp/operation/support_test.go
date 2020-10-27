@@ -9,6 +9,7 @@ package operation
 import (
 	"testing"
 
+	"github.com/hyperledger/aries-framework-go/pkg/didcomm/messaging/msghandler"
 	"github.com/hyperledger/aries-framework-go/pkg/doc/did"
 	"github.com/hyperledger/aries-framework-go/pkg/doc/verifiable"
 	"github.com/hyperledger/aries-framework-go/pkg/framework/aries"
@@ -18,7 +19,21 @@ import (
 	"github.com/stretchr/testify/require"
 
 	crypto2 "github.com/trustbloc/edge-adapter/pkg/crypto"
+	mockdidexchange "github.com/trustbloc/edge-adapter/pkg/internal/mock/didexchange"
+	"github.com/trustbloc/edge-adapter/pkg/internal/mock/messenger"
+	mockpresentproof "github.com/trustbloc/edge-adapter/pkg/internal/mock/presentproof"
 )
+
+func config(t *testing.T) *Config {
+	return &Config{
+		DIDExchClient:        &mockdidexchange.MockClient{},
+		Storage:              memStorage(),
+		AriesContextProvider: agent(t),
+		MsgRegistrar:         msghandler.NewRegistrar(),
+		AriesMessenger:       &messenger.MockMessenger{},
+		PresentProofClient:   &mockpresentproof.MockClient{},
+	}
+}
 
 func trio(t *testing.T) (*ariesctx.Provider, *ariesctx.Provider, *ariesctx.Provider) {
 	t.Helper()
