@@ -19,6 +19,8 @@ import (
 	"github.com/hyperledger/aries-framework-go/pkg/framework/aries/api/vdr"
 	"github.com/trustbloc/edge-core/pkg/log"
 	"github.com/trustbloc/edge-core/pkg/storage"
+
+	"github.com/trustbloc/edge-adapter/pkg/aries/message"
 )
 
 // Msg svc constants.
@@ -96,11 +98,11 @@ func New(config *Config) (*Service, error) {
 		mediatorSvc: config.MediatorSvc,
 	}
 
-	msgCh := make(chan routeMsg, 1)
+	msgCh := make(chan message.Msg, 1)
 
 	err = config.MsgRegistrar.Register(
-		newMsgSvc("diddoc-req", didDocReq, msgCh),
-		newMsgSvc("register-route-req", registerRouteReq, msgCh),
+		message.NewMsgSvc("diddoc-req", didDocReq, msgCh),
+		message.NewMsgSvc("register-route-req", registerRouteReq, msgCh),
 	)
 	if err != nil {
 		return nil, fmt.Errorf("message service client: %w", err)
@@ -162,25 +164,25 @@ func (o *Service) GetDIDDoc(connID string) (*did.Doc, error) {
 	return newDidDoc, nil
 }
 
-func (o *Service) didCommMsgListener(ch <-chan routeMsg) {
+func (o *Service) didCommMsgListener(ch <-chan message.Msg) {
 	for msg := range ch {
 		var err error
 
 		var msgMap service.DIDCommMsgMap
 
-		switch msg.didCommMsg.Type() {
+		switch msg.DIDCommMsg.Type() {
 		case didDocReq:
-			msgMap, err = o.handleDIDDocReq(msg.didCommMsg)
+			msgMap, err = o.handleDIDDocReq(msg.DIDCommMsg)
 		case registerRouteReq:
 			msgMap, err = o.handleRouteRegistration(msg)
 		default:
-			err = fmt.Errorf("unsupported message service type : %s", msg.didCommMsg.Type())
+			err = fmt.Errorf("unsupported message service type : %s", msg.DIDCommMsg.Type())
 		}
 
 		if err != nil {
-			msgType := msg.didCommMsg.Type()
+			msgType := msg.DIDCommMsg.Type()
 
-			switch msg.didCommMsg.Type() {
+			switch msg.DIDCommMsg.Type() {
 			case didDocReq:
 				msgType = didDocResp
 			case registerRouteReq:
@@ -193,18 +195,18 @@ func (o *Service) didCommMsgListener(ch <-chan routeMsg) {
 				Data: &ErrorRespData{ErrorMsg: err.Error()},
 			})
 
-			logger.Errorf("msgType=[%s] id=[%s] errMsg=[%s]", msg.didCommMsg.Type(), msg.didCommMsg.ID(), err.Error())
+			logger.Errorf("msgType=[%s] id=[%s] errMsg=[%s]", msg.DIDCommMsg.Type(), msg.DIDCommMsg.ID(), err.Error())
 		}
 
-		err = o.messenger.ReplyTo(msg.didCommMsg.ID(), msgMap)
+		err = o.messenger.ReplyTo(msg.DIDCommMsg.ID(), msgMap)
 		if err != nil {
 			logger.Errorf("sendReply : msgType=[%s] id=[%s] errMsg=[%s]",
-				msg.didCommMsg.Type(), msg.didCommMsg.ID(), err.Error())
+				msg.DIDCommMsg.Type(), msg.DIDCommMsg.ID(), err.Error())
 
 			continue
 		}
 
-		logger.Infof("msgType=[%s] id=[%s] msg=[%s]", msg.didCommMsg.Type(), msg.didCommMsg.ID(), "success")
+		logger.Infof("msgType=[%s] id=[%s] msg=[%s]", msg.DIDCommMsg.Type(), msg.DIDCommMsg.ID(), "success")
 	}
 }
 
@@ -235,15 +237,15 @@ func (o *Service) handleDIDDocReq(msg service.DIDCommMsg) (service.DIDCommMsgMap
 	}), nil
 }
 
-func (o *Service) handleRouteRegistration(msg routeMsg) (service.DIDCommMsgMap, error) { // nolint: gocyclo
+func (o *Service) handleRouteRegistration(msg message.Msg) (service.DIDCommMsgMap, error) { // nolint: gocyclo
 	pMsg := ConnReq{}
 
-	err := msg.didCommMsg.Decode(&pMsg)
+	err := msg.DIDCommMsg.Decode(&pMsg)
 	if err != nil {
 		return nil, fmt.Errorf("parse didcomm message : %w", err)
 	}
 
-	if msg.didCommMsg.ParentThreadID() == "" {
+	if msg.DIDCommMsg.ParentThreadID() == "" {
 		return nil, errors.New("parent thread id mandatory")
 	}
 
@@ -256,7 +258,7 @@ func (o *Service) handleRouteRegistration(msg routeMsg) (service.DIDCommMsgMap, 
 		return nil, fmt.Errorf("parse did doc : %w", err)
 	}
 
-	txnID, err := o.store.Get(msg.didCommMsg.ParentThreadID())
+	txnID, err := o.store.Get(msg.DIDCommMsg.ParentThreadID())
 	if err != nil {
 		return nil, fmt.Errorf("fetch txn data : %w", err)
 	}
@@ -271,7 +273,7 @@ func (o *Service) handleRouteRegistration(msg routeMsg) (service.DIDCommMsgMap, 
 		return nil, fmt.Errorf("route registration : %w", err)
 	}
 
-	connID, err := o.connectionLookup.GetConnectionIDByDIDs(msg.myDID, msg.theirDID)
+	connID, err := o.connectionLookup.GetConnectionIDByDIDs(msg.MyDID, msg.TheirDID)
 	if err != nil {
 		return nil, fmt.Errorf("get connection by dids : %w", err)
 	}

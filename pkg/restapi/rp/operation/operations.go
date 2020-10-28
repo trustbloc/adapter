@@ -42,6 +42,7 @@ import (
 	"github.com/trustbloc/edge-core/pkg/log"
 	"github.com/trustbloc/edge-core/pkg/storage"
 
+	"github.com/trustbloc/edge-adapter/pkg/aries/message"
 	"github.com/trustbloc/edge-adapter/pkg/crypto"
 	"github.com/trustbloc/edge-adapter/pkg/db/rp"
 	"github.com/trustbloc/edge-adapter/pkg/internal/common/support"
@@ -74,6 +75,13 @@ const (
 	consentVCAttachmentFormat = "trustbloc/UserConsentVerifiableCredential@0.1.0"
 
 	transientStoreName = "rpadapter_trx"
+)
+
+// Msg svc constants.
+const (
+	msgTypeBaseURI = "https://trustbloc.dev/adapter/1.0"
+	didDocReq      = msgTypeBaseURI + "/diddoc-req"
+	didDocResp     = msgTypeBaseURI + "/diddoc-resp"
 )
 
 var logger = log.New("edge-adapter/rp-operations")
@@ -131,6 +139,11 @@ type routeService interface {
 	GetDIDDoc(connID string) (*did.Doc, error)
 }
 
+type connectionRecorder interface {
+	GetConnectionIDByDIDs(string, string) (string, error)
+	GetConnectionRecord(id string) (*connection.Record, error)
+}
+
 // GovernanceProvider governance provider.
 type GovernanceProvider interface {
 	IssueCredential(didID, profileID string) ([]byte, error)
@@ -161,6 +174,7 @@ type consentRequestCtx struct {
 	CR            *admin.GetConsentRequestOK
 	UserDID       string
 	RPPublicDID   string
+	ConnectionID  string
 	RPPairwiseDID string
 	RPLabel       string
 	UserData      *userDataCollection
@@ -191,6 +205,8 @@ func New(config *Config) (*Operation, error) { // nolint:funlen
 		governanceProvider:     config.GovernanceProvider,
 		km:                     config.AriesContextProvider.KMS(),
 		ariesCrypto:            config.AriesContextProvider.Crypto(),
+		messenger:              config.AriesMessenger,
+		didCommServiceEndpoint: config.AriesContextProvider.ServiceEndpoint(),
 	}
 
 	err := o.didClient.RegisterActionEvent(o.didActions)
@@ -234,6 +250,17 @@ func New(config *Config) (*Operation, error) { // nolint:funlen
 
 	go o.listenForIssuerResponses()
 
+	msgCh := make(chan message.Msg, 1)
+
+	err = config.MsgRegistrar.Register(
+		message.NewMsgSvc("rp-diddoc-req", didDocReq, msgCh),
+	)
+	if err != nil {
+		return nil, fmt.Errorf("message service client: %w", err)
+	}
+
+	go o.didCommMsgListener(msgCh)
+
 	return o, nil
 }
 
@@ -273,7 +300,7 @@ type Operation struct {
 	didStateMsgs           chan service.StateMsg
 	rpStore                *rp.Store
 	publicDIDCreator       PublicDIDCreator
-	connections            *connection.Recorder
+	connections            connectionRecorder
 	ppClient               PresentProofClient
 	ppActions              chan service.DIDCommAction
 	vdrReg                 vdrapi.Registry
@@ -282,6 +309,8 @@ type Operation struct {
 	km                     kms.KeyManager
 	ariesCrypto            ariescrypto.Crypto
 	routeSvc               routeService
+	messenger              service.Messenger
+	didCommServiceEndpoint string
 }
 
 // GetRESTHandlers get all controller API handler available for this service.
@@ -836,15 +865,27 @@ func (o *Operation) requestRemoteCredential(authz *verifiable.Credential,
 		return "", fmt.Errorf("%w: failed to parse issuer did document: %s", errInvalidCredential, err.Error())
 	}
 
+	val, err := o.transientStore.Get(crCtx.ConnectionID)
+	if err != nil {
+		return "", fmt.Errorf("get connection-authzDID mapping : %w", err)
+	}
+
+	rpAuthZDID := string(val)
+
+	if rpAuthZDID != sub.RPDIDDoc.ID {
+		return "", fmt.Errorf("rp did '%s' in authz doesn't match the expected rp did '%s'",
+			sub.RPDIDDoc.ID, rpAuthZDID)
+	}
+
 	// TODO Issuer's label on the connection record https://github.com/trustbloc/edge-adapter/issues/93
-	_, err = o.didClient.CreateConnection(crCtx.RPPairwiseDID, issuerDID)
+	_, err = o.didClient.CreateConnection(rpAuthZDID, issuerDID)
 	if err != nil {
 		return "", fmt.Errorf(
 			"failed to create didcomm connection between %s and %s: %w",
-			crCtx.RPPairwiseDID, issuerDID.ID, err)
+			rpAuthZDID, issuerDID.ID, err)
 	}
 
-	vpBytes, err := o.toMarshalledVP(authz, crCtx.RPPairwiseDID)
+	vpBytes, err := o.toMarshalledVP(authz, rpAuthZDID)
 	if err != nil {
 		return "", fmt.Errorf("failed to convert authz credential to verifiable presentation: %w", err)
 	}
@@ -863,7 +904,7 @@ func (o *Operation) requestRemoteCredential(authz *verifiable.Credential,
 				Base64: base64.StdEncoding.EncodeToString(vpBytes),
 			},
 		}},
-	}, crCtx.RPPairwiseDID, issuerDID.ID)
+	}, rpAuthZDID, issuerDID.ID)
 	if err != nil {
 		return "", fmt.Errorf("failed to send request-presentation: %w", err)
 	}
@@ -1097,6 +1138,7 @@ func (o *Operation) listenForConnectionCompleteEvents() {
 
 		crCtx.RPPairwiseDID = record.MyDID
 		crCtx.UserDID = record.TheirDID
+		crCtx.ConnectionID = record.ConnectionID
 
 		err = newTransientStorage(o.transientStore).Put(crCtx.InvitationID, crCtx)
 		if err != nil {
@@ -1123,6 +1165,78 @@ func (o *Operation) listenForIssuerResponses() {
 
 		action.Continue(presentproof.WithFriendlyNames(uuid.New().String()))
 	}
+}
+
+func (o *Operation) didCommMsgListener(ch <-chan message.Msg) {
+	for msg := range ch {
+		var err error
+
+		var msgMap service.DIDCommMsgMap
+
+		switch msg.DIDCommMsg.Type() {
+		case didDocReq:
+			msgMap, err = o.handleDIDDocReq(msg)
+		default:
+			err = fmt.Errorf("unsupported message service type : %s", msg.DIDCommMsg.Type())
+		}
+
+		if err != nil {
+			msgType := msg.DIDCommMsg.Type()
+			if msg.DIDCommMsg.Type() == didDocReq {
+				msgType = didDocResp
+			}
+
+			msgMap = service.NewDIDCommMsgMap(&ErrorResp{
+				ID:   uuid.New().String(),
+				Type: msgType,
+				Data: &ErrorRespData{ErrorMsg: err.Error()},
+			})
+
+			logger.Errorf("msgType=[%s] id=[%s] errMsg=[%s]", msg.DIDCommMsg.Type(), msg.DIDCommMsg.ID(), err.Error())
+		}
+
+		err = o.messenger.ReplyTo(msg.DIDCommMsg.ID(), msgMap)
+		if err != nil {
+			logger.Errorf("sendReply : msgType=[%s] id=[%s] errMsg=[%s]",
+				msg.DIDCommMsg.Type(), msg.DIDCommMsg.ID(), err.Error())
+
+			continue
+		}
+
+		logger.Infof("msgType=[%s] id=[%s] msg=[%s]", msg.DIDCommMsg.Type(), msg.DIDCommMsg.ID(), "success")
+	}
+}
+
+func (o *Operation) handleDIDDocReq(msg message.Msg) (service.DIDCommMsgMap, error) {
+	newDidDoc, err := o.vdrReg.Create(
+		"peer", vdrapi.WithServices(did.Service{ServiceEndpoint: o.didCommServiceEndpoint}),
+	)
+	if err != nil {
+		return nil, fmt.Errorf("create new peer did : %w", err)
+	}
+
+	docBytes, err := newDidDoc.JSONBytes()
+	if err != nil {
+		return nil, fmt.Errorf("marshal did doc : %w", err)
+	}
+
+	connID, err := o.connections.GetConnectionIDByDIDs(msg.MyDID, msg.TheirDID)
+	if err != nil {
+		return nil, fmt.Errorf("get connection by DIDs : %w", err)
+	}
+
+	err = o.transientStore.Put(connID, []byte(newDidDoc.ID))
+	if err != nil {
+		return nil, fmt.Errorf("save connection-authzDID mapping  : %w", err)
+	}
+
+	return service.NewDIDCommMsgMap(&DIDDocResp{
+		ID:   uuid.New().String(),
+		Type: didDocResp,
+		Data: &DIDDocRespData{
+			DIDDoc: docBytes,
+		},
+	}), nil
 }
 
 func (o *Operation) handleIssuerPresentationMsg(msg service.DIDCommMsg) error {
@@ -1333,7 +1447,7 @@ func marshalCreds(in map[string]*verifiable.Credential) (map[string][]byte, erro
 	return out, nil
 }
 
-func createRouteSvc(config *Config, connectionLookup *connection.Recorder) (routeService, error) {
+func createRouteSvc(config *Config, connectionLookup connectionRecorder) (routeService, error) {
 	s, err := config.AriesContextProvider.Service(mediatorsvc.Coordination)
 	if err != nil {
 		return nil, fmt.Errorf("mediator service lookup: %s", err)

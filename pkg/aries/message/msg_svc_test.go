@@ -4,7 +4,7 @@ Copyright SecureKey Technologies Inc. All Rights Reserved.
 SPDX-License-Identifier: Apache-2.0
 */
 
-package route
+package message
 
 import (
 	"testing"
@@ -18,9 +18,9 @@ func TestNewMsgSvc(t *testing.T) {
 	name := "msg-123"
 	msgType := "http://example.com/message/test"
 	purpose := "msg-123"
-	msgCh := make(chan routeMsg)
+	msgCh := make(chan Msg)
 
-	msgSvc := newMsgSvc(name, msgType, msgCh)
+	msgSvc := NewMsgSvc(name, msgType, msgCh)
 	require.Equal(t, name, msgSvc.Name())
 
 	require.True(t, msgSvc.Accept(msgType, []string{purpose, "purpose2"}))
