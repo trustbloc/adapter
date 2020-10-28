@@ -23,6 +23,7 @@ import (
 	"github.com/stretchr/testify/require"
 	mockstorage "github.com/trustbloc/edge-core/pkg/storage/mockstore"
 
+	"github.com/trustbloc/edge-adapter/pkg/aries/message"
 	mockconn "github.com/trustbloc/edge-adapter/pkg/internal/mock/connection"
 	mockdidex "github.com/trustbloc/edge-adapter/pkg/internal/mock/didexchange"
 	mockmediator "github.com/trustbloc/edge-adapter/pkg/internal/mock/mediator"
@@ -75,10 +76,10 @@ func TestDIDCommMsgListener(t *testing.T) {
 			},
 		}
 
-		msgCh := make(chan routeMsg, 1)
+		msgCh := make(chan message.Msg, 1)
 		go c.didCommMsgListener(msgCh)
 
-		msgCh <- routeMsg{didCommMsg: service.NewDIDCommMsgMap(struct {
+		msgCh <- message.Msg{DIDCommMsg: service.NewDIDCommMsgMap(struct {
 			Type string `json:"@type,omitempty"`
 		}{Type: "unsupported-message-type"})}
 
@@ -99,10 +100,10 @@ func TestDIDCommMsgListener(t *testing.T) {
 			},
 		}
 
-		msgCh := make(chan routeMsg, 1)
+		msgCh := make(chan message.Msg, 1)
 		go c.didCommMsgListener(msgCh)
 
-		msgCh <- routeMsg{didCommMsg: service.NewDIDCommMsgMap(struct {
+		msgCh <- message.Msg{DIDCommMsg: service.NewDIDCommMsgMap(struct {
 			Type string `json:"@type,omitempty"`
 		}{Type: "unsupported-message-type"})}
 	})
@@ -131,10 +132,10 @@ func TestDIDCommMsgListener(t *testing.T) {
 			},
 		}
 
-		msgCh := make(chan routeMsg, 1)
+		msgCh := make(chan message.Msg, 1)
 		go c.didCommMsgListener(msgCh)
 
-		msgCh <- routeMsg{didCommMsg: service.NewDIDCommMsgMap(DIDDocReq{
+		msgCh <- message.Msg{DIDCommMsg: service.NewDIDCommMsgMap(DIDDocReq{
 			ID:   uuid.New().String(),
 			Type: didDocReq,
 		})}
@@ -168,7 +169,7 @@ func TestDIDCommMsgListener(t *testing.T) {
 		c, err := New(config)
 		require.NoError(t, err)
 
-		msgCh := make(chan routeMsg, 1)
+		msgCh := make(chan message.Msg, 1)
 		go c.didCommMsgListener(msgCh)
 
 		didDoc := mockdiddoc.GetMockDIDDoc()
@@ -180,7 +181,7 @@ func TestDIDCommMsgListener(t *testing.T) {
 		didDocBytes, err := didDoc.JSONBytes()
 		require.NoError(t, err)
 
-		msgCh <- routeMsg{didCommMsg: service.NewDIDCommMsgMap(ConnReq{
+		msgCh <- message.Msg{DIDCommMsg: service.NewDIDCommMsgMap(ConnReq{
 			ID:   uuid.New().String(),
 			Type: registerRouteReq,
 			Thread: &decorator.Thread{
@@ -222,10 +223,10 @@ func TestDIDDocReq(t *testing.T) {
 		c, err := New(config)
 		require.NoError(t, err)
 
-		msgCh := make(chan routeMsg, 1)
+		msgCh := make(chan message.Msg, 1)
 		go c.didCommMsgListener(msgCh)
 
-		msgCh <- routeMsg{didCommMsg: service.NewDIDCommMsgMap(DIDDocReq{
+		msgCh <- message.Msg{DIDCommMsg: service.NewDIDCommMsgMap(DIDDocReq{
 			ID:   uuid.New().String(),
 			Type: didDocReq,
 		})}
@@ -260,10 +261,10 @@ func TestDIDDocReq(t *testing.T) {
 
 		c.store = &mockstorage.MockStore{Store: make(map[string][]byte), ErrPut: errors.New("save error")}
 
-		msgCh := make(chan routeMsg, 1)
+		msgCh := make(chan message.Msg, 1)
 		go c.didCommMsgListener(msgCh)
 
-		msgCh <- routeMsg{didCommMsg: service.NewDIDCommMsgMap(DIDDocReq{
+		msgCh <- message.Msg{DIDCommMsg: service.NewDIDCommMsgMap(DIDDocReq{
 			ID:   uuid.New().String(),
 			Type: didDocReq,
 		})}
@@ -296,10 +297,10 @@ func TestRegisterRouteReq(t *testing.T) { // nolint:gocyclo
 			},
 		}
 
-		msgCh := make(chan routeMsg, 1)
+		msgCh := make(chan message.Msg, 1)
 		go c.didCommMsgListener(msgCh)
 
-		msgCh <- routeMsg{didCommMsg: service.NewDIDCommMsgMap(ConnReq{
+		msgCh <- message.Msg{DIDCommMsg: service.NewDIDCommMsgMap(ConnReq{
 			ID:   uuid.New().String(),
 			Type: registerRouteReq,
 		})}
@@ -332,10 +333,10 @@ func TestRegisterRouteReq(t *testing.T) { // nolint:gocyclo
 			},
 		}
 
-		msgCh := make(chan routeMsg, 1)
+		msgCh := make(chan message.Msg, 1)
 		go c.didCommMsgListener(msgCh)
 
-		msgCh <- routeMsg{didCommMsg: service.NewDIDCommMsgMap(ConnReq{
+		msgCh <- message.Msg{DIDCommMsg: service.NewDIDCommMsgMap(ConnReq{
 			ID:   uuid.New().String(),
 			Type: registerRouteReq,
 			Thread: &decorator.Thread{
@@ -373,10 +374,10 @@ func TestRegisterRouteReq(t *testing.T) { // nolint:gocyclo
 			},
 		}
 
-		msgCh := make(chan routeMsg, 1)
+		msgCh := make(chan message.Msg, 1)
 		go c.didCommMsgListener(msgCh)
 
-		msgCh <- routeMsg{didCommMsg: service.NewDIDCommMsgMap(ConnReq{
+		msgCh <- message.Msg{DIDCommMsg: service.NewDIDCommMsgMap(ConnReq{
 			ID:   uuid.New().String(),
 			Type: registerRouteReq,
 			Thread: &decorator.Thread{
@@ -419,10 +420,10 @@ func TestRegisterRouteReq(t *testing.T) { // nolint:gocyclo
 		didDocBytes, err := didDoc.JSONBytes()
 		require.NoError(t, err)
 
-		msgCh := make(chan routeMsg, 1)
+		msgCh := make(chan message.Msg, 1)
 		go c.didCommMsgListener(msgCh)
 
-		msgCh <- routeMsg{didCommMsg: service.NewDIDCommMsgMap(ConnReq{
+		msgCh <- message.Msg{DIDCommMsg: service.NewDIDCommMsgMap(ConnReq{
 			ID:   uuid.New().String(),
 			Type: registerRouteReq,
 			Thread: &decorator.Thread{
@@ -466,7 +467,7 @@ func TestRegisterRouteReq(t *testing.T) { // nolint:gocyclo
 		c, err := New(config)
 		require.NoError(t, err)
 
-		msgCh := make(chan routeMsg, 1)
+		msgCh := make(chan message.Msg, 1)
 		go c.didCommMsgListener(msgCh)
 
 		didDoc := mockdiddoc.GetMockDIDDoc()
@@ -478,7 +479,7 @@ func TestRegisterRouteReq(t *testing.T) { // nolint:gocyclo
 		didDocBytes, err := didDoc.JSONBytes()
 		require.NoError(t, err)
 
-		msgCh <- routeMsg{didCommMsg: service.NewDIDCommMsgMap(ConnReq{
+		msgCh <- message.Msg{DIDCommMsg: service.NewDIDCommMsgMap(ConnReq{
 			ID:   uuid.New().String(),
 			Type: registerRouteReq,
 			Thread: &decorator.Thread{
@@ -520,7 +521,7 @@ func TestRegisterRouteReq(t *testing.T) { // nolint:gocyclo
 		c, err := New(config)
 		require.NoError(t, err)
 
-		msgCh := make(chan routeMsg, 1)
+		msgCh := make(chan message.Msg, 1)
 		go c.didCommMsgListener(msgCh)
 
 		didDoc := mockdiddoc.GetMockDIDDoc()
@@ -532,7 +533,7 @@ func TestRegisterRouteReq(t *testing.T) { // nolint:gocyclo
 		didDocBytes, err := didDoc.JSONBytes()
 		require.NoError(t, err)
 
-		msgCh <- routeMsg{didCommMsg: service.NewDIDCommMsgMap(ConnReq{
+		msgCh <- message.Msg{DIDCommMsg: service.NewDIDCommMsgMap(ConnReq{
 			ID:   uuid.New().String(),
 			Type: registerRouteReq,
 			Thread: &decorator.Thread{
@@ -572,7 +573,7 @@ func TestRegisterRouteReq(t *testing.T) { // nolint:gocyclo
 		c, err := New(config)
 		require.NoError(t, err)
 
-		msgCh := make(chan routeMsg, 1)
+		msgCh := make(chan message.Msg, 1)
 		go c.didCommMsgListener(msgCh)
 
 		didDoc := mockdiddoc.GetMockDIDDoc()
@@ -584,7 +585,7 @@ func TestRegisterRouteReq(t *testing.T) { // nolint:gocyclo
 		didDocBytes, err := didDoc.JSONBytes()
 		require.NoError(t, err)
 
-		msgCh <- routeMsg{didCommMsg: service.NewDIDCommMsgMap(ConnReq{
+		msgCh <- message.Msg{DIDCommMsg: service.NewDIDCommMsgMap(ConnReq{
 			ID:   uuid.New().String(),
 			Type: registerRouteReq,
 			Thread: &decorator.Thread{

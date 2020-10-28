@@ -8,7 +8,7 @@
 @rp_adapter
 Feature: RP Adapter
   Background: Setup External Agent
-    Given the "Mock Wallet" is running on "localhost" port "9081" with controller "http://localhost:9082"
+    Given the "Mock Wallet" is running on "localhost" port "9081" with webhook "http://localhost:9083" and controller "http://localhost:9082"
     And the "Mock Issuer Adapter" is running on "localhost" port "10010" with controller "http://localhost:10011"
 
   @rp_adapter_healthcheck
@@ -28,6 +28,7 @@ Feature: RP Adapter
     And "Mock Wallet" accepts the didcomm invitation from "didcommconnection"
     Then "Mock Wallet" connects with the RP adapter "didcommconnection"
 
+  @rp_adapter_cred
   Scenario: Returns both local and remote user data to the relying party with the user's consent
     Given "Mock Issuer Adapter" and "Mock Wallet" have a didcomm connection
     And an rp tenant with label "userdata" and scopes "credit_card_stmt:remote,driver_license:local" that requests the "credit_card_stmt:remote,driver_license:local" scope from the "Mock Wallet"

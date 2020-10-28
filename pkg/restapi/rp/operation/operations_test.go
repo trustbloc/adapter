@@ -34,6 +34,7 @@ import (
 	mockroute "github.com/hyperledger/aries-framework-go/pkg/mock/didcomm/protocol/mediator"
 	mockprovider "github.com/hyperledger/aries-framework-go/pkg/mock/provider"
 	ariesmockstorage "github.com/hyperledger/aries-framework-go/pkg/mock/storage"
+	mockvdr "github.com/hyperledger/aries-framework-go/pkg/mock/vdr"
 	"github.com/hyperledger/aries-framework-go/pkg/storage/mem"
 	"github.com/hyperledger/aries-framework-go/pkg/store/connection"
 	"github.com/ory/hydra-client-go/client/admin"
@@ -43,7 +44,9 @@ import (
 	"github.com/trustbloc/edge-core/pkg/storage/memstore"
 	mockstorage "github.com/trustbloc/edge-core/pkg/storage/mockstore"
 
+	"github.com/trustbloc/edge-adapter/pkg/aries/message"
 	"github.com/trustbloc/edge-adapter/pkg/db/rp"
+	mockconn "github.com/trustbloc/edge-adapter/pkg/internal/mock/connection"
 	mockdidexchange "github.com/trustbloc/edge-adapter/pkg/internal/mock/didexchange"
 	mockgovernance "github.com/trustbloc/edge-adapter/pkg/internal/mock/governance"
 	"github.com/trustbloc/edge-adapter/pkg/internal/mock/messenger"
@@ -1699,11 +1702,14 @@ func TestGetPresentationsRequest(t *testing.T) {
 }
 
 func TestCHAPIResponseHandler(t *testing.T) {
+	redirectURL := "http://hydra.example.com/accept"
+
 	t.Run("valid chapi response", func(t *testing.T) {
 		relyingParty, subject, issuer := trio(t)
 		rpDID := newPeerDID(t, relyingParty)
 		subjectDID := newPeerDID(t, subject)
 		issuerDID := newPeerDID(t, issuer)
+		rpAuthZDID := newPeerDID(t, relyingParty)
 
 		simulateDIDExchange(t, relyingParty, rpDID, subject, subjectDID)
 
@@ -1726,7 +1732,7 @@ func TestCHAPIResponseHandler(t *testing.T) {
 				},
 			},
 		}
-		authz := newAuthorizationVC(t, subjectDID.ID, rpDID, issuerDID)
+		authz := newAuthorizationVC(t, subjectDID.ID, rpAuthZDID, issuerDID)
 		degree := newUniversityDegreeVC(t, issuer, issuerDID)
 		vp := newPresentationSubmissionVP(t,
 			subject,
@@ -1742,7 +1748,6 @@ func TestCHAPIResponseHandler(t *testing.T) {
 				},
 			}},
 			authz, degree)
-		redirectURL := "http://hydra.example.com/accept"
 		requestPresentationSent := make(chan struct{})
 
 		c, err := New(&Config{
@@ -1754,7 +1759,7 @@ func TestCHAPIResponseHandler(t *testing.T) {
 					return nil
 				},
 				RequestPresentationFunc: func(request *presentproof.RequestPresentation, myDID, theirDID string) (string, error) {
-					require.Equal(t, rpDID.ID, myDID)
+					require.Equal(t, rpAuthZDID.ID, myDID)
 					require.Equal(t, issuerDID.ID, theirDID)
 					require.Len(t, request.RequestPresentationsAttach, 1)
 					checkPresentationDefinitionAttachment(t, authz, request)
@@ -1774,6 +1779,8 @@ func TestCHAPIResponseHandler(t *testing.T) {
 		})
 		require.NoError(t, err)
 
+		rpWalletConnID := uuid.New().String()
+
 		storePut(t, c.transientStore, invitationID, &consentRequestCtx{
 			InvitationID:  invitationID,
 			PD:            definitions,
@@ -1781,7 +1788,11 @@ func TestCHAPIResponseHandler(t *testing.T) {
 			UserDID:       subjectDID.ID,
 			RPPublicDID:   rpPublicDID,
 			RPPairwiseDID: rpDID.ID,
+			ConnectionID:  rpWalletConnID,
 		})
+
+		err = c.transientStore.Put(rpWalletConnID, []byte(rpAuthZDID.ID))
+		require.NoError(t, err)
 
 		w := httptest.NewRecorder()
 		c.chapiResponseHandler(w, newCHAPIResponse(t, invitationID, vp))
@@ -1929,6 +1940,106 @@ func TestCHAPIResponseHandler(t *testing.T) {
 		})
 
 		w := &httptest.ResponseRecorder{}
+		c.chapiResponseHandler(w, newCHAPIResponse(t, invitationID, vp))
+		require.Equal(t, http.StatusInternalServerError, w.Code)
+	})
+
+	t.Run("rp authz did validation error", func(t *testing.T) {
+		relyingParty, subject, issuer := trio(t)
+		rpDID := newPeerDID(t, relyingParty)
+		subjectDID := newPeerDID(t, subject)
+		issuerDID := newPeerDID(t, issuer)
+		rpAuthZDID := newPeerDID(t, relyingParty)
+
+		simulateDIDExchange(t, relyingParty, rpDID, subject, subjectDID)
+
+		invitationID := uuid.New().String()
+		rpPublicDID := newDID(t).String()
+		thid := uuid.New().String()
+		definitions := &presexch.PresentationDefinitions{
+			InputDescriptors: []*presexch.InputDescriptor{
+				{
+					ID: uuid.New().String(),
+					Schema: &presexch.Schema{
+						URI: []string{vc.AuthorizationCredentialContext},
+					},
+				},
+				{
+					ID: uuid.New().String(),
+					Schema: &presexch.Schema{
+						URI: []string{"https://www.w3.org/2018/credentials/examples/v1"},
+					},
+				},
+			},
+		}
+		authz := newAuthorizationVC(t, subjectDID.ID, rpAuthZDID, issuerDID)
+		degree := newUniversityDegreeVC(t, issuer, issuerDID)
+		vp := newPresentationSubmissionVP(t,
+			subject,
+			subjectDID,
+			&presexch.PresentationSubmission{DescriptorMap: []*presexch.InputDescriptorMapping{
+				{
+					ID:   definitions.InputDescriptors[0].ID,
+					Path: "$.verifiableCredential[0]",
+				},
+				{
+					ID:   definitions.InputDescriptors[1].ID,
+					Path: "$.verifiableCredential[1]",
+				},
+			}},
+			authz, degree)
+		requestPresentationSent := make(chan struct{})
+
+		c, err := New(&Config{
+			DIDExchClient:        &mockdidexchange.MockClient{},
+			Storage:              memStorage(),
+			AriesContextProvider: relyingParty,
+			PresentProofClient: &mockpresentproof.MockClient{
+				RegisterActionFunc: func(c chan<- service.DIDCommAction) error {
+					return nil
+				},
+				RequestPresentationFunc: func(request *presentproof.RequestPresentation, myDID, theirDID string) (string, error) {
+					require.Equal(t, rpAuthZDID.ID, myDID)
+					require.Equal(t, issuerDID.ID, theirDID)
+					require.Len(t, request.RequestPresentationsAttach, 1)
+					checkPresentationDefinitionAttachment(t, authz, request)
+
+					go func() { requestPresentationSent <- struct{}{} }()
+
+					return thid, nil
+				},
+			},
+			Hydra: &stubHydra{
+				acceptConsentRequestFunc: func(*admin.AcceptConsentRequestParams) (*admin.AcceptConsentRequestOK, error) {
+					return &admin.AcceptConsentRequestOK{Payload: &models.CompletedRequest{RedirectTo: redirectURL}}, nil
+				},
+			},
+			MsgRegistrar:   msghandler.NewRegistrar(),
+			AriesMessenger: &messenger.MockMessenger{},
+		})
+		require.NoError(t, err)
+
+		rpWalletConnID := uuid.New().String()
+
+		storePut(t, c.transientStore, invitationID, &consentRequestCtx{
+			InvitationID:  invitationID,
+			PD:            definitions,
+			CR:            &admin.GetConsentRequestOK{Payload: &models.ConsentRequest{Challenge: uuid.New().String()}},
+			UserDID:       subjectDID.ID,
+			RPPublicDID:   rpPublicDID,
+			RPPairwiseDID: rpDID.ID,
+			ConnectionID:  rpWalletConnID,
+		})
+
+		// no conn to rpAuthZ mapping
+		w := httptest.NewRecorder()
+		c.chapiResponseHandler(w, newCHAPIResponse(t, invitationID, vp))
+		require.Equal(t, http.StatusInternalServerError, w.Code)
+
+		// conn authz did doesnt match to the did in authz credential
+		err = c.transientStore.Put(rpWalletConnID, []byte("invalid"))
+		require.NoError(t, err)
+		w = httptest.NewRecorder()
 		c.chapiResponseHandler(w, newCHAPIResponse(t, invitationID, vp))
 		require.Equal(t, http.StatusInternalServerError, w.Code)
 	})
@@ -2821,6 +2932,222 @@ func TestRemoveOIDCScope(t *testing.T) {
 			}
 
 			require.Contains(t, result, scope)
+		}
+	})
+}
+
+func TestDIDDocReq(t *testing.T) { // nolint:gocyclo
+	t.Run("unsupported message type", func(t *testing.T) {
+		c, err := New(config(t))
+		require.NoError(t, err)
+
+		done := make(chan struct{})
+
+		c.messenger = &messenger.MockMessenger{
+			ReplyToFunc: func(msgID string, msg service.DIDCommMsgMap) error {
+				pMsg := &DIDDocResp{}
+				err = msg.Decode(pMsg)
+				require.NoError(t, err)
+
+				require.Contains(t, pMsg.Data.ErrorMsg, "unsupported message service type : unsupported-message-type")
+				require.Empty(t, pMsg.Data.DIDDoc)
+
+				done <- struct{}{}
+
+				return nil
+			},
+		}
+
+		msgCh := make(chan message.Msg, 1)
+		go c.didCommMsgListener(msgCh)
+
+		msgCh <- message.Msg{DIDCommMsg: service.NewDIDCommMsgMap(struct {
+			Type string `json:"@type,omitempty"`
+		}{Type: "unsupported-message-type"})}
+
+		select {
+		case <-done:
+		case <-time.After(5 * time.Second):
+			require.Fail(t, "tests are not validated due to timeout")
+		}
+	})
+
+	t.Run("messenger reply error", func(t *testing.T) {
+		c, err := New(config(t))
+		require.NoError(t, err)
+
+		c.messenger = &messenger.MockMessenger{
+			ReplyToFunc: func(msgID string, msg service.DIDCommMsgMap) error {
+				return errors.New("reply error")
+			},
+		}
+
+		msgCh := make(chan message.Msg, 1)
+		go c.didCommMsgListener(msgCh)
+
+		msgCh <- message.Msg{DIDCommMsg: service.NewDIDCommMsgMap(struct {
+			Type string `json:"@type,omitempty"`
+		}{Type: "unsupported-message-type"})}
+	})
+
+	t.Run("did doc request", func(t *testing.T) {
+		c, err := New(config(t))
+		require.NoError(t, err)
+
+		done := make(chan struct{})
+
+		c.messenger = &messenger.MockMessenger{
+			ReplyToFunc: func(msgID string, msg service.DIDCommMsgMap) error {
+				pMsg := &DIDDocResp{}
+				dErr := msg.Decode(pMsg)
+				require.NoError(t, dErr)
+
+				didDoc, dErr := did.ParseDocument(pMsg.Data.DIDDoc)
+				require.NoError(t, dErr)
+
+				require.Contains(t, didDoc.ID, "did:")
+				require.Equal(t, pMsg.Type, didDocResp)
+
+				done <- struct{}{}
+
+				return nil
+			},
+		}
+		c.connections = &mockconn.MockConnectionsLookup{ConnIDByDIDs: uuid.New().String()}
+
+		msgCh := make(chan message.Msg, 1)
+		go c.didCommMsgListener(msgCh)
+
+		msgCh <- message.Msg{DIDCommMsg: service.NewDIDCommMsgMap(DIDDocReq{
+			ID:   uuid.New().String(),
+			Type: didDocReq,
+		})}
+
+		select {
+		case <-done:
+		case <-time.After(5 * time.Second):
+			require.Fail(t, "tests are not validated due to timeout")
+		}
+	})
+
+	t.Run("invalid connection", func(t *testing.T) {
+		c, err := New(config(t))
+		require.NoError(t, err)
+
+		done := make(chan struct{})
+
+		c.messenger = &messenger.MockMessenger{
+			ReplyToFunc: func(msgID string, msg service.DIDCommMsgMap) error {
+				pMsg := &ErrorResp{}
+				dErr := msg.Decode(pMsg)
+				require.NoError(t, dErr)
+				require.Equal(t, pMsg.Type, didDocResp)
+				require.Contains(t, pMsg.Data.ErrorMsg, "get connection by DIDs")
+
+				done <- struct{}{}
+
+				return nil
+			},
+		}
+		c.connections = &mockconn.MockConnectionsLookup{ConnIDByDIDsErr: errors.New("conn by dids error")}
+
+		msgCh := make(chan message.Msg, 1)
+		go c.didCommMsgListener(msgCh)
+
+		msgCh <- message.Msg{DIDCommMsg: service.NewDIDCommMsgMap(DIDDocReq{
+			ID:   uuid.New().String(),
+			Type: didDocReq,
+		})}
+
+		select {
+		case <-done:
+		case <-time.After(5 * time.Second):
+			require.Fail(t, "tests are not validated due to timeout")
+		}
+	})
+
+	t.Run("create did doc error", func(t *testing.T) {
+		conf := config(t)
+
+		done := make(chan struct{})
+		conf.AriesContextProvider = &mockprovider.Provider{
+			ProtocolStateStorageProviderValue: mem.NewProvider(),
+			StorageProviderValue:              mem.NewProvider(),
+			VDRegistryValue:                   &mockvdr.MockVDRegistry{CreateErr: errors.New("create did error")},
+			ServiceMap: map[string]interface{}{
+				mediator.Coordination: &mockroute.MockMediatorSvc{},
+			},
+		}
+
+		conf.AriesMessenger = &messenger.MockMessenger{
+			ReplyToFunc: func(msgID string, msg service.DIDCommMsgMap) error {
+				pMsg := &ErrorResp{}
+				dErr := msg.Decode(pMsg)
+				require.NoError(t, dErr)
+				require.Equal(t, pMsg.Type, didDocResp)
+				require.Contains(t, pMsg.Data.ErrorMsg, "create new peer did")
+
+				done <- struct{}{}
+
+				return nil
+			},
+		}
+
+		c, err := New(conf)
+		require.NoError(t, err)
+
+		msgCh := make(chan message.Msg, 1)
+		go c.didCommMsgListener(msgCh)
+
+		msgCh <- message.Msg{DIDCommMsg: service.NewDIDCommMsgMap(DIDDocReq{
+			ID:   uuid.New().String(),
+			Type: didDocReq,
+		})}
+
+		select {
+		case <-done:
+		case <-time.After(5 * time.Second):
+			require.Fail(t, "tests are not validated due to timeout")
+		}
+	})
+
+	t.Run("mapping save error", func(t *testing.T) {
+		c, err := New(config(t))
+		require.NoError(t, err)
+
+		done := make(chan struct{})
+
+		c.messenger = &messenger.MockMessenger{
+			ReplyToFunc: func(msgID string, msg service.DIDCommMsgMap) error {
+				pMsg := &ErrorResp{}
+				dErr := msg.Decode(pMsg)
+				require.NoError(t, dErr)
+				require.Equal(t, pMsg.Type, didDocResp)
+				require.Contains(t, pMsg.Data.ErrorMsg, "save connection-authzDID mapping")
+
+				done <- struct{}{}
+
+				return nil
+			},
+		}
+		c.connections = &mockconn.MockConnectionsLookup{ConnIDByDIDs: uuid.New().String()}
+
+		store := mockStore()
+		store.Store.ErrPut = errors.New("save error")
+		c.transientStore = store.Store
+
+		msgCh := make(chan message.Msg, 1)
+		go c.didCommMsgListener(msgCh)
+
+		msgCh <- message.Msg{DIDCommMsg: service.NewDIDCommMsgMap(DIDDocReq{
+			ID:   uuid.New().String(),
+			Type: didDocReq,
+		})}
+
+		select {
+		case <-done:
+		case <-time.After(5 * time.Second):
+			require.Fail(t, "tests are not validated due to timeout")
 		}
 	})
 }

@@ -119,7 +119,7 @@ func (a *Steps) RegisterSteps(s *godog.Suite) {
 	s.Step(`^"([^"]*)" agent is running on "([^"]*)" port "([^"]*)" with controller "([^"]*)"$`,
 		a.ValidateAgentConnection)
 	s.Step(`^"([^"]*)" agent is running on "([^"]*)" port "([^"]*)" with webhook "([^"]*)" and controller "([^"]*)"$`,
-		a.validateAgentConnectionWithWebhook)
+		a.ValidateAgentConnectionWithWebhook)
 	s.Step(`^"([^"]*)" validates the supportedVCContexts "([^"]*)" in connect request from Issuer adapter \("([^"]*)"\) along with primary credential type "([^"]*)" in case of supportsAssuranceCred "([^"]*)" and responds within "([^"]*)" seconds$`, // nolint: lll
 		a.handleDIDCommConnectRequest)
 	s.Step(`^"([^"]*)" sends request credential message and receives credential from the issuer \("([^"]*)"\)$`,
@@ -146,7 +146,8 @@ func (a *Steps) ValidateAgentConnection(agentID, inboundHost, inboundPort, contr
 	return nil
 }
 
-func (a *Steps) validateAgentConnectionWithWebhook(agentID, inboundHost,
+// ValidateAgentConnectionWithWebhook checks if the controller agent is running along with webhook.
+func (a *Steps) ValidateAgentConnectionWithWebhook(agentID, inboundHost,
 	inboundPort, webhookURL, controllerURL string) error {
 	if err := a.checkAgentIsRunning(agentID, controllerURL); err != nil {
 		return err
@@ -730,6 +731,21 @@ func (a *Steps) fetchPresentation(agentID, issuerID, expectedScope, supportsAssu
 	}
 
 	return nil
+}
+
+// GetAuthZDIDDoc returns the DID Doc.
+func (a *Steps) GetAuthZDIDDoc(agent, connID string) (*did.Doc, error) {
+	err := unregisterAllMsgServices(a.ControllerURLs[agent])
+	if err != nil {
+		return nil, fmt.Errorf("unregister msg svc : %w", err)
+	}
+
+	_, didDoc, err := authZDIDDocReq(a.ControllerURLs[agent], a.WebhookURLs[agent], connID)
+	if err != nil {
+		return nil, fmt.Errorf("get did doc through msg svc : %w", err)
+	}
+
+	return didDoc, nil
 }
 
 // ResolveDID resolves the did on behalf of the agent.

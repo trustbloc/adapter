@@ -109,6 +109,7 @@ func NewSteps(ctx *bddctx.BDDContext) *Steps {
 // RegisterSteps registers agent steps.
 func (s *Steps) RegisterSteps(g *godog.Suite) {
 	g.Step(`^the "([^"]*)" is running on "([^"]*)" port "([^"]*)" with controller "([^"]*)"$`, s.registerAgentController)
+	g.Step(`^the "([^"]*)" is running on "([^"]*)" port "([^"]*)" with webhook "([^"]*)" and controller "([^"]*)"$`, s.registerAgentControllerWithWebhook) //nolint:lll
 	g.Step(`^a request is sent to create an RP tenant with label "([^"]*)"$`, s.createTenant)
 	g.Step(`^the trustbloc DID of the tenant with label "([^"]*)" is resolvable$`, s.resolveDID)
 	g.Step(`^the client ID of the tenant with label "([^"]*)" is registered at hydra$`, s.lookupClientID)
@@ -129,6 +130,11 @@ func (s *Steps) RegisterSteps(g *godog.Suite) {
 
 func (s *Steps) registerAgentController(agentID, inboundHost, inboundPort, controllerURL string) error {
 	return s.controller.ValidateAgentConnection(agentID, inboundHost, inboundPort, controllerURL)
+}
+
+func (s *Steps) registerAgentControllerWithWebhook(agentID, inboundHost, inboundPort,
+	webhookURL, controllerURL string) error {
+	return s.controller.ValidateAgentConnectionWithWebhook(agentID, inboundHost, inboundPort, webhookURL, controllerURL)
 }
 
 func (s *Steps) createTenant(label, scopesStr string) error {
@@ -649,7 +655,7 @@ func (s *Steps) walletCreatesAuthorizationCredential(wallet, tenant, issuer stri
 		return nil, err
 	}
 
-	rpDID, err := s.controller.ResolveDID(wallet, walletTenantConn.TheirDID)
+	rpDID, err := s.controller.GetAuthZDIDDoc(wallet, walletTenantConn.ConnectionID)
 	if err != nil {
 		return nil, fmt.Errorf("%s failed to resolve %s's DID %s : %w", wallet, tenant, walletTenantConn.TheirDID, err)
 	}

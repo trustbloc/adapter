@@ -47,3 +47,34 @@ type HandleCHAPIResponse struct {
 type HandleCHAPIResponseResult struct {
 	RedirectURL string `json:"redirectURL"`
 }
+
+// DIDDocReq model.
+type DIDDocReq struct {
+	ID   string `json:"@id,omitempty"`
+	Type string `json:"@type,omitempty"`
+}
+
+// DIDDocResp model.
+type DIDDocResp struct {
+	ID   string          `json:"@id,omitempty"`
+	Type string          `json:"@type,omitempty"`
+	Data *DIDDocRespData `json:"data,omitempty"`
+}
+
+// DIDDocRespData model for error data in DIDDocResp.
+type DIDDocRespData struct {
+	ErrorMsg string          `json:"errorMsg,omitempty"`
+	DIDDoc   json.RawMessage `json:"didDoc,omitempty"`
+}
+
+// ErrorResp model.
+type ErrorResp struct {
+	ID   string         `json:"@id,omitempty"`
+	Type string         `json:"@type,omitempty"`
+	Data *ErrorRespData `json:"data,omitempty"`
+}
+
+// ErrorRespData model for error data in ErrorResp.
+type ErrorRespData struct {
+	ErrorMsg string `json:"errorMsg,omitempty"`
+}

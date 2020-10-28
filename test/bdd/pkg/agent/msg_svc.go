@@ -155,6 +155,26 @@ func adapterCreateConnReq(controllerURL, webhookURL, msgID string, adapterDIDDoc
 	return getAdapterConnResp(webhookURL, msgSvcName)
 }
 
+func authZDIDDocReq(controllerURL, webhookURL, connectionID string) (string, *did.Doc, error) {
+	msgSvcName := uuid.New().String()
+
+	err := registerCreateConnMsgServices(controllerURL, msgSvcName, "https://trustbloc.dev/adapter/1.0/diddoc-resp")
+	if err != nil {
+		return "", nil, err
+	}
+
+	// send message
+	err = sendMessage(controllerURL, connectionID, &routesvc.DIDDocReq{
+		ID:   uuid.New().String(),
+		Type: "https://trustbloc.dev/adapter/1.0/diddoc-req",
+	})
+	if err != nil {
+		return "", nil, fmt.Errorf("failed to send message : %w", err)
+	}
+
+	return getDIDDocResp(webhookURL, msgSvcName)
+}
+
 func registerCreateConnMsgServices(controllerURL, msgSvcName, msgType string) error {
 	// register create conn msg service
 	params := messaging.RegisterMsgSvcArgs{
