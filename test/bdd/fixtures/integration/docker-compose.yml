@@ -35,7 +35,7 @@ services:
 
   mock-wallet.com:
     container_name: mock-wallet.com
-    image: ${ARIES_AGENT_REST_IMAGE}:${ARIES_AGENT_REST_IMAGE_TAG}
+    image: ${AGENT_SDK_REST_IMAGE}:${AGENT_SDK_REST_IMAGE_TAG}
     environment:
       - ARIESD_API_HOST=${WALLET_AGENT_HOST}:${WALLET_AGENT_API_PORT}
       - ARIESD_INBOUND_HOST=http@${WALLET_AGENT_HOST}:${WALLET_AGENT_INBOUND_PORT}
@@ -70,7 +70,7 @@ services:
 
   mock-issuer-adapter.com:
     container_name: mock-issuer-adapter.com
-    image: ${ARIES_AGENT_REST_IMAGE}:${ARIES_AGENT_REST_IMAGE_TAG}
+    image: ${AGENT_SDK_REST_IMAGE}:${AGENT_SDK_REST_IMAGE_TAG}
     environment:
       - ARIESD_API_HOST=${ISSUER_AGENT_HOST}:${ISSUER_AGENT_API_PORT}
       - ARIESD_INBOUND_HOST=http@${ISSUER_AGENT_HOST}:${ISSUER_AGENT_INBOUND_PORT}
