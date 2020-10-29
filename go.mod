@@ -13,7 +13,7 @@ require (
 	github.com/coreos/go-oidc v2.2.1+incompatible
 	github.com/google/uuid v1.1.2
 	github.com/gorilla/mux v1.7.4
-	github.com/hyperledger/aries-framework-go v0.1.5-0.20201020160650-4535370d64e4
+	github.com/hyperledger/aries-framework-go v0.1.5-0.20201022202135-f8f69217453b
 	github.com/kr/text v0.2.0 // indirect
 	github.com/mr-tron/base58 v1.1.3
 	github.com/niemeyer/pretty v0.0.0-20200227124842-a10e7caefd8e // indirect
@@ -30,4 +30,8 @@ require (
 	gopkg.in/square/go-jose.v2 v2.5.1 // indirect
 )
 
-replace github.com/piprate/json-gold => github.com/trustbloc/json-gold v0.3.1-0.20200414173446-30d742ee949e
+replace (
+	github.com/kilic/bls12-381 => github.com/trustbloc/bls12-381 v0.0.0-20201008080608-ba2e87ef05ef
+	github.com/phoreproject/bls => github.com/trustbloc/bls v0.0.0-20201008085849-81064514c3cc
+	github.com/piprate/json-gold => github.com/trustbloc/json-gold v0.3.1-0.20200414173446-30d742ee949e
+)

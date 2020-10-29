@@ -175,7 +175,7 @@ const (
 		  "birthDate":"1958-07-17"
 	   },
 	   "metadata":{
-		  "contexts":["https://w3id.org/citizenship/v1"],
+		  "contexts":["https://trustbloc.github.io/context/vc/examples/citizenship-v1.jsonld"],
 		  "scopes":["PermanentResidentCard"],
 		  "name":"Permanent Resident Card",
 		  "description":"Permanent Resident Card for John Smith"

@@ -76,7 +76,7 @@ func (e *Steps) createProfile(id, name, issuerURL, supportedVCContexts, supports
 
 	requestBytes, err := json.Marshal(profileReq)
 	if err != nil {
-		return nil
+		return err
 	}
 
 	resp, err := bddutil.HTTPDo(http.MethodPost, issuerAdapterURL+"/profile", "", "", //nolint: bodyclose
