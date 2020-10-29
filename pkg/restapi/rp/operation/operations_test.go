@@ -2034,14 +2034,14 @@ func TestCHAPIResponseHandler(t *testing.T) {
 		// no conn to rpAuthZ mapping
 		w := httptest.NewRecorder()
 		c.chapiResponseHandler(w, newCHAPIResponse(t, invitationID, vp))
-		require.Equal(t, http.StatusInternalServerError, w.Code)
+		require.Equal(t, http.StatusAccepted, w.Code)
 
 		// conn authz did doesnt match to the did in authz credential
 		err = c.transientStore.Put(rpWalletConnID, []byte("invalid"))
 		require.NoError(t, err)
 		w = httptest.NewRecorder()
 		c.chapiResponseHandler(w, newCHAPIResponse(t, invitationID, vp))
-		require.Equal(t, http.StatusInternalServerError, w.Code)
+		require.Equal(t, http.StatusAccepted, w.Code)
 	})
 
 	t.Run("internal server error if cannot send request-presentation", func(t *testing.T) {

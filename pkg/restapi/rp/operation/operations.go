@@ -854,7 +854,7 @@ func (o *Operation) chapiResponseHandler(w http.ResponseWriter, r *http.Request)
 }
 
 func (o *Operation) requestRemoteCredential(authz *verifiable.Credential,
-	crCtx *consentRequestCtx) (threadID string, err error) {
+	_ *consentRequestCtx) (threadID string, err error) {
 	sub, err := vc.AuthZSubject(authz)
 	if err != nil {
 		return "", fmt.Errorf("%w: failed to parse authz subject: %s", errInvalidCredential, err.Error())
@@ -865,17 +865,8 @@ func (o *Operation) requestRemoteCredential(authz *verifiable.Credential,
 		return "", fmt.Errorf("%w: failed to parse issuer did document: %s", errInvalidCredential, err.Error())
 	}
 
-	val, err := o.transientStore.Get(crCtx.ConnectionID)
-	if err != nil {
-		return "", fmt.Errorf("get connection-authzDID mapping : %w", err)
-	}
-
-	rpAuthZDID := string(val)
-
-	if rpAuthZDID != sub.RPDIDDoc.ID {
-		return "", fmt.Errorf("rp did '%s' in authz doesn't match the expected rp did '%s'",
-			sub.RPDIDDoc.ID, rpAuthZDID)
-	}
+	// TODO https://github.com/trustbloc/edge-adapter/issues/373 Enable RP AuthZ DID
+	rpAuthZDID := sub.RPDIDDoc.ID
 
 	// TODO Issuer's label on the connection record https://github.com/trustbloc/edge-adapter/issues/93
 	_, err = o.didClient.CreateConnection(rpAuthZDID, issuerDID)
