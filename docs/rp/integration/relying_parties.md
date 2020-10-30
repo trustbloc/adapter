@@ -60,6 +60,7 @@ to your client. Read more about how the adapter uses DIDs in the [note below](#u
 
 Redirect the end-user to the OIDC authorization endpoint (see note [below](#oidc-discovery) on how to discover this endpoint)
 and include any or all scopes your client was registered with in the [registration step](#register-your-oidc-client).
+*You must also include the `openid` scope in the authorization request*.
 
 The Adapter will authenticate the end-user and request verifiable credentials (and optionally request authorization to access
 credentials at other locations reachable via DIDComm).
@@ -67,7 +68,7 @@ credentials at other locations reachable via DIDComm).
 Example request:
 
 ```
-HTTP GET https://rp-adapter.example.com/oauth2/auth?state=123&scope=drivers_license%20banking_info
+HTTP GET https://rp-adapter.example.com/oauth2/auth?state=123&scope=openid%20drivers_license%20banking_info
 ```
 
 ### Parsing the End-User Claims
