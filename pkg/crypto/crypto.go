@@ -8,7 +8,6 @@ package crypto
 
 import (
 	"fmt"
-	"strings"
 
 	ariescrypto "github.com/hyperledger/aries-framework-go/pkg/crypto"
 	"github.com/hyperledger/aries-framework-go/pkg/doc/did"
@@ -123,27 +122,11 @@ func (c *Crypto) validateDIDDoc(signingKeyID, proofPurpose string) error {
 
 // validateProofPurpose validates the proof purpose.
 func validateProofPurpose(proofPurpose, method string, didDoc *did.Doc) error {
-	const idParts = 2
-
 	vmMatched := false
-
-	// TODO remove this workaround when we are working with did docs that have correct verification method IDs:
-	//  - aries framework: https://github.com/hyperledger/aries-framework-go/issues/2145
-	//  - trustbloc did method: https://github.com/trustbloc/trustbloc-did-method/issues/169
-	if strings.HasPrefix(method, "did:peer") {
-		parts := strings.Split(method, "#")
-
-		if len(parts) != idParts {
-			return fmt.Errorf("method [%s] expected to be in did#keyID format", method)
-		}
-
-		method = "#" + parts[1]
-	}
 
 	switch proofPurpose {
 	case AssertionMethod:
 		assertionMethods := didDoc.VerificationMethods(did.AssertionMethod)[did.AssertionMethod]
-
 		vmMatched = isValidVerificationMethod(method, assertionMethods)
 	case Authentication:
 		authMethods := didDoc.VerificationMethods(did.Authentication)[did.Authentication]
