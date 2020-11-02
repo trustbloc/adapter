@@ -399,6 +399,42 @@ func (a *Steps) didConnectReqWithRouting(agentID, routerURL, issuerID string) er
 	return nil
 }
 
+// BlindedRouting agent(wallet) registers the other agent(adapter) with the router
+func (a *Steps) BlindedRouting(agentID, connID, routerURL string) error {
+	// unregister all the msg services (to clear older data)
+	err := unregisterAllMsgServices(a.ControllerURLs[agentID])
+	if err != nil {
+		return err
+	}
+
+	// send request to adapter for fetching the peerDIDDoc
+	// issuer adapter - wallet
+	msgID, adapterDIDDoc, err := adapterDIDDocReq(a.ControllerURLs[agentID], a.WebhookURLs[agentID], connID)
+	if err != nil {
+		return fmt.Errorf("adapter did doc : %w", err)
+	}
+
+	// create a connection with router
+	routerConnID, err := a.connectWithRouter(agentID, routerURL)
+	if err != nil {
+		return fmt.Errorf("connect to router: %w", err)
+	}
+
+	// wallet to router
+	routerDIDDoc, err := routerConnReq(a.ControllerURLs[agentID], a.WebhookURLs[agentID], routerConnID, adapterDIDDoc)
+	if err != nil {
+		return fmt.Errorf("router connection req : %w", err)
+	}
+
+	// wallet to issuer
+	err = adapterCreateConnReq(a.ControllerURLs[agentID], a.WebhookURLs[agentID], msgID, routerDIDDoc)
+	if err != nil {
+		return fmt.Errorf("adapter connection req : %w", err)
+	}
+
+	return nil
+}
+
 // ValidateConnection retrieves the agent's connection record and tests whether its state is completed.
 func (a *Steps) ValidateConnection(agentID, connID string) (*didexchange.Connection, error) {
 	conn, err := a.getConnection(agentID, connID)

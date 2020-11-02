@@ -206,7 +206,6 @@ func New(config *Config) (*Operation, error) { // nolint:funlen
 		km:                     config.AriesContextProvider.KMS(),
 		ariesCrypto:            config.AriesContextProvider.Crypto(),
 		messenger:              config.AriesMessenger,
-		didCommServiceEndpoint: config.AriesContextProvider.ServiceEndpoint(),
 	}
 
 	err := o.didClient.RegisterActionEvent(o.didActions)
@@ -310,7 +309,6 @@ type Operation struct {
 	ariesCrypto            ariescrypto.Crypto
 	routeSvc               routeService
 	messenger              service.Messenger
-	didCommServiceEndpoint string
 }
 
 // GetRESTHandlers get all controller API handler available for this service.
@@ -1199,9 +1197,12 @@ func (o *Operation) didCommMsgListener(ch <-chan message.Msg) {
 }
 
 func (o *Operation) handleDIDDocReq(msg message.Msg) (service.DIDCommMsgMap, error) {
-	newDidDoc, err := o.vdrReg.Create(
-		"peer", vdrapi.WithServices(did.Service{ServiceEndpoint: o.didCommServiceEndpoint}),
-	)
+	connID, err := o.connections.GetConnectionIDByDIDs(msg.MyDID, msg.TheirDID)
+	if err != nil {
+		return nil, fmt.Errorf("get connection by DIDs : %w", err)
+	}
+
+	newDidDoc, err := o.routeSvc.GetDIDDoc(connID)
 	if err != nil {
 		return nil, fmt.Errorf("create new peer did : %w", err)
 	}
@@ -1209,11 +1210,6 @@ func (o *Operation) handleDIDDocReq(msg message.Msg) (service.DIDCommMsgMap, err
 	docBytes, err := newDidDoc.JSONBytes()
 	if err != nil {
 		return nil, fmt.Errorf("marshal did doc : %w", err)
-	}
-
-	connID, err := o.connections.GetConnectionIDByDIDs(msg.MyDID, msg.TheirDID)
-	if err != nil {
-		return nil, fmt.Errorf("get connection by DIDs : %w", err)
 	}
 
 	err = o.transientStore.Put(connID, []byte(newDidDoc.ID))
