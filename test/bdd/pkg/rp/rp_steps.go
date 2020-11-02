@@ -121,8 +121,9 @@ func (s *Steps) RegisterSteps(g *godog.Suite) {
 	g.Step(`^"([^"]*)" accepts the didcomm invitation from "([^"]*)"$`, s.walletAcceptsDIDCommInvitation)
 	g.Step(`^"([^"]*)" connects with the RP adapter "([^"]*)"$`, s.validateConnection)
 	g.Step(`^"([^"]*)" and "([^"]*)" have a didcomm connection$`, s.connectAgents)
-	g.Step(`^an rp tenant with label "([^"]*)" and scopes "([^"]*)" that requests the "([^"]*)" scope from the "([^"]*)"`, s.didexchangeFlow)                                         //nolint:lll
-	g.Step(`^the "([^"]*)" provides an authorization credential via CHAPI that contains the DIDs of rp "([^"]*)" and issuer "([^"]*)"$`, s.walletRespondsWithAuthorizationCredential) //nolint:lll
+	g.Step(`^an rp tenant with label "([^"]*)" and scopes "([^"]*)" that requests the "([^"]*)" scope from the "([^"]*)"`, s.didexchangeFlow)                                                                                   //nolint:lll
+	g.Step(`^the "([^"]*)" provides an authorization credential via CHAPI that contains the DIDs of rp "([^"]*)" and issuer "([^"]*)"$`, s.walletRespondsWithAuthorizationCredential)                                           //nolint:lll
+	g.Step(`^the "([^"]*)" provides an authorization credential via CHAPI that contains the DIDs of blinded rp "([^"]*)" registered with router "([^"]*)" and issuer "([^"]*)"$`, s.walletRespondsWithBlindedRPAuthzCredential) //nolint:lll
 	g.Step(`^"([^"]*)" responds to "([^"]*)" with the user's data$`, s.issuerRepliesWithUserData)
 	g.Step(`^the user is redirected to the rp tenant "([^"]*)"$`, s.userRedirectBackToTenant)
 	g.Step(`^the rp tenant "([^"]*)" retrieves the user data from the rp adapter$`, s.rpTenantRetrievesUserData)
@@ -606,7 +607,11 @@ func (s *Steps) didexchangeFlow(tenantID, scopesStr, scope, walletID string) err
 }
 
 func (s *Steps) walletRespondsWithAuthorizationCredential(wallet, tenant, issuer string) error {
-	submissionVP, err := s.walletCreatesAuthorizationCredential(wallet, tenant, issuer)
+	return s.respondWithAuthZ(wallet, tenant, issuer, "")
+}
+
+func (s *Steps) respondWithAuthZ(wallet, tenant, issuer, routerURL string) error {
+	submissionVP, err := s.walletCreatesAuthorizationCredential(wallet, tenant, issuer, routerURL)
 	if err != nil {
 		return fmt.Errorf("'%s' failed to create presentation submission VP : %w", wallet, err)
 	}
@@ -648,11 +653,23 @@ func (s *Steps) walletRespondsWithAuthorizationCredential(wallet, tenant, issuer
 	return nil
 }
 
+func (s *Steps) walletRespondsWithBlindedRPAuthzCredential(wallet, tenant, routerURL, issuer string) error {
+	return s.respondWithAuthZ(wallet, tenant, issuer, routerURL)
+}
+
 // nolint:funlen,gocyclo
-func (s *Steps) walletCreatesAuthorizationCredential(wallet, tenant, issuer string) (*verifiable.Presentation, error) {
+func (s *Steps) walletCreatesAuthorizationCredential(wallet, tenant, issuer,
+	routerURL string) (*verifiable.Presentation, error) {
 	walletTenantConn, err := s.controller.GetConnectionBetweenAgents(wallet, tenant)
 	if err != nil {
 		return nil, err
+	}
+
+	if routerURL != "" {
+		err = s.controller.BlindedRouting(wallet, walletTenantConn.ConnectionID, routerURL)
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	rpDID, err := s.controller.GetAuthZDIDDoc(wallet, walletTenantConn.ConnectionID)

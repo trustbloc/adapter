@@ -3096,6 +3096,8 @@ func TestDIDDocReq(t *testing.T) { // nolint:gocyclo
 		c, err := New(conf)
 		require.NoError(t, err)
 
+		c.connections = &mockconn.MockConnectionsLookup{ConnIDByDIDs: uuid.New().String()}
+
 		msgCh := make(chan message.Msg, 1)
 		go c.didCommMsgListener(msgCh)
 

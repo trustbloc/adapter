@@ -36,3 +36,12 @@ Feature: RP Adapter
     When "Mock Issuer Adapter" responds to "userdata" with the user's data
     Then the user is redirected to the rp tenant "userdata"
     And the rp tenant "userdata" retrieves the user data from the rp adapter
+
+  @rp_adapter_blinded_cred
+  Scenario: Returns both local and remote user data to the relying party with the user's consent with Blinded RP
+    Given "Mock Issuer Adapter" and "Mock Wallet" have a didcomm connection
+    And an rp tenant with label "userdata" and scopes "credit_card_stmt:remote,driver_license:local" that requests the "credit_card_stmt:remote,driver_license:local" scope from the "Mock Wallet"
+    And the "Mock Wallet" provides an authorization credential via CHAPI that contains the DIDs of blinded rp "userdata" registered with router "http://localhost:9280" and issuer "Mock Issuer Adapter"
+    When "Mock Issuer Adapter" responds to "userdata" with the user's data
+    Then the user is redirected to the rp tenant "userdata"
+    And the rp tenant "userdata" retrieves the user data from the rp adapter
