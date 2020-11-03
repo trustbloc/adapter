@@ -19,8 +19,8 @@ type ProfileDataRequest struct {
 	ID                          string   `json:"id,omitempty"`
 	Name                        string   `json:"name"`
 	SupportedVCContexts         []string `json:"supportedVCContexts"`
-	SupportsAssuranceCredential bool     `json:"SupportsAssuranceCredential"`
-	RequiresBlindedRouting      bool     `json:"requiresBlindedRouting"`
+	SupportsAssuranceCredential bool     `json:"supportsAssuranceCredential"`
+	RequiresBlindedRoute        bool     `json:"requiresBlindedRoute"`
 	URL                         string   `json:"url"`
 }
 

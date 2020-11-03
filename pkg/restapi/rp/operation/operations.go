@@ -136,7 +136,7 @@ type PublicDIDCreator interface {
 }
 
 type routeService interface {
-	GetDIDDoc(connID string, requiresBlindedRouting bool) (*did.Doc, error)
+	GetDIDDoc(connID string, requiresBlindedRoute bool) (*did.Doc, error)
 }
 
 type connectionRecorder interface {
