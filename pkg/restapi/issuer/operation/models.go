@@ -20,6 +20,7 @@ type ProfileDataRequest struct {
 	Name                        string   `json:"name"`
 	SupportedVCContexts         []string `json:"supportedVCContexts"`
 	SupportsAssuranceCredential bool     `json:"SupportsAssuranceCredential"`
+	RequiresBlindedRouting      bool     `json:"requiresBlindedRouting"`
 	URL                         string   `json:"url"`
 }
 

@@ -18,8 +18,8 @@ Feature: Issuer Adapter e2e
 
   @issuer_adapter_core
   Scenario Outline: Issuer adapter features
-    Given Issuer Profile with id "<profileID>", name "<profileName>", issuerURL "<issuerURL>", supportedVCContexts "<supportedVCContexts>" and supportsAssuranceCred "<supportsAssuranceCred>"
-    And   Retrieved profile with id "<profileID>" contains name "<profileName>", issuerURL "<issuerURL>", supportedVCContexts "<supportedVCContexts>" and supportsAssuranceCred "<supportsAssuranceCred>"
+    Given Issuer Profile with id "<profileID>", name "<profileName>", issuerURL "<issuerURL>", supportedVCContexts "<supportedVCContexts>", requiresBlindedRouting "false" and supportsAssuranceCred "<supportsAssuranceCred>"
+    And   Retrieved profile with id "<profileID>" contains name "<profileName>", issuerURL "<issuerURL>", supportedVCContexts "<supportedVCContexts>", requiresBlindedRouting "false" and supportsAssuranceCred "<supportsAssuranceCred>"
     Then  Issuer adapter shows the wallet connect UI when the issuer "<profileID>" wants to connect to the wallet
     And   Issuer adapter ("<profileID>") creates DIDComm connection invitation for "Wallet"
     ## Mocking CHAPI flow here
@@ -36,8 +36,8 @@ Feature: Issuer Adapter e2e
 
   @issuer_adapter_routing
   Scenario Outline: Blinded Routing
-    Given Issuer Profile with id "<profileID>", name "Blinded Routing", issuerURL "<issuerURL>", supportedVCContexts "https://w3id.org/citizenship/v3 " and supportsAssuranceCred "<supportsAssuranceCred>"
-    And   Retrieved profile with id "<profileID>" contains name "Blinded Routing", issuerURL "<issuerURL>", supportedVCContexts "https://w3id.org/citizenship/v3" and supportsAssuranceCred "<supportsAssuranceCred>"
+    Given Issuer Profile with id "<profileID>", name "Blinded Routing", issuerURL "<issuerURL>", supportedVCContexts "https://w3id.org/citizenship/v3", requiresBlindedRouting "true" and supportsAssuranceCred "<supportsAssuranceCred>"
+    And   Retrieved profile with id "<profileID>" contains name "Blinded Routing", issuerURL "<issuerURL>", supportedVCContexts "https://w3id.org/citizenship/v3", requiresBlindedRouting "true" and supportsAssuranceCred "<supportsAssuranceCred>"
     Then  Issuer adapter shows the wallet connect UI when the issuer "<profileID>" wants to connect to the wallet
     And   Issuer adapter ("<profileID>") creates DIDComm connection invitation for "Wallet"
     Then  "Wallet" with blinded routing support("http://localhost:9280") receives the DIDConnect request from Issuer adapter ("<profileID>")

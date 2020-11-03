@@ -1038,6 +1038,21 @@ func TestIssueCredentialHandler(t *testing.T) {
 				ConnIDByDIDs: connID,
 			}
 
+			issuerID := uuid.New().String()
+
+			profile := createProfileData(issuerID)
+			profile.CredentialSigningKey = mockdiddoc.GetMockDIDDoc("did:example:def567").PublicKey[0].ID
+
+			err = c.profileStore.SaveProfile(profile)
+			require.NoError(t, err)
+
+			err = c.storeUserConnectionMapping(&UserConnectionMapping{
+				ConnectionID: connID,
+				IssuerID:     issuerID,
+				Token:        uuid.New().String(),
+			})
+			require.NoError(t, err)
+
 			done := make(chan struct{})
 
 			actionCh <- createCredentialReqMsg(t, nil, nil, func(err error) {
@@ -1264,6 +1279,13 @@ func TestIssueCredentialHandler(t *testing.T) {
 			profile := createProfileData(issuerID)
 
 			err = c.profileStore.SaveProfile(profile)
+			require.NoError(t, err)
+
+			err = c.storeUserConnectionMapping(&UserConnectionMapping{
+				ConnectionID: connID,
+				IssuerID:     issuerID,
+				Token:        uuid.New().String(),
+			})
 			require.NoError(t, err)
 
 			go c.didCommActionListener(actionCh)
