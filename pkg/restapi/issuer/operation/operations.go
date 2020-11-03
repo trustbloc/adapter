@@ -108,7 +108,7 @@ type mediatorClientProvider interface {
 }
 
 type routeService interface {
-	GetDIDDoc(connID string) (*did.Doc, error)
+	GetDIDDoc(connID string, requiredBlindedRouting bool) (*did.Doc, error)
 }
 
 // Config defines configuration for issuer operations.
@@ -681,12 +681,22 @@ func (o *Operation) handleRequestCredential(msg service.DIDCommAction) (interfac
 		return nil, fmt.Errorf("connection using DIDs not found : %w", err)
 	}
 
+	userConnMap, err := o.getUserConnectionMapping(connID)
+	if err != nil {
+		return nil, fmt.Errorf("get token from the connectionID : %w", err)
+	}
+
+	profile, err := o.profileStore.GetProfile(userConnMap.IssuerID)
+	if err != nil {
+		return nil, fmt.Errorf("fetch issuer profile : %w", err)
+	}
+
 	authorizationCreReq, err := fetchAuthorizationCreReq(msg)
 	if err != nil {
 		return nil, err
 	}
 
-	newDidDoc, err := o.routeSvc.GetDIDDoc(connID)
+	newDidDoc, err := o.routeSvc.GetDIDDoc(connID, profile.RequiresBlindedRouting)
 	if err != nil {
 		return nil, fmt.Errorf("create new issuer did : %w", err)
 	}
@@ -706,16 +716,6 @@ func (o *Operation) handleRequestCredential(msg service.DIDCommAction) (interfac
 	_, err = o.didExClient.CreateConnection(newDidDoc.ID, rpDIDDoc)
 	if err != nil {
 		return nil, fmt.Errorf("create connection with rp : %w", err)
-	}
-
-	userConnMap, err := o.getUserConnectionMapping(connID)
-	if err != nil {
-		return nil, fmt.Errorf("get token from the connectionID : %w", err)
-	}
-
-	profile, err := o.profileStore.GetProfile(userConnMap.IssuerID)
-	if err != nil {
-		return nil, fmt.Errorf("fetch issuer profile : %w", err)
 	}
 
 	vc := issuervc.CreateAuthorizationCredential(newDidDoc.ID, docJSON, authorizationCreReq.RPDIDDoc,
@@ -1242,6 +1242,7 @@ func mapProfileReqToData(data *ProfileDataRequest, didDoc *did.Doc) (*issuer.Pro
 		SupportedVCContexts:         data.SupportedVCContexts,
 		URL:                         data.URL,
 		SupportsAssuranceCredential: data.SupportsAssuranceCredential,
+		RequiresBlindedRouting:      data.RequiresBlindedRouting,
 		CredentialSigningKey:        assertionMethod,
 		PresentationSigningKey:      authMethod,
 		CreatedAt:                   &created,

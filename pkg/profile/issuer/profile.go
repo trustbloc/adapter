@@ -36,6 +36,7 @@ type ProfileData struct {
 	URL                         string     `json:"url"`
 	SupportedVCContexts         []string   `json:"supportedVCContexts"`
 	SupportsAssuranceCredential bool       `json:"SupportsAssuranceCredential"`
+	RequiresBlindedRouting      bool       `json:"requiresBlindedRouting"`
 	CredentialSigningKey        string     `json:"credentialSigningKey"`
 	PresentationSigningKey      string     `json:"presentationSigningKey"`
 	CreatedAt                   *time.Time `json:"createdAt"`

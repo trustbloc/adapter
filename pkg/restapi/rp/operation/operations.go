@@ -136,7 +136,7 @@ type PublicDIDCreator interface {
 }
 
 type routeService interface {
-	GetDIDDoc(connID string) (*did.Doc, error)
+	GetDIDDoc(connID string, requiresBlindedRouting bool) (*did.Doc, error)
 }
 
 type connectionRecorder interface {
@@ -1202,7 +1202,8 @@ func (o *Operation) handleDIDDocReq(msg message.Msg) (service.DIDCommMsgMap, err
 		return nil, fmt.Errorf("get connection by DIDs : %w", err)
 	}
 
-	newDidDoc, err := o.routeSvc.GetDIDDoc(connID)
+	// TODO https://github.com/trustbloc/edge-adapter/issues/380 Option to configure blinded routing feat
+	newDidDoc, err := o.routeSvc.GetDIDDoc(connID, false)
 	if err != nil {
 		return nil, fmt.Errorf("create new peer did : %w", err)
 	}

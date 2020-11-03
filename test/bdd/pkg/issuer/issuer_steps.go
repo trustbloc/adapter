@@ -48,9 +48,9 @@ func NewSteps(ctx *context.BDDContext) *Steps {
 
 // RegisterSteps registers agent steps.
 func (e *Steps) RegisterSteps(s *godog.Suite) {
-	s.Step(`^Issuer Profile with id "([^"]*)", name "([^"]*)", issuerURL "([^"]*)", supportedVCContexts "([^"]*)" and supportsAssuranceCred "([^"]*)"$`, // nolint: lll
+	s.Step(`^Issuer Profile with id "([^"]*)", name "([^"]*)", issuerURL "([^"]*)", supportedVCContexts "([^"]*)", requiresBlindedRouting "([^"]*)" and supportsAssuranceCred "([^"]*)"$`, // nolint: lll
 		e.createProfile)
-	s.Step(`^Retrieved profile with id "([^"]*)" contains name "([^"]*)", issuerURL "([^"]*)", supportedVCContexts "([^"]*)" and supportsAssuranceCred "([^"]*)"$`, // nolint: lll
+	s.Step(`^Retrieved profile with id "([^"]*)" contains name "([^"]*)", issuerURL "([^"]*)", supportedVCContexts "([^"]*)", requiresBlindedRouting "([^"]*)" and supportsAssuranceCred "([^"]*)"$`, // nolint: lll
 		e.retrieveProfile)
 	s.Step(`^Issuer adapter shows the wallet connect UI when the issuer "([^"]*)" wants to connect to the wallet$`,
 		e.walletConnect)
@@ -60,8 +60,14 @@ func (e *Steps) RegisterSteps(s *godog.Suite) {
 		e.validateConnectResp)
 }
 
-func (e *Steps) createProfile(id, name, issuerURL, supportedVCContexts, supportsAssuranceCredStr string) error {
+func (e *Steps) createProfile(id, name, issuerURL, supportedVCContexts,
+	requiresBlindedRoutingStr, supportsAssuranceCredStr string) error {
 	supportsAssuranceCred, err := strconv.ParseBool(supportsAssuranceCredStr)
+	if err != nil {
+		return err
+	}
+
+	requiresBlindedRouting, err := strconv.ParseBool(requiresBlindedRoutingStr)
 	if err != nil {
 		return err
 	}
@@ -72,6 +78,7 @@ func (e *Steps) createProfile(id, name, issuerURL, supportedVCContexts, supports
 		URL:                         issuerURL,
 		SupportedVCContexts:         strings.Split(supportedVCContexts, ","),
 		SupportsAssuranceCredential: supportsAssuranceCred,
+		RequiresBlindedRouting:      requiresBlindedRouting,
 	}
 
 	requestBytes, err := json.Marshal(profileReq)
@@ -101,7 +108,8 @@ func (e *Steps) createProfile(id, name, issuerURL, supportedVCContexts, supports
 }
 
 // nolint:funlen,gomnd,gocyclo
-func (e *Steps) retrieveProfile(id, name, issuerURL, supportedVCContexts, supportsAssuranceCredStr string) error {
+func (e *Steps) retrieveProfile(id, name, issuerURL, supportedVCContexts,
+	requiresBlindedRoutingStr, supportsAssuranceCredStr string) error {
 	resp, err := bddutil.HTTPDo(http.MethodGet, //nolint: bodyclose
 		fmt.Sprintf(issuerAdapterURL+"/profile/%s", id), "", "", nil, e.bddContext.TLSConfig())
 	if err != nil {
@@ -146,7 +154,17 @@ func (e *Steps) retrieveProfile(id, name, issuerURL, supportedVCContexts, suppor
 	}
 
 	if profileResponse.SupportsAssuranceCredential != supportsAssuranceCred {
-		return fmt.Errorf("profile supports assurance cred url doesn't match : expected=%t actual=%t",
+		return fmt.Errorf("profile supports assurance cred doesn't match : expected=%t actual=%t",
+			supportsAssuranceCred, profileResponse.SupportsAssuranceCredential)
+	}
+
+	requiresBlindedRouting, err := strconv.ParseBool(requiresBlindedRoutingStr)
+	if err != nil {
+		return err
+	}
+
+	if profileResponse.RequiresBlindedRouting != requiresBlindedRouting {
+		return fmt.Errorf("profile requiresBlindedRouting doesn't match : expected=%t actual=%t",
 			supportsAssuranceCred, profileResponse.SupportsAssuranceCredential)
 	}
 

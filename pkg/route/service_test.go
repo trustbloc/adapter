@@ -636,7 +636,7 @@ func TestGetDIDService(t *testing.T) {
 		err = c.store.Put(connID, []byte(uuid.New().String()))
 		require.NoError(t, err)
 
-		doc, err := c.GetDIDDoc(connID)
+		doc, err := c.GetDIDDoc(connID, false)
 		require.NoError(t, err)
 		require.Equal(t, routerEndpoint, doc.Service[0].ServiceEndpoint)
 		require.Equal(t, keys, doc.Service[0].RoutingKeys)
@@ -664,9 +664,27 @@ func TestGetDIDService(t *testing.T) {
 		c, err := New(config)
 		require.NoError(t, err)
 
-		doc, err := c.GetDIDDoc("")
+		doc, err := c.GetDIDDoc("", false)
 		require.NoError(t, err)
 		require.Equal(t, config.ServiceEndpoint, doc.Service[0].ServiceEndpoint)
+	})
+
+	t.Run("error when not registered and blinded routing is required", func(t *testing.T) {
+		config := config()
+
+		mediatorConfig := &mediatorsvc.Config{}
+		config.MediatorClient = &mockmediator.MockClient{
+			GetConfigFunc: func(connID string) (*mediatorsvc.Config, error) {
+				return mediatorConfig, nil
+			},
+		}
+
+		c, err := New(config)
+		require.NoError(t, err)
+
+		_, err = c.GetDIDDoc("", true)
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "no router registered to support blinded routing")
 	})
 
 	t.Run("get config error (registered route)", func(t *testing.T) {
@@ -684,7 +702,7 @@ func TestGetDIDService(t *testing.T) {
 		err = c.store.Put(connID, []byte(uuid.New().String()))
 		require.NoError(t, err)
 
-		_, err = c.GetDIDDoc(connID)
+		_, err = c.GetDIDDoc(connID, false)
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "get mediator config")
 	})
@@ -701,7 +719,7 @@ func TestGetDIDService(t *testing.T) {
 		err = c.store.Put(connID, []byte(uuid.New().String()))
 		require.NoError(t, err)
 
-		_, err = c.GetDIDDoc(connID)
+		_, err = c.GetDIDDoc(connID, false)
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "get conn id to router conn id mapping")
 	})
@@ -731,7 +749,7 @@ func TestGetDIDService(t *testing.T) {
 		err = c.store.Put(connID, []byte(uuid.New().String()))
 		require.NoError(t, err)
 
-		_, err = c.GetDIDDoc(connID)
+		_, err = c.GetDIDDoc(connID, false)
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "did document missing did-communication service type")
 	})
@@ -754,7 +772,7 @@ func TestGetDIDService(t *testing.T) {
 		err = c.store.Put(connID, []byte(uuid.New().String()))
 		require.NoError(t, err)
 
-		_, err = c.GetDIDDoc(connID)
+		_, err = c.GetDIDDoc(connID, false)
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "create new peer did")
 	})
@@ -779,7 +797,7 @@ func TestGetDIDService(t *testing.T) {
 		err = c.store.Put(connID, []byte(uuid.New().String()))
 		require.NoError(t, err)
 
-		_, err = c.GetDIDDoc(connID)
+		_, err = c.GetDIDDoc(connID, false)
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "register did doc recipient key")
 	})
