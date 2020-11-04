@@ -6,6 +6,8 @@ SPDX-License-Identifier: Apache-2.0
 package did
 
 import (
+	"crypto"
+	"crypto/ed25519"
 	"crypto/tls"
 	"crypto/x509"
 	"fmt"
@@ -54,6 +56,16 @@ func (p *TrustblocDIDCreator) Create() (*did.Doc, error) {
 		return nil, fmt.Errorf("failed to create public keys : %w", err)
 	}
 
+	recoverKey, err := p.newKey()
+	if err != nil {
+		return nil, fmt.Errorf("failed to create recover key : %w", err)
+	}
+
+	updateKey, err := p.newKey()
+	if err != nil {
+		return nil, fmt.Errorf("failed to update recover key : %w", err)
+	}
+
 	_, didcommRecipientKey, err := p.km.CreateAndExportPubKeyBytes(kms.ED25519Type)
 	if err != nil {
 		return nil, fmt.Errorf("kms failed to create keyset: %w", err)
@@ -62,8 +74,8 @@ func (p *TrustblocDIDCreator) Create() (*did.Doc, error) {
 	publicDID, err := p.tblocDIDs.CreateDID(
 		p.blocDomain,
 		trustblocdid.WithPublicKey(publicKeys[0]),
-		trustblocdid.WithPublicKey(publicKeys[1]),
-		trustblocdid.WithPublicKey(publicKeys[2]),
+		trustblocdid.WithRecoveryPublicKey(recoverKey),
+		trustblocdid.WithUpdatePublicKey(updateKey),
 		trustblocdid.WithService(&did.Service{
 			ID:              "didcomm",
 			Type:            "did-communication",
@@ -79,24 +91,15 @@ func (p *TrustblocDIDCreator) Create() (*did.Doc, error) {
 	return publicDID, err
 }
 
-func (p *TrustblocDIDCreator) newPublicKeys() ([3]*trustblocdid.PublicKey, error) {
-	var keys = [3]struct {
-		keyID string
-		bits  []byte
-	}{}
-
-	for i := range keys {
-		var err error
-
-		keys[i].keyID, keys[i].bits, err = p.km.CreateAndExportPubKeyBytes(kms.ED25519Type)
-		if err != nil {
-			return [3]*trustblocdid.PublicKey{}, fmt.Errorf("failed to create key : %w", err)
-		}
+func (p *TrustblocDIDCreator) newPublicKeys() ([1]*trustblocdid.PublicKey, error) {
+	keyID, bits, err := p.km.CreateAndExportPubKeyBytes(kms.ED25519Type)
+	if err != nil {
+		return [1]*trustblocdid.PublicKey{}, fmt.Errorf("failed to create key : %w", err)
 	}
 
-	return [3]*trustblocdid.PublicKey{
+	return [1]*trustblocdid.PublicKey{
 		{
-			ID:       keys[0].keyID,
+			ID:       keyID,
 			Type:     trustblocdid.JWSVerificationKey2020,
 			Encoding: trustblocdid.PublicKeyEncodingJwk,
 			KeyType:  trustblocdid.Ed25519KeyType,
@@ -104,21 +107,16 @@ func (p *TrustblocDIDCreator) newPublicKeys() ([3]*trustblocdid.PublicKey, error
 				trustblocdid.KeyPurposeVerificationMethod,
 				trustblocdid.KeyPurposeAuthentication,
 				trustblocdid.KeyPurposeAssertionMethod},
-			Value: keys[0].bits,
-		},
-		{
-			ID:       keys[1].keyID,
-			Encoding: trustblocdid.PublicKeyEncodingJwk,
-			KeyType:  trustblocdid.Ed25519KeyType,
-			Value:    keys[1].bits,
-			Recovery: true,
-		},
-		{
-			ID:       keys[2].keyID,
-			Encoding: trustblocdid.PublicKeyEncodingJwk,
-			KeyType:  trustblocdid.Ed25519KeyType,
-			Value:    keys[2].bits,
-			Update:   true,
+			Value: bits,
 		},
 	}, nil
+}
+
+func (p *TrustblocDIDCreator) newKey() (crypto.PublicKey, error) {
+	_, bits, err := p.km.CreateAndExportPubKeyBytes(kms.ED25519Type)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create key : %w", err)
+	}
+
+	return ed25519.PublicKey(bits), nil
 }

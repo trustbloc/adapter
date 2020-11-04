@@ -9,6 +9,7 @@ package rp
 import (
 	"bytes"
 	"context"
+	"crypto/ed25519"
 	"crypto/tls"
 	"encoding/json"
 	"errors"
@@ -220,7 +221,7 @@ func (s *Steps) resolveDID(label string) error {
 	return nil
 }
 
-func (s *Steps) newTrustBlocDID(agentID string) (*did.Doc, error) { // nolint:funlen
+func (s *Steps) newTrustBlocDID(agentID string) (*did.Doc, error) {
 	keys := [3]struct {
 		keyID string
 		bits  []byte
@@ -252,20 +253,8 @@ func (s *Steps) newTrustBlocDID(agentID string) (*did.Doc, error) { // nolint:fu
 				trustblocdid.KeyPurposeAssertionMethod},
 			Value: keys[0].bits,
 		}),
-		trustblocdid.WithPublicKey(&trustblocdid.PublicKey{
-			ID:       keys[1].keyID,
-			Encoding: trustblocdid.PublicKeyEncodingJwk,
-			KeyType:  trustblocdid.Ed25519KeyType,
-			Value:    keys[1].bits,
-			Recovery: true,
-		}),
-		trustblocdid.WithPublicKey(&trustblocdid.PublicKey{
-			ID:       keys[2].keyID,
-			Encoding: trustblocdid.PublicKeyEncodingJwk,
-			KeyType:  trustblocdid.Ed25519KeyType,
-			Value:    keys[2].bits,
-			Update:   true,
-		}),
+		trustblocdid.WithRecoveryPublicKey(ed25519.PublicKey(keys[1].bits)),
+		trustblocdid.WithUpdatePublicKey(ed25519.PublicKey(keys[2].bits)),
 	)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create new trustbloc did: %w", err)
