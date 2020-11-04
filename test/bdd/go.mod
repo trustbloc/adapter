@@ -21,7 +21,7 @@ require (
 	github.com/trustbloc/edge-adapter v0.0.0
 	github.com/trustbloc/edge-core v0.1.5-0.20200916124536-c32454a16108
 	github.com/trustbloc/hub-router v0.0.0-20201021182235-d8deb548a305
-	github.com/trustbloc/trustbloc-did-method v0.1.5-0.20201103214450-5c75ee984ed0
+	github.com/trustbloc/trustbloc-did-method v0.1.5-0.20201104140931-a5c42ef6b769
 	golang.org/x/oauth2 v0.0.0-20200902213428-5d25da1a8d43
 )
 
