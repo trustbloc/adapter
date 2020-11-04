@@ -220,7 +220,7 @@ func (s *Steps) resolveDID(label string) error {
 	return nil
 }
 
-func (s *Steps) newTrustBlocDID(agentID string) (*did.Doc, error) {
+func (s *Steps) newTrustBlocDID(agentID string) (*did.Doc, error) { // nolint:funlen
 	keys := [3]struct {
 		keyID string
 		bits  []byte
@@ -246,8 +246,11 @@ func (s *Steps) newTrustBlocDID(agentID string) (*did.Doc, error) {
 			Type:     trustblocdid.JWSVerificationKey2020,
 			Encoding: trustblocdid.PublicKeyEncodingJwk,
 			KeyType:  trustblocdid.Ed25519KeyType,
-			Purpose:  []string{trustblocdid.KeyPurposeGeneral, trustblocdid.KeyPurposeAuth, trustblocdid.KeyPurposeAssertion},
-			Value:    keys[0].bits,
+			Purposes: []string{
+				trustblocdid.KeyPurposeVerificationMethod,
+				trustblocdid.KeyPurposeAuthentication,
+				trustblocdid.KeyPurposeAssertionMethod},
+			Value: keys[0].bits,
 		}),
 		trustblocdid.WithPublicKey(&trustblocdid.PublicKey{
 			ID:       keys[1].keyID,
