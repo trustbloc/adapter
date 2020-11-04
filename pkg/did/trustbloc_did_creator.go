@@ -100,8 +100,11 @@ func (p *TrustblocDIDCreator) newPublicKeys() ([3]*trustblocdid.PublicKey, error
 			Type:     trustblocdid.JWSVerificationKey2020,
 			Encoding: trustblocdid.PublicKeyEncodingJwk,
 			KeyType:  trustblocdid.Ed25519KeyType,
-			Purpose:  []string{trustblocdid.KeyPurposeGeneral, trustblocdid.KeyPurposeAuth, trustblocdid.KeyPurposeAssertion},
-			Value:    keys[0].bits,
+			Purposes: []string{
+				trustblocdid.KeyPurposeVerificationMethod,
+				trustblocdid.KeyPurposeAuthentication,
+				trustblocdid.KeyPurposeAssertionMethod},
+			Value: keys[0].bits,
 		},
 		{
 			ID:       keys[1].keyID,
