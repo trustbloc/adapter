@@ -115,7 +115,7 @@ func New(config *Config) (*Service, error) {
 
 // GetDIDDoc returns the did doc with router endpoint/keys if its registered, else returns the doc
 // with default endpoint.
-func (o *Service) GetDIDDoc(connID string, requiresBlindedRouting bool) (*did.Doc, error) {
+func (o *Service) GetDIDDoc(connID string, requiresBlindedRoute bool) (*did.Doc, error) {
 	// get routers connection ID
 	routerConnID, err := o.store.Get(connID)
 	if err != nil && !errors.Is(err, storage.ErrValueNotFound) {
@@ -123,7 +123,7 @@ func (o *Service) GetDIDDoc(connID string, requiresBlindedRouting bool) (*did.Do
 	}
 
 	if errors.Is(err, storage.ErrValueNotFound) {
-		if requiresBlindedRouting {
+		if requiresBlindedRoute {
 			return nil, errors.New("no router registered to support blinded routing")
 		}
 
