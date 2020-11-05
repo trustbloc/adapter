@@ -74,7 +74,8 @@ const (
 	//  and consentVC: https://github.com/trustbloc/edge-adapter/issues/106
 	consentVCAttachmentFormat = "trustbloc/UserConsentVerifiableCredential@0.1.0"
 
-	transientStoreName = "rpadapter_trx"
+	transientStoreName   = "rpadapter_trx"
+	persistenceStoreName = "rpadapter_pst"
 )
 
 // Msg svc constants.
@@ -238,6 +239,11 @@ func New(config *Config) (*Operation, error) { // nolint:funlen
 		return nil, fmt.Errorf("failed to open transient store : %w", err)
 	}
 
+	o.persistenceStore, err = persistenceStore(config.Storage.Persistent)
+	if err != nil {
+		return nil, fmt.Errorf("failed to open persistence store : %w", err)
+	}
+
 	o.routeSvc, err = createRouteSvc(config, o.connections)
 	if err != nil {
 		return nil, fmt.Errorf("create route message service : %w", err)
@@ -304,6 +310,7 @@ type Operation struct {
 	ppActions              chan service.DIDCommAction
 	vdrReg                 vdrapi.Registry
 	transientStore         storage.Store
+	persistenceStore       storage.Store
 	governanceProvider     GovernanceProvider
 	km                     kms.KeyManager
 	ariesCrypto            ariescrypto.Crypto
@@ -852,7 +859,7 @@ func (o *Operation) chapiResponseHandler(w http.ResponseWriter, r *http.Request)
 }
 
 func (o *Operation) requestRemoteCredential(authz *verifiable.Credential,
-	_ *consentRequestCtx) (threadID string, err error) {
+	crCtx *consentRequestCtx) (threadID string, err error) {
 	sub, err := vc.AuthZSubject(authz)
 	if err != nil {
 		return "", fmt.Errorf("%w: failed to parse authz subject: %s", errInvalidCredential, err.Error())
@@ -863,8 +870,16 @@ func (o *Operation) requestRemoteCredential(authz *verifiable.Credential,
 		return "", fmt.Errorf("%w: failed to parse issuer did document: %s", errInvalidCredential, err.Error())
 	}
 
-	// TODO https://github.com/trustbloc/edge-adapter/issues/373 Enable RP AuthZ DID
-	rpAuthZDID := sub.RPDIDDoc.ID
+	val, err := o.transientStore.Get(getConnectionToAuthZDIDMappingDBKey(crCtx.ConnectionID))
+	if err != nil {
+		return "", fmt.Errorf("get connection-authzDID mapping : %w", err)
+	}
+
+	rpAuthZDID := string(val)
+	if rpAuthZDID != sub.RPDIDDoc.ID {
+		return "", fmt.Errorf("rp did '%s' in authz doesn't match the expected rp did '%s'",
+			sub.RPDIDDoc.ID, rpAuthZDID)
+	}
 
 	// TODO Issuer's label on the connection record https://github.com/trustbloc/edge-adapter/issues/93
 	_, err = o.didClient.CreateConnection(rpAuthZDID, issuerDID)
@@ -1133,6 +1148,12 @@ func (o *Operation) listenForConnectionCompleteEvents() {
 		if err != nil {
 			logger.Errorf("failed to update invitation data in transient storage : %s", err)
 		}
+
+		err = o.persistenceStore.Put(getConnToTenantMappingDBKey(event.ConnectionID()),
+			[]byte(crCtx.CR.Payload.Client.ClientID))
+		if err != nil {
+			logger.Errorf("failed to update connectionID to rp client id : %s", err)
+		}
 	}
 }
 
@@ -1202,8 +1223,17 @@ func (o *Operation) handleDIDDocReq(msg message.Msg) (service.DIDCommMsgMap, err
 		return nil, fmt.Errorf("get connection by DIDs : %w", err)
 	}
 
-	// TODO https://github.com/trustbloc/edge-adapter/issues/380 Option to configure blinded routing feat
-	newDidDoc, err := o.routeSvc.GetDIDDoc(connID, false)
+	cID, err := o.persistenceStore.Get(getConnToTenantMappingDBKey(connID))
+	if err != nil {
+		return nil, fmt.Errorf("get connection to rp tenant mapping : %w", err)
+	}
+
+	rpTenant, err := o.rpStore.GetRP(string(cID))
+	if err != nil {
+		return nil, fmt.Errorf("get rp tenant data : %w", err)
+	}
+
+	newDidDoc, err := o.routeSvc.GetDIDDoc(connID, rpTenant.RequiresBlindedRoute)
 	if err != nil {
 		return nil, fmt.Errorf("create new peer did : %w", err)
 	}
@@ -1213,7 +1243,7 @@ func (o *Operation) handleDIDDocReq(msg message.Msg) (service.DIDCommMsgMap, err
 		return nil, fmt.Errorf("marshal did doc : %w", err)
 	}
 
-	err = o.transientStore.Put(connID, []byte(newDidDoc.ID))
+	err = o.transientStore.Put(getConnectionToAuthZDIDMappingDBKey(connID), []byte(newDidDoc.ID))
 	if err != nil {
 		return nil, fmt.Errorf("save connection-authzDID mapping  : %w", err)
 	}
@@ -1335,10 +1365,11 @@ func (o *Operation) createRPTenant(w http.ResponseWriter, r *http.Request) {
 
 	// RP not found - we're good to go
 	err = o.rpStore.SaveRP(&rp.Tenant{
-		ClientID:  created.Payload.ClientID,
-		PublicDID: publicDID.ID,
-		Label:     request.Label,
-		Scopes:    request.Scopes,
+		ClientID:             created.Payload.ClientID,
+		PublicDID:            publicDID.ID,
+		Label:                request.Label,
+		Scopes:               request.Scopes,
+		RequiresBlindedRoute: request.RequiresBlindedRoute,
 	})
 	if err != nil {
 		msg := fmt.Sprintf("failed to save relying party : %s", err)
@@ -1350,10 +1381,11 @@ func (o *Operation) createRPTenant(w http.ResponseWriter, r *http.Request) {
 
 	w.WriteHeader(http.StatusCreated)
 	commhttp.WriteResponse(w, &CreateRPTenantResponse{
-		ClientID:     created.Payload.ClientID,
-		ClientSecret: created.Payload.ClientSecret,
-		PublicDID:    publicDID.ID,
-		Scopes:       request.Scopes,
+		ClientID:             created.Payload.ClientID,
+		ClientSecret:         created.Payload.ClientSecret,
+		PublicDID:            publicDID.ID,
+		Scopes:               request.Scopes,
+		RequiresBlindedRoute: request.RequiresBlindedRoute,
 	})
 }
 
@@ -1415,6 +1447,15 @@ func transientStore(p storage.Provider) (storage.Store, error) {
 	return p.OpenStore(transientStoreName)
 }
 
+func persistenceStore(p storage.Provider) (storage.Store, error) {
+	err := p.CreateStore(persistenceStoreName)
+	if err != nil && !errors.Is(err, storage.ErrDuplicateStore) {
+		return nil, fmt.Errorf("failed to create persistence store : %w", err)
+	}
+
+	return p.OpenStore(persistenceStoreName)
+}
+
 func handleError(w http.ResponseWriter, statusCode int, msg string) {
 	logger.Errorf(msg)
 	commhttp.WriteErrorResponse(w, statusCode, msg)
@@ -1467,4 +1508,12 @@ func createRouteSvc(config *Config, connectionLookup connectionRecorder) (routeS
 	}
 
 	return routeSvc, nil
+}
+
+func getConnectionToAuthZDIDMappingDBKey(connID string) string {
+	return "connauthzmap_" + connID
+}
+
+func getConnToTenantMappingDBKey(connID string) string {
+	return "conntenantmap_" + connID
 }

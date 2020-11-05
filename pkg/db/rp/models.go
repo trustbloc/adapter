@@ -12,10 +12,11 @@ import (
 
 // Tenant describes the Relying Party.
 type Tenant struct {
-	ClientID  string
-	PublicDID string
-	Label     string
-	Scopes    []string
+	ClientID             string
+	PublicDID            string
+	Label                string
+	Scopes               []string
+	RequiresBlindedRoute bool
 }
 
 // UserConnection describes a connection a relying party has with a user.
