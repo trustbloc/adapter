@@ -21,6 +21,7 @@ import (
 	"net/url"
 	"os"
 	"reflect"
+	"strconv"
 	"strings"
 	"time"
 
@@ -111,7 +112,7 @@ func NewSteps(ctx *bddctx.BDDContext) *Steps {
 func (s *Steps) RegisterSteps(g *godog.Suite) {
 	g.Step(`^the "([^"]*)" is running on "([^"]*)" port "([^"]*)" with controller "([^"]*)"$`, s.registerAgentController)
 	g.Step(`^the "([^"]*)" is running on "([^"]*)" port "([^"]*)" with webhook "([^"]*)" and controller "([^"]*)"$`, s.registerAgentControllerWithWebhook) //nolint:lll
-	g.Step(`^a request is sent to create an RP tenant with label "([^"]*)"$`, s.createTenant)
+	g.Step(`^a request is sent to create an RP tenant with label "([^"]*)" with blinded routing ""([^"]*)"$`, s.createTenant)                              //nolint:lll
 	g.Step(`^the trustbloc DID of the tenant with label "([^"]*)" is resolvable$`, s.resolveDID)
 	g.Step(`^the client ID of the tenant with label "([^"]*)" is registered at hydra$`, s.lookupClientID)
 	g.Step(`^the client ID of the tenant with label "([^"]*)" and scopes "([^"]*)" is registered at hydra$`, s.lookupClientID) //nolint:lll
@@ -139,15 +140,21 @@ func (s *Steps) registerAgentControllerWithWebhook(agentID, inboundHost, inbound
 	return s.controller.ValidateAgentConnectionWithWebhook(agentID, inboundHost, inboundPort, webhookURL, controllerURL)
 }
 
-func (s *Steps) createTenant(label, scopesStr string) error {
+func (s *Steps) createTenant(label, scopesStr, blindedRouteStr string) error {
 	callbackServer := httptest.NewServer(s)
 	callbackURL := callbackServer.URL + "/" + label
 	scopes := strings.Split(scopesStr, ",")
 
+	blindedRoute, err := strconv.ParseBool(blindedRouteStr)
+	if err != nil {
+		return err
+	}
+
 	requestBytes, err := json.Marshal(&operation.CreateRPTenantRequest{
-		Label:    label,
-		Callback: callbackURL,
-		Scopes:   scopes,
+		Label:                label,
+		Callback:             callbackURL,
+		Scopes:               scopes,
+		RequiresBlindedRoute: blindedRoute,
 	})
 	if err != nil {
 		return err
@@ -176,6 +183,11 @@ func (s *Steps) createTenant(label, scopesStr string) error {
 	err = json.NewDecoder(bytes.NewBuffer(respBytes)).Decode(response)
 	if err != nil {
 		return fmt.Errorf("failed to decode create rp tenant response : %s", err)
+	}
+
+	if response.RequiresBlindedRoute != blindedRoute {
+		return fmt.Errorf("requiresBlindedRoute prop doesn't match : expected=%t actual=%t",
+			blindedRoute, response.RequiresBlindedRoute)
 	}
 
 	s.tenantCtx[label] = &tenantContext{
@@ -335,7 +347,7 @@ func validateTenantRegistration(expected *tenantContext, result *models.OAuth2Cl
 }
 
 func (s *Steps) registerTenantFlow(label, scopesStr string) error {
-	err := s.createTenant(label, scopesStr)
+	err := s.createTenant(label, scopesStr, "false")
 	if err != nil {
 		return err
 	}

@@ -24,17 +24,19 @@ type GetPresentationRequestResponse struct {
 
 // CreateRPTenantRequest API request body to register an RP tenant.
 type CreateRPTenantRequest struct {
-	Label    string   `json:"label"`
-	Callback string   `json:"callback"`
-	Scopes   []string `json:"scopes"`
+	Label                string   `json:"label"`
+	Callback             string   `json:"callback"`
+	Scopes               []string `json:"scopes"`
+	RequiresBlindedRoute bool     `json:"requiresBlindedRoute"`
 }
 
 // CreateRPTenantResponse API response body to register an RP tenant.
 type CreateRPTenantResponse struct {
-	ClientID     string   `json:"clientID"`
-	ClientSecret string   `json:"clientSecret"`
-	PublicDID    string   `json:"publicDID"`
-	Scopes       []string `json:"scopes"`
+	ClientID             string   `json:"clientID"`
+	ClientSecret         string   `json:"clientSecret"`
+	PublicDID            string   `json:"publicDID"`
+	Scopes               []string `json:"scopes"`
+	RequiresBlindedRoute bool     `json:"requiresBlindedRoute"`
 }
 
 // HandleCHAPIResponse is the input message to the chapiResponseHandler handler.

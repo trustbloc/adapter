@@ -371,7 +371,12 @@ func TestListenForConnectionCompleteEvents(t *testing.T) {
 		})
 		require.NoError(t, err)
 		invitationID := uuid.New().String()
-		storePut(t, o.transientStore, invitationID, &consentRequestCtx{InvitationID: invitationID})
+		storePut(t, o.transientStore, invitationID, &consentRequestCtx{
+			InvitationID: invitationID,
+			CR: &admin.GetConsentRequestOK{Payload: &models.ConsentRequest{
+				Client: &models.OAuth2Client{ClientID: uuid.New().String()},
+			}},
+		})
 
 		msgs <- service.StateMsg{
 			Type:    service.PostState,
@@ -1791,7 +1796,7 @@ func TestCHAPIResponseHandler(t *testing.T) {
 			ConnectionID:  rpWalletConnID,
 		})
 
-		err = c.transientStore.Put(rpWalletConnID, []byte(rpAuthZDID.ID))
+		err = c.transientStore.Put(getConnectionToAuthZDIDMappingDBKey(rpWalletConnID), []byte(rpAuthZDID.ID))
 		require.NoError(t, err)
 
 		w := httptest.NewRecorder()
@@ -2034,14 +2039,14 @@ func TestCHAPIResponseHandler(t *testing.T) {
 		// no conn to rpAuthZ mapping
 		w := httptest.NewRecorder()
 		c.chapiResponseHandler(w, newCHAPIResponse(t, invitationID, vp))
-		require.Equal(t, http.StatusAccepted, w.Code)
+		require.Equal(t, http.StatusInternalServerError, w.Code)
 
 		// conn authz did doesnt match to the did in authz credential
 		err = c.transientStore.Put(rpWalletConnID, []byte("invalid"))
 		require.NoError(t, err)
 		w = httptest.NewRecorder()
 		c.chapiResponseHandler(w, newCHAPIResponse(t, invitationID, vp))
-		require.Equal(t, http.StatusAccepted, w.Code)
+		require.Equal(t, http.StatusInternalServerError, w.Code)
 	})
 
 	t.Run("internal server error if cannot send request-presentation", func(t *testing.T) {
@@ -2599,10 +2604,11 @@ func TestCreateRPTenant(t *testing.T) {
 	t.Run("creates valid tenant", func(t *testing.T) {
 		callback := "http://test.example.com"
 		expected := &rp.Tenant{
-			ClientID:  uuid.New().String(),
-			PublicDID: newDID(t).String(),
-			Label:     "test label",
-			Scopes:    []string{creditCardStatementScope},
+			ClientID:             uuid.New().String(),
+			PublicDID:            newDID(t).String(),
+			Label:                "test label",
+			Scopes:               []string{creditCardStatementScope},
+			RequiresBlindedRoute: true,
 		}
 		clientSecret := uuid.New().String()
 
@@ -2639,9 +2645,10 @@ func TestCreateRPTenant(t *testing.T) {
 
 		w := httptest.NewRecorder()
 		o.createRPTenant(w, newCreateRPRequest(t, &CreateRPTenantRequest{
-			Label:    expected.Label,
-			Callback: callback,
-			Scopes:   []string{creditCardStatementScope},
+			Label:                expected.Label,
+			Callback:             callback,
+			Scopes:               []string{creditCardStatementScope},
+			RequiresBlindedRoute: true,
 		}))
 		require.Equal(t, http.StatusCreated, w.Code)
 		response := &CreateRPTenantResponse{}
@@ -2651,6 +2658,7 @@ func TestCreateRPTenant(t *testing.T) {
 		require.Equal(t, expected.PublicDID, response.PublicDID)
 		require.Equal(t, expected.Scopes, response.Scopes)
 		require.Equal(t, clientSecret, response.ClientSecret)
+		require.Equal(t, expected.RequiresBlindedRoute, response.RequiresBlindedRoute)
 
 		rpStore, err := rp.New(store)
 		require.NoError(t, err)
@@ -3013,7 +3021,16 @@ func TestDIDDocReq(t *testing.T) { // nolint:gocyclo
 				return nil
 			},
 		}
-		c.connections = &mockconn.MockConnectionsLookup{ConnIDByDIDs: uuid.New().String()}
+
+		rpClientID := uuid.New().String()
+		err = c.rpStore.SaveRP(&rp.Tenant{ClientID: rpClientID, RequiresBlindedRoute: false})
+		require.NoError(t, err)
+
+		connID := uuid.New().String()
+		c.connections = &mockconn.MockConnectionsLookup{ConnIDByDIDs: connID}
+
+		err = c.persistenceStore.Put(getConnToTenantMappingDBKey(connID), []byte(rpClientID))
+		require.NoError(t, err)
 
 		msgCh := make(chan message.Msg, 1)
 		go c.didCommMsgListener(msgCh)
@@ -3096,7 +3113,15 @@ func TestDIDDocReq(t *testing.T) { // nolint:gocyclo
 		c, err := New(conf)
 		require.NoError(t, err)
 
-		c.connections = &mockconn.MockConnectionsLookup{ConnIDByDIDs: uuid.New().String()}
+		rpClientID := uuid.New().String()
+		err = c.rpStore.SaveRP(&rp.Tenant{ClientID: rpClientID, RequiresBlindedRoute: false})
+		require.NoError(t, err)
+
+		connID := uuid.New().String()
+		c.connections = &mockconn.MockConnectionsLookup{ConnIDByDIDs: connID}
+
+		err = c.persistenceStore.Put(getConnToTenantMappingDBKey(connID), []byte(rpClientID))
+		require.NoError(t, err)
 
 		msgCh := make(chan message.Msg, 1)
 		go c.didCommMsgListener(msgCh)
@@ -3132,11 +3157,99 @@ func TestDIDDocReq(t *testing.T) { // nolint:gocyclo
 				return nil
 			},
 		}
-		c.connections = &mockconn.MockConnectionsLookup{ConnIDByDIDs: uuid.New().String()}
+
+		rpClientID := uuid.New().String()
+		err = c.rpStore.SaveRP(&rp.Tenant{ClientID: rpClientID, RequiresBlindedRoute: false})
+		require.NoError(t, err)
+
+		connID := uuid.New().String()
+		c.connections = &mockconn.MockConnectionsLookup{ConnIDByDIDs: connID}
+
+		err = c.persistenceStore.Put(getConnToTenantMappingDBKey(connID), []byte(rpClientID))
+		require.NoError(t, err)
 
 		store := mockStore()
 		store.Store.ErrPut = errors.New("save error")
 		c.transientStore = store.Store
+
+		msgCh := make(chan message.Msg, 1)
+		go c.didCommMsgListener(msgCh)
+
+		msgCh <- message.Msg{DIDCommMsg: service.NewDIDCommMsgMap(DIDDocReq{
+			ID:   uuid.New().String(),
+			Type: didDocReq,
+		})}
+
+		select {
+		case <-done:
+		case <-time.After(5 * time.Second):
+			require.Fail(t, "tests are not validated due to timeout")
+		}
+	})
+
+	t.Run("connection to rp tenant mapping not found", func(t *testing.T) {
+		c, err := New(config(t))
+		require.NoError(t, err)
+
+		done := make(chan struct{})
+
+		c.messenger = &messenger.MockMessenger{
+			ReplyToFunc: func(msgID string, msg service.DIDCommMsgMap) error {
+				pMsg := &ErrorResp{}
+				dErr := msg.Decode(pMsg)
+				require.NoError(t, dErr)
+				require.Equal(t, pMsg.Type, didDocResp)
+				require.Contains(t, pMsg.Data.ErrorMsg, "get connection to rp tenant mapping")
+
+				done <- struct{}{}
+
+				return nil
+			},
+		}
+
+		connID := uuid.New().String()
+		c.connections = &mockconn.MockConnectionsLookup{ConnIDByDIDs: connID}
+
+		msgCh := make(chan message.Msg, 1)
+		go c.didCommMsgListener(msgCh)
+
+		msgCh <- message.Msg{DIDCommMsg: service.NewDIDCommMsgMap(DIDDocReq{
+			ID:   uuid.New().String(),
+			Type: didDocReq,
+		})}
+
+		select {
+		case <-done:
+		case <-time.After(5 * time.Second):
+			require.Fail(t, "tests are not validated due to timeout")
+		}
+	})
+
+	t.Run("rp tenant not found", func(t *testing.T) {
+		c, err := New(config(t))
+		require.NoError(t, err)
+
+		done := make(chan struct{})
+
+		c.messenger = &messenger.MockMessenger{
+			ReplyToFunc: func(msgID string, msg service.DIDCommMsgMap) error {
+				pMsg := &ErrorResp{}
+				dErr := msg.Decode(pMsg)
+				require.NoError(t, dErr)
+				require.Equal(t, pMsg.Type, didDocResp)
+				require.Contains(t, pMsg.Data.ErrorMsg, "get rp tenant data")
+
+				done <- struct{}{}
+
+				return nil
+			},
+		}
+
+		connID := uuid.New().String()
+		c.connections = &mockconn.MockConnectionsLookup{ConnIDByDIDs: connID}
+
+		err = c.persistenceStore.Put(getConnToTenantMappingDBKey(connID), []byte(uuid.New().String()))
+		require.NoError(t, err)
 
 		msgCh := make(chan message.Msg, 1)
 		go c.didCommMsgListener(msgCh)
