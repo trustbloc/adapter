@@ -719,7 +719,7 @@ func (o *Operation) handleRequestCredential(msg service.DIDCommAction) (interfac
 	}
 
 	vc := issuervc.CreateAuthorizationCredential(newDidDoc.ID, docJSON, authorizationCreReq.RPDIDDoc,
-		authorizationCreReq.SubjectDID)
+		authorizationCreReq.SubjectDIDDoc)
 
 	vc, err = o.vccrypto.SignCredential(vc, profile.CredentialSigningKey)
 	if err != nil {
@@ -729,7 +729,7 @@ func (o *Operation) handleRequestCredential(msg service.DIDCommAction) (interfac
 	handle := &AuthorizationCredentialHandle{
 		ID:               vc.ID,
 		IssuerDID:        newDidDoc.ID,
-		SubjectDID:       authorizationCreReq.SubjectDID,
+		SubjectDID:       authorizationCreReq.SubjectDIDDoc.ID,
 		RPDID:            authorizationCreReq.RPDIDDoc.ID,
 		UserConnectionID: connID,
 		Token:            userConnMap.Token,
@@ -1065,7 +1065,7 @@ func getTokenStore(prov storage.Provider) (storage.Store, error) {
 	return txnStore, nil
 }
 
-func fetchAuthorizationCreReq(msg service.DIDCommAction) (*AuthorizationCredentialReq, error) {
+func fetchAuthorizationCreReq(msg service.DIDCommAction) (*AuthorizationCredentialReq, error) { // nolint: gocyclo
 	credReq := &issuecredsvc.RequestCredential{}
 
 	err := msg.Message.Decode(credReq)
@@ -1090,8 +1090,9 @@ func fetchAuthorizationCreReq(msg service.DIDCommAction) (*AuthorizationCredenti
 		return nil, fmt.Errorf("invalid json data in credential request : %w", err)
 	}
 
-	if authorizationCreReq.SubjectDID == "" {
-		return nil, errors.New("subject did is missing in authorization cred request")
+	if authorizationCreReq.SubjectDIDDoc == nil || authorizationCreReq.SubjectDIDDoc.ID == "" ||
+		authorizationCreReq.SubjectDIDDoc.Doc == nil {
+		return nil, errors.New("subject did data is missing in authorization cred request")
 	}
 
 	if authorizationCreReq.RPDIDDoc == nil || authorizationCreReq.RPDIDDoc.ID == "" ||

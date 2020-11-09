@@ -626,7 +626,10 @@ func (a *Steps) fetchCredential(agentID, issuerID string) error { // nolint: fun
 	}
 
 	ccReq := &issuerops.AuthorizationCredentialReq{
-		SubjectDID: conn.MyDID,
+		SubjectDIDDoc: &adaptervc.DIDDoc{
+			ID:  didDocument.ID,
+			Doc: didDocJSON,
+		},
 		RPDIDDoc: &adaptervc.DIDDoc{
 			ID:  didDocument.ID,
 			Doc: didDocJSON,
@@ -1101,9 +1104,9 @@ func validateAndGetAuthorizationCredential(vc *verifiable.Credential,
 		return nil, fmt.Errorf("failed to parse credential : %s", err.Error())
 	}
 
-	if authorizationVC.Subject.SubjectDID != ccReq.SubjectDID {
-		return nil, fmt.Errorf("unexpected user did authorization credential : expected=%s actual=%s", ccReq.SubjectDID,
-			authorizationVC.Subject.SubjectDID)
+	if authorizationVC.Subject.SubjectDIDDoc.ID != ccReq.SubjectDIDDoc.ID {
+		return nil, fmt.Errorf("unexpected user did authorization credential : expected=%s actual=%s",
+			ccReq.SubjectDIDDoc.ID, authorizationVC.Subject.SubjectDIDDoc.ID)
 	}
 
 	_, err = did.ParseDocument(authorizationVC.Subject.IssuerDIDDoc.Doc)

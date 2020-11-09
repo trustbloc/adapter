@@ -990,7 +990,7 @@ func TestIssueCredentialHandler(t *testing.T) {
 					Type: issuecredsvc.RequestCredentialMsgType,
 					RequestsAttach: []decorator.Attachment{
 						{Data: decorator.AttachmentData{
-							JSON: createAuthorizationCredReq(t, "did:example:xyz123",
+							JSON: createAuthorizationCredReq(t, mockdiddoc.GetMockDIDDoc("did:example:xyz123"),
 								mockdiddoc.GetMockDIDDoc("did:example:def567")),
 						}},
 					},
@@ -1233,14 +1233,14 @@ func TestIssueCredentialHandler(t *testing.T) {
 					Type: issuecredsvc.RequestCredentialMsgType,
 					RequestsAttach: []decorator.Attachment{
 						{Data: decorator.AttachmentData{
-							JSON: createAuthorizationCredReq(t, "",
+							JSON: createAuthorizationCredReq(t, mockdiddoc.GetMockDIDDoc(""),
 								mockdiddoc.GetMockDIDDoc("did:example:def567")),
 						}},
 					},
 				}),
 			})
 			require.Error(t, err)
-			require.Contains(t, err.Error(), "subject did is missing in authorization cred request")
+			require.Contains(t, err.Error(), "subject did data is missing in authorization cred request")
 			require.Nil(t, cc)
 
 			// authorization cred does't contain rpDIDDoc
@@ -1249,7 +1249,7 @@ func TestIssueCredentialHandler(t *testing.T) {
 					Type: issuecredsvc.RequestCredentialMsgType,
 					RequestsAttach: []decorator.Attachment{
 						{Data: decorator.AttachmentData{
-							JSON: createAuthorizationCredReq(t, "did:example:123", nil),
+							JSON: createAuthorizationCredReq(t, mockdiddoc.GetMockDIDDoc("did:example:xyz123"), nil),
 						}},
 					},
 				}),
@@ -1297,7 +1297,7 @@ func TestIssueCredentialHandler(t *testing.T) {
 					Type: issuecredsvc.RequestCredentialMsgType,
 					RequestsAttach: []decorator.Attachment{
 						{Data: decorator.AttachmentData{
-							JSON: createAuthorizationCredReq(t, "did:example:xyz123",
+							JSON: createAuthorizationCredReq(t, mockdiddoc.GetMockDIDDoc("did:example:xyz123"),
 								mockdiddoc.GetMockDIDDoc("did:example:def567")),
 						}},
 					},

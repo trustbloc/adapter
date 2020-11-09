@@ -56,8 +56,8 @@ type ValidateConnectResp struct {
 
 // AuthorizationCredentialReq authorization credential request from wallet.
 type AuthorizationCredentialReq struct {
-	SubjectDID string            `json:"subjectDID,omitempty"`
-	RPDIDDoc   *adaptervc.DIDDoc `json:"requestingPartyDIDDoc,omitempty"`
+	SubjectDIDDoc *adaptervc.DIDDoc `json:"subjectDIDDoc,omitempty"`
+	RPDIDDoc      *adaptervc.DIDDoc `json:"requestingPartyDIDDoc,omitempty"`
 }
 
 // AuthorizationCredentialHandle stores authorization credential related data.
