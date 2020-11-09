@@ -159,18 +159,24 @@ func createProfileData(profileID string) *issuer.ProfileData {
 	}
 }
 
-func createAuthorizationCredReq(t *testing.T, subjectDID string, rpDIDDoc *did.Doc) json.RawMessage {
-	rpDIDDOcBytes, err := mockdiddoc.GetMockDIDDoc("did:example:def567").JSONBytes()
+func createAuthorizationCredReq(t *testing.T, subjectDIDDoc, rpDIDDoc *did.Doc) json.RawMessage {
+	subjectDIDDocBytes, err := subjectDIDDoc.JSONBytes()
 	require.NoError(t, err)
 
 	ccReq := AuthorizationCredentialReq{
-		SubjectDID: subjectDID,
+		SubjectDIDDoc: &adaptervc.DIDDoc{
+			ID:  subjectDIDDoc.ID,
+			Doc: subjectDIDDocBytes,
+		},
 	}
 
 	if rpDIDDoc != nil {
+		rpDIDDocBytes, convErr := rpDIDDoc.JSONBytes()
+		require.NoError(t, convErr)
+
 		ccReq.RPDIDDoc = &adaptervc.DIDDoc{
 			ID:  rpDIDDoc.ID,
-			Doc: rpDIDDOcBytes,
+			Doc: rpDIDDocBytes,
 		}
 	}
 
@@ -186,14 +192,17 @@ func createAuthorizationCredential(t *testing.T) *verifiable.Credential {
 	didDocJSON, err := didDocument.JSONBytes()
 	require.NoError(t, err)
 
-	subjectDID := "did:example:abc789"
+	subjectDIDDoc := &adaptervc.DIDDoc{
+		ID:  didDocument.ID,
+		Doc: didDocJSON,
+	}
 
 	rpDIDDoc := &adaptervc.DIDDoc{
 		ID:  didDocument.ID,
 		Doc: didDocJSON,
 	}
 
-	vc := issuervc.CreateAuthorizationCredential(didDocument.ID, didDocJSON, rpDIDDoc, subjectDID)
+	vc := issuervc.CreateAuthorizationCredential(didDocument.ID, didDocJSON, rpDIDDoc, subjectDIDDoc)
 
 	return vc
 }
@@ -205,7 +214,7 @@ func createCredentialReqMsg(t *testing.T, msg interface{}, continueFn func(args 
 			Type: issuecredsvc.RequestCredentialMsgType,
 			RequestsAttach: []decorator.Attachment{
 				{Data: decorator.AttachmentData{
-					JSON: createAuthorizationCredReq(t, "did:example:xyz123",
+					JSON: createAuthorizationCredReq(t, mockdiddoc.GetMockDIDDoc("did:example:xyz123"),
 						mockdiddoc.GetMockDIDDoc("did:example:def567")),
 				}},
 			},

@@ -150,14 +150,17 @@ func TestCreateAuthorizationCredential(t *testing.T) {
 		didDocJSON, err := didDocument.JSONBytes()
 		require.NoError(t, err)
 
-		subjectDID := "did:example:abc789"
-
 		rpDIDDoc := &adaptervc.DIDDoc{
 			ID:  didDocument.ID,
 			Doc: didDocJSON,
 		}
 
-		vc := CreateAuthorizationCredential(didDocument.ID, didDocJSON, rpDIDDoc, subjectDID)
+		subjectDIDDoc := &adaptervc.DIDDoc{
+			ID:  didDocument.ID,
+			Doc: didDocJSON,
+		}
+
+		vc := CreateAuthorizationCredential(didDocument.ID, didDocJSON, rpDIDDoc, subjectDIDDoc)
 		require.True(t, adapterutil.StringsContains(adaptervc.AuthorizationCredentialType, vc.Types))
 
 		authorizationVC := &adaptervc.AuthorizationCredential{}
@@ -168,7 +171,8 @@ func TestCreateAuthorizationCredential(t *testing.T) {
 		require.Equal(t, string(didDocJSON), string(authorizationVC.Subject.IssuerDIDDoc.Doc))
 		require.Equal(t, rpDIDDoc.ID, authorizationVC.Subject.RPDIDDoc.ID)
 		require.Equal(t, string(didDocJSON), string(authorizationVC.Subject.RPDIDDoc.Doc))
-		require.Equal(t, subjectDID, authorizationVC.Subject.SubjectDID)
+		require.Equal(t, subjectDIDDoc.ID, authorizationVC.Subject.SubjectDIDDoc.ID)
+		require.Equal(t, string(didDocJSON), string(authorizationVC.Subject.SubjectDIDDoc.Doc))
 	})
 }
 

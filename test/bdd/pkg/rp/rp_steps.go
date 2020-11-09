@@ -686,6 +686,11 @@ func (s *Steps) walletCreatesAuthorizationCredential(wallet, tenant, issuer,
 		return nil, err
 	}
 
+	walletDID, err := s.controller.ResolveDID(wallet, walletIssuerConn.MyDID)
+	if err != nil {
+		return nil, fmt.Errorf("%s failed to resolve %s's DID %s : %w", wallet, issuer, walletIssuerConn.MyDID, err)
+	}
+
 	issuerDID, err := s.controller.ResolveDID(wallet, walletIssuerConn.TheirDID)
 	if err != nil {
 		return nil, fmt.Errorf("%s failed to resolve %s's DID %s : %w", wallet, issuer, walletIssuerConn.TheirDID, err)
@@ -696,7 +701,7 @@ func (s *Steps) walletCreatesAuthorizationCredential(wallet, tenant, issuer,
 		return nil, fmt.Errorf("%s failed to create a connection to %s : %w", issuer, tenant, err)
 	}
 
-	authzVC, err := newUserAuthorizationVC(walletTenantConn.MyDID, rpDID, issuerDID)
+	authzVC, err := newUserAuthorizationVC(walletDID, rpDID, issuerDID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create user authorization credential : %w", err)
 	}

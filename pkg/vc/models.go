@@ -26,11 +26,11 @@ type AuthorizationCredential struct {
 
 // AuthorizationCredentialSubject struct for sending the issuer IssuerDIDDoc to wallet.
 type AuthorizationCredentialSubject struct {
-	ID           string                      `json:"id,omitempty"`
-	Scope        []*presexch.InputDescriptor `json:"scope"`
-	IssuerDIDDoc *DIDDoc                     `json:"issuerDIDDoc,omitempty"`
-	RPDIDDoc     *DIDDoc                     `json:"requestingPartyDIDDoc,omitempty"`
-	SubjectDID   string                      `json:"subjectDID,omitempty"`
+	ID            string                      `json:"id,omitempty"`
+	Scope         []*presexch.InputDescriptor `json:"scope"`
+	IssuerDIDDoc  *DIDDoc                     `json:"issuerDIDDoc,omitempty"`
+	RPDIDDoc      *DIDDoc                     `json:"requestingPartyDIDDoc,omitempty"`
+	SubjectDIDDoc *DIDDoc                     `json:"subjectDIDDoc,omitempty"`
 }
 
 // DIDDoc is how a DID document is transported over the wire.

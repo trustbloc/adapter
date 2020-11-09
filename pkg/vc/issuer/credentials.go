@@ -106,8 +106,8 @@ func ParseWalletResponse(vpBytes []byte) (*DIDConnectCredentialSubject, error) {
 }
 
 // CreateAuthorizationCredential creates authorization credential.
-func CreateAuthorizationCredential(did string, docJSON []byte, rpDIDDoc *adaptervc.DIDDoc,
-	subjectDID string) *verifiable.Credential {
+func CreateAuthorizationCredential(did string, docJSON []byte, rpDIDDoc,
+	subjectDIDDoc *adaptervc.DIDDoc) *verifiable.Credential {
 	issued := time.Now()
 
 	vc := &verifiable.Credential{
@@ -126,8 +126,8 @@ func CreateAuthorizationCredential(did string, docJSON []byte, rpDIDDoc *adapter
 				ID:  did,
 				Doc: docJSON,
 			},
-			RPDIDDoc:   rpDIDDoc,
-			SubjectDID: subjectDID,
+			RPDIDDoc:      rpDIDDoc,
+			SubjectDIDDoc: subjectDIDDoc,
 		},
 		Issuer: verifiable.Issuer{
 			ID: uuid.New().URN(),

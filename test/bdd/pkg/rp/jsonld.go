@@ -50,7 +50,7 @@ func newPresentationSubmissionVP(submission *presexch.PresentationSubmission,
 	return vp, nil
 }
 
-func newUserAuthorizationVC(subjectDID string, rpDID, issuerDID *did.Doc) (*verifiable.Credential, error) {
+func newUserAuthorizationVC(subjectDID, rpDID, issuerDID *did.Doc) (*verifiable.Credential, error) {
 	const (
 		userAuthorizationVCTemplate = `{
 	"@context": [
@@ -70,7 +70,7 @@ func newUserAuthorizationVC(subjectDID string, rpDID, issuerDID *did.Doc) (*veri
 		"id": "%s",
 		"requestingPartyDIDDoc": %s,
 		"issuerDIDDoc": %s,
-		"subjectDID": "%s"
+		"subjectDIDDoc": %s
 	}
 }`
 		didDocTemplate = `{
@@ -92,9 +92,17 @@ func newUserAuthorizationVC(subjectDID string, rpDID, issuerDID *did.Doc) (*veri
 	}
 
 	issuerDIDClaim := fmt.Sprintf(didDocTemplate, issuerDID.ID, bits)
+
+	bits, err = subjectDID.JSONBytes()
+	if err != nil {
+		return nil, err
+	}
+
+	subjectDIDClaim := fmt.Sprintf(didDocTemplate, subjectDID.ID, bits)
+
 	contents := fmt.Sprintf(
 		userAuthorizationVCTemplate,
-		subjectDID, subjectDID, rpDIDClaim, issuerDIDClaim, subjectDID)
+		subjectDID.ID, subjectDID.ID, rpDIDClaim, issuerDIDClaim, subjectDIDClaim)
 
 	return verifiable.ParseCredential([]byte(contents), verifiable.WithJSONLDDocumentLoader(testDocumentLoader))
 }
