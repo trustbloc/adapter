@@ -27,7 +27,8 @@ HTTP POST
 {
     "label": "Acme University",
     "callback":"http://example.acme.edu/oauth2/callback",
-    "scopes": ["openid", book", "newspaper"]
+    "scopes": ["openid", book", "newspaper"],
+    "requiresBlindedRoute":true
 }
 ```
 
@@ -36,7 +37,8 @@ sent to end-user wallets. <br/>
 `callback`: Required. OIDC callback URL. <br/>
 `scopes`: Required. The list of scopes the RP can request. Note: you **must** include the `openid` scope in order to register
 as an OIDC client. See notes on [available scopes](#available-scopes) for how to discover the scopes supported by the
-adapter.
+adapter. <br/>
+`requiresBlindedRoute`: Optional (defaults to false). flag for blinded routing feat - [refer](../../blinded_routing.md)
 
 **Response:**
 
@@ -46,6 +48,7 @@ HTTP 201 CREATED
 {
     "clientID": "75095612-d5c4-44ee-a824-6ec50578b825",
     "clientSecret": "rGDy~Fwf8Hocym8y1q5~da5IV9",
+    "requiresBlindedRoute":true,
     "publicDID": "did:trustbloc:testnet.trustbloc.local:EiAZRRfUgI9qnsUdYyL9dY40I5JOOJjQURgXFQ5HzYjGeQ"
 }
 ```

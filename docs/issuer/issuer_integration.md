@@ -12,7 +12,8 @@ id : profile id <br/>
 name : profile name <br/>
 supportedVCContexts : VC contexts supported by the issuer <br/>
 url : issuer service callback urls <br/>
-supportsAssuranceCredential: falg for issuer assurance support - [refer](#24-user-data-api---http-post-urlfromissuerprofileassurance)
+supportsAssuranceCredential: flag for issuer assurance support - [refer](#24-user-data-api---http-post-urlfromissuerprofileassurance)
+requiresBlindedRoute: flag for blinded routing feat - [refer](../blinded_routing.md)
 
 ```
 {
@@ -22,7 +23,8 @@ supportsAssuranceCredential: falg for issuer assurance support - [refer](#24-use
       "https://w3id.org/citizenship/v3"
    ],
    "url":"http://issuer.example.com",
-   "supportsAssuranceCredential":false
+   "supportsAssuranceCredential":false,
+   "requiresBlindedRoute":true
 }
 ```
 
@@ -36,6 +38,7 @@ supportsAssuranceCredential: falg for issuer assurance support - [refer](#24-use
       "https://w3id.org/citizenship/v3"
    ],
    "supportsAssuranceCredential":false,
+   "requiresBlindedRoute":true,
    "credentialSigningKey":"did:example:def567#key1",
    "presentationSigningKey":"did:example:def567#key1",
    "createdAt":"2020-07-27T14:31:04.250212Z"

@@ -16,6 +16,8 @@ The edge adapter contains following components.
 - [Issuer Adapter](./docs/issuer/README.md)
 - [Relying Party (RP) Adapter](./docs/rp/README.md) 
 
+The TrustBloc Adapters provide support for DIDComm to go through a router using [Blinded Routing](./docs/blinded_routing.md) feature. 
+
 ## Build
 To build from source see [here](docs/build.md).
 
