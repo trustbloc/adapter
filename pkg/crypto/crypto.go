@@ -144,9 +144,9 @@ func validateProofPurpose(proofPurpose, method string, didDoc *did.Doc) error {
 	return nil
 }
 
-func isValidVerificationMethod(method string, vms []did.VerificationMethod) bool {
+func isValidVerificationMethod(method string, vms []did.Verification) bool {
 	for _, vm := range vms {
-		if method == vm.PublicKey.ID {
+		if method == vm.VerificationMethod.ID {
 			return true
 		}
 	}

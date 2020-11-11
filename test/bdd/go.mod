@@ -12,7 +12,7 @@ require (
 	github.com/cucumber/godog v0.9.0
 	github.com/fsouza/go-dockerclient v1.6.5
 	github.com/google/uuid v1.1.2
-	github.com/hyperledger/aries-framework-go v0.1.5-0.20201106200736-b08aae492851
+	github.com/hyperledger/aries-framework-go v0.1.5-0.20201110161050-249e1c428734
 	github.com/ory/hydra-client-go v1.4.10
 	github.com/piprate/json-gold v0.3.0
 	github.com/pkg/errors v0.9.1
@@ -21,7 +21,7 @@ require (
 	github.com/trustbloc/edge-adapter v0.0.0
 	github.com/trustbloc/edge-core v0.1.5-0.20201106164919-76ecfeca954f
 	github.com/trustbloc/hub-router v0.0.0-20201106210532-44b629b28a17
-	github.com/trustbloc/trustbloc-did-method v0.1.5-0.20201104140931-a5c42ef6b769
+	github.com/trustbloc/trustbloc-did-method v0.1.5-0.20201110175950-f47afa606cda
 	golang.org/x/oauth2 v0.0.0-20200902213428-5d25da1a8d43
 	gotest.tools/v3 v3.0.3 // indirect
 )

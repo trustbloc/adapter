@@ -1854,7 +1854,7 @@ func TestCHAPIResponseHandler(t *testing.T) {
 
 		invalid.Context = nil
 		invalid.Service = nil
-		invalid.PublicKey = nil
+		invalid.VerificationMethod = nil
 
 		definitions := &presexch.PresentationDefinitions{
 			InputDescriptors: []*presexch.InputDescriptor{{

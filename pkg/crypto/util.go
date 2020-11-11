@@ -52,7 +52,7 @@ func GetVerificationMethodFromDID(d *did.Doc, rel did.VerificationRelationship) 
 		return "", fmt.Errorf("did %s does not declare the requested verification method", d.ID)
 	}
 
-	method := methods[rel][0].PublicKey.ID
+	method := methods[rel][0].VerificationMethod.ID
 
 	if method == "" {
 		return "", fmt.Errorf("did %s has a public key with no id for verification method %d", d.ID, rel)

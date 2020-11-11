@@ -25,7 +25,7 @@ func TestGetVerificationMethodFromDID(t *testing.T) {
 		actual, err := crypto.GetVerificationMethodFromDID(doc, did.Authentication)
 		require.NoError(t, err)
 
-		require.Equal(t, fmt.Sprintf("%s%s", doc.ID, doc.Authentication[0].PublicKey.ID), actual)
+		require.Equal(t, fmt.Sprintf("%s%s", doc.ID, doc.Authentication[0].VerificationMethod.ID), actual)
 	})
 
 	t.Run("error if doc does not have verification method", func(t *testing.T) {
@@ -37,7 +37,7 @@ func TestGetVerificationMethodFromDID(t *testing.T) {
 
 	t.Run("error if verification method ID is empty", func(t *testing.T) {
 		doc := newPeerDID(t)
-		doc.Authentication[0].PublicKey.ID = ""
+		doc.Authentication[0].VerificationMethod.ID = ""
 		_, err := crypto.GetVerificationMethodFromDID(doc, did.Authentication)
 		require.Error(t, err)
 	})

@@ -38,6 +38,8 @@ import (
 	"github.com/ory/hydra-client-go/models"
 	"github.com/trustbloc/edge-core/pkg/log"
 	trustblocdid "github.com/trustbloc/trustbloc-did-method/pkg/did"
+	"github.com/trustbloc/trustbloc-did-method/pkg/did/doc"
+	"github.com/trustbloc/trustbloc-did-method/pkg/did/option/create"
 	trustblocvdri "github.com/trustbloc/trustbloc-did-method/pkg/vdri/trustbloc"
 	"golang.org/x/oauth2"
 
@@ -254,19 +256,19 @@ func (s *Steps) newTrustBlocDID(agentID string) (*did.Doc, error) {
 
 	didDoc, err := trustblocClient.CreateDID(
 		trustblocDIDMethodDomain,
-		trustblocdid.WithPublicKey(&trustblocdid.PublicKey{
+		create.WithPublicKey(&doc.PublicKey{
 			ID:       keys[0].keyID,
-			Type:     trustblocdid.JWSVerificationKey2020,
-			Encoding: trustblocdid.PublicKeyEncodingJwk,
-			KeyType:  trustblocdid.Ed25519KeyType,
+			Type:     doc.JWSVerificationKey2020,
+			Encoding: doc.PublicKeyEncodingJwk,
+			KeyType:  doc.Ed25519KeyType,
 			Purposes: []string{
-				trustblocdid.KeyPurposeVerificationMethod,
-				trustblocdid.KeyPurposeAuthentication,
-				trustblocdid.KeyPurposeAssertionMethod},
+				doc.KeyPurposeVerificationMethod,
+				doc.KeyPurposeAuthentication,
+				doc.KeyPurposeAssertionMethod},
 			Value: keys[0].bits,
 		}),
-		trustblocdid.WithRecoveryPublicKey(ed25519.PublicKey(keys[1].bits)),
-		trustblocdid.WithUpdatePublicKey(ed25519.PublicKey(keys[2].bits)),
+		create.WithRecoveryPublicKey(ed25519.PublicKey(keys[1].bits)),
+		create.WithUpdatePublicKey(ed25519.PublicKey(keys[2].bits)),
 	)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create new trustbloc did: %w", err)

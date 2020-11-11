@@ -13,7 +13,7 @@ require (
 	github.com/coreos/go-oidc v2.2.1+incompatible
 	github.com/google/uuid v1.1.2
 	github.com/gorilla/mux v1.7.4
-	github.com/hyperledger/aries-framework-go v0.1.5-0.20201106200736-b08aae492851
+	github.com/hyperledger/aries-framework-go v0.1.5-0.20201110161050-249e1c428734
 	github.com/mr-tron/base58 v1.1.3
 	github.com/niemeyer/pretty v0.0.0-20200227124842-a10e7caefd8e // indirect
 	github.com/ory/hydra-client-go v1.4.10
@@ -22,7 +22,7 @@ require (
 	github.com/sirupsen/logrus v1.7.0
 	github.com/stretchr/testify v1.6.1
 	github.com/trustbloc/edge-core v0.1.5-0.20201106164919-76ecfeca954f
-	github.com/trustbloc/trustbloc-did-method v0.1.5-0.20201104140931-a5c42ef6b769
+	github.com/trustbloc/trustbloc-did-method v0.1.5-0.20201110175950-f47afa606cda
 	golang.org/x/net v0.0.0-20201009032441-dbdefad45b89 // indirect
 	gopkg.in/check.v1 v1.0.0-20200227125254-8fa46927fb4f // indirect
 )

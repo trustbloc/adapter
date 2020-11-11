@@ -150,6 +150,18 @@ func TestCreateAuthorizationCredential(t *testing.T) {
 		didDocJSON, err := didDocument.JSONBytes()
 		require.NoError(t, err)
 
+		tempVC := &adaptervc.AuthorizationCredential{}
+		require.NoError(t, adapterutil.DecodeJSONMarshaller(&verifiable.Credential{
+			Subject: &adaptervc.AuthorizationCredentialSubject{
+				IssuerDIDDoc: &adaptervc.DIDDoc{
+					Doc: didDocJSON,
+				},
+			},
+		}, tempVC))
+		require.NoError(t, err)
+
+		didDocJSON = tempVC.Subject.IssuerDIDDoc.Doc
+
 		rpDIDDoc := &adaptervc.DIDDoc{
 			ID:  didDocument.ID,
 			Doc: didDocJSON,
@@ -168,7 +180,7 @@ func TestCreateAuthorizationCredential(t *testing.T) {
 		err = adapterutil.DecodeJSONMarshaller(vc, authorizationVC)
 		require.NoError(t, err)
 		require.Equal(t, didDocument.ID, authorizationVC.Subject.IssuerDIDDoc.ID)
-		require.Equal(t, string(didDocJSON), string(authorizationVC.Subject.IssuerDIDDoc.Doc))
+		require.Equal(t, string(tempVC.Subject.IssuerDIDDoc.Doc), string(authorizationVC.Subject.IssuerDIDDoc.Doc))
 		require.Equal(t, rpDIDDoc.ID, authorizationVC.Subject.RPDIDDoc.ID)
 		require.Equal(t, string(didDocJSON), string(authorizationVC.Subject.RPDIDDoc.Doc))
 		require.Equal(t, subjectDIDDoc.ID, authorizationVC.Subject.SubjectDIDDoc.ID)
