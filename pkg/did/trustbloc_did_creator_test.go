@@ -12,7 +12,7 @@ import (
 	"github.com/hyperledger/aries-framework-go/pkg/doc/did"
 	"github.com/hyperledger/aries-framework-go/pkg/kms"
 	"github.com/stretchr/testify/require"
-	trustblocdid "github.com/trustbloc/trustbloc-did-method/pkg/did"
+	"github.com/trustbloc/trustbloc-did-method/pkg/did/option/create"
 )
 
 func TestNewTrustblocDIDCreator(t *testing.T) {
@@ -29,7 +29,7 @@ func TestTrustblocDIDCreator_Create(t *testing.T) {
 		didcommURL := "http://example.didcomm.com"
 		c := NewTrustblocDIDCreator(domain, didcommURL, &mockKeyManager{}, nil)
 		c.tblocDIDs = &stubTrustblocClient{
-			createFunc: func(d string, options ...trustblocdid.CreateDIDOption) (*did.Doc, error) {
+			createFunc: func(d string, options ...create.Option) (*did.Doc, error) {
 				require.Equal(t, domain, d)
 				return expected, nil
 			},
@@ -67,7 +67,7 @@ func TestTrustblocDIDCreator_Create(t *testing.T) {
 		expected := errors.New("test")
 		c := NewTrustblocDIDCreator("", "", &mockKeyManager{}, nil)
 		c.tblocDIDs = &stubTrustblocClient{
-			createFunc: func(string, ...trustblocdid.CreateDIDOption) (*did.Doc, error) {
+			createFunc: func(string, ...create.Option) (*did.Doc, error) {
 				return nil, expected
 			},
 		}
@@ -78,10 +78,10 @@ func TestTrustblocDIDCreator_Create(t *testing.T) {
 }
 
 type stubTrustblocClient struct {
-	createFunc func(string, ...trustblocdid.CreateDIDOption) (*did.Doc, error)
+	createFunc func(string, ...create.Option) (*did.Doc, error)
 }
 
-func (s *stubTrustblocClient) CreateDID(domain string, options ...trustblocdid.CreateDIDOption) (*did.Doc, error) {
+func (s *stubTrustblocClient) CreateDID(domain string, options ...create.Option) (*did.Doc, error) {
 	return s.createFunc(domain, options...)
 }
 

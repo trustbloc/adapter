@@ -16,10 +16,12 @@ import (
 	"github.com/hyperledger/aries-framework-go/pkg/kms"
 	"github.com/mr-tron/base58"
 	trustblocdid "github.com/trustbloc/trustbloc-did-method/pkg/did"
+	"github.com/trustbloc/trustbloc-did-method/pkg/did/doc"
+	"github.com/trustbloc/trustbloc-did-method/pkg/did/option/create"
 )
 
 type trustblocDIDClient interface {
-	CreateDID(string, ...trustblocdid.CreateDIDOption) (*did.Doc, error)
+	CreateDID(string, ...create.Option) (*did.Doc, error)
 }
 
 // KeyManager creates keys.
@@ -73,10 +75,10 @@ func (p *TrustblocDIDCreator) Create() (*did.Doc, error) {
 
 	publicDID, err := p.tblocDIDs.CreateDID(
 		p.blocDomain,
-		trustblocdid.WithPublicKey(publicKeys[0]),
-		trustblocdid.WithRecoveryPublicKey(recoverKey),
-		trustblocdid.WithUpdatePublicKey(updateKey),
-		trustblocdid.WithService(&did.Service{
+		create.WithPublicKey(publicKeys[0]),
+		create.WithRecoveryPublicKey(recoverKey),
+		create.WithUpdatePublicKey(updateKey),
+		create.WithService(&did.Service{
 			ID:              "didcomm",
 			Type:            "did-communication",
 			Priority:        0,
@@ -91,22 +93,22 @@ func (p *TrustblocDIDCreator) Create() (*did.Doc, error) {
 	return publicDID, err
 }
 
-func (p *TrustblocDIDCreator) newPublicKeys() ([1]*trustblocdid.PublicKey, error) {
+func (p *TrustblocDIDCreator) newPublicKeys() ([1]*doc.PublicKey, error) {
 	keyID, bits, err := p.km.CreateAndExportPubKeyBytes(kms.ED25519Type)
 	if err != nil {
-		return [1]*trustblocdid.PublicKey{}, fmt.Errorf("failed to create key : %w", err)
+		return [1]*doc.PublicKey{}, fmt.Errorf("failed to create key : %w", err)
 	}
 
-	return [1]*trustblocdid.PublicKey{
+	return [1]*doc.PublicKey{
 		{
 			ID:       keyID,
-			Type:     trustblocdid.JWSVerificationKey2020,
-			Encoding: trustblocdid.PublicKeyEncodingJwk,
-			KeyType:  trustblocdid.Ed25519KeyType,
+			Type:     doc.JWSVerificationKey2020,
+			Encoding: doc.PublicKeyEncodingJwk,
+			KeyType:  doc.Ed25519KeyType,
 			Purposes: []string{
-				trustblocdid.KeyPurposeVerificationMethod,
-				trustblocdid.KeyPurposeAuthentication,
-				trustblocdid.KeyPurposeAssertionMethod},
+				doc.KeyPurposeVerificationMethod,
+				doc.KeyPurposeAuthentication,
+				doc.KeyPurposeAssertionMethod},
 			Value: bits,
 		},
 	}, nil

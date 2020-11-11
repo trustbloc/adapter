@@ -36,7 +36,7 @@ func GetMockDIDDoc(didID string) *did.Doc {
 		Priority:        0,
 	}
 
-	signingKey := did.PublicKey{
+	signingKey := did.VerificationMethod{
 		ID:         creator,
 		Type:       keyType,
 		Controller: didID,
@@ -48,12 +48,12 @@ func GetMockDIDDoc(didID string) *did.Doc {
 	return &did.Doc{
 		Context:              []string{didContext},
 		ID:                   didID,
-		PublicKey:            []did.PublicKey{signingKey},
+		VerificationMethod:   []did.VerificationMethod{signingKey},
 		Service:              []did.Service{service},
 		Created:              &createdTime,
-		AssertionMethod:      []did.VerificationMethod{{PublicKey: signingKey}},
-		Authentication:       []did.VerificationMethod{{PublicKey: signingKey}},
-		CapabilityInvocation: []did.VerificationMethod{{PublicKey: signingKey}},
-		CapabilityDelegation: []did.VerificationMethod{{PublicKey: signingKey}},
+		AssertionMethod:      []did.Verification{{VerificationMethod: signingKey}},
+		Authentication:       []did.Verification{{VerificationMethod: signingKey}},
+		CapabilityInvocation: []did.Verification{{VerificationMethod: signingKey}},
+		CapabilityDelegation: []did.Verification{{VerificationMethod: signingKey}},
 	}
 }

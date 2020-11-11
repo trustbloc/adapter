@@ -27,13 +27,13 @@ func TestSignCredential(t *testing.T) {
 		c := New(&kms.KeyManager{}, &cryptomock.Crypto{}, &vdrmock.MockVDRegistry{ResolveValue: didDoc})
 
 		vc := &verifiable.Credential{ID: uuid.New().URN()}
-		signingKeyID := didDoc.AssertionMethod[0].PublicKey.ID
+		signingKeyID := didDoc.AssertionMethod[0].VerificationMethod.ID
 
 		signedVC, err := c.SignCredential(vc, signingKeyID)
 		require.NoError(t, err)
 		require.Equal(t, vc.ID, signedVC.ID)
 		require.Equal(t, AssertionMethod, signedVC.Proofs[0]["proofPurpose"])
-		require.Equal(t, didDoc.AssertionMethod[0].PublicKey.ID, signedVC.Proofs[0]["verificationMethod"])
+		require.Equal(t, didDoc.AssertionMethod[0].VerificationMethod.ID, signedVC.Proofs[0]["verificationMethod"])
 		require.NotEmpty(t, signedVC.Proofs[0]["created"])
 	})
 
@@ -77,12 +77,12 @@ func TestSignPresentation(t *testing.T) {
 		c := New(&kms.KeyManager{}, &cryptomock.Crypto{}, &vdrmock.MockVDRegistry{ResolveValue: didDoc})
 
 		vp := &verifiable.Presentation{ID: uuid.New().URN()}
-		signingKeyID := didDoc.AssertionMethod[0].PublicKey.ID
+		signingKeyID := didDoc.AssertionMethod[0].VerificationMethod.ID
 
 		signedVP, err := c.SignPresentation(vp, signingKeyID)
 		require.NoError(t, err)
 		require.Equal(t, Authentication, signedVP.Proofs[0]["proofPurpose"])
-		require.Equal(t, didDoc.AssertionMethod[0].PublicKey.ID, signedVP.Proofs[0]["verificationMethod"])
+		require.Equal(t, didDoc.AssertionMethod[0].VerificationMethod.ID, signedVP.Proofs[0]["verificationMethod"])
 		require.NotEmpty(t, signedVP.Proofs[0]["created"])
 	})
 

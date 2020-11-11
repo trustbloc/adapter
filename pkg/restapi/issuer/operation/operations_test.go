@@ -766,7 +766,7 @@ func TestCHAPIRequest(t *testing.T) {
 
 			profile := createProfileData("profile2")
 			profile.SupportsAssuranceCredential = true
-			profile.CredentialSigningKey = mockdiddoc.GetMockDIDDoc("did:example:def567").PublicKey[0].ID
+			profile.CredentialSigningKey = mockdiddoc.GetMockDIDDoc("did:example:def567").VerificationMethod[0].ID
 
 			err = c.profileStore.SaveProfile(profile)
 			require.NoError(t, err)
@@ -969,7 +969,7 @@ func TestIssueCredentialHandler(t *testing.T) {
 			issuerID := uuid.New().String()
 
 			profile := createProfileData(issuerID)
-			profile.CredentialSigningKey = mockdiddoc.GetMockDIDDoc("did:example:def567").PublicKey[0].ID
+			profile.CredentialSigningKey = mockdiddoc.GetMockDIDDoc("did:example:def567").VerificationMethod[0].ID
 
 			err = c.profileStore.SaveProfile(profile)
 			require.NoError(t, err)
@@ -1041,7 +1041,7 @@ func TestIssueCredentialHandler(t *testing.T) {
 			issuerID := uuid.New().String()
 
 			profile := createProfileData(issuerID)
-			profile.CredentialSigningKey = mockdiddoc.GetMockDIDDoc("did:example:def567").PublicKey[0].ID
+			profile.CredentialSigningKey = mockdiddoc.GetMockDIDDoc("did:example:def567").VerificationMethod[0].ID
 
 			err = c.profileStore.SaveProfile(profile)
 			require.NoError(t, err)
@@ -1133,7 +1133,7 @@ func TestIssueCredentialHandler(t *testing.T) {
 
 			// error saving authorization cred data
 			profile := createProfileData(issuerID)
-			profile.CredentialSigningKey = mockdiddoc.GetMockDIDDoc("did:example:def567").PublicKey[0].ID
+			profile.CredentialSigningKey = mockdiddoc.GetMockDIDDoc("did:example:def567").VerificationMethod[0].ID
 
 			err = c.profileStore.SaveProfile(profile)
 			require.NoError(t, err)
@@ -1337,8 +1337,8 @@ func TestPresentProofHandler(t *testing.T) {
 			issuerID := uuid.New().String()
 
 			profile := createProfileData(issuerID)
-			profile.PresentationSigningKey = mockdiddoc.GetMockDIDDoc("did:example:def567").PublicKey[0].ID
-			profile.CredentialSigningKey = mockdiddoc.GetMockDIDDoc("did:example:def567").PublicKey[0].ID
+			profile.PresentationSigningKey = mockdiddoc.GetMockDIDDoc("did:example:def567").VerificationMethod[0].ID
+			profile.CredentialSigningKey = mockdiddoc.GetMockDIDDoc("did:example:def567").VerificationMethod[0].ID
 
 			err = c.profileStore.SaveProfile(profile)
 			require.NoError(t, err)
@@ -1409,8 +1409,8 @@ func TestPresentProofHandler(t *testing.T) {
 			issuerID := uuid.New().String()
 
 			profile := createProfileData(issuerID)
-			profile.PresentationSigningKey = mockdiddoc.GetMockDIDDoc("did:example:def567").PublicKey[0].ID
-			profile.CredentialSigningKey = mockdiddoc.GetMockDIDDoc("did:example:def567").PublicKey[0].ID
+			profile.PresentationSigningKey = mockdiddoc.GetMockDIDDoc("did:example:def567").VerificationMethod[0].ID
+			profile.CredentialSigningKey = mockdiddoc.GetMockDIDDoc("did:example:def567").VerificationMethod[0].ID
 			profile.SupportsAssuranceCredential = true
 
 			err = c.profileStore.SaveProfile(profile)
@@ -1923,8 +1923,8 @@ func TestPresentProofHandler(t *testing.T) {
 			issuerID := uuid.New().String()
 
 			profile := createProfileData(issuerID)
-			profile.PresentationSigningKey = mockdiddoc.GetMockDIDDoc("did:example:def567").PublicKey[0].ID
-			profile.CredentialSigningKey = mockdiddoc.GetMockDIDDoc("did:example:def567").PublicKey[0].ID
+			profile.PresentationSigningKey = mockdiddoc.GetMockDIDDoc("did:example:def567").VerificationMethod[0].ID
+			profile.CredentialSigningKey = mockdiddoc.GetMockDIDDoc("did:example:def567").VerificationMethod[0].ID
 			profile.SupportsAssuranceCredential = true
 
 			err = c.profileStore.SaveProfile(profile)
