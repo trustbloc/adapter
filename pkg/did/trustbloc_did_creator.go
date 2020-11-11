@@ -106,7 +106,6 @@ func (p *TrustblocDIDCreator) newPublicKeys() ([1]*doc.PublicKey, error) {
 			Encoding: doc.PublicKeyEncodingJwk,
 			KeyType:  doc.Ed25519KeyType,
 			Purposes: []string{
-				doc.KeyPurposeVerificationMethod,
 				doc.KeyPurposeAuthentication,
 				doc.KeyPurposeAssertionMethod},
 			Value: bits,

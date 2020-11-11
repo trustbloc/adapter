@@ -262,7 +262,6 @@ func (s *Steps) newTrustBlocDID(agentID string) (*did.Doc, error) {
 			Encoding: doc.PublicKeyEncodingJwk,
 			KeyType:  doc.Ed25519KeyType,
 			Purposes: []string{
-				doc.KeyPurposeVerificationMethod,
 				doc.KeyPurposeAuthentication,
 				doc.KeyPurposeAssertionMethod},
 			Value: keys[0].bits,
