@@ -13,6 +13,7 @@ import (
 // MockMessenger mock messenger.
 type MockMessenger struct {
 	ReplyToFunc func(msgID string, msg service.DIDCommMsgMap) error
+	SendFunc    func(msg service.DIDCommMsgMap, myDID, theirDID string) error
 }
 
 // ReplyTo reply to a message.
@@ -25,7 +26,11 @@ func (m *MockMessenger) ReplyTo(msgID string, msg service.DIDCommMsgMap) error {
 }
 
 // Send send message.
-func (m *MockMessenger) Send(_ service.DIDCommMsgMap, _, _ string) error {
+func (m *MockMessenger) Send(msg service.DIDCommMsgMap, myDID, theirDID string) error {
+	if m.SendFunc != nil {
+		return m.SendFunc(msg, myDID, theirDID)
+	}
+
 	return nil
 }
 

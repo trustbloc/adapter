@@ -21,6 +21,7 @@ Feature: RP Adapter
     Then the trustbloc DID of the tenant with label "test-tenant" is resolvable
     And the client ID of the tenant with label "test-tenant" and scopes "credit_card_stmt:remote" is registered at hydra
 
+  @rp_wallet_didex
   Scenario: Establishment of didcomm connection with the web wallet
     Given a registered rp tenant with label "didcommconnection" and scopes "credit_card_stmt:remote"
     When the rp tenant "didcommconnection" redirects the user to the rp adapter with scope "credit_card_stmt:remote"

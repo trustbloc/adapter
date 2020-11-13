@@ -42,7 +42,8 @@ func getServicesList(controllerURL string) ([]string, error) {
 	return result.Names, nil
 }
 
-func unregisterAllMsgServices(controllerURL string) error {
+// UnregisterAllMsgServices unregisters all the message services.
+func UnregisterAllMsgServices(controllerURL string) error {
 	svcNames, err := getServicesList(controllerURL)
 	if err != nil {
 		return fmt.Errorf("unregister message services : %w", err)
@@ -72,7 +73,7 @@ func adapterDIDDocReq(controllerURL, webhookURL, connectionID string) (string, *
 
 	// issuer adapter - wallet
 	// register for message service
-	err := registerCreateConnMsgServices(controllerURL, msgSvcName,
+	err := RegisterMsgService(controllerURL, msgSvcName,
 		"https://trustbloc.dev/blinded-routing/1.0/diddoc-resp")
 	if err != nil {
 		return "", nil, err
@@ -96,7 +97,7 @@ func routerConnReq(controllerURL, webhookURL, connectionID string, adapterDIDDoc
 
 	// wallet - router
 	// register for message service
-	err := registerCreateConnMsgServices(controllerURL, msgSvcName,
+	err := RegisterMsgService(controllerURL, msgSvcName,
 		"https://trustbloc.dev/blinded-routing/1.0/create-conn-resp")
 	if err != nil {
 		return nil, err
@@ -128,7 +129,7 @@ func adapterCreateConnReq(controllerURL, webhookURL, msgID string, adapterDIDDoc
 
 	// issuer adapter - wallet
 	// register for message service
-	err := registerCreateConnMsgServices(controllerURL, msgSvcName,
+	err := RegisterMsgService(controllerURL, msgSvcName,
 		"https://trustbloc.dev/blinded-routing/1.0/register-route-resp")
 	if err != nil {
 		return err
@@ -158,7 +159,7 @@ func adapterCreateConnReq(controllerURL, webhookURL, msgID string, adapterDIDDoc
 func authZDIDDocReq(controllerURL, webhookURL, connectionID string) (string, *did.Doc, error) {
 	msgSvcName := uuid.New().String()
 
-	err := registerCreateConnMsgServices(controllerURL, msgSvcName, "https://trustbloc.dev/adapter/1.0/diddoc-resp")
+	err := RegisterMsgService(controllerURL, msgSvcName, "https://trustbloc.dev/adapter/1.0/diddoc-resp")
 	if err != nil {
 		return "", nil, err
 	}
@@ -175,7 +176,8 @@ func authZDIDDocReq(controllerURL, webhookURL, connectionID string) (string, *di
 	return getDIDDocResp(webhookURL, msgSvcName)
 }
 
-func registerCreateConnMsgServices(controllerURL, msgSvcName, msgType string) error {
+// RegisterMsgService registers a new message services.
+func RegisterMsgService(controllerURL, msgSvcName, msgType string) error {
 	// register create conn msg service
 	params := messaging.RegisterMsgSvcArgs{
 		Name: msgSvcName,
@@ -356,6 +358,16 @@ func getAdapterConnResp(controllerURL, msgSvcName string) error {
 
 	if message.Message.Data != nil && message.Message.Data.ErrorMsg != "" {
 		return fmt.Errorf("adapter create connection failed : errMsg=%s", message.Message.Data.ErrorMsg)
+	}
+
+	return nil
+}
+
+// GetDIDExStateCompResp get didex state complete message.
+func GetDIDExStateCompResp(controllerURL, msgSvcName string) error {
+	_, err := pullMsgFromWebhookURL(controllerURL, msgSvcName)
+	if err != nil {
+		return fmt.Errorf("failed to pull incoming message from webhook : %w", err)
 	}
 
 	return nil

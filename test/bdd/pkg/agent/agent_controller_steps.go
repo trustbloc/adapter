@@ -266,13 +266,27 @@ func (a *Steps) handleDIDCommConnectRequest(agentID, supportedVCContexts, issuer
 		return fmt.Errorf("failed to parse governance credential : %s", err.Error())
 	}
 
+	err = UnregisterAllMsgServices(a.ControllerURLs[agentID])
+	if err != nil {
+		return err
+	}
+
+	msgSvcName := uuid.New().String()
+
+	err = RegisterMsgService(a.ControllerURLs[agentID], msgSvcName, "https://trustbloc.dev/didexchange/1.0/state-complete")
+	if err != nil {
+		return err
+	}
+
 	connectionID, err := a.AcceptOOBInvitation(agentID, request.DIDCommInvitation, issuerID)
 	if err != nil {
 		return err
 	}
 
-	// Added to mock CHAPI timeout (ie, DIDExchange should happen with this duration)
-	time.Sleep(time.Duration(timeout) * time.Second)
+	err = GetDIDExStateCompResp(a.WebhookURLs[agentID], msgSvcName)
+	if err != nil {
+		return err
+	}
 
 	conn, err := a.ValidateConnection(agentID, connectionID)
 	if err != nil {
@@ -332,7 +346,7 @@ func (a *Steps) didConnectReqWithRouting(agentID, routerURL, issuerID string) er
 	}
 
 	// unregister all the msg services (to clear older data)
-	err = unregisterAllMsgServices(a.ControllerURLs[agentID])
+	err = UnregisterAllMsgServices(a.ControllerURLs[agentID])
 	if err != nil {
 		return err
 	}
@@ -402,7 +416,7 @@ func (a *Steps) didConnectReqWithRouting(agentID, routerURL, issuerID string) er
 // BlindedRouting agent(wallet) registers the other agent(adapter) with the router
 func (a *Steps) BlindedRouting(agentID, connID, routerURL string) error {
 	// unregister all the msg services (to clear older data)
-	err := unregisterAllMsgServices(a.ControllerURLs[agentID])
+	err := UnregisterAllMsgServices(a.ControllerURLs[agentID])
 	if err != nil {
 		return err
 	}
@@ -774,7 +788,7 @@ func (a *Steps) fetchPresentation(agentID, issuerID, expectedScope, supportsAssu
 
 // GetAuthZDIDDoc returns the DID Doc.
 func (a *Steps) GetAuthZDIDDoc(agent, connID string) (*did.Doc, error) {
-	err := unregisterAllMsgServices(a.ControllerURLs[agent])
+	err := UnregisterAllMsgServices(a.ControllerURLs[agent])
 	if err != nil {
 		return nil, fmt.Errorf("unregister msg svc : %w", err)
 	}

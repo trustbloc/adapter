@@ -13,6 +13,11 @@ import (
 	"github.com/hyperledger/aries-framework-go/pkg/storage"
 )
 
+const (
+	// DIDExStateComp state complete message type.
+	DIDExStateComp = "https://trustbloc.dev/didexchange/1.0/state-complete"
+)
+
 // CtxProvider contains dependencies to create aries protocol clients and is typically created by using aries.Context().
 type CtxProvider interface {
 	Service(id string) (interface{}, error)
@@ -22,4 +27,10 @@ type CtxProvider interface {
 	KMS() kms.KeyManager
 	VDRegistry() vdrapi.Registry
 	Crypto() ariescrypto.Crypto
+}
+
+// DIDCommMsg core didcomm message model.
+type DIDCommMsg struct {
+	ID   string `json:"@id"`
+	Type string `json:"@type"`
 }
