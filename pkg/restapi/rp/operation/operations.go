@@ -42,6 +42,7 @@ import (
 	"github.com/trustbloc/edge-core/pkg/log"
 	"github.com/trustbloc/edge-core/pkg/storage"
 
+	"github.com/trustbloc/edge-adapter/pkg/aries"
 	"github.com/trustbloc/edge-adapter/pkg/aries/message"
 	"github.com/trustbloc/edge-adapter/pkg/crypto"
 	"github.com/trustbloc/edge-adapter/pkg/db/rp"
@@ -1105,7 +1106,7 @@ func (o *Operation) handleIncomingDIDExchangeRequestAction(action service.DIDCom
 	action.Continue(nil)
 }
 
-func (o *Operation) listenForConnectionCompleteEvents() {
+func (o *Operation) listenForConnectionCompleteEvents() { // nolint: gocyclo
 	for msg := range o.didStateMsgs {
 		if msg.Type != service.PostState || msg.StateID != didexchangesvc.StateIDCompleted {
 			continue
@@ -1153,6 +1154,14 @@ func (o *Operation) listenForConnectionCompleteEvents() {
 			[]byte(crCtx.CR.Payload.Client.ClientID))
 		if err != nil {
 			logger.Errorf("failed to update connectionID to rp client id : %s", err)
+		}
+
+		err = o.messenger.Send(service.NewDIDCommMsgMap(&aries.DIDCommMsg{
+			ID:   uuid.New().String(),
+			Type: aries.DIDExStateComp,
+		}), record.MyDID, record.TheirDID)
+		if err != nil {
+			logger.Errorf("send didex state complete msg : %s", err)
 		}
 	}
 }

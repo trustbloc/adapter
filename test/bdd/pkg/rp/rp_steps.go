@@ -554,9 +554,27 @@ func (s *Steps) walletAcceptsDIDCommInvitation(walletID, tenantID string) error 
 		return fmt.Errorf("failed to unmarshal oob invitation from bdd test store : %w", err)
 	}
 
+	err = agent.UnregisterAllMsgServices(s.controller.ControllerURLs[walletID])
+	if err != nil {
+		return err
+	}
+
+	msgSvcName := uuid.New().String()
+
+	err = agent.RegisterMsgService(s.controller.ControllerURLs[walletID], msgSvcName,
+		"https://trustbloc.dev/didexchange/1.0/state-complete")
+	if err != nil {
+		return err
+	}
+
 	connID, err := s.controller.AcceptOOBInvitation(walletID, inv, walletID)
 	if err != nil {
 		return fmt.Errorf("%s failed to accept invitation from %s : %w", walletID, tenantID, err)
+	}
+
+	err = agent.GetDIDExStateCompResp(s.controller.WebhookURLs[walletID], msgSvcName)
+	if err != nil {
+		return err
 	}
 
 	s.tenantCtx[tenantID].walletConnID = connID

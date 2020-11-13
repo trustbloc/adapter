@@ -316,6 +316,28 @@ func (s *mockRouteSvc) GetDIDDoc(connID string, requiredBlindedRouting bool) (*d
 	return s.GetDIDDocValue, s.GetDIDDocErr
 }
 
+type didexchangeEvent struct {
+	connID    string
+	invID     string
+	invIDFunc func() string
+}
+
+func (d *didexchangeEvent) ConnectionID() string {
+	return d.connID
+}
+
+func (d *didexchangeEvent) InvitationID() string {
+	if d.invIDFunc != nil {
+		return d.invIDFunc()
+	}
+
+	return d.invID
+}
+
+func (d *didexchangeEvent) All() map[string]interface{} {
+	return make(map[string]interface{})
+}
+
 const (
 	vcFmt = `{
 	   "@context":[
