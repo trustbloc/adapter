@@ -22,7 +22,7 @@ require (
 	github.com/sirupsen/logrus v1.7.0
 	github.com/stretchr/testify v1.6.1
 	github.com/trustbloc/edge-core v0.1.5-0.20201106164919-76ecfeca954f
-	github.com/trustbloc/trustbloc-did-method v0.1.5-0.20201111193349-e4142ee60300
+	github.com/trustbloc/trustbloc-did-method v0.1.5-0.20201113081448-0e789546b4d7
 	golang.org/x/net v0.0.0-20201009032441-dbdefad45b89 // indirect
 	gopkg.in/check.v1 v1.0.0-20200227125254-8fa46927fb4f // indirect
 )
