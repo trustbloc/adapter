@@ -139,6 +139,7 @@ github.com/beorn7/perks v1.0.1/go.mod h1:G2ZrVWU2WbWT9wwq4/hrbKbnv/1ERSJQ0ibhJ6r
 github.com/bgentry/speakeasy v0.1.0/go.mod h1:+zsyZBPWlz7T6j88CTgSN5bM796AkVf0kBD4zp0CCIs=
 github.com/bitly/go-hostpool v0.0.0-20171023180738-a3a6125de932/go.mod h1:NOuUCSz6Q9T7+igc/hlvDOUdtWKryOrtFyIVABv/p7k=
 github.com/bitly/go-hostpool v0.1.0/go.mod h1:4gOCgp6+NZnVqlKyZ/iBZFTAJKembaVENUpMkpg42fw=
+github.com/bluele/gcache v0.0.0-20190518031135-bc40bd653833 h1:yCfXxYaelOyqnia8F/Yng47qhmfC9nKTRIbYRrRueq4=
 github.com/bluele/gcache v0.0.0-20190518031135-bc40bd653833/go.mod h1:8c4/i2VlovMO2gBnHGQPN5EJw+H0lx1u/5p+cgsXtCk=
 github.com/bmizerany/assert v0.0.0-20160611221934-b7ed37b82869/go.mod h1:Ekp36dRnpXw/yCqJaO+ZrUyxD+3VXMFFr56k5XYrpB4=
 github.com/boltdb/bolt v1.3.1/go.mod h1:clJnj/oiGkjum5o1McbSZDSLxVThjynRyGBgiAx27Ps=
@@ -600,8 +601,10 @@ github.com/hyperledger/aries-framework-go v0.1.5-0.20201028195746-556cee009e20/g
 github.com/hyperledger/aries-framework-go v0.1.5-0.20201030222504-2f5e96e162b3/go.mod h1:UF34fHG3WLB1QSxeIqDrWDhK98GLqA09NauwultnG7w=
 github.com/hyperledger/aries-framework-go v0.1.5-0.20201110161050-249e1c428734 h1:zF9gANh/lO87S96RPWTONZxYKToAgBNWDspFRkSxDeI=
 github.com/hyperledger/aries-framework-go v0.1.5-0.20201110161050-249e1c428734/go.mod h1:QzlBsH2J303U3r8lJ1jq69ackseH+v5/B9hpCFouBqg=
-github.com/hyperledger/aries-framework-go-ext/component/storage/mysql v0.0.0-20201104150902-c6b30b1569cc h1:zf5/VBv+suEsbJFQ+e6zhCZnWWhWjr4XmypXsDC85ZI=
-github.com/hyperledger/aries-framework-go-ext/component/storage/mysql v0.0.0-20201104150902-c6b30b1569cc/go.mod h1:/ySOxjKsxV+rnorkp7VZHw/1/OQtxRYlgibhcQVWw/E=
+github.com/hyperledger/aries-framework-go v0.1.5-0.20201124194436-a37f1c10fd4e h1:QluQFRvFRSYExodztwD1RS6bTRcqGZSjTuRpPCrOek0=
+github.com/hyperledger/aries-framework-go v0.1.5-0.20201124194436-a37f1c10fd4e/go.mod h1:QzlBsH2J303U3r8lJ1jq69ackseH+v5/B9hpCFouBqg=
+github.com/hyperledger/aries-framework-go-ext/component/storage/mysql v0.0.0-20201119153638-fc5d5e680587 h1:FHK7W1WHdYnb/7IhnpNf1G9oPwOko3+3qUb3Os4amM8=
+github.com/hyperledger/aries-framework-go-ext/component/storage/mysql v0.0.0-20201119153638-fc5d5e680587/go.mod h1:/ySOxjKsxV+rnorkp7VZHw/1/OQtxRYlgibhcQVWw/E=
 github.com/hyperledger/aries-framework-go-ext/test/component/storage v0.0.0-20201020105420-c85a221b09b5 h1:lcnsNy983eXWEhi3uWFq/RV4ut6umrMQj/V7FtZ175A=
 github.com/hyperledger/aries-framework-go-ext/test/component/storage v0.0.0-20201020105420-c85a221b09b5/go.mod h1:6h4vLybbbz82KKsU5Qi15+SOT76U6jbd1//QL5ywQIM=
 github.com/ianlancetaylor/demangle v0.0.0-20181102032728-5e5cf60278f6/go.mod h1:aSSvb/t6k1mPoxDqO4vJh6VOCGPwU4O0C2/Eqndh1Sc=
@@ -940,8 +943,8 @@ github.com/trustbloc/json-gold v0.3.1-0.20200414173446-30d742ee949e h1:i+hGa8C1M
 github.com/trustbloc/json-gold v0.3.1-0.20200414173446-30d742ee949e/go.mod h1:OK1z7UgtBZk06n2cDE2OSq1kffmjFFp5/2yhLLCz9UM=
 github.com/trustbloc/sidetree-core-go v0.1.5-0.20201111115036-54dcc46d4ee1 h1:HF6ZnQLt9SfXZXP74tN0yagXuOQE1LjXbG3LfKOphKI=
 github.com/trustbloc/sidetree-core-go v0.1.5-0.20201111115036-54dcc46d4ee1/go.mod h1:prRWqxBavkSxgKtPmUriSxCemrvl47yStMbW4jMFuRs=
-github.com/trustbloc/trustbloc-did-method v0.1.5-0.20201111193349-e4142ee60300 h1:x4y8zlphxuRsiMUFtDAvZnsZ4hb4klyHhemKhTGBI/s=
-github.com/trustbloc/trustbloc-did-method v0.1.5-0.20201111193349-e4142ee60300/go.mod h1:JnHLrcA69mkPng+x0J1MZTcV/zWvViPi39NdZw0+b/4=
+github.com/trustbloc/trustbloc-did-method v0.1.5-0.20201113081448-0e789546b4d7 h1:jHYzRoZUCteZlLmBEISwf7/8jucWEJAor3yRrFp2euk=
+github.com/trustbloc/trustbloc-did-method v0.1.5-0.20201113081448-0e789546b4d7/go.mod h1:JnHLrcA69mkPng+x0J1MZTcV/zWvViPi39NdZw0+b/4=
 github.com/tv42/httpunix v0.0.0-20150427012821-b75d8614f926/go.mod h1:9ESjWnEqriFuLhtthL60Sar/7RFoluCcXsuvEwTV5KM=
 github.com/ugorji/go v1.1.4/go.mod h1:uQMGLiO92mf5W77hV/PUCpI3pbzQx3CRekS0kk+RGrc=
 github.com/ugorji/go/codec v0.0.0-20181204163529-d75b2dcb6bc8/go.mod h1:VFNgLljTbGfSG7qAOspJ7OScBnGdDN/yBr0sguwnwf0=

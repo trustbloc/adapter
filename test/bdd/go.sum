@@ -615,6 +615,8 @@ github.com/hyperledger/aries-framework-go v0.1.5-0.20201106200736-b08aae492851 h
 github.com/hyperledger/aries-framework-go v0.1.5-0.20201106200736-b08aae492851/go.mod h1:QzlBsH2J303U3r8lJ1jq69ackseH+v5/B9hpCFouBqg=
 github.com/hyperledger/aries-framework-go v0.1.5-0.20201110161050-249e1c428734 h1:zF9gANh/lO87S96RPWTONZxYKToAgBNWDspFRkSxDeI=
 github.com/hyperledger/aries-framework-go v0.1.5-0.20201110161050-249e1c428734/go.mod h1:QzlBsH2J303U3r8lJ1jq69ackseH+v5/B9hpCFouBqg=
+github.com/hyperledger/aries-framework-go v0.1.5-0.20201124194436-a37f1c10fd4e h1:QluQFRvFRSYExodztwD1RS6bTRcqGZSjTuRpPCrOek0=
+github.com/hyperledger/aries-framework-go v0.1.5-0.20201124194436-a37f1c10fd4e/go.mod h1:QzlBsH2J303U3r8lJ1jq69ackseH+v5/B9hpCFouBqg=
 github.com/ianlancetaylor/demangle v0.0.0-20181102032728-5e5cf60278f6/go.mod h1:aSSvb/t6k1mPoxDqO4vJh6VOCGPwU4O0C2/Eqndh1Sc=
 github.com/igor-pavlenko/httpsignatures-go v0.0.21/go.mod h1:3LVsCi3evlfQSNDKMTg3uElxEP8SjK3/Q5N9I8GU9W0=
 github.com/imdario/mergo v0.3.6/go.mod h1:2EnlNZ0deacrJVfApfmtdGgDfMuh/nq6Ok1EcJh5FfA=
