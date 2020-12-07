@@ -3474,6 +3474,10 @@ func (s *stubStore) Get(k string) ([]byte, error) {
 	return nil, s.errGet
 }
 
+func (s *stubStore) PutAll(keys []string, values [][]byte) error {
+	return nil
+}
+
 func (s *stubStore) CreateIndex(createIndexRequest storage.CreateIndexRequest) error {
 	panic("implement me")
 }
