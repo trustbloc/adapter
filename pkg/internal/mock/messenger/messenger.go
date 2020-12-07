@@ -25,6 +25,11 @@ func (m *MockMessenger) ReplyTo(msgID string, msg service.DIDCommMsgMap) error {
 	return nil
 }
 
+// ReplyToMsg reply to a message.
+func (m *MockMessenger) ReplyToMsg(_, _ service.DIDCommMsgMap, _, _ string) error {
+	return nil
+}
+
 // Send send message.
 func (m *MockMessenger) Send(msg service.DIDCommMsgMap, myDID, theirDID string) error {
 	if m.SendFunc != nil {

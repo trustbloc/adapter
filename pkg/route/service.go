@@ -200,7 +200,7 @@ func (o *Service) didCommMsgListener(ch <-chan message.Msg) {
 			logger.Errorf("msgType=[%s] id=[%s] errMsg=[%s]", msg.DIDCommMsg.Type(), msg.DIDCommMsg.ID(), err.Error())
 		}
 
-		err = o.messenger.ReplyTo(msg.DIDCommMsg.ID(), msgMap)
+		err = o.messenger.ReplyTo(msg.DIDCommMsg.ID(), msgMap) // nolint:staticcheck //issue#403
 		if err != nil {
 			logger.Errorf("sendReply : msgType=[%s] id=[%s] errMsg=[%s]",
 				msg.DIDCommMsg.Type(), msg.DIDCommMsg.ID(), err.Error())
