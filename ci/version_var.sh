@@ -11,10 +11,10 @@ IS_RELEASE=false
 
 # Project Parameters
 SOURCE_REPO=edge-adapter
-BASE_ISSUER_ADAPTER_PKG_NAME=issuer-adapter-rest
-BASE_RP_ADAPTER_PKG_NAME=rp-adapter-rest
-RELEASE_REPO=docker.pkg.github.com/trustbloc/${SOURCE_REPO}
-SNAPSHOT_REPO=docker.pkg.github.com/trustbloc-cicd/snapshot
+BASE_ISSUER_ADAPTER_PKG_NAME=issuer-adapter
+BASE_RP_ADAPTER_PKG_NAME=rp-adapter
+RELEASE_REPO=ghcr.io/trustbloc
+SNAPSHOT_REPO=ghcr.io/trustbloc-cicd
 
 if [ ${IS_RELEASE} = false ]
 then
