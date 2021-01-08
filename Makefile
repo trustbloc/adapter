@@ -5,10 +5,10 @@
 ADAPTER_REST_PATH=cmd/adapter-rest
 
 # Namespace for the agent images
-DOCKER_OUTPUT_NS   ?= docker.pkg.github.com
-ADAPTER_REST_BASE_IMAGE_NAME ?= trustbloc/edge-adapter/adapter-rest-base
-ISSUER_ADAPTER_REST_IMAGE_NAME   ?= trustbloc/edge-adapter/issuer-adapter-rest
-RP_ADAPTER_REST_IMAGE_NAME   ?= trustbloc/edge-adapter/rp-adapter-rest
+DOCKER_OUTPUT_NS   ?= ghcr.io
+ADAPTER_REST_BASE_IMAGE_NAME ?= trustbloc/edge-adapter/adapter-base
+ISSUER_ADAPTER_REST_IMAGE_NAME   ?= trustbloc/issuer-adapter
+RP_ADAPTER_REST_IMAGE_NAME   ?= trustbloc/rp-adapter
 MOCK_ISSUER_IMAGE_NAME ?= trustbloc/edge-adapter/mock-issuer
 MOCK_WEBHOOK_IMAGE_NAME ?= trustbloc/edge-adapter/mock-webhook
 

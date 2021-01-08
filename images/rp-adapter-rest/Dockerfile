@@ -6,9 +6,11 @@
 
 ARG ALPINE_VER
 
-FROM docker.pkg.github.com/trustbloc/edge-adapter/adapter-rest-base:latest as base
+FROM ghcr.io/trustbloc/edge-adapter/adapter-base:latest as base
 
 FROM alpine:${ALPINE_VER}
+LABEL org.opencontainers.image.source https://github.com/trustbloc/edge-adapter
+
 COPY --from=base /go/src/github.com/trustbloc/edge-adapter/.build/bin/adapter-rest /usr/local/bin
 COPY .build/bin/rp-adapter-vue /usr/local/static/rp-adapter-vue/
 ENV ADAPTER_REST_STATIC_FILES=/usr/local/static/rp-adapter-vue
