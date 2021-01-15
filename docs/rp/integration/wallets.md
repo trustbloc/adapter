@@ -17,7 +17,7 @@ bootstrapped via an
 [Out-of-Band invitation](https://github.com/hyperledger/aries-rfcs/blob/master/features/0434-outofband/README.md).
 
 The Adapter may request verifiable credentials with statements about a subject, or it may request
-[Authorization Credentials](https://github.com/trustbloc/context/blob/master/vc/authorization-credential-v1.jsonld) that
+[Authorization Credentials](https://github.com/trustbloc/context/blob/main/vc/authorization-credential-v1.jsonld) that
 the RP Adapter can then use to fetch the "normal" credentials.
 
 > **TODO** document authorization credentials
@@ -25,7 +25,7 @@ the RP Adapter can then use to fetch the "normal" credentials.
 In all cases, once the RP Adapter has collected all credentials and verified requirements are met as per the
 original presentation definition, the End User's web browser will be redirected back to the Relying Party's origin.
 
-![overview](http://www.plantuml.com/plantuml/proxy?src=https://raw.githubusercontent.com/trustbloc/edge-adapter/master/docs/rp/integration/wallet_rpadapter_int_overview.puml)
+![overview](http://www.plantuml.com/plantuml/proxy?src=https://raw.githubusercontent.com/trustbloc/edge-adapter/main/docs/rp/integration/wallet_rpadapter_int_overview.puml)
 
 
 ## Requirements
@@ -41,11 +41,11 @@ high-level [TrustBloc Agent SDK](https://github.com/trustbloc/agent-sdk) APIs th
 * Decentralized Identity Foundation's [Presentation-Exchange](https://identity.foundation/presentation-exchange/) format.
 * Produce and consume [Decentralized Identifiers](https://w3c.github.io/did-core/) in JSON-LD format.
   * Supported DID methods are:
-    * [`did:trustbloc`](https://github.com/trustbloc/trustbloc-did-method/blob/master/docs/spec/trustbloc-did-method.md).
+    * [`did:trustbloc`](https://github.com/trustbloc/trustbloc-did-method/blob/main/docs/spec/trustbloc-did-method.md).
     * [`did:peer`](https://identity.foundation/peer-did-method-spec/).
 * Produce and consume [Verifiable Credentials & Presentations](https://www.w3.org/TR/vc-data-model/) in JSON-LD format.
 * Produce Verifiable Credentials of type
-    [`AuthorizationCredential`](https://github.com/trustbloc/context/blob/master/vc/authorization-credential-v1.jsonld)
+    [`AuthorizationCredential`](https://github.com/trustbloc/context/blob/main/vc/authorization-credential-v1.jsonld)
     to enable OAuth-like use cases.
 * [Aries RFC0434 Out-of-Band Protocol](https://github.com/hyperledger/aries-rfcs/blob/master/features/0434-outofband/README.md).
 * [Aries RFC0023 DID Exchange Protocol](https://github.com/hyperledger/aries-rfcs/blob/master/features/0023-did-exchange/README.md).
@@ -239,7 +239,7 @@ The RP Adapter sends a web credentials request to the web browser with the follo
 ### Query Type 'PresentationDefinitionQuery'
 
 The [Presentation Definition](https://identity.foundation/presentation-exchange/#presentation-definition) may include
-descriptors for [`AuthorizationCredentials`](https://github.com/trustbloc/context/blob/master/vc/authorization-credential-v1.jsonld).
+descriptors for [`AuthorizationCredentials`](https://github.com/trustbloc/context/blob/main/vc/authorization-credential-v1.jsonld).
 When they do they come in the form of:
 
 ```jsonc
@@ -379,7 +379,7 @@ Here is an example `AuthorizationCredential` that fulfills this requirement:
 The DIDComm connection invitation is in the format of an
 [Aries RFC0434 Out-of-Band Invitation](https://github.com/hyperledger/aries-rfcs/blob/master/features/0434-outofband/README.md#invitation-httpsdidcommorgout-of-bandverinvitation).
 The `service` entry has a
-[`did:trustbloc` DID](https://github.com/trustbloc/trustbloc-did-method/blob/master/docs/spec/trustbloc-did-method.md).
+[`did:trustbloc` DID](https://github.com/trustbloc/trustbloc-did-method/blob/main/docs/spec/trustbloc-did-method.md).
 The `trustbloc` DID is the public identifier for the relying party. It possesses a `service` entry following the
 [Aries RFC0067 DIDComm Service Conventions](https://github.com/hyperledger/aries-rfcs/blob/master/features/0067-didcomm-diddoc-conventions/README.md#service-conventions).
 Although published, wallets may only connect to this DID in response to a DIDComm connection invitation. The connection
