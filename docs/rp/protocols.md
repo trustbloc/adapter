@@ -5,7 +5,7 @@ transactions between relying parties and identity providers mediated by the end 
 
 ## Technologies
 
-* [Hyperledger Aries Framework - Go](https://github.com/hyperledger/aries-framework-go/blob/master/README.md)
+* [Hyperledger Aries Framework - Go](https://github.com/hyperledger/aries-framework-go/blob/main/README.md)
 * [Credential Handler API polyfill](https://github.com/digitalbazaar/credential-handler-polyfill/blob/master/README.md)
 
 Note: for an overview of the tech stack, see [stack](./architecture.md#stack).
@@ -14,7 +14,7 @@ Note: for an overview of the tech stack, see [stack](./architecture.md#stack).
 
 * [Verifiable Credentials Data Model 1.0](https://www.w3.org/TR/vc-data-model/)
 * [Decentralized Identifiers (DIDs) v1.0](https://w3c.github.io/did-core/)
-  * [TrustBloc DID Method Specification 0.1](https://github.com/trustbloc/trustbloc-did-method/blob/master/docs/spec/trustbloc-did-method.md)
+  * [TrustBloc DID Method Specification 0.1](https://github.com/trustbloc/trustbloc-did-method/blob/main/docs/spec/trustbloc-did-method.md)
   * [Peer DID Method Specification](https://identity.foundation/peer-did-method-spec/)
 * Hyperledger Aries RFCs:
   * [RFC0005 - DID Communication](https://github.com/hyperledger/aries-rfcs/blob/master/concepts/0005-didcomm/README.md) ("DIDComm")

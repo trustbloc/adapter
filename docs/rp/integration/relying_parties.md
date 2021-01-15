@@ -171,6 +171,6 @@ a JSON-LD document into a JWT while preserving the cryptographic security guaran
 ### Available Scopes
 
 The scopes the Adapter supports are currently configured in a simple
-[JSON format](https://github.com/trustbloc/edge-sandbox/blob/master/test/bdd/fixtures/demo/adapter-config/rp/presentationdefinitions.json)
+[JSON format](https://github.com/trustbloc/edge-sandbox/blob/main/test/bdd/fixtures/demo/adapter-config/rp/presentationdefinitions.json)
 that is not exposed in via any other means. Consult the system administrator for the currently supported scopes before
 [registering your client](#register-your-oidc-client).
