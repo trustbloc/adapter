@@ -161,6 +161,7 @@ type AriesContextProvider interface {
 	Crypto() ariescrypto.Crypto
 	Service(id string) (interface{}, error)
 	ServiceEndpoint() string
+	Messenger() service.Messenger
 }
 
 // Storage config.
