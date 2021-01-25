@@ -26,11 +26,13 @@ import (
 	"github.com/hyperledger/aries-framework-go/pkg/client/outofband"
 	"github.com/hyperledger/aries-framework-go/pkg/client/presentproof"
 	arieslog "github.com/hyperledger/aries-framework-go/pkg/common/log"
+	"github.com/hyperledger/aries-framework-go/pkg/controller/command"
 	"github.com/hyperledger/aries-framework-go/pkg/didcomm/messaging/msghandler"
 	arieshttp "github.com/hyperledger/aries-framework-go/pkg/didcomm/transport/http"
 	"github.com/hyperledger/aries-framework-go/pkg/framework/aries"
 	"github.com/hyperledger/aries-framework-go/pkg/framework/aries/api"
 	"github.com/hyperledger/aries-framework-go/pkg/framework/aries/defaults"
+	"github.com/hyperledger/aries-framework-go/pkg/framework/context"
 	ariesstorage "github.com/hyperledger/aries-framework-go/pkg/storage"
 	ariesmem "github.com/hyperledger/aries-framework-go/pkg/storage/mem"
 	"github.com/hyperledger/aries-framework-go/pkg/vdr/httpbinding"
@@ -52,6 +54,8 @@ import (
 	issuerops "github.com/trustbloc/edge-adapter/pkg/restapi/issuer/operation"
 	"github.com/trustbloc/edge-adapter/pkg/restapi/rp"
 	rpops "github.com/trustbloc/edge-adapter/pkg/restapi/rp/operation"
+	"github.com/trustbloc/edge-adapter/pkg/restapi/wallet"
+	walletops "github.com/trustbloc/edge-adapter/pkg/restapi/wallet/operation"
 )
 
 var logger = log.New("edge-adapter")
@@ -160,6 +164,12 @@ const (
 	requestTokensEnvKey    = "ADAPTER_REST_REQUEST_TOKENS" //nolint: gosec
 	requestTokensFlagUsage = "Tokens used for http request " +
 		" Alternatively, this can be set with the following environment variable: " + requestTokensEnvKey
+
+	walletAppURLFlagName  = "wallet-app-url"
+	walletAppURLFlagUsage = "A deep link pointing to wallet application(s) which will be " +
+		"used by this adapter to send credential request to remote wallets ." +
+		" Alternatively, this can be set with the following environment variable: " + walletAppURLEnvKey
+	walletAppURLEnvKey = "WALLET_APP_URL"
 )
 
 // API endpoints.
@@ -175,6 +185,8 @@ const (
 	rpAdapterPersistentStorePrefix = "rpadapter"
 	rpAdapterTransientStorePrefix  = "rpadapter_txn"
 	issuerAdapterStorePrefix       = "issueradapter"
+	issuerWalletBridgeLabel        = "issuer-wallet-bridge"
+	rpWalletBridgeLabel            = "rp-wallet-bridge"
 	tokenLength                    = 2
 	sleep                          = 1 * time.Second
 )
@@ -231,6 +243,7 @@ type adapterRestParameters struct {
 	universalResolverURL string
 	governanceVCSURL     string
 	requestTokens        map[string]string
+	walletAppURL         string
 }
 
 // governanceProvider governance provider.
@@ -363,6 +376,11 @@ func getAdapterRestParameters(cmd *cobra.Command) (*adapterRestParameters, error
 		return nil, err
 	}
 
+	walletAppURL, err := cmdutils.GetUserSetVarFromString(cmd, walletAppURLFlagName, walletAppURLEnvKey, true)
+	if err != nil {
+		return nil, err
+	}
+
 	logger.Infof("logger level set to %s", logLevel)
 
 	return &adapterRestParameters{
@@ -379,6 +397,7 @@ func getAdapterRestParameters(cmd *cobra.Command) (*adapterRestParameters, error
 		universalResolverURL:        universalResolverURL,
 		governanceVCSURL:            governanceVCSURL,
 		requestTokens:               requestTokens,
+		walletAppURL:                walletAppURL,
 	}, nil
 }
 
@@ -550,6 +569,7 @@ func createFlags(startCmd *cobra.Command) {
 	startCmd.Flags().StringP(universalResolverURLFlagName, universalResolverURLFlagShorthand, "",
 		universalResolverURLFlagUsage)
 	startCmd.Flags().StringP(logLevelFlagName, "", "INFO", logLevelFlagUsage)
+	startCmd.Flags().StringP(walletAppURLFlagName, "", "", walletAppURLFlagUsage)
 }
 
 func startAdapterService(parameters *adapterRestParameters, srv server) error {
@@ -594,6 +614,7 @@ func startAdapterService(parameters *adapterRestParameters, srv server) error {
 		if err != nil {
 			return fmt.Errorf("failed to add issuer-adapter handlers : %w", err)
 		}
+
 	default:
 		return fmt.Errorf("invalid mode : %s", parameters.mode)
 	}
@@ -693,9 +714,16 @@ func addRPHandlers(parameters *adapterRestParameters, framework *aries.Aries, ro
 		Methods(http.MethodGet).
 		HandlerFunc(uiHandler(parameters.staticFiles, http.ServeFile))
 
+	// wallet bridge
+	err = addWalletHandlers(parameters, ctx, router, msgRegistrar, rpWalletBridgeLabel)
+	if err != nil {
+		return fmt.Errorf("failed to get wallet bridge operations for rp: %w", err)
+	}
+
 	return nil
 }
 
+// nolint:funlen
 func addIssuerHandlers(parameters *adapterRestParameters, framework *aries.Aries, router *mux.Router,
 	rootCAs *x509.CertPool, msgRegistrar *msghandler.Registrar) error {
 	store, err := initEdgeStore(parameters.dsnParams.dsn, parameters.dsnParams.timeout, issuerAdapterStorePrefix)
@@ -751,6 +779,33 @@ func addIssuerHandlers(parameters *adapterRestParameters, framework *aries.Aries
 		Subrouter().
 		Methods(http.MethodGet).
 		HandlerFunc(uiHandler(parameters.staticFiles, http.ServeFile))
+
+	// wallet bridge
+	err = addWalletHandlers(parameters, ariesCtx, router, msgRegistrar, issuerWalletBridgeLabel)
+	if err != nil {
+		return fmt.Errorf("failed to get wallet bridge operations for issuer: %w", err)
+	}
+
+	return nil
+}
+
+//nolint: interfacer
+func addWalletHandlers(parameters *adapterRestParameters, ctx *context.Provider,
+	router *mux.Router, msgRegistrar command.MessageHandler, label string) error {
+	walletBridge, err := wallet.New(&walletops.Config{
+		AriesCtx:     ctx,
+		MsgRegistrar: msgRegistrar,
+		DefaultLabel: label,
+		WalletAppURL: parameters.walletAppURL,
+	})
+	if err != nil {
+		return err
+	}
+
+	rpHandlers := walletBridge.GetOperations()
+	for _, handler := range rpHandlers {
+		router.HandleFunc(handler.Path(), handler.Handle()).Methods(handler.Method())
+	}
 
 	return nil
 }

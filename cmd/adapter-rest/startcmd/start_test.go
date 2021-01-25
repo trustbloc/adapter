@@ -16,6 +16,11 @@ import (
 	"testing"
 
 	"github.com/google/uuid"
+	"github.com/gorilla/mux"
+	"github.com/hyperledger/aries-framework-go/pkg/didcomm/messaging/msghandler"
+	"github.com/hyperledger/aries-framework-go/pkg/framework/aries"
+	"github.com/hyperledger/aries-framework-go/pkg/framework/context"
+	"github.com/hyperledger/aries-framework-go/pkg/mock/storage"
 	"github.com/spf13/cobra"
 	"github.com/stretchr/testify/require"
 )
@@ -211,6 +216,7 @@ func TestStartCmdValidArgs(t *testing.T) {
 		"--" + universalResolverURLFlagName, "http://uniresolver.trustbloc.com",
 		"--" + requestTokensFlagName, "token1=tk1",
 		"--" + requestTokensFlagName, "token2=tk2=tk2",
+		"--" + walletAppURLFlagName, "http://demoapp",
 	}
 	startCmd.SetArgs(args)
 
@@ -439,6 +445,53 @@ func TestAdapterModes(t *testing.T) {
 		_, err = initAriesStore("invaldidb://test", 10, "")
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "unsupported storage driver: invaldidb")
+
+		ctx, err := context.New(context.WithStorageProvider(&storage.MockStoreProvider{
+			ErrOpenStoreHandle: fmt.Errorf("sample error"),
+		}))
+		require.NoError(t, err)
+
+		err = addWalletHandlers(parameters, ctx, nil, nil, "")
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "failed to open wallet profile store")
+	})
+
+	t.Run("test adapter mode - wallet handler errors", func(t *testing.T) {
+		parameters := &adapterRestParameters{
+			dsnParams: &dsnParams{
+				dsn: "mem://test",
+			},
+			didCommParameters: &didCommParameters{},
+		}
+
+		issuerAries, err := aries.New(aries.WithStoreProvider(&storage.MockStoreProvider{
+			FailNamespace: "walletappprofile",
+		}))
+		require.NoError(t, err)
+
+		defer func() {
+			e := issuerAries.Close()
+			logger.Warnf("failed to destroy issuer aries: %w", e)
+		}()
+
+		err = addIssuerHandlers(parameters, issuerAries, &mux.Router{}, nil, &msghandler.Registrar{})
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "failed to get wallet bridge operations for issuer")
+
+		rpAries, err := aries.New(aries.WithStoreProvider(&storage.MockStoreProvider{
+			FailNamespace: "walletappprofile",
+		}))
+		require.NoError(t, err)
+
+		defer func() {
+			e := rpAries.Close()
+			logger.Warnf("failed to destroy rp aries: %w", e)
+		}()
+
+		parameters.presentationDefinitionsFile = "./testdata/pres-def-mock.json"
+		err = addRPHandlers(parameters, rpAries, &mux.Router{}, nil, &msghandler.Registrar{})
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "failed to get wallet bridge operations for rp")
 	})
 }
 
