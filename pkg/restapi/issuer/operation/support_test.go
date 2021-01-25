@@ -30,7 +30,7 @@ import (
 	mocksvc "github.com/hyperledger/aries-framework-go/pkg/mock/didcomm/protocol/didexchange"
 	mockroute "github.com/hyperledger/aries-framework-go/pkg/mock/didcomm/protocol/mediator"
 	mockkms "github.com/hyperledger/aries-framework-go/pkg/mock/kms"
-	mockprovider "github.com/hyperledger/aries-framework-go/pkg/mock/provider"
+	ariesmockprovider "github.com/hyperledger/aries-framework-go/pkg/mock/provider"
 	mockstore "github.com/hyperledger/aries-framework-go/pkg/mock/storage"
 	mockvdri "github.com/hyperledger/aries-framework-go/pkg/mock/vdr"
 	"github.com/stretchr/testify/require"
@@ -44,27 +44,30 @@ import (
 	mockoutofband "github.com/trustbloc/edge-adapter/pkg/internal/mock/outofband"
 	"github.com/trustbloc/edge-adapter/pkg/internal/mock/presentproof"
 	"github.com/trustbloc/edge-adapter/pkg/profile/issuer"
+	mockprovider "github.com/trustbloc/edge-adapter/pkg/restapi/internal/mocks/provider"
 	adaptervc "github.com/trustbloc/edge-adapter/pkg/vc"
 	issuervc "github.com/trustbloc/edge-adapter/pkg/vc/issuer"
 )
 
 func getAriesCtx() aries.CtxProvider {
-	return &mockprovider.Provider{
-		ProtocolStateStorageProviderValue: mockstore.NewMockStoreProvider(),
-		StorageProviderValue:              mockstore.NewMockStoreProvider(),
-		ServiceMap: map[string]interface{}{
-			didexchange.DIDExchange: &mocksvc.MockDIDExchangeSvc{},
-			mediator.Coordination:   &mockroute.MockMediatorSvc{},
-			issuecredsvc.Name:       &issuecredential.MockIssueCredentialSvc{},
-			presentproofsvc.Name:    &presentproof.MockPresentProofSvc{},
-			outofbandsvc.Name:       &mockoutofband.MockService{},
-		},
-		KMSValue:             &mockkms.KeyManager{ImportPrivateKeyErr: fmt.Errorf("error import priv key")},
-		CryptoValue:          &mockcrypto.Crypto{},
-		ServiceEndpointValue: "endpoint",
-		VDRegistryValue: &mockvdri.MockVDRegistry{
-			CreateValue:  mockdiddoc.GetMockDIDDoc("did:example:def567"),
-			ResolveValue: mockdiddoc.GetMockDIDDoc("did:example:def567"),
+	return &mockprovider.MockProvider{
+		Provider: &ariesmockprovider.Provider{
+			ProtocolStateStorageProviderValue: mockstore.NewMockStoreProvider(),
+			StorageProviderValue:              mockstore.NewMockStoreProvider(),
+			ServiceMap: map[string]interface{}{
+				didexchange.DIDExchange: &mocksvc.MockDIDExchangeSvc{},
+				mediator.Coordination:   &mockroute.MockMediatorSvc{},
+				issuecredsvc.Name:       &issuecredential.MockIssueCredentialSvc{},
+				presentproofsvc.Name:    &presentproof.MockPresentProofSvc{},
+				outofbandsvc.Name:       &mockoutofband.MockService{},
+			},
+			KMSValue:             &mockkms.KeyManager{ImportPrivateKeyErr: fmt.Errorf("error import priv key")},
+			CryptoValue:          &mockcrypto.Crypto{},
+			ServiceEndpointValue: "endpoint",
+			VDRegistryValue: &mockvdri.MockVDRegistry{
+				CreateValue:  mockdiddoc.GetMockDIDDoc("did:example:def567"),
+				ResolveValue: mockdiddoc.GetMockDIDDoc("did:example:def567"),
+			},
 		},
 	}
 }

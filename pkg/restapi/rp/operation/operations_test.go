@@ -32,7 +32,7 @@ import (
 	"github.com/hyperledger/aries-framework-go/pkg/doc/did"
 	"github.com/hyperledger/aries-framework-go/pkg/doc/verifiable"
 	mockroute "github.com/hyperledger/aries-framework-go/pkg/mock/didcomm/protocol/mediator"
-	mockprovider "github.com/hyperledger/aries-framework-go/pkg/mock/provider"
+	ariesmockprovider "github.com/hyperledger/aries-framework-go/pkg/mock/provider"
 	ariesmockstorage "github.com/hyperledger/aries-framework-go/pkg/mock/storage"
 	mockvdr "github.com/hyperledger/aries-framework-go/pkg/mock/vdr"
 	"github.com/hyperledger/aries-framework-go/pkg/storage/mem"
@@ -53,6 +53,7 @@ import (
 	mockoutofband "github.com/trustbloc/edge-adapter/pkg/internal/mock/outofband"
 	mockpresentproof "github.com/trustbloc/edge-adapter/pkg/internal/mock/presentproof"
 	"github.com/trustbloc/edge-adapter/pkg/presexch"
+	mockprovider "github.com/trustbloc/edge-adapter/pkg/restapi/internal/mocks/provider"
 	"github.com/trustbloc/edge-adapter/pkg/vc"
 )
 
@@ -182,10 +183,11 @@ func TestNew(t *testing.T) {
 		expected := errors.New("test")
 
 		config := config(t)
-		config.AriesContextProvider = &mockprovider.Provider{
-			ProtocolStateStorageProviderValue: &ariesmockstorage.MockStoreProvider{ErrOpenStoreHandle: expected},
-			StorageProviderValue:              mem.NewProvider(),
-		}
+		config.AriesContextProvider = &mockprovider.MockProvider{
+			Provider: &ariesmockprovider.Provider{
+				ProtocolStateStorageProviderValue: &ariesmockstorage.MockStoreProvider{ErrOpenStoreHandle: expected},
+				StorageProviderValue:              mem.NewProvider(),
+			}}
 
 		_, err := New(config)
 		require.Error(t, err)
@@ -194,20 +196,22 @@ func TestNew(t *testing.T) {
 
 	t.Run("create route service", func(t *testing.T) {
 		conf := config(t)
-		conf.AriesContextProvider = &mockprovider.Provider{
-			ProtocolStateStorageProviderValue: mem.NewProvider(),
-			StorageProviderValue:              mem.NewProvider(),
-		}
+		conf.AriesContextProvider = &mockprovider.MockProvider{
+			Provider: &ariesmockprovider.Provider{
+				ProtocolStateStorageProviderValue: mem.NewProvider(),
+				StorageProviderValue:              mem.NewProvider(),
+			}}
 
 		_, err := New(conf)
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "failed to cast mediator service")
 
-		conf.AriesContextProvider = &mockprovider.Provider{
-			ProtocolStateStorageProviderValue: mem.NewProvider(),
-			StorageProviderValue:              mem.NewProvider(),
-			ServiceErr:                        errors.New("invalid service"),
-		}
+		conf.AriesContextProvider = &mockprovider.MockProvider{
+			Provider: &ariesmockprovider.Provider{
+				ProtocolStateStorageProviderValue: mem.NewProvider(),
+				StorageProviderValue:              mem.NewProvider(),
+				ServiceErr:                        errors.New("invalid service"),
+			}}
 
 		_, err = New(conf)
 		require.Error(t, err)
@@ -352,19 +356,20 @@ func TestListenForConnectionCompleteEvents(t *testing.T) {
 				},
 			},
 			Storage: memStorage(),
-			AriesContextProvider: &mockprovider.Provider{
-				StorageProviderValue: &ariesmockstorage.MockStoreProvider{
-					Store: &ariesmockstorage.MockStore{
-						Store: map[string][]byte{
-							fmt.Sprintf("conn_%s", record.ConnectionID): marshal(t, record),
+			AriesContextProvider: &mockprovider.MockProvider{
+				Provider: &ariesmockprovider.Provider{
+					StorageProviderValue: &ariesmockstorage.MockStoreProvider{
+						Store: &ariesmockstorage.MockStore{
+							Store: map[string][]byte{
+								fmt.Sprintf("conn_%s", record.ConnectionID): marshal(t, record),
+							},
 						},
 					},
-				},
-				ProtocolStateStorageProviderValue: mem.NewProvider(),
-				ServiceMap: map[string]interface{}{
-					mediator.Coordination: &mockroute.MockMediatorSvc{},
-				},
-			},
+					ProtocolStateStorageProviderValue: mem.NewProvider(),
+					ServiceMap: map[string]interface{}{
+						mediator.Coordination: &mockroute.MockMediatorSvc{},
+					},
+				}},
 			PresentProofClient: &mockpresentproof.MockClient{},
 			MsgRegistrar:       msghandler.NewRegistrar(),
 			AriesMessenger:     &messenger.MockMessenger{},
@@ -483,17 +488,18 @@ func TestListenForConnectionCompleteEvents(t *testing.T) {
 				return nil
 			},
 		}
-		config.AriesContextProvider = &mockprovider.Provider{
-			StorageProviderValue: &ariesmockstorage.MockStoreProvider{
-				Store: &ariesmockstorage.MockStore{
-					ErrGet: errors.New("test"),
+		config.AriesContextProvider = &mockprovider.MockProvider{
+			Provider: &ariesmockprovider.Provider{
+				StorageProviderValue: &ariesmockstorage.MockStoreProvider{
+					Store: &ariesmockstorage.MockStore{
+						ErrGet: errors.New("test"),
+					},
 				},
-			},
-			ProtocolStateStorageProviderValue: mem.NewProvider(),
-			ServiceMap: map[string]interface{}{
-				mediator.Coordination: &mockroute.MockMediatorSvc{},
-			},
-		}
+				ProtocolStateStorageProviderValue: mem.NewProvider(),
+				ServiceMap: map[string]interface{}{
+					mediator.Coordination: &mockroute.MockMediatorSvc{},
+				},
+			}}
 
 		o, err := New(config)
 		require.NoError(t, err)
@@ -3087,14 +3093,15 @@ func TestDIDDocReq(t *testing.T) { // nolint:gocyclo
 		conf := config(t)
 
 		done := make(chan struct{})
-		conf.AriesContextProvider = &mockprovider.Provider{
-			ProtocolStateStorageProviderValue: mem.NewProvider(),
-			StorageProviderValue:              mem.NewProvider(),
-			VDRegistryValue:                   &mockvdr.MockVDRegistry{CreateErr: errors.New("create did error")},
-			ServiceMap: map[string]interface{}{
-				mediator.Coordination: &mockroute.MockMediatorSvc{},
-			},
-		}
+		conf.AriesContextProvider = &mockprovider.MockProvider{
+			Provider: &ariesmockprovider.Provider{
+				ProtocolStateStorageProviderValue: mem.NewProvider(),
+				StorageProviderValue:              mem.NewProvider(),
+				VDRegistryValue:                   &mockvdr.MockVDRegistry{CreateErr: errors.New("create did error")},
+				ServiceMap: map[string]interface{}{
+					mediator.Coordination: &mockroute.MockMediatorSvc{},
+				},
+			}}
 
 		conf.AriesMessenger = &messenger.MockMessenger{
 			ReplyToFunc: func(msgID string, msg service.DIDCommMsgMap) error {
@@ -3476,6 +3483,13 @@ func (s *stubStore) Get(k string) ([]byte, error) {
 
 func (s *stubStore) PutAll(keys []string, values [][]byte) error {
 	return nil
+}
+
+func (s *stubStore) PutBulk(keys []string, values [][]byte) error {
+	panic("implement me")
+}
+func (s *stubStore) GetBulk(k ...string) ([][]byte, error) {
+	panic("implement me")
 }
 
 func (s *stubStore) CreateIndex(createIndexRequest storage.CreateIndexRequest) error {

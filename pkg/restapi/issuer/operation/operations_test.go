@@ -29,7 +29,7 @@ import (
 	mocksvc "github.com/hyperledger/aries-framework-go/pkg/mock/didcomm/protocol/didexchange"
 	mockroute "github.com/hyperledger/aries-framework-go/pkg/mock/didcomm/protocol/mediator"
 	mockkms "github.com/hyperledger/aries-framework-go/pkg/mock/kms"
-	mockprovider "github.com/hyperledger/aries-framework-go/pkg/mock/provider"
+	ariesmockprovider "github.com/hyperledger/aries-framework-go/pkg/mock/provider"
 	mockstore "github.com/hyperledger/aries-framework-go/pkg/mock/storage"
 	mockvdr "github.com/hyperledger/aries-framework-go/pkg/mock/vdr"
 	"github.com/hyperledger/aries-framework-go/pkg/store/connection"
@@ -47,6 +47,7 @@ import (
 	mockoutofband "github.com/trustbloc/edge-adapter/pkg/internal/mock/outofband"
 	"github.com/trustbloc/edge-adapter/pkg/internal/mock/presentproof"
 	"github.com/trustbloc/edge-adapter/pkg/profile/issuer"
+	mockprovider "github.com/trustbloc/edge-adapter/pkg/restapi/internal/mocks/provider"
 	adaptervc "github.com/trustbloc/edge-adapter/pkg/vc"
 )
 
@@ -64,7 +65,7 @@ func TestNew(t *testing.T) {
 	})
 
 	t.Run("test new - aries provider fail", func(t *testing.T) {
-		c, err := New(&Config{AriesCtx: &mockprovider.Provider{}})
+		c, err := New(&Config{AriesCtx: mockprovider.NewMockProvider()})
 		require.Nil(t, c)
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "failed to create aries outofband client")
@@ -110,9 +111,11 @@ func TestNew(t *testing.T) {
 
 	t.Run("mediator client error", func(t *testing.T) {
 		config := config()
-		config.AriesCtx = &mockprovider.Provider{
-			ServiceMap: map[string]interface{}{
-				outofbandsvc.Name: &mockoutofband.MockService{},
+		config.AriesCtx = &mockprovider.MockProvider{
+			Provider: &ariesmockprovider.Provider{
+				ServiceMap: map[string]interface{}{
+					outofbandsvc.Name: &mockoutofband.MockService{},
+				},
 			},
 		}
 
@@ -350,18 +353,20 @@ func TestConnectWallet(t *testing.T) {
 
 	t.Run("test connect wallet - failed to create invitation", func(t *testing.T) {
 		config := config()
-		config.AriesCtx = &mockprovider.Provider{
-			ProtocolStateStorageProviderValue: mockstore.NewMockStoreProvider(),
-			StorageProviderValue:              mockstore.NewMockStoreProvider(),
-			ServiceMap: map[string]interface{}{
-				didexchange.DIDExchange: &mocksvc.MockDIDExchangeSvc{},
-				mediator.Coordination:   &mockroute.MockMediatorSvc{},
-				issuecredsvc.Name:       &issuecredential.MockIssueCredentialSvc{},
-				presentproofsvc.Name:    &presentproof.MockPresentProofSvc{},
-				outofbandsvc.Name:       &mockoutofband.MockService{},
+		config.AriesCtx = &mockprovider.MockProvider{
+			Provider: &ariesmockprovider.Provider{
+				ProtocolStateStorageProviderValue: mockstore.NewMockStoreProvider(),
+				StorageProviderValue:              mockstore.NewMockStoreProvider(),
+				ServiceMap: map[string]interface{}{
+					didexchange.DIDExchange: &mocksvc.MockDIDExchangeSvc{},
+					mediator.Coordination:   &mockroute.MockMediatorSvc{},
+					issuecredsvc.Name:       &issuecredential.MockIssueCredentialSvc{},
+					presentproofsvc.Name:    &presentproof.MockPresentProofSvc{},
+					outofbandsvc.Name:       &mockoutofband.MockService{},
+				},
+				KMSValue:             &mockkms.KeyManager{CrAndExportPubKeyErr: errors.New("key generation error")},
+				ServiceEndpointValue: "endpoint",
 			},
-			KMSValue:             &mockkms.KeyManager{CrAndExportPubKeyErr: errors.New("key generation error")},
-			ServiceEndpointValue: "endpoint",
 		}
 
 		c, err := New(config)
@@ -892,14 +897,16 @@ func TestIssueCredentialHandler(t *testing.T) {
 		require.NoError(t, err)
 		require.NotNil(t, c)
 
-		c, err = issueCredentialClient(&mockprovider.Provider{}, actionCh)
+		c, err = issueCredentialClient(mockprovider.NewMockProvider(), actionCh)
 		require.Error(t, err)
 		require.Nil(t, c)
 
-		c, err = issueCredentialClient(&mockprovider.Provider{
-			ServiceMap: map[string]interface{}{
-				issuecredsvc.Name: &issuecredential.MockIssueCredentialSvc{
-					RegisterActionEventErr: errors.New("register error")},
+		c, err = issueCredentialClient(&mockprovider.MockProvider{
+			Provider: &ariesmockprovider.Provider{
+				ServiceMap: map[string]interface{}{
+					issuecredsvc.Name: &issuecredential.MockIssueCredentialSvc{
+						RegisterActionEventErr: errors.New("register error")},
+				},
 			},
 		}, actionCh)
 		require.Error(t, err)
@@ -914,14 +921,16 @@ func TestIssueCredentialHandler(t *testing.T) {
 		require.NoError(t, err)
 		require.NotNil(t, c)
 
-		c, err = presentProofClient(&mockprovider.Provider{}, actionCh)
+		c, err = presentProofClient(mockprovider.NewMockProvider(), actionCh)
 		require.Error(t, err)
 		require.Nil(t, c)
 
-		c, err = presentProofClient(&mockprovider.Provider{
-			ServiceMap: map[string]interface{}{
-				presentproofsvc.Name: &presentproof.MockPresentProofSvc{
-					RegisterActionEventErr: errors.New("register error")},
+		c, err = presentProofClient(&mockprovider.MockProvider{
+			Provider: &ariesmockprovider.Provider{
+				ServiceMap: map[string]interface{}{
+					presentproofsvc.Name: &presentproof.MockPresentProofSvc{
+						RegisterActionEventErr: errors.New("register error")},
+				},
 			},
 		}, actionCh)
 		require.Error(t, err)
@@ -1015,7 +1024,7 @@ func TestIssueCredentialHandler(t *testing.T) {
 			actionCh := make(chan service.DIDCommAction, 1)
 
 			config := config()
-			config.AriesCtx = &mockprovider.Provider{
+			config.AriesCtx = &mockprovider.MockProvider{Provider: &ariesmockprovider.Provider{
 				ProtocolStateStorageProviderValue: mockstore.NewMockStoreProvider(),
 				StorageProviderValue:              mockstore.NewMockStoreProvider(),
 				ServiceMap: map[string]interface{}{
@@ -1029,6 +1038,7 @@ func TestIssueCredentialHandler(t *testing.T) {
 				VDRegistryValue: &mockvdr.MockVDRegistry{
 					CreateErr: errors.New("did create error"),
 				},
+			},
 			}
 
 			c, err := New(config)
