@@ -16,6 +16,7 @@ import (
 	vdrapi "github.com/hyperledger/aries-framework-go/pkg/framework/aries/api/vdr"
 	ariesctx "github.com/hyperledger/aries-framework-go/pkg/framework/context"
 	"github.com/hyperledger/aries-framework-go/pkg/storage/mem"
+	"github.com/hyperledger/aries-framework-go/pkg/vdr/peer"
 	"github.com/stretchr/testify/require"
 
 	crypto2 "github.com/trustbloc/edge-adapter/pkg/crypto"
@@ -87,10 +88,10 @@ func simulateDIDExchange(t *testing.T,
 	agentA *ariesctx.Provider, didA *did.Doc, agentB *ariesctx.Provider, didB *did.Doc) {
 	t.Helper()
 
-	err := agentA.VDRegistry().Store(didB)
+	_, err := agentA.VDRegistry().Create(peer.DIDMethod, didB, vdrapi.WithOption("store", true))
 	require.NoError(t, err)
 
-	err = agentB.VDRegistry().Store(didA)
+	_, err = agentB.VDRegistry().Create(peer.DIDMethod, didA, vdrapi.WithOption("store", true))
 	require.NoError(t, err)
 }
 
@@ -98,10 +99,10 @@ func newPeerDID(t *testing.T, agent *ariesctx.Provider) *did.Doc {
 	t.Helper()
 
 	d, err := agent.VDRegistry().Create(
-		"peer",
-		vdrapi.WithServices(did.Service{ServiceEndpoint: "http://agent.example.com/didcomm", Type: "did-communication"}),
+		peer.DIDMethod, &did.Doc{
+			Service: []did.Service{{ServiceEndpoint: "http://agent.example.com/didcomm", Type: "did-communication"}}},
 	)
 	require.NoError(t, err)
 
-	return d
+	return d.DIDDocument
 }

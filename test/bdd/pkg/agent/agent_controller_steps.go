@@ -42,6 +42,7 @@ import (
 	"github.com/hyperledger/aries-framework-go/pkg/doc/verifiable"
 	vdriapi "github.com/hyperledger/aries-framework-go/pkg/framework/aries/api/vdr"
 	"github.com/hyperledger/aries-framework-go/pkg/kms"
+	"github.com/hyperledger/aries-framework-go/pkg/vdr/peer"
 	"github.com/trustbloc/edge-core/pkg/log"
 
 	issuerops "github.com/trustbloc/edge-adapter/pkg/restapi/issuer/operation"
@@ -704,7 +705,7 @@ func (a *Steps) fetchCredential(agentID, issuerID string) error { // nolint: fun
 
 	issuerDIDDoc.ID = authorizationData.IssuerDIDDoc.ID
 
-	err = a.bddContext.VDRI.Store(issuerDIDDoc)
+	_, err = a.bddContext.VDRI.Create(peer.DIDMethod, issuerDIDDoc, vdriapi.WithOption("store", true))
 	if err != nil {
 		return err
 	}

@@ -12,16 +12,17 @@ import (
 	"crypto/x509"
 	"fmt"
 
+	"github.com/hyperledger/aries-framework-go-ext/component/vdr/sidetree/doc"
+	"github.com/hyperledger/aries-framework-go-ext/component/vdr/trustbloc"
 	"github.com/hyperledger/aries-framework-go/pkg/doc/did"
+	"github.com/hyperledger/aries-framework-go/pkg/doc/jose"
+	vdrapi "github.com/hyperledger/aries-framework-go/pkg/framework/aries/api/vdr"
 	"github.com/hyperledger/aries-framework-go/pkg/kms"
 	"github.com/mr-tron/base58"
-	trustblocdid "github.com/trustbloc/trustbloc-did-method/pkg/did"
-	"github.com/trustbloc/trustbloc-did-method/pkg/did/doc"
-	"github.com/trustbloc/trustbloc-did-method/pkg/did/option/create"
 )
 
 type trustblocDIDClient interface {
-	CreateDID(string, ...create.Option) (*did.Doc, error)
+	Create(keyManager kms.KeyManager, did *did.Doc, opts ...vdrapi.DIDMethodOption) (*did.DocResolution, error)
 }
 
 // KeyManager creates keys.
@@ -44,7 +45,7 @@ func NewTrustblocDIDCreator(blocDomain, didcommInboundURL string,
 		blocDomain:        blocDomain,
 		didcommInboundURL: didcommInboundURL,
 		km:                km,
-		tblocDIDs: trustblocdid.New(trustblocdid.WithTLSConfig(&tls.Config{
+		tblocDIDs: trustbloc.New(nil, trustbloc.WithDomain(blocDomain), trustbloc.WithTLSConfig(&tls.Config{
 			RootCAs:    rootCAs,
 			MinVersion: tls.VersionTLS12,
 		})),
@@ -53,7 +54,7 @@ func NewTrustblocDIDCreator(blocDomain, didcommInboundURL string,
 
 // Create a new did:trustbloc DID.
 func (p *TrustblocDIDCreator) Create() (*did.Doc, error) {
-	publicKeys, err := p.newPublicKeys()
+	didDoc, err := p.newPublicKeys()
 	if err != nil {
 		return nil, fmt.Errorf("failed to create public keys : %w", err)
 	}
@@ -73,44 +74,47 @@ func (p *TrustblocDIDCreator) Create() (*did.Doc, error) {
 		return nil, fmt.Errorf("kms failed to create keyset: %w", err)
 	}
 
-	publicDID, err := p.tblocDIDs.CreateDID(
-		p.blocDomain,
-		create.WithPublicKey(publicKeys[0]),
-		create.WithRecoveryPublicKey(recoverKey),
-		create.WithUpdatePublicKey(updateKey),
-		create.WithService(&did.Service{
-			ID:              "didcomm",
-			Type:            "did-communication",
-			Priority:        0,
-			RecipientKeys:   []string{base58.Encode(didcommRecipientKey)},
-			ServiceEndpoint: p.didcommInboundURL,
-		}),
+	didDoc.Service = []did.Service{{
+		ID:              "didcomm",
+		Type:            "did-communication",
+		Priority:        0,
+		RecipientKeys:   []string{base58.Encode(didcommRecipientKey)},
+		ServiceEndpoint: p.didcommInboundURL,
+	}}
+
+	docResolution, err := p.tblocDIDs.Create(nil, didDoc,
+		vdrapi.WithOption(trustbloc.RecoveryPublicKeyOpt, recoverKey),
+		vdrapi.WithOption(trustbloc.UpdatePublicKeyOpt, updateKey),
 	)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create trustbloc DID : %w", err)
 	}
 
-	return publicDID, err
+	return docResolution.DIDDocument, err
 }
 
-func (p *TrustblocDIDCreator) newPublicKeys() ([1]*doc.PublicKey, error) {
+func (p *TrustblocDIDCreator) newPublicKeys() (*did.Doc, error) {
+	didDoc := &did.Doc{}
+
 	keyID, bits, err := p.km.CreateAndExportPubKeyBytes(kms.ED25519Type)
 	if err != nil {
-		return [1]*doc.PublicKey{}, fmt.Errorf("failed to create key : %w", err)
+		return nil, fmt.Errorf("failed to create key : %w", err)
 	}
 
-	return [1]*doc.PublicKey{
-		{
-			ID:       keyID,
-			Type:     doc.JWSVerificationKey2020,
-			Encoding: doc.PublicKeyEncodingJwk,
-			KeyType:  doc.Ed25519KeyType,
-			Purposes: []string{
-				doc.KeyPurposeAuthentication,
-				doc.KeyPurposeAssertionMethod},
-			Value: bits,
-		},
-	}, nil
+	jwk, err := jose.JWKFromPublicKey(ed25519.PublicKey(bits))
+	if err != nil {
+		return nil, err
+	}
+
+	vm, err := did.NewVerificationMethodFromJWK(keyID, doc.JWSVerificationKey2020, "", jwk)
+	if err != nil {
+		return nil, err
+	}
+
+	didDoc.Authentication = append(didDoc.Authentication, *did.NewReferencedVerification(vm, did.Authentication))
+	didDoc.AssertionMethod = append(didDoc.AssertionMethod, *did.NewReferencedVerification(vm, did.AssertionMethod))
+
+	return didDoc, nil
 }
 
 func (p *TrustblocDIDCreator) newKey() (crypto.PublicKey, error) {

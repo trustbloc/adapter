@@ -799,17 +799,17 @@ func (o *Operation) handleRequestPresentation(msg service.DIDCommAction) (interf
 		return nil, fmt.Errorf("fetch issuer profile : %w", err)
 	}
 
-	issuerDIDDoc, err := o.vdriRegistry.Resolve(authorizationCredHandle.IssuerDID)
+	docResolution, err := o.vdriRegistry.Resolve(authorizationCredHandle.IssuerDID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to resolve issuer did %s: %w", authorizationCredHandle.IssuerDID, err)
 	}
 
-	vp, err := o.generateUserPresentation(authorizationCredHandle, profile, issuerDIDDoc)
+	vp, err := o.generateUserPresentation(authorizationCredHandle, profile, docResolution.DIDDocument)
 	if err != nil {
 		return nil, err
 	}
 
-	verificationMethod, err := crypto.GetVerificationMethodFromDID(issuerDIDDoc, did.Authentication)
+	verificationMethod, err := crypto.GetVerificationMethodFromDID(docResolution.DIDDocument, did.Authentication)
 	if err != nil {
 		return nil, fmt.Errorf("failed to obtain a authentication verification method from issuer did %s: %w",
 			authorizationCredHandle.IssuerDID, err)

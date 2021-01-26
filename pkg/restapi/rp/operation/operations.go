@@ -1418,12 +1418,12 @@ func (o *Operation) toMarshalledVP(authZ *verifiable.Credential, signingDID stri
 		return nil, fmt.Errorf("failed to convert authz credential to presentation: %w", err)
 	}
 
-	rpDIDDoc, err := o.vdrReg.Resolve(signingDID)
+	rpDocResolution, err := o.vdrReg.Resolve(signingDID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to resolve rp did %s: %w", signingDID, err)
 	}
 
-	verificationMethod, err := crypto.GetVerificationMethodFromDID(rpDIDDoc, did.Authentication)
+	verificationMethod, err := crypto.GetVerificationMethodFromDID(rpDocResolution.DIDDocument, did.Authentication)
 	if err != nil {
 		return nil, fmt.Errorf("failed to obtain a verification method from rp did %s: %w", signingDID, err)
 	}

@@ -17,6 +17,7 @@ import (
 	mediatorsvc "github.com/hyperledger/aries-framework-go/pkg/didcomm/protocol/mediator"
 	"github.com/hyperledger/aries-framework-go/pkg/doc/did"
 	"github.com/hyperledger/aries-framework-go/pkg/framework/aries/api/vdr"
+	"github.com/hyperledger/aries-framework-go/pkg/vdr/peer"
 	"github.com/trustbloc/edge-core/pkg/log"
 	"github.com/trustbloc/edge-core/pkg/storage"
 
@@ -115,7 +116,7 @@ func New(config *Config) (*Service, error) {
 
 // GetDIDDoc returns the did doc with router endpoint/keys if its registered, else returns the doc
 // with default endpoint.
-func (o *Service) GetDIDDoc(connID string, requiresBlindedRoute bool) (*did.Doc, error) {
+func (o *Service) GetDIDDoc(connID string, requiresBlindedRoute bool) (*did.Doc, error) { //nolint:gocyclo
 	// get routers connection ID
 	routerConnID, err := o.store.Get(connID)
 	if err != nil && !errors.Is(err, storage.ErrValueNotFound) {
@@ -127,12 +128,16 @@ func (o *Service) GetDIDDoc(connID string, requiresBlindedRoute bool) (*did.Doc,
 			return nil, errors.New("no router registered to support blinded routing")
 		}
 
-		return o.vdriRegistry.Create(
-			"peer",
-			vdr.WithServices(did.Service{
+		docResolution, errCreate := o.vdriRegistry.Create(
+			peer.DIDMethod,
+			&did.Doc{Service: []did.Service{{
 				ServiceEndpoint: o.endpoint,
-			}),
-		)
+			}}})
+		if errCreate != nil {
+			return nil, errCreate
+		}
+
+		return docResolution.DIDDocument, nil
 	}
 
 	config, err := o.mediator.GetConfig(string(routerConnID))
@@ -140,16 +145,17 @@ func (o *Service) GetDIDDoc(connID string, requiresBlindedRoute bool) (*did.Doc,
 		return nil, fmt.Errorf("get mediator config: %w", err)
 	}
 
-	newDidDoc, err := o.vdriRegistry.Create(
-		"peer",
-		vdr.WithServices(did.Service{
+	docResolution, err := o.vdriRegistry.Create(
+		peer.DIDMethod,
+		&did.Doc{Service: []did.Service{{
 			ServiceEndpoint: config.Endpoint(),
 			RoutingKeys:     config.Keys(),
-		}),
-	)
+		}}})
 	if err != nil {
-		return nil, fmt.Errorf("create new peer did : %w", err)
+		return nil, err
 	}
+
+	newDidDoc := docResolution.DIDDocument
 
 	didSvc, ok := did.LookupService(newDidDoc, didCommServiceType)
 	if !ok {
@@ -213,11 +219,16 @@ func (o *Service) didCommMsgListener(ch <-chan message.Msg) {
 }
 
 func (o *Service) handleDIDDocReq(msg service.DIDCommMsg) (service.DIDCommMsgMap, error) {
-	// create peer DID
-	newDidDoc, err := o.vdriRegistry.Create("peer", vdr.WithServices(did.Service{ServiceEndpoint: o.endpoint}))
+	docResolution, err := o.vdriRegistry.Create(
+		peer.DIDMethod,
+		&did.Doc{Service: []did.Service{{
+			ServiceEndpoint: o.endpoint,
+		}}})
 	if err != nil {
-		return nil, fmt.Errorf("create new peer did : %w", err)
+		return nil, err
 	}
+
+	newDidDoc := docResolution.DIDDocument
 
 	err = o.store.Put(msg.ID(), []byte(newDidDoc.ID))
 	if err != nil {

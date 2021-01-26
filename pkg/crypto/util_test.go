@@ -12,7 +12,6 @@ import (
 
 	"github.com/hyperledger/aries-framework-go/pkg/doc/did"
 	"github.com/hyperledger/aries-framework-go/pkg/framework/aries"
-	"github.com/hyperledger/aries-framework-go/pkg/framework/aries/api/vdr"
 	"github.com/hyperledger/aries-framework-go/pkg/storage/mem"
 	"github.com/stretchr/testify/require"
 
@@ -53,11 +52,12 @@ func newPeerDID(t *testing.T) *did.Doc {
 	ctx, err := a.Context()
 	require.NoError(t, err)
 
-	d, err := ctx.VDRegistry().Create(
-		"peer",
-		vdr.WithServices(did.Service{ServiceEndpoint: "http://agent.example.com/didcomm", Type: "did-communication"}),
-	)
+	didDoc := &did.Doc{}
+
+	didDoc.Service = []did.Service{{ServiceEndpoint: "http://agent.example.com/didcomm", Type: "did-communication"}}
+
+	d, err := ctx.VDRegistry().Create("peer", didDoc)
 	require.NoError(t, err)
 
-	return d
+	return d.DIDDocument
 }
