@@ -114,29 +114,6 @@ func TestNew(t *testing.T) {
 		require.Empty(t, op)
 	})
 
-	t.Run("create new instance - register action event failure", func(t *testing.T) {
-		op, err := New(&Config{
-			AriesCtx: &mockprovider.MockProvider{
-				Provider: &ariesmockprovider.Provider{
-					StorageProviderValue:              mockstore.NewMockStoreProvider(),
-					ProtocolStateStorageProviderValue: mockstore.NewMockStoreProvider(),
-					ServiceMap: map[string]interface{}{
-						didexchangesvc.DIDExchange: &mockdidexsvc.MockDIDExchangeSvc{
-							RegisterActionEventErr: fmt.Errorf(sampleErr),
-						},
-						outofbandsvc.Name:     &mockoutofband.MockService{},
-						mediator.Coordination: &mockroute.MockMediatorSvc{},
-					},
-				},
-			},
-			MsgRegistrar: msghandler.NewRegistrar(),
-		})
-
-		require.Error(t, err)
-		require.Empty(t, op)
-		require.Contains(t, err.Error(), "failed to register events")
-	})
-
 	t.Run("create new instance - register state event failure", func(t *testing.T) {
 		op, err := New(&Config{
 			AriesCtx: &mockprovider.MockProvider{

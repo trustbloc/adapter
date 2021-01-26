@@ -292,13 +292,6 @@ func (o *Operation) SendCHAPIRequest(rw http.ResponseWriter, req *http.Request) 
 }
 
 func (o *Operation) setupEventHandlers() error {
-	// creates action channel
-	actions := make(chan service.DIDCommAction)
-	// registers action channel to listen for events
-	if err := o.didExchange.RegisterActionEvent(actions); err != nil {
-		return fmt.Errorf("register action event: %w", err)
-	}
-
 	// create state channel subscribers
 	states := make(chan service.StateMsg)
 
@@ -307,7 +300,6 @@ func (o *Operation) setupEventHandlers() error {
 		return fmt.Errorf("register msg event: %w", err)
 	}
 
-	go service.AutoExecuteActionEvent(actions)
 	go o.stateMsgListener(states)
 
 	return nil
