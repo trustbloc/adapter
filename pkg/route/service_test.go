@@ -212,7 +212,7 @@ func TestDIDDocReq(t *testing.T) {
 				dErr := msg.Decode(pMsg)
 				require.NoError(t, dErr)
 				require.Equal(t, pMsg.Type, didDocResp)
-				require.Contains(t, pMsg.Data.ErrorMsg, "create new peer did")
+				require.Contains(t, pMsg.Data.ErrorMsg, "create did error")
 
 				done <- struct{}{}
 
@@ -774,7 +774,7 @@ func TestGetDIDService(t *testing.T) {
 
 		_, err = c.GetDIDDoc(connID, false)
 		require.Error(t, err)
-		require.Contains(t, err.Error(), "create new peer did")
+		require.Contains(t, err.Error(), "create error")
 	})
 
 	t.Run("add key to router error", func(t *testing.T) {

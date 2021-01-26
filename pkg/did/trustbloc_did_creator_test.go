@@ -6,13 +6,15 @@ SPDX-License-Identifier: Apache-2.0
 package did
 
 import (
+	"crypto/ed25519"
+	"crypto/rand"
 	"errors"
 	"testing"
 
 	"github.com/hyperledger/aries-framework-go/pkg/doc/did"
+	vdrapi "github.com/hyperledger/aries-framework-go/pkg/framework/aries/api/vdr"
 	"github.com/hyperledger/aries-framework-go/pkg/kms"
 	"github.com/stretchr/testify/require"
-	"github.com/trustbloc/trustbloc-did-method/pkg/did/option/create"
 )
 
 func TestNewTrustblocDIDCreator(t *testing.T) {
@@ -27,11 +29,14 @@ func TestTrustblocDIDCreator_Create(t *testing.T) {
 		domain := "http://example.trustbloc.com"
 		expected := newDIDDoc()
 		didcommURL := "http://example.didcomm.com"
-		c := NewTrustblocDIDCreator(domain, didcommURL, &mockKeyManager{}, nil)
+		_, pubKey, err := ed25519.GenerateKey(rand.Reader)
+		require.NoError(t, err)
+
+		c := NewTrustblocDIDCreator(domain, didcommURL, &mockKeyManager{v: pubKey}, nil)
 		c.tblocDIDs = &stubTrustblocClient{
-			createFunc: func(d string, options ...create.Option) (*did.Doc, error) {
-				require.Equal(t, domain, d)
-				return expected, nil
+			createFunc: func(keyManager kms.KeyManager, didDoc *did.Doc,
+				opts ...vdrapi.DIDMethodOption) (*did.DocResolution, error) {
+				return &did.DocResolution{DIDDocument: expected}, nil
 			},
 		}
 		result, err := c.Create()
@@ -64,33 +69,39 @@ func TestTrustblocDIDCreator_Create(t *testing.T) {
 	})
 
 	t.Run("error creating trustbloc DID", func(t *testing.T) {
+		_, pubKey, err := ed25519.GenerateKey(rand.Reader)
+		require.NoError(t, err)
+
 		expected := errors.New("test")
-		c := NewTrustblocDIDCreator("", "", &mockKeyManager{}, nil)
+		c := NewTrustblocDIDCreator("", "", &mockKeyManager{v: pubKey}, nil)
 		c.tblocDIDs = &stubTrustblocClient{
-			createFunc: func(string, ...create.Option) (*did.Doc, error) {
+			createFunc: func(keyManager kms.KeyManager, did *did.Doc,
+				opts ...vdrapi.DIDMethodOption) (*did.DocResolution, error) {
 				return nil, expected
 			},
 		}
-		_, err := c.Create()
+		_, err = c.Create()
 		require.Error(t, err)
 		require.True(t, errors.Is(err, expected))
 	})
 }
 
 type stubTrustblocClient struct {
-	createFunc func(string, ...create.Option) (*did.Doc, error)
+	createFunc func(keyManager kms.KeyManager, did *did.Doc, opts ...vdrapi.DIDMethodOption) (*did.DocResolution, error)
 }
 
-func (s *stubTrustblocClient) CreateDID(domain string, options ...create.Option) (*did.Doc, error) {
-	return s.createFunc(domain, options...)
+func (s *stubTrustblocClient) Create(keyManager kms.KeyManager, didDoc *did.Doc,
+	opts ...vdrapi.DIDMethodOption) (*did.DocResolution, error) {
+	return s.createFunc(keyManager, didDoc, opts...)
 }
 
 type mockKeyManager struct {
+	v   []byte
 	err error
 }
 
 func (s *mockKeyManager) CreateAndExportPubKeyBytes(kt kms.KeyType) (string, []byte, error) {
-	return "", nil, s.err
+	return "", s.v, s.err
 }
 
 func newDIDDoc() *did.Doc {

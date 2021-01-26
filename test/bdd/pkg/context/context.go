@@ -10,6 +10,7 @@ import (
 	"crypto/tls"
 	"fmt"
 
+	"github.com/hyperledger/aries-framework-go-ext/component/vdr/trustbloc"
 	vdriapi "github.com/hyperledger/aries-framework-go/pkg/framework/aries/api/vdr"
 	"github.com/hyperledger/aries-framework-go/pkg/framework/context"
 	mockstore "github.com/hyperledger/aries-framework-go/pkg/mock/storage"
@@ -17,7 +18,6 @@ import (
 	"github.com/hyperledger/aries-framework-go/pkg/vdr/httpbinding"
 	"github.com/hyperledger/aries-framework-go/pkg/vdr/peer"
 	tlsutils "github.com/trustbloc/edge-core/pkg/utils/tls"
-	"github.com/trustbloc/trustbloc-did-method/pkg/vdri/trustbloc"
 )
 
 const (
@@ -77,7 +77,7 @@ func createVDRI(didResolverURL string) (vdriapi.Registry, error) {
 	return vdripkg.New(
 		vdriProvider,
 		vdripkg.WithVDR(p),
-		vdripkg.WithVDR(trustbloc.New(trustbloc.WithResolverURL(didResolverURL),
+		vdripkg.WithVDR(trustbloc.New(nil, trustbloc.WithResolverURL(didResolverURL),
 			trustbloc.WithDomain("testnet.trustbloc.local"))),
 		vdripkg.WithVDR(didResolverVDRI),
 	), nil

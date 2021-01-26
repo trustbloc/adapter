@@ -31,12 +31,14 @@ import (
 	presentproofsvc "github.com/hyperledger/aries-framework-go/pkg/didcomm/protocol/presentproof"
 	"github.com/hyperledger/aries-framework-go/pkg/doc/did"
 	"github.com/hyperledger/aries-framework-go/pkg/doc/verifiable"
+	vdrapi "github.com/hyperledger/aries-framework-go/pkg/framework/aries/api/vdr"
 	mockroute "github.com/hyperledger/aries-framework-go/pkg/mock/didcomm/protocol/mediator"
 	ariesmockprovider "github.com/hyperledger/aries-framework-go/pkg/mock/provider"
 	ariesmockstorage "github.com/hyperledger/aries-framework-go/pkg/mock/storage"
 	mockvdr "github.com/hyperledger/aries-framework-go/pkg/mock/vdr"
 	"github.com/hyperledger/aries-framework-go/pkg/storage/mem"
 	"github.com/hyperledger/aries-framework-go/pkg/store/connection"
+	"github.com/hyperledger/aries-framework-go/pkg/vdr/peer"
 	"github.com/ory/hydra-client-go/client/admin"
 	"github.com/ory/hydra-client-go/models"
 	"github.com/stretchr/testify/require"
@@ -2221,7 +2223,7 @@ func TestToMarshalledVP(t *testing.T) {
 		subjectDID := newPeerDID(t, subject)
 		rpDID := newPeerDID(t, agent(t))
 		rpDID.Authentication = nil
-		err := relyingParty.VDRegistry().Store(rpDID)
+		_, err := relyingParty.VDRegistry().Create(peer.DIDMethod, rpDID, vdrapi.WithOption("store", true))
 		require.NoError(t, err)
 
 		o, err := New(config(t))

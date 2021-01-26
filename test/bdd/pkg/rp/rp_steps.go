@@ -29,18 +29,18 @@ import (
 	"github.com/coreos/go-oidc"
 	"github.com/cucumber/godog"
 	"github.com/google/uuid"
+	"github.com/hyperledger/aries-framework-go-ext/component/vdr/sidetree/doc"
+	"github.com/hyperledger/aries-framework-go-ext/component/vdr/trustbloc"
 	"github.com/hyperledger/aries-framework-go/pkg/client/outofband"
 	"github.com/hyperledger/aries-framework-go/pkg/doc/did"
+	"github.com/hyperledger/aries-framework-go/pkg/doc/jose"
 	"github.com/hyperledger/aries-framework-go/pkg/doc/verifiable"
+	vdrapi "github.com/hyperledger/aries-framework-go/pkg/framework/aries/api/vdr"
 	"github.com/hyperledger/aries-framework-go/pkg/kms"
 	"github.com/ory/hydra-client-go/client"
 	"github.com/ory/hydra-client-go/client/admin"
 	"github.com/ory/hydra-client-go/models"
 	"github.com/trustbloc/edge-core/pkg/log"
-	trustblocdid "github.com/trustbloc/trustbloc-did-method/pkg/did"
-	"github.com/trustbloc/trustbloc-did-method/pkg/did/doc"
-	"github.com/trustbloc/trustbloc-did-method/pkg/did/option/create"
-	trustblocvdri "github.com/trustbloc/trustbloc-did-method/pkg/vdri/trustbloc"
 	"golang.org/x/oauth2"
 
 	"github.com/trustbloc/edge-adapter/pkg/crypto"
@@ -204,10 +204,10 @@ func (s *Steps) createTenant(label, scopesStr, blindedRouteStr string) error {
 }
 
 func (s *Steps) resolveDID(label string) error {
-	vdri := trustblocvdri.New(
-		trustblocvdri.WithTLSConfig(s.context.TLSConfig()),
-		trustblocvdri.WithResolverURL(resolverURL),
-		trustblocvdri.WithDomain("testnet.trustbloc.local"),
+	vdri := trustbloc.New(nil,
+		trustbloc.WithTLSConfig(s.context.TLSConfig()),
+		trustbloc.WithResolverURL(resolverURL),
+		trustbloc.WithDomain("testnet.trustbloc.local"),
 	)
 
 	const (
@@ -250,24 +250,27 @@ func (s *Steps) newTrustBlocDID(agentID string) (*did.Doc, error) {
 		}
 	}
 
-	trustblocClient := trustblocdid.New(trustblocdid.WithTLSConfig(&tls.Config{
-		RootCAs: s.context.TLSConfig().RootCAs, MinVersion: tls.VersionTLS12,
-	}))
+	trustblocClient := trustbloc.New(nil, trustbloc.WithDomain(trustblocDIDMethodDomain),
+		trustbloc.WithTLSConfig(&tls.Config{RootCAs: s.context.TLSConfig().RootCAs, MinVersion: tls.VersionTLS12}))
 
-	didDoc, err := trustblocClient.CreateDID(
-		trustblocDIDMethodDomain,
-		create.WithPublicKey(&doc.PublicKey{
-			ID:       keys[0].keyID,
-			Type:     doc.JWSVerificationKey2020,
-			Encoding: doc.PublicKeyEncodingJwk,
-			KeyType:  doc.Ed25519KeyType,
-			Purposes: []string{
-				doc.KeyPurposeAuthentication,
-				doc.KeyPurposeAssertionMethod},
-			Value: keys[0].bits,
-		}),
-		create.WithRecoveryPublicKey(ed25519.PublicKey(keys[1].bits)),
-		create.WithUpdatePublicKey(ed25519.PublicKey(keys[2].bits)),
+	didDoc := did.Doc{}
+
+	jwk, err := jose.JWKFromPublicKey(ed25519.PublicKey(keys[0].bits))
+	if err != nil {
+		return nil, err
+	}
+
+	vm, err := did.NewVerificationMethodFromJWK(keys[0].keyID, doc.JWSVerificationKey2020, "", jwk)
+	if err != nil {
+		return nil, err
+	}
+
+	didDoc.Authentication = append(didDoc.Authentication, *did.NewReferencedVerification(vm, did.Authentication))
+	didDoc.AssertionMethod = append(didDoc.AssertionMethod, *did.NewReferencedVerification(vm, did.AssertionMethod))
+
+	docResolution, err := trustblocClient.Create(nil, &didDoc,
+		vdrapi.WithOption(trustbloc.RecoveryPublicKeyOpt, ed25519.PublicKey(keys[1].bits)),
+		vdrapi.WithOption(trustbloc.UpdatePublicKeyOpt, ed25519.PublicKey(keys[2].bits)),
 	)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create new trustbloc did: %w", err)
@@ -275,17 +278,17 @@ func (s *Steps) newTrustBlocDID(agentID string) (*did.Doc, error) {
 
 	friendlyName := uuid.New().String()
 
-	_, err = bddutil.ResolveDID(s.context.VDRI, didDoc.ID, 10)
+	_, err = bddutil.ResolveDID(s.context.VDRI, docResolution.DIDDocument.ID, 10)
 	if err != nil {
-		return nil, fmt.Errorf("failed to resolve did=%s err: %w", didDoc.ID, err)
+		return nil, fmt.Errorf("failed to resolve did=%s err: %w", docResolution.DIDDocument.ID, err)
 	}
 
-	err = s.controller.SaveDID(agentID, friendlyName, didDoc)
+	err = s.controller.SaveDID(agentID, friendlyName, docResolution.DIDDocument)
 	if err != nil {
 		return nil, fmt.Errorf("failed to save new trustbloc did: %w", err)
 	}
 
-	return didDoc, nil
+	return docResolution.DIDDocument, nil
 }
 
 func (s *Steps) lookupClientID(label string) error {

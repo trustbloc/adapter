@@ -107,12 +107,12 @@ func (c *Crypto) validateDIDDoc(signingKeyID, proofPurpose string) error {
 		return err
 	}
 
-	didDoc, err := c.vdri.Resolve(didID)
+	docResolution, err := c.vdri.Resolve(didID)
 	if err != nil {
 		return err
 	}
 
-	err = validateProofPurpose(proofPurpose, signingKeyID, didDoc)
+	err = validateProofPurpose(proofPurpose, signingKeyID, docResolution.DIDDocument)
 	if err != nil {
 		return err
 	}

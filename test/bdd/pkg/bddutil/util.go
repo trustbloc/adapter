@@ -60,11 +60,11 @@ func CloseResponseBody(respBody io.Closer) {
 
 // ResolveDID waits for the DID to become available for resolution.
 func ResolveDID(vdriRegistry vdriapi.Registry, did string, maxRetry int) (*docdid.Doc, error) {
-	var didDoc *docdid.Doc
+	var docResolution *docdid.DocResolution
 
 	for i := 1; i <= maxRetry; i++ {
 		var err error
-		didDoc, err = vdriRegistry.Resolve(did)
+		docResolution, err = vdriRegistry.Resolve(did)
 
 		if err != nil {
 			if !strings.Contains(err.Error(), "DID does not exist") {
@@ -78,7 +78,7 @@ func ResolveDID(vdriRegistry vdriapi.Registry, did string, maxRetry int) (*docdi
 		}
 	}
 
-	return didDoc, nil
+	return docResolution.DIDDocument, nil
 }
 
 // GetDIDConnectRequestKey key for storing DID Connect request.
