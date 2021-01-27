@@ -23,6 +23,7 @@ services:
       - ADAPTER_REST_UNIVERSAL_RESOLVER_URL=http://did.rest.example.com:8072/1.0/identifiers
       - ADAPTER_REST_DSN=mysql://issueradapter:issueradapter-secret-pw@tcp(mysql:3306)/
       - ADAPTER_REST_DSN_TIMEOUT=45
+      - ADAPTER_REST_WALLET_APP_URL=http://demoapp/load
     ports:
       - 9070:9070
       - 9071:9071
@@ -52,6 +53,7 @@ services:
       - ADAPTER_REST_HYDRA_URL=https://hydra.trustbloc.local:4445
       - ADAPTER_REST_UNIVERSAL_RESOLVER_URL=http://did.rest.example.com:8072/1.0/identifiers
       - ADAPTER_REST_DSN_TIMEOUT=45
+      - ADAPTER_REST_WALLET_APP_URL=http://demoapp/load
     ports:
       - 8070:8070
     entrypoint: ""

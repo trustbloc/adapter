@@ -89,6 +89,8 @@ const (
 
 	governanceCtx       = "https://trustbloc.github.io/context/governance/context.jsonld"
 	governanceVCCTXSize = 3
+
+	stateCompleteMsgType = "https://trustbloc.dev/didexchange/1.0/state-complete"
 )
 
 var logger = log.New("edge-adapter/agent")
@@ -128,6 +130,8 @@ func (a *Steps) RegisterSteps(s *godog.Suite) {
 	s.Step(`^"([^"]*)" sends present proof request message to the the issuer \("([^"]*)"\) and validates that the vc inside vp contains type "([^"]*)" along with supportsAssuranceCred "([^"]*)" validation$`, // nolint: lll
 		a.fetchPresentation)
 	s.Step(`^"([^"]*)" with blinded routing support\("([^"]*)"\) receives the DIDConnect request from Issuer adapter \("([^"]*)"\)$`, a.didConnectReqWithRouting) // nolint: lll
+	s.Step(`^"([^"]*)" loads her remote wallet app "([^"]*)" and accepts invitation$`, a.connectToWalletBridge)
+	s.Step(`^Remote wallet "([^"]*)" supports CHAPI request/response through DIDComm$`, a.registerCHAPIMsgHandler)
 }
 
 // ValidateAgentConnection checks if the controller agent is running.
@@ -221,7 +225,10 @@ func (a *Steps) healthCheck(endpoint string) error {
 func (a *Steps) handleDIDCommConnectRequest(agentID, supportedVCContexts, issuerID,
 	primaryVCType, supportsAssuranceCredStr string, timeout int) error {
 	// Mock CHAPI request from Issuer
-	didConnReq := a.bddContext.Store[bddutil.GetDIDConnectRequestKey(issuerID, agentID)]
+	didConnReq, found := a.bddContext.GetString(bddutil.GetDIDConnectRequestKey(issuerID, agentID))
+	if !found {
+		return fmt.Errorf("did connect request not found")
+	}
 
 	request := &issuerops.CHAPIRequest{}
 
@@ -327,7 +334,10 @@ func (a *Steps) handleDIDCommConnectRequest(agentID, supportedVCContexts, issuer
 }
 
 func (a *Steps) didConnectReqWithRouting(agentID, routerURL, issuerID string) error { // nolint: funlen,gocyclo
-	didConnReq := a.bddContext.Store[bddutil.GetDIDConnectRequestKey(issuerID, agentID)]
+	didConnReq, found := a.bddContext.GetString(bddutil.GetDIDConnectRequestKey(issuerID, agentID))
+	if !found {
+		return fmt.Errorf("didconnect request not found")
+	}
 
 	request := &issuerops.CHAPIRequest{}
 
@@ -1389,7 +1399,8 @@ func validateConnection(controllerURL, connID, state string) error {
 	)
 }
 
-func pullMsgFromWebhookURL(webhookURL, topic string) (*service.DIDCommMsgMap, error) {
+// PullMsgFromWebhookURL pulls incoming message from webhook URL
+func PullMsgFromWebhookURL(webhookURL, topic string) (*service.DIDCommMsgMap, error) {
 	var incoming struct {
 		ID      string                `json:"id"`
 		Topic   string                `json:"topic"`
@@ -1442,4 +1453,70 @@ func (a *Steps) connectWithRouter(agentID, routerURL string) (string, error) {
 	}
 
 	return connectionID, nil
+}
+
+func (a *Steps) connectToWalletBridge(userID, walletID string) error {
+	invitationURL, found := a.bddContext.GetString(bddutil.GetDeepLinkWalletInvitationKey(userID))
+	if !found {
+		return fmt.Errorf("unable to find invitation URL for user=%s", userID)
+	}
+
+	invitationURLSplit := strings.Split(invitationURL, "oob=")
+
+	if len(invitationURLSplit) < 2 { //nolint:gomnd
+		return fmt.Errorf("invalid invitation URL for user=%s", userID)
+	}
+
+	invitationBytes, err := base64.StdEncoding.DecodeString(invitationURLSplit[1])
+	if err != nil {
+		return fmt.Errorf("failed to extract out-of-band invitation from URL: %w", err)
+	}
+
+	oobInvitation := &outofband.Invitation{}
+
+	err = json.Unmarshal(invitationBytes, oobInvitation)
+	if err != nil {
+		return fmt.Errorf("failed to prepare out-of-band invitation from bytes: %w", err)
+	}
+
+	msgSvcName := uuid.New().String()
+
+	err = RegisterMsgService(a.ControllerURLs[walletID], msgSvcName, stateCompleteMsgType)
+	if err != nil {
+		return err
+	}
+
+	connectionID, err := a.AcceptOOBInvitation(walletID, oobInvitation, userID)
+	if err != nil {
+		return fmt.Errorf("failed to connection '%s' : %w", walletID, err)
+	}
+
+	err = GetDIDExStateCompResp(a.WebhookURLs[walletID], msgSvcName)
+	if err != nil {
+		return err
+	}
+
+	_, err = a.ValidateConnection(walletID, connectionID)
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func (a *Steps) registerCHAPIMsgHandler(agentID string) error {
+	msgSvc := uuid.New().String()
+
+	err := RegisterMsgService(a.ControllerURLs[agentID], msgSvc, "https://trustbloc.dev/chapi/1.0/request")
+	if err != nil {
+		return fmt.Errorf("failed to register CHAPI request message handler: %w", err)
+	}
+
+	a.bddContext.Store[bddutil.GetRemoteWalletAppInfo(agentID)] = struct {
+		WebhookURL    string
+		ControllerURL string
+		MessageHandle string
+	}{a.WebhookURLs[agentID], a.ControllerURLs[agentID], msgSvc}
+
+	return nil
 }

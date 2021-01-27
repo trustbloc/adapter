@@ -269,7 +269,7 @@ func sendReply(controllerURL, msgID string, msg interface{}) error {
 }
 
 func getDIDDocResp(controllerURL, msgSvcName string) (string, *did.Doc, error) {
-	webhookMsg, err := pullMsgFromWebhookURL(controllerURL, msgSvcName)
+	webhookMsg, err := PullMsgFromWebhookURL(controllerURL, msgSvcName)
 	if err != nil {
 		return "", nil, fmt.Errorf("failed to pull incoming message from webhook : %w", err)
 	}
@@ -305,7 +305,7 @@ func getDIDDocResp(controllerURL, msgSvcName string) (string, *did.Doc, error) {
 }
 
 func getRouterCreateConnResp(controllerURL, msgSvcName string) (*did.Doc, error) {
-	webhookMsg, err := pullMsgFromWebhookURL(controllerURL, msgSvcName)
+	webhookMsg, err := PullMsgFromWebhookURL(controllerURL, msgSvcName)
 	if err != nil {
 		return nil, fmt.Errorf("failed to pull incoming message from webhook : %w", err)
 	}
@@ -341,7 +341,7 @@ func getRouterCreateConnResp(controllerURL, msgSvcName string) (*did.Doc, error)
 }
 
 func getAdapterConnResp(controllerURL, msgSvcName string) error {
-	webhookMsg, err := pullMsgFromWebhookURL(controllerURL, msgSvcName)
+	webhookMsg, err := PullMsgFromWebhookURL(controllerURL, msgSvcName)
 	if err != nil {
 		return fmt.Errorf("failed to pull incoming message from webhook : %w", err)
 	}
@@ -365,7 +365,7 @@ func getAdapterConnResp(controllerURL, msgSvcName string) error {
 
 // GetDIDExStateCompResp get didex state complete message.
 func GetDIDExStateCompResp(controllerURL, msgSvcName string) error {
-	_, err := pullMsgFromWebhookURL(controllerURL, msgSvcName)
+	_, err := PullMsgFromWebhookURL(controllerURL, msgSvcName)
 	if err != nil {
 		return fmt.Errorf("failed to pull incoming message from webhook : %w", err)
 	}

@@ -26,7 +26,7 @@ const (
 
 // BDDContext is a global context shared between different test suites in bddtests.
 type BDDContext struct {
-	Store     map[string]string
+	Store     map[string]interface{}
 	tlsConfig *tls.Config
 	VDRI      vdriapi.Registry
 }
@@ -44,7 +44,7 @@ func NewBDDContext(caCertPath string) (*BDDContext, error) {
 	}
 
 	return &BDDContext{
-		Store:     make(map[string]string),
+		Store:     make(map[string]interface{}),
 		tlsConfig: &tls.Config{RootCAs: rootCAs, MinVersion: tls.VersionTLS12},
 		VDRI:      vdri,
 	}, nil
@@ -53,6 +53,23 @@ func NewBDDContext(caCertPath string) (*BDDContext, error) {
 // TLSConfig return tls config.
 func (b *BDDContext) TLSConfig() *tls.Config {
 	return b.tlsConfig
+}
+
+// GetString returns string value by key from bddcontext store
+func (b *BDDContext) GetString(key string) (string, bool) {
+	val, found := b.Store[key]
+	if !found {
+		return "", false
+	}
+
+	return fmt.Sprintf("%v", val), true
+}
+
+// Get returns value by key from bddcontext store
+func (b *BDDContext) Get(key string) (interface{}, bool) {
+	val, found := b.Store[key]
+
+	return val, found
 }
 
 func createVDRI(didResolverURL string) (vdriapi.Registry, error) {

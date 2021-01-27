@@ -169,7 +169,7 @@ const (
 	walletAppURLFlagUsage = "A deep link pointing to wallet application(s) which will be " +
 		"used by this adapter to send credential request to remote wallets ." +
 		" Alternatively, this can be set with the following environment variable: " + walletAppURLEnvKey
-	walletAppURLEnvKey = "WALLET_APP_URL"
+	walletAppURLEnvKey = "ADAPTER_REST_WALLET_APP_URL"
 )
 
 // API endpoints.
@@ -179,6 +179,9 @@ const (
 	// modes
 	issuerMode = "issuer"
 	rpMode     = "rp"
+
+	// paths
+	walletBridgePath = "/wallet-bridge/"
 )
 
 const (
@@ -802,9 +805,11 @@ func addWalletHandlers(parameters *adapterRestParameters, ctx *context.Provider,
 		return err
 	}
 
+	walletRouter := router.PathPrefix(walletBridgePath).Subrouter()
+
 	rpHandlers := walletBridge.GetOperations()
 	for _, handler := range rpHandlers {
-		router.HandleFunc(handler.Path(), handler.Handle()).Methods(handler.Method())
+		walletRouter.HandleFunc(handler.Path(), handler.Handle()).Methods(handler.Method())
 	}
 
 	return nil

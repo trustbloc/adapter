@@ -34,7 +34,7 @@ var logger = log.New("edge-adapter/wallet-bridge")
 
 // constants for endpoints of wallet bridge controller.
 const (
-	commandName          = "/wallet"
+	commandName          = "/wallet-bridge"
 	CreateInvitationPath = "/create-invitation"
 	RequestAppProfile    = "/request-app-profile"
 	SendCHAPIRequest     = "/send-chapi-request"
@@ -123,7 +123,7 @@ func (o *Operation) GetRESTHandlers() []Handler {
 	}
 }
 
-// CreateInvitation swagger:route POST /wallet/create-invitation wallet-bridge createInvitation
+// CreateInvitation swagger:route POST /wallet-bridge/create-invitation wallet-bridge createInvitation
 //
 // Creates out-of-band invitation to connect to this wallet server.
 // Response contains URL to application with invitation to load during startup.
@@ -132,16 +132,16 @@ func (o *Operation) GetRESTHandlers() []Handler {
 //    default: genericError
 //    200: createInvitationResponse
 func (o *Operation) CreateInvitation(rw http.ResponseWriter, req *http.Request) {
-	var request createInvitationRequest
+	var request CreateInvitationRequest
 
-	err := json.NewDecoder(req.Body).Decode(&request.Body)
+	err := json.NewDecoder(req.Body).Decode(&request)
 	if err != nil {
 		commhttp.WriteErrorResponseWithLog(rw, http.StatusBadRequest, err.Error(), CreateInvitationPath, logger)
 
 		return
 	}
 
-	if request.Body.UserID == "" {
+	if request.UserID == "" {
 		commhttp.WriteErrorResponseWithLog(rw, http.StatusBadRequest, invalidIDErr, CreateInvitationPath, logger)
 
 		return
@@ -163,7 +163,7 @@ func (o *Operation) CreateInvitation(rw http.ResponseWriter, req *http.Request) 
 		return
 	}
 
-	err = o.store.SaveProfile(request.Body.UserID, &walletAppProfile{InvitationID: invitation.ID})
+	err = o.store.SaveProfile(request.UserID, &walletAppProfile{InvitationID: invitation.ID})
 	if err != nil {
 		commhttp.WriteErrorResponseWithLog(rw, http.StatusInternalServerError, err.Error(), CreateInvitationPath, logger)
 
@@ -172,12 +172,12 @@ func (o *Operation) CreateInvitation(rw http.ResponseWriter, req *http.Request) 
 
 	rw.WriteHeader(http.StatusOK)
 	commhttp.WriteResponseWithLog(rw,
-		&createInvitationResponse{
+		&CreateInvitationResponse{
 			URL: fmt.Sprintf("%s?oob=%s", o.walletAppURL, base64.StdEncoding.EncodeToString(invitationBytes)),
 		}, CreateInvitationPath, logger)
 }
 
-// RequestApplicationProfile swagger:route POST /wallet/request-app-profile wallet-bridge applicationProfileRequest
+// RequestApplicationProfile swagger:route POST /wallet-bridge/request-app-profile wallet-bridge applicationProfileRequest
 //
 // Requests wallet application profile of given user.
 // Response contains wallet application profile of given user.
@@ -193,7 +193,7 @@ func (o *Operation) RequestApplicationProfile(rw http.ResponseWriter, req *http.
 		return
 	}
 
-	profile, err := o.store.GetProfileByUserID(request.Body.UserID)
+	profile, err := o.store.GetProfileByUserID(request.UserID)
 	if err != nil {
 		commhttp.WriteErrorResponseWithLog(rw, http.StatusInternalServerError, err.Error(), RequestAppProfile, logger)
 
@@ -204,8 +204,8 @@ func (o *Operation) RequestApplicationProfile(rw http.ResponseWriter, req *http.
 	var status string
 	if profile.ConnectionID != "" {
 		status = didexchangesvc.StateIDCompleted
-	} else if request.Body.WaitForConnection {
-		ctx, cancel := context.WithTimeout(context.Background(), request.Body.Timeout)
+	} else if request.WaitForConnection {
+		ctx, cancel := context.WithTimeout(context.Background(), request.Timeout)
 		defer cancel()
 
 		err = o.waitForConnectionCompletion(ctx, profile)
@@ -220,10 +220,10 @@ func (o *Operation) RequestApplicationProfile(rw http.ResponseWriter, req *http.
 
 	rw.WriteHeader(http.StatusOK)
 	commhttp.WriteResponseWithLog(rw,
-		&applicationProfileResponse{profile.InvitationID, status}, RequestAppProfile, logger)
+		&ApplicationProfileResponse{profile.InvitationID, status}, RequestAppProfile, logger)
 }
 
-// SendCHAPIRequest swagger:route POST /wallet/send-chapi-request wallet-bridge chapiRequest
+// SendCHAPIRequest swagger:route POST /wallet-bridge/send-chapi-request wallet-bridge chapiRequest
 //
 // Sends CHAPI request to given wallet application ID.
 // Response contains CHAPI request.
@@ -239,7 +239,7 @@ func (o *Operation) SendCHAPIRequest(rw http.ResponseWriter, req *http.Request) 
 		return
 	}
 
-	profile, err := o.store.GetProfileByUserID(request.Body.UserID)
+	profile, err := o.store.GetProfileByUserID(request.UserID)
 	if err != nil {
 		commhttp.WriteErrorResponseWithLog(rw, http.StatusBadRequest, err.Error(), SendCHAPIRequest, logger)
 
@@ -252,13 +252,13 @@ func (o *Operation) SendCHAPIRequest(rw http.ResponseWriter, req *http.Request) 
 		return
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), request.Body.Timeout)
+	ctx, cancel := context.WithTimeout(context.Background(), request.Timeout)
 	defer cancel()
 
 	msgBytes, err := json.Marshal(map[string]interface{}{
 		"@id":   uuid.New().String(),
 		"@type": chapiRqstDIDCommMsgType,
-		"data":  request.Body.Request,
+		"data":  request.Request,
 	})
 	if err != nil {
 		commhttp.WriteErrorResponseWithLog(rw, http.StatusInternalServerError, err.Error(), SendCHAPIRequest, logger)
@@ -284,11 +284,7 @@ func (o *Operation) SendCHAPIRequest(rw http.ResponseWriter, req *http.Request) 
 	}
 
 	rw.WriteHeader(http.StatusOK)
-	commhttp.WriteResponseWithLog(rw, &chapiResponse{
-		Body: struct {
-			Response json.RawMessage `json:"chapiResponse"`
-		}{Response: response},
-	}, SendCHAPIRequest, logger)
+	commhttp.WriteResponseWithLog(rw, &CHAPIResponse{response}, SendCHAPIRequest, logger)
 }
 
 func (o *Operation) setupEventHandlers() error {
@@ -383,43 +379,43 @@ func (o *Operation) waitForConnectionCompletion(ctx context.Context, profile *wa
 	}
 }
 
-func prepareAppProfileRequest(r io.Reader) (*applicationProfileRequest, error) {
-	var request applicationProfileRequest
+func prepareAppProfileRequest(r io.Reader) (*ApplicationProfileRequest, error) {
+	var request ApplicationProfileRequest
 
-	err := json.NewDecoder(r).Decode(&request.Body)
+	err := json.NewDecoder(r).Decode(&request)
 	if err != nil {
 		return nil, err
 	}
 
-	if request.Body.UserID == "" {
+	if request.UserID == "" {
 		return nil, fmt.Errorf(invalidIDErr)
 	}
 
-	if request.Body.WaitForConnection && request.Body.Timeout == 0 {
-		request.Body.Timeout = defaultSendMsgTimeout
+	if request.WaitForConnection && request.Timeout == 0 {
+		request.Timeout = defaultSendMsgTimeout
 	}
 
 	return &request, nil
 }
 
-func prepareCHAPIRequest(r io.Reader) (*chapiRequest, error) {
-	var request chapiRequest
+func prepareCHAPIRequest(r io.Reader) (*CHAPIRequest, error) {
+	var request CHAPIRequest
 
-	err := json.NewDecoder(r).Decode(&request.Body)
+	err := json.NewDecoder(r).Decode(&request)
 	if err != nil {
 		return nil, err
 	}
 
-	if request.Body.UserID == "" {
+	if request.UserID == "" {
 		return nil, fmt.Errorf(invalidIDErr)
 	}
 
-	if len(request.Body.Request) == 0 {
+	if len(request.Request) == 0 {
 		return nil, fmt.Errorf(invalidCHAPIRequestErr)
 	}
 
-	if request.Body.Timeout == 0 {
-		request.Body.Timeout = defaultSendMsgTimeout
+	if request.Timeout == 0 {
+		request.Timeout = defaultSendMsgTimeout
 	}
 
 	return &request, nil
