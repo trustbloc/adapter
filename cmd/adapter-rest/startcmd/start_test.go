@@ -19,7 +19,6 @@ import (
 	"github.com/gorilla/mux"
 	"github.com/hyperledger/aries-framework-go/pkg/didcomm/messaging/msghandler"
 	"github.com/hyperledger/aries-framework-go/pkg/framework/aries"
-	"github.com/hyperledger/aries-framework-go/pkg/framework/context"
 	"github.com/hyperledger/aries-framework-go/pkg/mock/storage"
 	"github.com/spf13/cobra"
 	"github.com/stretchr/testify/require"
@@ -445,15 +444,6 @@ func TestAdapterModes(t *testing.T) {
 		_, err = initAriesStore("invaldidb://test", 10, "")
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "unsupported storage driver: invaldidb")
-
-		ctx, err := context.New(context.WithStorageProvider(&storage.MockStoreProvider{
-			ErrOpenStoreHandle: fmt.Errorf("sample error"),
-		}))
-		require.NoError(t, err)
-
-		err = addWalletHandlers(parameters, ctx, nil, nil, "")
-		require.Error(t, err)
-		require.Contains(t, err.Error(), "failed to open wallet profile store")
 	})
 
 	t.Run("test adapter mode - wallet handler errors", func(t *testing.T) {
@@ -476,7 +466,7 @@ func TestAdapterModes(t *testing.T) {
 
 		err = addIssuerHandlers(parameters, issuerAries, &mux.Router{}, nil, &msghandler.Registrar{})
 		require.Error(t, err)
-		require.Contains(t, err.Error(), "failed to get wallet bridge operations for issuer")
+		require.Contains(t, err.Error(), "failed to initialize wallet bridge")
 
 		rpAries, err := aries.New(aries.WithStoreProvider(&storage.MockStoreProvider{
 			FailNamespace: "walletappprofile",
@@ -491,7 +481,7 @@ func TestAdapterModes(t *testing.T) {
 		parameters.presentationDefinitionsFile = "./testdata/pres-def-mock.json"
 		err = addRPHandlers(parameters, rpAries, &mux.Router{}, nil, &msghandler.Registrar{})
 		require.Error(t, err)
-		require.Contains(t, err.Error(), "failed to get wallet bridge operations for rp")
+		require.Contains(t, err.Error(), "failed to initialize wallet bridge")
 	})
 }
 

@@ -130,8 +130,8 @@ func (a *Steps) RegisterSteps(s *godog.Suite) {
 	s.Step(`^"([^"]*)" sends present proof request message to the the issuer \("([^"]*)"\) and validates that the vc inside vp contains type "([^"]*)" along with supportsAssuranceCred "([^"]*)" validation$`, // nolint: lll
 		a.fetchPresentation)
 	s.Step(`^"([^"]*)" with blinded routing support\("([^"]*)"\) receives the DIDConnect request from Issuer adapter \("([^"]*)"\)$`, a.didConnectReqWithRouting) // nolint: lll
-	s.Step(`^"([^"]*)" loads her remote wallet app "([^"]*)" and accepts invitation$`, a.connectToWalletBridge)
-	s.Step(`^Remote wallet "([^"]*)" supports CHAPI request/response through DIDComm$`, a.registerCHAPIMsgHandler)
+	s.Step(`^"([^"]*)" loads remote wallet app "([^"]*)" and accepts invitation$`, a.ConnectToWalletBridge)
+	s.Step(`^Remote wallet "([^"]*)" supports CHAPI request/response through DIDComm$`, a.RegisterCHAPIMsgHandler)
 }
 
 // ValidateAgentConnection checks if the controller agent is running.
@@ -1455,7 +1455,8 @@ func (a *Steps) connectWithRouter(agentID, routerURL string) (string, error) {
 	return connectionID, nil
 }
 
-func (a *Steps) connectToWalletBridge(userID, walletID string) error {
+// ConnectToWalletBridge connects to remote wallet by resolving invitation from deeplink
+func (a *Steps) ConnectToWalletBridge(userID, walletID string) error {
 	invitationURL, found := a.bddContext.GetString(bddutil.GetDeepLinkWalletInvitationKey(userID))
 	if !found {
 		return fmt.Errorf("unable to find invitation URL for user=%s", userID)
@@ -1504,7 +1505,8 @@ func (a *Steps) connectToWalletBridge(userID, walletID string) error {
 	return nil
 }
 
-func (a *Steps) registerCHAPIMsgHandler(agentID string) error {
+// RegisterCHAPIMsgHandler registers CHAPI request message handler in remote wallet
+func (a *Steps) RegisterCHAPIMsgHandler(agentID string) error {
 	msgSvc := uuid.New().String()
 
 	err := RegisterMsgService(a.ControllerURLs[agentID], msgSvc, "https://trustbloc.dev/chapi/1.0/request")

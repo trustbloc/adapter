@@ -7,6 +7,7 @@
 @all
 @rp_adapter
 Feature: RP Adapter
+
   Background: Setup External Agent
     Given the "Mock Wallet" is running on "localhost" port "9081" with webhook "http://localhost:9083" and controller "http://localhost:9082"
     And the "Mock Issuer Adapter" is running on "localhost" port "10010" with controller "http://localhost:10011"
@@ -16,6 +17,7 @@ Feature: RP Adapter
     When an HTTP GET is sent to "https://localhost:8070/healthcheck"
     Then the JSON path "status" of the response equals "success"
 
+  @rp_register_party
   Scenario: Register relying party
     When a request is sent to create an RP tenant with label "test-tenant" and scopes "credit_card_stmt:remote"
     Then the trustbloc DID of the tenant with label "test-tenant" is resolvable
@@ -46,3 +48,19 @@ Feature: RP Adapter
     When "Mock Issuer Adapter" responds to "blinded_userdata" with the user's data
     Then the user is redirected to the rp tenant "blinded_userdata"
     And the rp tenant "blinded_userdata" retrieves the user data from the rp adapter
+
+  @rp_adapter_wallet_bridge
+  Scenario: RP connects to a remote wallet and requests a credential.
+    # player: RP
+    Given a request is sent to create an RP tenant with label "bob-tenant" and scopes "driver_license:local"
+    And   rp tenant creates a deep link to invite remote wallet user "bob" to connect
+
+    # player: Bob
+    Given remote wallet "Mock Wallet" supports credential handler request/response through DIDComm
+
+    # player: Bob
+    Then  "bob" loads remote wallet app "Mock Wallet" and accepts rp tenant's invitation
+
+    # player: RP & Bob's wallet app
+    When  rp tenant checks wallet application profile for "bob" it finds profile status as "completed"
+    And   rp tenant sends store credential request to remote wallet of "bob" and gets response back remote wallet app "Mock Wallet"

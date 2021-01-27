@@ -48,7 +48,9 @@ import (
 	"github.com/trustbloc/edge-adapter/pkg/db/rp"
 	"github.com/trustbloc/edge-adapter/pkg/internal/common/support"
 	"github.com/trustbloc/edge-adapter/pkg/presexch"
+	"github.com/trustbloc/edge-adapter/pkg/restapi"
 	commhttp "github.com/trustbloc/edge-adapter/pkg/restapi/internal/common/http"
+	walletops "github.com/trustbloc/edge-adapter/pkg/restapi/wallet/operation"
 	"github.com/trustbloc/edge-adapter/pkg/route"
 	"github.com/trustbloc/edge-adapter/pkg/vc"
 )
@@ -77,6 +79,7 @@ const (
 
 	transientStoreName   = "rpadapter_trx"
 	persistenceStoreName = "rpadapter_pst"
+	rpWalletBridgeLabel  = "rp_wallet_bridge"
 )
 
 // Msg svc constants.
@@ -87,13 +90,6 @@ const (
 )
 
 var logger = log.New("edge-adapter/rp-operations")
-
-// Handler http handler for each controller API endpoint.
-type Handler interface {
-	Path() string
-	Method() string
-	Handle() http.HandlerFunc
-}
 
 type presentationExProvider interface {
 	Create(scopes []string) (*presexch.PresentationDefinitions, error)
@@ -189,7 +185,7 @@ type userDataCollection struct {
 }
 
 // New returns CreateCredential instance.
-func New(config *Config) (*Operation, error) { // nolint:funlen
+func New(config *Config) (*Operation, error) { // nolint:funlen,gocyclo
 	o := &Operation{
 		presentationExProvider: config.PresentationExProvider,
 		hydra:                  config.Hydra,
@@ -251,6 +247,17 @@ func New(config *Config) (*Operation, error) { // nolint:funlen
 		return nil, fmt.Errorf("create route message service : %w", err)
 	}
 
+	o.walletBridge, err = walletops.New(&walletops.Config{
+		AriesCtx:              config.AriesContextProvider,
+		MsgRegistrar:          config.MsgRegistrar,
+		WalletAppURL:          config.WalletBridgeAppURL,
+		DefaultLabel:          rpWalletBridgeLabel,
+		AdapterTransientStore: o.transientStore,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to initialize wallet bridge : %w", err)
+	}
+
 	go o.listenForIncomingConnections()
 
 	go o.listenForConnectionCompleteEvents()
@@ -287,6 +294,7 @@ type Config struct {
 	GovernanceProvider     GovernanceProvider
 	AriesMessenger         service.Messenger
 	MsgRegistrar           *msghandler.Registrar
+	WalletBridgeAppURL     string
 }
 
 // TODO implement an eviction strategy for Operation.oidcStates and OIDC.consentRequests
@@ -318,11 +326,12 @@ type Operation struct {
 	ariesCrypto            ariescrypto.Crypto
 	routeSvc               routeService
 	messenger              service.Messenger
+	walletBridge           *walletops.Operation
 }
 
 // GetRESTHandlers get all controller API handler available for this service.
-func (o *Operation) GetRESTHandlers() []Handler {
-	return []Handler{
+func (o *Operation) GetRESTHandlers() []restapi.Handler {
+	return append([]restapi.Handler{
 		support.NewHTTPHandler(hydraLoginEndpoint, http.MethodGet, o.hydraLoginHandlerIterOne),
 		support.NewHTTPHandler(hydraConsentEndpoint, http.MethodGet, o.hydraConsentHandler),
 		support.NewHTTPHandler(OIDCCallbackEndpoint, http.MethodGet, o.oidcCallbackHandler),
@@ -331,7 +340,7 @@ func (o *Operation) GetRESTHandlers() []Handler {
 		support.NewHTTPHandler(userInfoEndpoint, http.MethodGet, o.userInfoHandler),
 		support.NewHTTPHandler(createRPTenantEndpoint, http.MethodPost, o.createRPTenant),
 		support.NewHTTPHandler(getPresentationResultEndpoint, http.MethodGet, o.getPresentationResponseResultHandler),
-	}
+	}, o.walletBridge.GetRESTHandlers()...)
 }
 
 //nolint:funlen
@@ -1151,10 +1160,13 @@ func (o *Operation) listenForConnectionCompleteEvents() { // nolint: gocyclo
 			logger.Errorf("failed to update invitation data in transient storage : %s", err)
 		}
 
-		err = o.persistenceStore.Put(getConnToTenantMappingDBKey(event.ConnectionID()),
-			[]byte(crCtx.CR.Payload.Client.ClientID))
-		if err != nil {
-			logger.Errorf("failed to update connectionID to rp client id : %s", err)
+		// consent request doesn't always apply, ex: remote wallet app connection through deep link invitation.
+		if crCtx.CR != nil {
+			err = o.persistenceStore.Put(getConnToTenantMappingDBKey(event.ConnectionID()),
+				[]byte(crCtx.CR.Payload.Client.ClientID))
+			if err != nil {
+				logger.Errorf("failed to update connectionID to rp client id : %s", err)
+			}
 		}
 
 		err = o.messenger.Send(service.NewDIDCommMsgMap(&aries.DIDCommMsg{

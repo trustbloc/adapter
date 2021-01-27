@@ -129,6 +129,7 @@ func FeatureContext(s *godog.Suite) {
 	}
 
 	common.NewSteps(bddContext).RegisterSteps(s)
+	common.NewWalletSteps(bddContext).RegisterSteps(s)
 	issuer.NewSteps(bddContext).RegisterSteps(s)
 	rp.NewSteps(bddContext).RegisterSteps(s)
 	agent.NewSteps(bddContext).RegisterSteps(s)

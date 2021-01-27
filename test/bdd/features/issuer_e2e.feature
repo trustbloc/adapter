@@ -50,7 +50,7 @@ Feature: Issuer Adapter e2e
 
 
   @issuer_adapter_wallet_bridge
-  Scenario: Issuer connects to a remote wallet
+  Scenario: Issuer connects to a remote wallet and sends store credential request
     # player: Issuer
     Given Issuer has a profile with name "PRCard Issuer 01", issuerURL "http://mock-issuer.com:9080/prCard" and supportedVCContexts "https://trustbloc.github.io/context/vc/examples/citizenship-v1.jsonld"
     And   issuer creates a deep link to invite remote wallet user "alice" to connect
@@ -59,7 +59,7 @@ Feature: Issuer Adapter e2e
     Given Remote wallet "WalletApp" supports CHAPI request/response through DIDComm
 
     # player: Alice
-    Then  "alice" loads her remote wallet app "WalletApp" and accepts invitation
+    Then  "alice" loads remote wallet app "WalletApp" and accepts invitation
 
     # player: Issuer & Alice's wallet app
     When  Issuer checks wallet application profile for "alice" it finds profile status as "completed"

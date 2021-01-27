@@ -44,6 +44,7 @@ import (
 	mockoutofband "github.com/trustbloc/edge-adapter/pkg/internal/mock/outofband"
 	"github.com/trustbloc/edge-adapter/pkg/internal/mock/presentproof"
 	"github.com/trustbloc/edge-adapter/pkg/profile/issuer"
+	"github.com/trustbloc/edge-adapter/pkg/restapi"
 	mockprovider "github.com/trustbloc/edge-adapter/pkg/restapi/internal/mocks/provider"
 	adaptervc "github.com/trustbloc/edge-adapter/pkg/vc"
 	issuervc "github.com/trustbloc/edge-adapter/pkg/vc/issuer"
@@ -82,15 +83,15 @@ func config() *Config {
 		GovernanceProvider: &mockgovernance.MockProvider{}}
 }
 
-func getHandler(t *testing.T, op *Operation, lookup string) Handler {
+func getHandler(t *testing.T, op *Operation, lookup string) restapi.Handler {
 	return getHandlerWithError(t, op, lookup)
 }
 
-func getHandlerWithError(t *testing.T, op *Operation, lookup string) Handler {
+func getHandlerWithError(t *testing.T, op *Operation, lookup string) restapi.Handler {
 	return handlerLookup(t, op, lookup)
 }
 
-func handlerLookup(t *testing.T, op *Operation, lookup string) Handler {
+func handlerLookup(t *testing.T, op *Operation, lookup string) restapi.Handler {
 	handlers := op.GetRESTHandlers()
 	require.NotEmpty(t, handlers)
 
@@ -120,7 +121,7 @@ func serveHTTP(t *testing.T, handler http.HandlerFunc, method, path string, req 
 	return rr
 }
 
-func serveHTTPMux(t *testing.T, handler Handler, endpoint string, reqBytes []byte, // nolint: unparam
+func serveHTTPMux(t *testing.T, handler restapi.Handler, endpoint string, reqBytes []byte, // nolint: unparam
 	urlVars map[string]string) *httptest.ResponseRecorder {
 	r, err := http.NewRequest(handler.Method(), endpoint, bytes.NewBuffer(reqBytes))
 	require.NoError(t, err)

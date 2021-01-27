@@ -6,12 +6,13 @@ SPDX-License-Identifier: Apache-2.0
 package rp
 
 import (
+	"github.com/trustbloc/edge-adapter/pkg/restapi"
 	"github.com/trustbloc/edge-adapter/pkg/restapi/rp/operation"
 )
 
 // New returns new controller instance.
 func New(config *operation.Config) (*Controller, error) {
-	var allHandlers []operation.Handler
+	var allHandlers []restapi.Handler
 
 	rpService, err := operation.New(config)
 	if err != nil {
@@ -27,10 +28,10 @@ func New(config *operation.Config) (*Controller, error) {
 
 // Controller contains handlers for controller.
 type Controller struct {
-	handlers []operation.Handler
+	handlers []restapi.Handler
 }
 
 // GetOperations returns all controller endpoints.
-func (c *Controller) GetOperations() []operation.Handler {
+func (c *Controller) GetOperations() []restapi.Handler {
 	return c.handlers
 }
