@@ -304,7 +304,7 @@ func TestOperation_RequestApplicationProfile(t *testing.T) {
 
 		require.Equal(t, rw.Code, http.StatusOK)
 
-		response := applicationProfileResponse{}
+		response := ApplicationProfileResponse{}
 		err = json.Unmarshal(rw.Body.Bytes(), &response)
 		require.NoError(t, err)
 		require.Equal(t, response.InvitationID, sampleProfile.InvitationID)
@@ -331,7 +331,7 @@ func TestOperation_RequestApplicationProfile(t *testing.T) {
 
 		require.Equal(t, rw.Code, http.StatusOK)
 
-		response := applicationProfileResponse{}
+		response := ApplicationProfileResponse{}
 		err = json.Unmarshal(rw.Body.Bytes(), &response)
 		require.NoError(t, err)
 		require.Equal(t, response.InvitationID, sampleProfile.InvitationID)
@@ -414,7 +414,7 @@ func TestOperation_RequestApplicationProfile(t *testing.T) {
 
 		require.Equal(t, rw.Code, http.StatusOK)
 
-		response := applicationProfileResponse{}
+		response := ApplicationProfileResponse{}
 		err = json.Unmarshal(rw.Body.Bytes(), &response)
 		require.NoError(t, err)
 		require.Equal(t, response.InvitationID, sampleProfile.InvitationID)
@@ -500,7 +500,7 @@ func TestOperation_RequestApplicationProfile(t *testing.T) {
 
 		require.Equal(t, rw.Code, http.StatusOK)
 
-		response := applicationProfileResponse{}
+		response := ApplicationProfileResponse{}
 		err = json.Unmarshal(rw.Body.Bytes(), &response)
 		require.NoError(t, err)
 		require.Equal(t, response.InvitationID, sampleProfile.InvitationID)
@@ -717,9 +717,9 @@ func TestOperation_SendCHAPIRequest(t *testing.T) {
 
 		require.Equal(t, rw.Code, http.StatusOK)
 
-		var response chapiResponse
+		var response CHAPIResponse
 		require.NoError(t, json.Unmarshal(rw.Body.Bytes(), &response))
-		require.JSONEq(t, string(response.Body.Response), chapiResponseSample, "")
+		require.JSONEq(t, string(response.Response), chapiResponseSample, "")
 	})
 }
 

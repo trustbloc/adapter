@@ -91,6 +91,16 @@ func GetDIDConnectResponseKey(issuerID, agentID string) string {
 	return issuerID + agentID + "-didconnect-response"
 }
 
+// GetDeepLinkWalletInvitationKey key for wallet bridge invitation URLs.
+func GetDeepLinkWalletInvitationKey(userID string) string {
+	return userID + "-walletbridge-invitation"
+}
+
+// GetRemoteWalletAppInfo key for wallet info of remote wallet app.
+func GetRemoteWalletAppInfo(userID string) string {
+	return userID + "-remote-wallet-appinfo"
+}
+
 // JSONMarshaller can marshal itself to JSON bytes.
 type JSONMarshaller interface {
 	MarshalJSON() ([]byte, error)

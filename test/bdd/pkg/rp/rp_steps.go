@@ -548,7 +548,10 @@ func validateGovernance(governanceVCBytes []byte) error {
 }
 
 func (s *Steps) walletAcceptsDIDCommInvitation(walletID, tenantID string) error {
-	marshalled := s.context.Store[bddutil.GetDIDConnectRequestKey(tenantID, walletID)]
+	marshalled, found := s.context.GetString(bddutil.GetDIDConnectRequestKey(tenantID, walletID))
+	if !found {
+		return fmt.Errorf("DID connect request not found")
+	}
 
 	inv := &outofband.Invitation{}
 
