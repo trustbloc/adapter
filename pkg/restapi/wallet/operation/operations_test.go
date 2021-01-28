@@ -30,6 +30,7 @@ import (
 	mockstore "github.com/hyperledger/aries-framework-go/pkg/mock/storage"
 	"github.com/hyperledger/aries-framework-go/pkg/store/connection"
 	"github.com/stretchr/testify/require"
+	edgemockstore "github.com/trustbloc/edge-core/pkg/storage/mockstore"
 
 	mockoutofband "github.com/trustbloc/edge-adapter/pkg/internal/mock/outofband"
 	mockprotocol "github.com/trustbloc/edge-adapter/pkg/restapi/internal/mocks/protocol"
@@ -173,7 +174,7 @@ func TestOperation_CreateInvitation(t *testing.T) {
 		require.NotEmpty(t, op)
 
 		rw := httptest.NewRecorder()
-		rq := httptest.NewRequest(http.MethodPost, commandName+CreateInvitationPath,
+		rq := httptest.NewRequest(http.MethodPost, operationID+CreateInvitationPath,
 			bytes.NewBufferString(sampleRequest))
 
 		op.CreateInvitation(rw, rq)
@@ -205,7 +206,7 @@ func TestOperation_CreateInvitation(t *testing.T) {
 		require.NotEmpty(t, op)
 
 		rw := httptest.NewRecorder()
-		rq := httptest.NewRequest(http.MethodPost, commandName+CreateInvitationPath,
+		rq := httptest.NewRequest(http.MethodPost, operationID+CreateInvitationPath,
 			bytes.NewBufferString(sampleRequest))
 
 		op.CreateInvitation(rw, rq)
@@ -221,7 +222,7 @@ func TestOperation_CreateInvitation(t *testing.T) {
 		require.NotEmpty(t, op)
 
 		rw := httptest.NewRecorder()
-		rq := httptest.NewRequest(http.MethodPost, commandName+CreateInvitationPath,
+		rq := httptest.NewRequest(http.MethodPost, operationID+CreateInvitationPath,
 			bytes.NewBufferString(sampleInvalidRequest))
 
 		op.CreateInvitation(rw, rq)
@@ -237,7 +238,7 @@ func TestOperation_CreateInvitation(t *testing.T) {
 		require.NotEmpty(t, op)
 
 		rw := httptest.NewRecorder()
-		rq := httptest.NewRequest(http.MethodPost, commandName+CreateInvitationPath,
+		rq := httptest.NewRequest(http.MethodPost, operationID+CreateInvitationPath,
 			bytes.NewBufferString("-----"))
 
 		op.CreateInvitation(rw, rq)
@@ -272,13 +273,51 @@ func TestOperation_CreateInvitation(t *testing.T) {
 		require.NotEmpty(t, op)
 
 		rw := httptest.NewRecorder()
-		rq := httptest.NewRequest(http.MethodPost, commandName+CreateInvitationPath,
+		rq := httptest.NewRequest(http.MethodPost, operationID+CreateInvitationPath,
 			bytes.NewBufferString(sampleRequest))
 
 		op.CreateInvitation(rw, rq)
 		require.Equal(t, rw.Code, http.StatusInternalServerError)
 
 		require.Contains(t, rw.Body.String(), `{"errMessage":"failed to save wallet application profile: sample-error"}`)
+	})
+
+	t.Run("create new invitation - failure - save transient store error", func(t *testing.T) {
+		op, err := New(&Config{
+			AriesCtx: &mockprovider.MockProvider{
+				Provider: &ariesmockprovider.Provider{
+					StorageProviderValue:              mockstore.NewMockStoreProvider(),
+					ProtocolStateStorageProviderValue: mockstore.NewMockStoreProvider(),
+					KMSValue:                          &mockkms.KeyManager{},
+					ServiceMap: map[string]interface{}{
+						didexchangesvc.DIDExchange: &mockdidexsvc.MockDIDExchangeSvc{},
+						outofbandsvc.Name:          &mockoutofband.MockService{},
+						mediator.Coordination:      &mockroute.MockMediatorSvc{},
+					},
+				},
+			},
+			MsgRegistrar: msghandler.NewRegistrar(),
+			WalletAppURL: sampleAppURL,
+			AdapterTransientStore: &edgemockstore.MockStore{
+				Store:  make(map[string][]byte),
+				ErrPut: fmt.Errorf(sampleErr),
+			},
+		})
+
+		require.NoError(t, err)
+		require.NotEmpty(t, op)
+
+		rw := httptest.NewRecorder()
+		rq := httptest.NewRequest(http.MethodPost, operationID+CreateInvitationPath,
+			bytes.NewBufferString(sampleRequest))
+
+		op.CreateInvitation(rw, rq)
+		require.Equal(t, rw.Code, http.StatusInternalServerError)
+		require.Contains(t, rw.Body.String(), `{"errMessage":"failed to save in adapter transient store: sample-error"}`)
+
+		err = op.putInAdapterTransientStore("test-key", make(chan int))
+		require.Error(t, err)
+		require.Contains(t, err.Error(), `failed to marshal transient data`)
 	})
 }
 
@@ -298,7 +337,7 @@ func TestOperation_RequestApplicationProfile(t *testing.T) {
 		require.NoError(t, err)
 
 		rw := httptest.NewRecorder()
-		rq := httptest.NewRequest(http.MethodGet, commandName+RequestAppProfile, bytes.NewBufferString(sampleReq))
+		rq := httptest.NewRequest(http.MethodGet, operationID+RequestAppProfilePath, bytes.NewBufferString(sampleReq))
 
 		op.RequestApplicationProfile(rw, rq)
 
@@ -322,7 +361,7 @@ func TestOperation_RequestApplicationProfile(t *testing.T) {
 		require.NoError(t, err)
 
 		rw := httptest.NewRecorder()
-		rq := httptest.NewRequest(http.MethodGet, commandName+RequestAppProfile, bytes.NewBufferString(sampleReq))
+		rq := httptest.NewRequest(http.MethodGet, operationID+RequestAppProfilePath, bytes.NewBufferString(sampleReq))
 		rq = mux.SetURLVars(rq, map[string]string{
 			"id": sampleUserID,
 		})
@@ -349,7 +388,7 @@ func TestOperation_RequestApplicationProfile(t *testing.T) {
 		require.NoError(t, err)
 
 		rw := httptest.NewRecorder()
-		rq := httptest.NewRequest(http.MethodGet, commandName+RequestAppProfile, bytes.NewBufferString(`{}`))
+		rq := httptest.NewRequest(http.MethodGet, operationID+RequestAppProfilePath, bytes.NewBufferString(`{}`))
 
 		op.RequestApplicationProfile(rw, rq)
 
@@ -357,7 +396,7 @@ func TestOperation_RequestApplicationProfile(t *testing.T) {
 		require.Contains(t, rw.Body.String(), invalidIDErr)
 
 		rw = httptest.NewRecorder()
-		rq = httptest.NewRequest(http.MethodGet, commandName+RequestAppProfile, bytes.NewBufferString(`===`))
+		rq = httptest.NewRequest(http.MethodGet, operationID+RequestAppProfilePath, bytes.NewBufferString(`===`))
 
 		op.RequestApplicationProfile(rw, rq)
 
@@ -371,7 +410,7 @@ func TestOperation_RequestApplicationProfile(t *testing.T) {
 		require.NotEmpty(t, op)
 
 		rw := httptest.NewRecorder()
-		rq := httptest.NewRequest(http.MethodGet, commandName+RequestAppProfile, bytes.NewBufferString(sampleReq3))
+		rq := httptest.NewRequest(http.MethodGet, operationID+RequestAppProfilePath, bytes.NewBufferString(sampleReq3))
 		rq = mux.SetURLVars(rq, map[string]string{
 			"id": sampleUserID,
 		})
@@ -405,7 +444,7 @@ func TestOperation_RequestApplicationProfile(t *testing.T) {
 		}
 
 		rw := httptest.NewRecorder()
-		rq := httptest.NewRequest(http.MethodGet, commandName+RequestAppProfile, bytes.NewBufferString(sampleReq))
+		rq := httptest.NewRequest(http.MethodGet, operationID+RequestAppProfilePath, bytes.NewBufferString(sampleReq))
 		rq = mux.SetURLVars(rq, map[string]string{
 			"id": sampleUserID,
 		})
@@ -491,7 +530,7 @@ func TestOperation_RequestApplicationProfile(t *testing.T) {
 		}
 
 		rw := httptest.NewRecorder()
-		rq := httptest.NewRequest(http.MethodGet, commandName+RequestAppProfile, bytes.NewBufferString(sampleReq))
+		rq := httptest.NewRequest(http.MethodGet, operationID+RequestAppProfilePath, bytes.NewBufferString(sampleReq))
 		rq = mux.SetURLVars(rq, map[string]string{
 			"id": sampleUserID,
 		})
@@ -518,7 +557,7 @@ func TestOperation_RequestApplicationProfile(t *testing.T) {
 		require.NoError(t, err)
 
 		rw := httptest.NewRecorder()
-		rq := httptest.NewRequest(http.MethodGet, commandName+RequestAppProfile, bytes.NewBufferString(sampleReq2))
+		rq := httptest.NewRequest(http.MethodGet, operationID+RequestAppProfilePath, bytes.NewBufferString(sampleReq2))
 
 		op.RequestApplicationProfile(rw, rq)
 		require.Equal(t, rw.Code, http.StatusInternalServerError)
@@ -574,7 +613,7 @@ func TestOperation_SendCHAPIRequest(t *testing.T) {
 
 		// test missing user ID
 		rw := httptest.NewRecorder()
-		rq := httptest.NewRequest(http.MethodPost, commandName+SendCHAPIRequest, bytes.NewBufferString(`{}`))
+		rq := httptest.NewRequest(http.MethodPost, operationID+SendCHAPIRequestPath, bytes.NewBufferString(`{}`))
 		op.SendCHAPIRequest(rw, rq)
 
 		require.Equal(t, rw.Code, http.StatusBadRequest)
@@ -582,7 +621,7 @@ func TestOperation_SendCHAPIRequest(t *testing.T) {
 
 		// test missing CHAPI request
 		rw = httptest.NewRecorder()
-		rq = httptest.NewRequest(http.MethodPost, commandName+SendCHAPIRequest, bytes.NewBufferString(`{
+		rq = httptest.NewRequest(http.MethodPost, operationID+SendCHAPIRequestPath, bytes.NewBufferString(`{
 			"userID": "sample-001"
 		}`))
 		op.SendCHAPIRequest(rw, rq)
@@ -592,7 +631,7 @@ func TestOperation_SendCHAPIRequest(t *testing.T) {
 
 		// test invalid request
 		rw = httptest.NewRecorder()
-		rq = httptest.NewRequest(http.MethodPost, commandName+SendCHAPIRequest, bytes.NewBufferString(`---`))
+		rq = httptest.NewRequest(http.MethodPost, operationID+SendCHAPIRequestPath, bytes.NewBufferString(`---`))
 		op.SendCHAPIRequest(rw, rq)
 
 		require.Equal(t, rw.Code, http.StatusBadRequest)
@@ -606,7 +645,8 @@ func TestOperation_SendCHAPIRequest(t *testing.T) {
 		require.NotEmpty(t, op)
 
 		rw := httptest.NewRecorder()
-		rq := httptest.NewRequest(http.MethodPost, commandName+SendCHAPIRequest, bytes.NewBufferString(chapiRequestSample))
+		rq := httptest.NewRequest(http.MethodPost, operationID+SendCHAPIRequestPath,
+			bytes.NewBufferString(chapiRequestSample))
 		op.SendCHAPIRequest(rw, rq)
 
 		require.Equal(t, rw.Code, http.StatusBadRequest)
@@ -623,7 +663,8 @@ func TestOperation_SendCHAPIRequest(t *testing.T) {
 		require.NoError(t, err)
 
 		rw := httptest.NewRecorder()
-		rq := httptest.NewRequest(http.MethodPost, commandName+SendCHAPIRequest, bytes.NewBufferString(chapiRequestSample))
+		rq := httptest.NewRequest(http.MethodPost, operationID+SendCHAPIRequestPath,
+			bytes.NewBufferString(chapiRequestSample))
 		op.SendCHAPIRequest(rw, rq)
 
 		require.Equal(t, rw.Code, http.StatusInternalServerError)
@@ -640,7 +681,8 @@ func TestOperation_SendCHAPIRequest(t *testing.T) {
 		require.NoError(t, err)
 
 		rw := httptest.NewRecorder()
-		rq := httptest.NewRequest(http.MethodPost, commandName+SendCHAPIRequest, bytes.NewBufferString(chapiRequestSample))
+		rq := httptest.NewRequest(http.MethodPost, operationID+SendCHAPIRequestPath,
+			bytes.NewBufferString(chapiRequestSample))
 		op.SendCHAPIRequest(rw, rq)
 
 		require.Equal(t, rw.Code, http.StatusInternalServerError)
@@ -701,7 +743,7 @@ func TestOperation_SendCHAPIRequest(t *testing.T) {
 		require.NoError(t, err)
 
 		rw := httptest.NewRecorder()
-		rq := httptest.NewRequest(http.MethodPost, commandName+SendCHAPIRequest, bytes.NewBufferString(`{
+		rq := httptest.NewRequest(http.MethodPost, operationID+SendCHAPIRequestPath, bytes.NewBufferString(`{
 			"userID": "userID-001",
 			"chapiRequest" : {
 				"web": {
@@ -876,7 +918,6 @@ func (m *mockDIDExchangeSvc) RegisterMsgEvent(ch chan<- service.StateMsg) error 
 }
 
 func (m *mockDIDExchangeSvc) pushEvent(msg service.StateMsg, index int) {
-	fmt.Println("GOT EVENT")
 	m.lock.Lock()
 	defer m.lock.Unlock()
 

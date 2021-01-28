@@ -28,10 +28,12 @@ import (
 	"github.com/hyperledger/aries-framework-go/pkg/didcomm/protocol/decorator"
 	didexchangesvc "github.com/hyperledger/aries-framework-go/pkg/didcomm/protocol/didexchange"
 	"github.com/hyperledger/aries-framework-go/pkg/didcomm/protocol/mediator"
+	outofbandsvc "github.com/hyperledger/aries-framework-go/pkg/didcomm/protocol/outofband"
 	presentproofsvc "github.com/hyperledger/aries-framework-go/pkg/didcomm/protocol/presentproof"
 	"github.com/hyperledger/aries-framework-go/pkg/doc/did"
 	"github.com/hyperledger/aries-framework-go/pkg/doc/verifiable"
 	vdrapi "github.com/hyperledger/aries-framework-go/pkg/framework/aries/api/vdr"
+	mockdidexsvc "github.com/hyperledger/aries-framework-go/pkg/mock/didcomm/protocol/didexchange"
 	mockroute "github.com/hyperledger/aries-framework-go/pkg/mock/didcomm/protocol/mediator"
 	ariesmockprovider "github.com/hyperledger/aries-framework-go/pkg/mock/provider"
 	ariesmockstorage "github.com/hyperledger/aries-framework-go/pkg/mock/storage"
@@ -227,6 +229,24 @@ func TestNew(t *testing.T) {
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "create service")
 	})
+
+	t.Run("wraps error if cannot initialize wallet bridge", func(t *testing.T) {
+		config := config(t)
+		config.AriesContextProvider = &mockprovider.MockProvider{
+			Provider: &ariesmockprovider.Provider{
+				ProtocolStateStorageProviderValue: mem.NewProvider(),
+				StorageProviderValue:              mem.NewProvider(),
+				ServiceMap: map[string]interface{}{
+					mediator.Coordination:      &mockroute.MockMediatorSvc{},
+					didexchangesvc.DIDExchange: &mockdidexsvc.MockDIDExchangeSvc{},
+				},
+			},
+		}
+
+		_, err := New(config)
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "failed to initialize wallet bridge")
+	})
 }
 
 func Test_HandleDIDExchangeRequests(t *testing.T) {
@@ -369,12 +389,15 @@ func TestListenForConnectionCompleteEvents(t *testing.T) {
 					},
 					ProtocolStateStorageProviderValue: mem.NewProvider(),
 					ServiceMap: map[string]interface{}{
-						mediator.Coordination: &mockroute.MockMediatorSvc{},
+						mediator.Coordination:      &mockroute.MockMediatorSvc{},
+						didexchangesvc.DIDExchange: &mockdidexsvc.MockDIDExchangeSvc{},
+						outofbandsvc.Name:          &mockoutofband.MockService{},
 					},
 				}},
 			PresentProofClient: &mockpresentproof.MockClient{},
 			MsgRegistrar:       msghandler.NewRegistrar(),
 			AriesMessenger:     &messenger.MockMessenger{},
+			OOBClient:          &mockoutofband.MockClient{},
 		})
 		require.NoError(t, err)
 		invitationID := uuid.New().String()
@@ -499,9 +522,12 @@ func TestListenForConnectionCompleteEvents(t *testing.T) {
 				},
 				ProtocolStateStorageProviderValue: mem.NewProvider(),
 				ServiceMap: map[string]interface{}{
-					mediator.Coordination: &mockroute.MockMediatorSvc{},
+					mediator.Coordination:      &mockroute.MockMediatorSvc{},
+					didexchangesvc.DIDExchange: &mockdidexsvc.MockDIDExchangeSvc{},
+					outofbandsvc.Name:          &mockoutofband.MockService{},
 				},
 			}}
+		config.OOBClient = &mockoutofband.MockClient{}
 
 		o, err := New(config)
 		require.NoError(t, err)
@@ -3101,7 +3127,9 @@ func TestDIDDocReq(t *testing.T) { // nolint:gocyclo
 				StorageProviderValue:              mem.NewProvider(),
 				VDRegistryValue:                   &mockvdr.MockVDRegistry{CreateErr: errors.New("create did error")},
 				ServiceMap: map[string]interface{}{
-					mediator.Coordination: &mockroute.MockMediatorSvc{},
+					mediator.Coordination:      &mockroute.MockMediatorSvc{},
+					didexchangesvc.DIDExchange: &mockdidexsvc.MockDIDExchangeSvc{},
+					outofbandsvc.Name:          &mockoutofband.MockService{},
 				},
 			}}
 

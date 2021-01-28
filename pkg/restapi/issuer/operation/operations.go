@@ -42,7 +42,9 @@ import (
 	"github.com/trustbloc/edge-adapter/pkg/crypto"
 	"github.com/trustbloc/edge-adapter/pkg/internal/common/support"
 	"github.com/trustbloc/edge-adapter/pkg/profile/issuer"
+	"github.com/trustbloc/edge-adapter/pkg/restapi"
 	commhttp "github.com/trustbloc/edge-adapter/pkg/restapi/internal/common/http"
+	walletops "github.com/trustbloc/edge-adapter/pkg/restapi/wallet/operation"
 	"github.com/trustbloc/edge-adapter/pkg/route"
 	adaptervc "github.com/trustbloc/edge-adapter/pkg/vc"
 	issuervc "github.com/trustbloc/edge-adapter/pkg/vc/issuer"
@@ -79,14 +81,9 @@ const (
 	// credential custom fields
 	vcFieldName        = "name"
 	vcFieldDescription = "description"
-)
 
-// Handler http handler for each controller API endpoint.
-type Handler interface {
-	Path() string
-	Method() string
-	Handle() http.HandlerFunc
-}
+	issuerWalletBridgeLabel = "issuer_wallet_bridge"
+)
 
 type connections interface {
 	GetConnectionIDByDIDs(string, string) (string, error)
@@ -129,6 +126,7 @@ type Config struct {
 	PublicDIDCreator   PublicDIDCreator
 	TLSConfig          *tls.Config
 	GovernanceProvider GovernanceProvider
+	WalletBridgeAppURL string
 }
 
 // New returns issuer rest instance.
@@ -209,6 +207,16 @@ func New(config *Config) (*Operation, error) { // nolint:funlen,gocyclo
 
 	vccrypto := crypto.New(config.AriesCtx.KMS(), config.AriesCtx.Crypto(), config.AriesCtx.VDRegistry())
 
+	walletBridge, err := walletops.New(&walletops.Config{
+		AriesCtx:     config.AriesCtx,
+		MsgRegistrar: config.MsgRegistrar,
+		WalletAppURL: config.WalletBridgeAppURL,
+		DefaultLabel: issuerWalletBridgeLabel,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to initialize wallet bridge : %w", err)
+	}
+
 	op := &Operation{
 		oobClient:          oobClient,
 		didExClient:        didExClient,
@@ -227,6 +235,7 @@ func New(config *Config) (*Operation, error) { // nolint:funlen,gocyclo
 		httpClient:         &http.Client{Transport: &http.Transport{TLSClientConfig: config.TLSConfig}},
 		routeSvc:           routeSvc,
 		messenger:          config.AriesMessenger,
+		walletBridge:       walletBridge,
 	}
 
 	go op.didCommActionListener(actionCh)
@@ -259,11 +268,12 @@ type Operation struct {
 	governanceProvider GovernanceProvider
 	routeSvc           routeService
 	messenger          service.Messenger
+	walletBridge       *walletops.Operation
 }
 
 // GetRESTHandlers get all controller API handler available for this service.
-func (o *Operation) GetRESTHandlers() []Handler {
-	return []Handler{
+func (o *Operation) GetRESTHandlers() []restapi.Handler {
+	return append([]restapi.Handler{
 		// profile
 		support.NewHTTPHandler(profileEndpoint, http.MethodPost, o.createIssuerProfileHandler),
 		support.NewHTTPHandler(getProfileEndpoint, http.MethodGet, o.getIssuerProfileHandler),
@@ -272,7 +282,7 @@ func (o *Operation) GetRESTHandlers() []Handler {
 		support.NewHTTPHandler(walletConnectEndpoint, http.MethodGet, o.walletConnectHandler),
 		support.NewHTTPHandler(validateConnectResponseEndpoint, http.MethodPost, o.validateWalletResponseHandler),
 		support.NewHTTPHandler(getCHAPIRequestEndpoint, http.MethodGet, o.getCHAPIRequestHandler),
-	}
+	}, o.walletBridge.GetRESTHandlers()...)
 }
 
 func (o *Operation) createIssuerProfileHandler(rw http.ResponseWriter, req *http.Request) {

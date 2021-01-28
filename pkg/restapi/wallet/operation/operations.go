@@ -24,9 +24,11 @@ import (
 	"github.com/hyperledger/aries-framework-go/pkg/didcomm/common/service"
 	didexchangesvc "github.com/hyperledger/aries-framework-go/pkg/didcomm/protocol/didexchange"
 	"github.com/trustbloc/edge-core/pkg/log"
+	edgestore "github.com/trustbloc/edge-core/pkg/storage"
 
 	"github.com/trustbloc/edge-adapter/pkg/aries"
 	"github.com/trustbloc/edge-adapter/pkg/internal/common/support"
+	"github.com/trustbloc/edge-adapter/pkg/restapi"
 	commhttp "github.com/trustbloc/edge-adapter/pkg/restapi/internal/common/http"
 )
 
@@ -34,10 +36,10 @@ var logger = log.New("edge-adapter/wallet-bridge")
 
 // constants for endpoints of wallet bridge controller.
 const (
-	commandName          = "/wallet-bridge"
-	CreateInvitationPath = "/create-invitation"
-	RequestAppProfile    = "/request-app-profile"
-	SendCHAPIRequest     = "/send-chapi-request"
+	operationID           = "/wallet-bridge"
+	CreateInvitationPath  = operationID + "/create-invitation"
+	RequestAppProfilePath = operationID + "/request-app-profile"
+	SendCHAPIRequestPath  = operationID + "/send-chapi-request"
 
 	invalidIDErr                = "invalid ID"
 	invalidCHAPIRequestErr      = "invalid CHAPI request"
@@ -59,20 +61,27 @@ type Handler interface {
 
 // Operation is REST service operation controller for wallet bridge features.
 type Operation struct {
-	agentLabel   string
-	walletAppURL string
-	store        *walletAppProfileStore
-	outOfBand    *outofband.Client
-	didExchange  *didexchange.Client
-	messenger    *messaging.Client
+	agentLabel            string
+	walletAppURL          string
+	store                 *walletAppProfileStore
+	outOfBand             *outofband.Client
+	didExchange           *didexchange.Client
+	messenger             *messaging.Client
+	adapterTransientStore edgestore.Store
 }
 
 // Config defines configuration for wallet adapter operations.
 type Config struct {
-	AriesCtx     aries.CtxProvider
-	MsgRegistrar command.MessageHandler
-	WalletAppURL string
-	DefaultLabel string
+	AriesCtx              aries.CtxProvider
+	MsgRegistrar          command.MessageHandler
+	WalletAppURL          string
+	DefaultLabel          string
+	AdapterTransientStore edgestore.Store
+}
+
+type consentRequestCtx struct {
+	InvitationID string
+	UserDID      string
 }
 
 // New returns new wallet bridge REST controller instance.
@@ -98,12 +107,13 @@ func New(config *Config) (*Operation, error) {
 	}
 
 	o := &Operation{
-		agentLabel:   config.DefaultLabel,
-		walletAppURL: config.WalletAppURL,
-		store:        store,
-		outOfBand:    outOfBandClient,
-		didExchange:  didExchangeClient,
-		messenger:    messengerClient,
+		agentLabel:            config.DefaultLabel,
+		walletAppURL:          config.WalletAppURL,
+		store:                 store,
+		outOfBand:             outOfBandClient,
+		didExchange:           didExchangeClient,
+		messenger:             messengerClient,
+		adapterTransientStore: config.AdapterTransientStore,
 	}
 
 	err = o.setupEventHandlers()
@@ -115,11 +125,11 @@ func New(config *Config) (*Operation, error) {
 }
 
 // GetRESTHandlers get all controller API handler available for this protocol service.
-func (o *Operation) GetRESTHandlers() []Handler {
-	return []Handler{
+func (o *Operation) GetRESTHandlers() []restapi.Handler {
+	return []restapi.Handler{
 		support.NewHTTPHandler(CreateInvitationPath, http.MethodPost, o.CreateInvitation),
-		support.NewHTTPHandler(RequestAppProfile, http.MethodPost, o.RequestApplicationProfile),
-		support.NewHTTPHandler(SendCHAPIRequest, http.MethodPost, o.SendCHAPIRequest),
+		support.NewHTTPHandler(RequestAppProfilePath, http.MethodPost, o.RequestApplicationProfile),
+		support.NewHTTPHandler(SendCHAPIRequestPath, http.MethodPost, o.SendCHAPIRequest),
 	}
 }
 
@@ -150,6 +160,15 @@ func (o *Operation) CreateInvitation(rw http.ResponseWriter, req *http.Request) 
 	// TODO : public DIDs in request parameters - [Issue#edge-agent:645]
 	invitation, err := o.outOfBand.CreateInvitation([]string{didexchangesvc.PIURI},
 		outofband.WithLabel(o.agentLabel))
+	if err != nil {
+		commhttp.WriteErrorResponseWithLog(rw, http.StatusInternalServerError, err.Error(), CreateInvitationPath, logger)
+
+		return
+	}
+
+	err = o.putInAdapterTransientStore(invitation.ID, &consentRequestCtx{
+		InvitationID: invitation.ID, UserDID: request.UserID,
+	})
 	if err != nil {
 		commhttp.WriteErrorResponseWithLog(rw, http.StatusInternalServerError, err.Error(), CreateInvitationPath, logger)
 
@@ -188,14 +207,14 @@ func (o *Operation) CreateInvitation(rw http.ResponseWriter, req *http.Request) 
 func (o *Operation) RequestApplicationProfile(rw http.ResponseWriter, req *http.Request) {
 	request, err := prepareAppProfileRequest(req.Body)
 	if err != nil {
-		commhttp.WriteErrorResponseWithLog(rw, http.StatusBadRequest, err.Error(), RequestAppProfile, logger)
+		commhttp.WriteErrorResponseWithLog(rw, http.StatusBadRequest, err.Error(), RequestAppProfilePath, logger)
 
 		return
 	}
 
 	profile, err := o.store.GetProfileByUserID(request.UserID)
 	if err != nil {
-		commhttp.WriteErrorResponseWithLog(rw, http.StatusInternalServerError, err.Error(), RequestAppProfile, logger)
+		commhttp.WriteErrorResponseWithLog(rw, http.StatusInternalServerError, err.Error(), RequestAppProfilePath, logger)
 
 		return
 	}
@@ -210,7 +229,7 @@ func (o *Operation) RequestApplicationProfile(rw http.ResponseWriter, req *http.
 
 		err = o.waitForConnectionCompletion(ctx, profile)
 		if err != nil {
-			commhttp.WriteErrorResponseWithLog(rw, http.StatusInternalServerError, err.Error(), RequestAppProfile, logger)
+			commhttp.WriteErrorResponseWithLog(rw, http.StatusInternalServerError, err.Error(), RequestAppProfilePath, logger)
 
 			return
 		}
@@ -220,7 +239,7 @@ func (o *Operation) RequestApplicationProfile(rw http.ResponseWriter, req *http.
 
 	rw.WriteHeader(http.StatusOK)
 	commhttp.WriteResponseWithLog(rw,
-		&ApplicationProfileResponse{profile.InvitationID, status}, RequestAppProfile, logger)
+		&ApplicationProfileResponse{profile.InvitationID, status}, RequestAppProfilePath, logger)
 }
 
 // SendCHAPIRequest swagger:route POST /wallet-bridge/send-chapi-request wallet-bridge chapiRequest
@@ -234,20 +253,21 @@ func (o *Operation) RequestApplicationProfile(rw http.ResponseWriter, req *http.
 func (o *Operation) SendCHAPIRequest(rw http.ResponseWriter, req *http.Request) {
 	request, err := prepareCHAPIRequest(req.Body)
 	if err != nil {
-		commhttp.WriteErrorResponseWithLog(rw, http.StatusBadRequest, err.Error(), SendCHAPIRequest, logger)
+		commhttp.WriteErrorResponseWithLog(rw, http.StatusBadRequest, err.Error(), SendCHAPIRequestPath, logger)
 
 		return
 	}
 
 	profile, err := o.store.GetProfileByUserID(request.UserID)
 	if err != nil {
-		commhttp.WriteErrorResponseWithLog(rw, http.StatusBadRequest, err.Error(), SendCHAPIRequest, logger)
+		commhttp.WriteErrorResponseWithLog(rw, http.StatusBadRequest, err.Error(), SendCHAPIRequestPath, logger)
 
 		return
 	}
 
 	if profile.ConnectionID == "" {
-		commhttp.WriteErrorResponseWithLog(rw, http.StatusInternalServerError, noConnectionFoundErr, SendCHAPIRequest, logger)
+		commhttp.WriteErrorResponseWithLog(rw, http.StatusInternalServerError, noConnectionFoundErr,
+			SendCHAPIRequestPath, logger)
 
 		return
 	}
@@ -261,7 +281,7 @@ func (o *Operation) SendCHAPIRequest(rw http.ResponseWriter, req *http.Request) 
 		"data":  request.Request,
 	})
 	if err != nil {
-		commhttp.WriteErrorResponseWithLog(rw, http.StatusInternalServerError, err.Error(), SendCHAPIRequest, logger)
+		commhttp.WriteErrorResponseWithLog(rw, http.StatusInternalServerError, err.Error(), SendCHAPIRequestPath, logger)
 
 		return
 	}
@@ -271,20 +291,20 @@ func (o *Operation) SendCHAPIRequest(rw http.ResponseWriter, req *http.Request) 
 		messaging.WaitForResponse(ctx, chapiRespDIDCommMsgType))
 	if err != nil {
 		commhttp.WriteErrorResponseWithLog(rw, http.StatusInternalServerError,
-			fmt.Sprintf(failedToSendCHAPIRequestErr, err), SendCHAPIRequest, logger)
+			fmt.Sprintf(failedToSendCHAPIRequestErr, err), SendCHAPIRequestPath, logger)
 
 		return
 	}
 
 	response, err := extractCHAPIResponse(responseBytes)
 	if err != nil {
-		commhttp.WriteErrorResponseWithLog(rw, http.StatusInternalServerError, err.Error(), SendCHAPIRequest, logger)
+		commhttp.WriteErrorResponseWithLog(rw, http.StatusInternalServerError, err.Error(), SendCHAPIRequestPath, logger)
 
 		return
 	}
 
 	rw.WriteHeader(http.StatusOK)
-	commhttp.WriteResponseWithLog(rw, &CHAPIResponse{response}, SendCHAPIRequest, logger)
+	commhttp.WriteResponseWithLog(rw, &CHAPIResponse{response}, SendCHAPIRequestPath, logger)
 }
 
 func (o *Operation) setupEventHandlers() error {
@@ -377,6 +397,22 @@ func (o *Operation) waitForConnectionCompletion(ctx context.Context, profile *wa
 			return fmt.Errorf("time out waiting for state 'completed'")
 		}
 	}
+}
+
+func (o *Operation) putInAdapterTransientStore(k string, v interface{}) error {
+	if o.adapterTransientStore != nil {
+		vBytes, err := json.Marshal(v)
+		if err != nil {
+			return fmt.Errorf("failed to marshal transient data: %w", err)
+		}
+
+		err = o.adapterTransientStore.Put(k, vBytes)
+		if err != nil {
+			return fmt.Errorf("failed to save in adapter transient store: %w", err)
+		}
+	}
+
+	return nil
 }
 
 func prepareAppProfileRequest(r io.Reader) (*ApplicationProfileRequest, error) {

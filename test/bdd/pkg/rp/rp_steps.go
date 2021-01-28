@@ -53,7 +53,9 @@ import (
 )
 
 const (
-	rpAdapterURL        = "https://localhost:8070"
+	// AdapterURL is RP adapter endpoint.
+	AdapterURL = "https://localhost:8070"
+
 	resolverURL         = "http://localhost:8072/1.0/identifiers"
 	hydraAdminURL       = "https://localhost:4445/"
 	hydraPublicURL      = "https://localhost:4444/"
@@ -131,6 +133,8 @@ func (s *Steps) RegisterSteps(g *godog.Suite) {
 	g.Step(`^"([^"]*)" responds to "([^"]*)" with the user's data$`, s.issuerRepliesWithUserData)
 	g.Step(`^the user is redirected to the rp tenant "([^"]*)"$`, s.userRedirectBackToTenant)
 	g.Step(`^the rp tenant "([^"]*)" retrieves the user data from the rp adapter$`, s.rpTenantRetrievesUserData)
+	g.Step(`^remote wallet "([^"]*)" supports credential handler request/response through DIDComm$`, s.registerCHAPIMsgHandler) //nolint:lll
+	g.Step(`^"([^"]*)" loads remote wallet app "([^"]*)" and accepts rp tenant's invitation$`, s.connectToWalletBridge)
 }
 
 func (s *Steps) registerAgentController(agentID, inboundHost, inboundPort, controllerURL string) error {
@@ -140,6 +144,14 @@ func (s *Steps) registerAgentController(agentID, inboundHost, inboundPort, contr
 func (s *Steps) registerAgentControllerWithWebhook(agentID, inboundHost, inboundPort,
 	webhookURL, controllerURL string) error {
 	return s.controller.ValidateAgentConnectionWithWebhook(agentID, inboundHost, inboundPort, webhookURL, controllerURL)
+}
+
+func (s *Steps) registerCHAPIMsgHandler(agentID string) error {
+	return s.controller.RegisterCHAPIMsgHandler(agentID)
+}
+
+func (s *Steps) connectToWalletBridge(userID, agentID string) error {
+	return s.controller.ConnectToWalletBridge(userID, agentID)
 }
 
 func (s *Steps) createTenant(label, scopesStr, blindedRouteStr string) error {
@@ -164,7 +176,7 @@ func (s *Steps) createTenant(label, scopesStr, blindedRouteStr string) error {
 
 	resp, err := (&http.Client{
 		Transport: &http.Transport{TLSClientConfig: s.context.TLSConfig()},
-	}).Post(rpAdapterURL+"/relyingparties", "application/json", bytes.NewReader(requestBytes)) //nolint:bodyclose
+	}).Post(AdapterURL+"/relyingparties", "application/json", bytes.NewReader(requestBytes)) //nolint:bodyclose
 	if err != nil {
 		return fmt.Errorf("failed to send request to create rp tenant : %w", err)
 	}
@@ -291,7 +303,7 @@ func (s *Steps) newTrustBlocDID(agentID string) (*did.Doc, error) {
 	return docResolution.DIDDocument, nil
 }
 
-func (s *Steps) lookupClientID(label string) error {
+func (s *Steps) lookupClientID(label, scope string) error {
 	u, err := url.Parse(hydraAdminURL)
 	if err != nil {
 		return fmt.Errorf("failed to parse hydraAdminURL %s : %w", hydraAdminURL, err)
@@ -320,7 +332,7 @@ func (s *Steps) lookupClientID(label string) error {
 
 	for _, c := range list.Payload {
 		if c.ClientID == tenantCtx.ClientID {
-			return validateTenantRegistration(tenantCtx, c)
+			return validateTenantRegistration(tenantCtx, c, scope)
 		}
 	}
 
@@ -329,21 +341,23 @@ func (s *Steps) lookupClientID(label string) error {
 		label, s.tenantCtx[label].ClientID, hydraAdminURL)
 }
 
-func validateTenantRegistration(expected *tenantContext, result *models.OAuth2Client) error {
+func validateTenantRegistration(expected *tenantContext, result *models.OAuth2Client, scopesStr string) error {
 	if !stringsContain(result.RedirectUris, expected.callbackURL) {
 		return fmt.Errorf(
 			"expected tenant to be registered with callback %s but instead got %v",
 			expected.callbackURL, result.RedirectUris)
 	}
 
-	expectedScopes := []string{oidc.ScopeOpenID, "credit_card_stmt:remote"}
-	resultScopes := strings.Split(result.Scope, " ")
+	if scopesStr != "" {
+		expectedScopes := append([]string{oidc.ScopeOpenID}, strings.Split(scopesStr, ",")...)
+		resultScopes := strings.Split(result.Scope, " ")
 
-	for i := range expectedScopes {
-		if !stringsContain(resultScopes, expectedScopes[i]) {
-			return fmt.Errorf(
-				"expected tenant to be registered with scope %s but instead got %v",
-				expectedScopes[i], resultScopes)
+		for i := range expectedScopes {
+			if !stringsContain(resultScopes, expectedScopes[i]) {
+				return fmt.Errorf(
+					"expected tenant to be registered with scope %s but instead got %v",
+					expectedScopes[i], resultScopes)
+			}
 		}
 	}
 
@@ -361,7 +375,7 @@ func (s *Steps) registerTenantFlow(label, scopesStr string) error {
 		return err
 	}
 
-	return s.lookupClientID(label)
+	return s.lookupClientID(label, scopesStr)
 }
 
 // nolint:funlen
@@ -407,7 +421,7 @@ func (s *Steps) redirectUserToAdapter(label, scope string) error {
 		return fmt.Errorf("failed to read body of redirect to rp adapter : %w", err)
 	}
 
-	if !strings.HasPrefix(resp.Request.URL.String(), rpAdapterURL+"/ui") {
+	if !strings.HasPrefix(resp.Request.URL.String(), AdapterURL+"/ui") {
 		return fmt.Errorf(
 			"rp adapter failed to redirect user to the ui endpoint. Request returned in response: %+v. Response body: %s", //nolint:lll
 			resp.Request, string(bits),
@@ -433,7 +447,7 @@ func (s *Steps) sendCHAPIRequestToWallet(tenantID, walletID string) error {
 	tenant := s.tenantCtx[tenantID]
 
 	//nolint:bodyclose
-	resp, err := tenant.browser.Get(fmt.Sprintf("%s/presentations/create?h=%s", rpAdapterURL, tenant.pdHandle))
+	resp, err := tenant.browser.Get(fmt.Sprintf("%s/presentations/create?h=%s", AdapterURL, tenant.pdHandle))
 	if err != nil {
 		return fmt.Errorf("rp adapter failed to produce a chapi request : %w", err)
 	}
@@ -661,7 +675,7 @@ func (s *Steps) respondWithAuthZ(wallet, tenant, issuer, routerURL string) error
 	}
 
 	resp, err := tenantCtx.browser.Post( // nolint:bodyclose
-		rpAdapterURL+"/presentations/handleResponse", "application/json", bytes.NewReader(chapiResponseBytes))
+		AdapterURL+"/presentations/handleResponse", "application/json", bytes.NewReader(chapiResponseBytes))
 	if err != nil {
 		return fmt.Errorf("'%s' failed to post response back to '%s': %w", wallet, tenant, err)
 	}
@@ -879,7 +893,7 @@ func (s *Steps) userRedirectBackToTenant(tenant string) error {
 
 	err := backoff.RetryNotify(
 		func() error {
-			req := fmt.Sprintf("%s/presentations/result?h=%s", rpAdapterURL, tenantCtx.invitationID)
+			req := fmt.Sprintf("%s/presentations/result?h=%s", AdapterURL, tenantCtx.invitationID)
 
 			resp, serviceErr := tenantCtx.browser.Get(req) // nolint:bodyclose
 			if serviceErr != nil {

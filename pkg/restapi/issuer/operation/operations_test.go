@@ -61,7 +61,7 @@ func TestNew(t *testing.T) {
 		c, err := New(config())
 		require.NoError(t, err)
 
-		require.Equal(t, 5, len(c.GetRESTHandlers()))
+		require.Equal(t, 8, len(c.GetRESTHandlers()))
 	})
 
 	t.Run("test new - aries provider fail", func(t *testing.T) {
@@ -123,6 +123,30 @@ func TestNew(t *testing.T) {
 		require.Nil(t, c)
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "failed to create aries mediator client")
+	})
+
+	t.Run("wallet bridge error", func(t *testing.T) {
+		config := config()
+		config.AriesCtx = &mockprovider.MockProvider{
+			Provider: &ariesmockprovider.Provider{
+				StorageProviderValue: &mockstore.MockStoreProvider{
+					FailNamespace: "walletappprofile",
+				},
+				ProtocolStateStorageProviderValue: mockstore.NewMockStoreProvider(),
+				ServiceMap: map[string]interface{}{
+					outofbandsvc.Name:       &mockoutofband.MockService{},
+					mediator.Coordination:   &mockroute.MockMediatorSvc{},
+					didexchange.DIDExchange: &mocksvc.MockDIDExchangeSvc{},
+					issuecredsvc.Name:       &issuecredential.MockIssueCredentialSvc{},
+					presentproofsvc.Name:    &presentproof.MockPresentProofSvc{},
+				},
+			},
+		}
+
+		c, err := New(config)
+		require.Nil(t, c)
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "failed to initialize wallet bridge")
 	})
 }
 
