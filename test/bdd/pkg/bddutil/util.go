@@ -14,6 +14,7 @@ import (
 	"io"
 	"io/ioutil"
 	"net/http"
+	"reflect"
 	"strings"
 	"time"
 
@@ -168,4 +169,19 @@ func SendHTTP(method, destination string, message []byte, result interface{}) er
 	}
 
 	return json.Unmarshal(data, result)
+}
+
+// JSONBytesEqual compares 2 JSON bytes
+func JSONBytesEqual(a, b []byte) (bool, error) {
+	var ar, br interface{}
+
+	if err := json.Unmarshal(a, &ar); err != nil {
+		return false, err
+	}
+
+	if err := json.Unmarshal(b, &br); err != nil {
+		return false, err
+	}
+
+	return reflect.DeepEqual(br, ar), nil
 }
