@@ -77,8 +77,8 @@ const (
 	}`
 
 	sampleCHAPIStoreResponse = `{
-                dataType: "response",
-                data: "success"
+                "dataType": "response",
+                "data": "success"
             }`
 	//nolint: lll
 	sampleCHAPIGetResponse = `{
@@ -236,9 +236,8 @@ func (e *WalletSteps) sendCHAPIRequestToRemoteWalletUser(adapterURL, userID, wal
 	}
 
 	go func() {
-		failure := e.handleCHAPIStoreRequest(walletInfo.ControllerURL, walletInfo.WebhookURL,
-			walletInfo.MessageHandle, expectedResponse)
-		if failure != nil {
+		if failure := e.handleCHAPIStoreRequest(walletInfo.ControllerURL, walletInfo.WebhookURL,
+			walletInfo.MessageHandle, expectedResponse); failure != nil {
 			panic(fmt.Sprintf("failed to reply with chapi response: %s", failure.Error()))
 		}
 	}()
@@ -270,10 +269,20 @@ func (e *WalletSteps) sendCHAPIRequestToRemoteWalletUser(adapterURL, userID, wal
 		return fmt.Errorf("failed to read response from wallet-bridge send CHAPI request: %w", err)
 	}
 
+	result, err := bddutil.JSONBytesEqual(response.Response, []byte(expectedResponse))
+	if err != nil {
+		return fmt.Errorf("failed to assert CHAPI response: %w", err)
+	}
+
+	if !result {
+		return fmt.Errorf("unexpected CHAPI response, \n expected `%s` \nbut got :`%s`",
+			expectedResponse, string(response.Response))
+	}
+
 	return nil
 }
 
-func (e *WalletSteps) handleCHAPIStoreRequest(controllerURL, webhookURL, msgHandle string,
+func (e *WalletSteps) handleCHAPIStoreRequest(controllerURL, webhookURL, msgHandle,
 	expectedResponse string) error {
 	msg, err := agent.PullMsgFromWebhookURL(webhookURL, msgHandle)
 	if err != nil {
@@ -292,7 +301,7 @@ func (e *WalletSteps) handleCHAPIStoreRequest(controllerURL, webhookURL, msgHand
 	msgDataBytes, err := json.Marshal(map[string]interface{}{
 		"@id":   uuid.New().String(),
 		"@type": chapiResponseMsgType,
-		"data":  []byte(expectedResponse),
+		"data":  json.RawMessage(expectedResponse),
 	})
 	if err != nil {
 		return err
