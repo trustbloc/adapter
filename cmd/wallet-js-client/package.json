@@ -1,7 +1,7 @@
 {
   "name": "@trustbloc/wallet-js-client",
   "description": "client APIs for wallet applications.",
-  "version": "0.0.1",
+  "version": "0.1.0",
   "main": "dist/wallet-client.min.js",
   "browser": "dist/wallet-client.min.js",
   "scripts": {
@@ -11,12 +11,15 @@
   "files": [
     "dist"
   ],
-  "private": true,
   "keywords": [],
   "author": "",
   "license": "Apache-2.0",
   "bugs": {
     "url": "https://github.com/trustbloc/edge-adapter/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git://github.com/trustbloc/edge-adapter.git"
   },
   "devDependencies": {
     "clean-webpack-plugin": "^3.0.0",
