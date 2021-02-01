@@ -81,6 +81,16 @@ jobs:
           make rp-adapter-rest-docker
           docker tag ghcr.io/trustbloc/rp-adapter:latest ${RP_ADAPTER_REST_PKG}:${ADAPTER_REST_TAG}
           docker push ${RP_ADAPTER_REST_PKG}:${ADAPTER_REST_TAG}
+
+          cd ./cmd/wallet-js-client
+          sed -i 's/"version": "0.1.0"/"version": "'NPM_WALLET_PKG_TAG'"/g' package.json
+          sed -i 's#"name": "@trustbloc/wallet-js-client"#"name": "@'${NPM_WALLET_PKG_NAME}'"#g' package.json
+          sed -i 's#"url": "git://github.com/trustbloc/edge-adapter.git"#"url": "git://github.com/'${NPM_WALLET_PKG_REPO}'.git"#g' package.json
+          npm install
+          npm publish
         env:
           DOCKER_USER: $(DOCKER_USER)
           DOCKER_PASSWORD: $(DOCKER_PASSWORD)
+          NPM_WALLET_PKG_TAG: $(NPM_WALLET_PKG_TAG)
+          NPM_WALLET_PKG_NAME: $(NPM_WALLET_PKG_NAME)
+          NPM_WALLET_PKG_REPO: $(NPM_WALLET_PKG_REPO)
