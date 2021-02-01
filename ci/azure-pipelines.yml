@@ -73,6 +73,9 @@ jobs:
           trap logout EXIT
           source ci/version_var.sh
           echo $DOCKER_PASSWORD | docker login ghcr.io --username $DOCKER_USER --password-stdin
+          echo '//npm.pkg.github.com/:_authToken=${DOCKER_PASSWORD}' > ~/.npmrc
+          echo '@trustbloc-cicd:registry=https://npm.pkg.github.com' >> ~/.npmrc
+          echo '@trustbloc:registry=https://npm.pkg.github.com' >> ~/.npmrc
 
           make issuer-adapter-rest-docker
           docker tag ghcr.io/trustbloc/issuer-adapter:latest ${ISSUER_ADAPTER_REST_PKG}:${ADAPTER_REST_TAG}
