@@ -39,6 +39,8 @@ SPDX-License-Identifier: Apache-2.0
 </template>
 
 <script>
+    import {WalletClient} from "@trustbloc/wallet-js-client";
+
     export default {
         name: 'WalletConnect',
         data() {
@@ -66,7 +68,6 @@ SPDX-License-Identifier: Apache-2.0
                 return;
             }
 
-            await this.$polyfill.loadOnce()
 
             const connectionRequest = {
                 web: {
@@ -76,7 +77,9 @@ SPDX-License-Identifier: Apache-2.0
 
             console.log("chapi request : ", JSON.stringify(connectionRequest))
 
-            const result = await navigator.credentials.get(connectionRequest);
+            let walletClient = new WalletClient()
+
+            const result = await walletClient.get(connectionRequest);
 
             console.log("chapi response : ", JSON.stringify(result.data))
 

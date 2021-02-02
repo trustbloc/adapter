@@ -60,6 +60,7 @@ SPDX-License-Identifier: Apache-2.0
 <script>
     import NavbarComponent from "./components/Navbar.vue";
     import FooterComponent from "./components/Footer.vue";
+    import {WalletClient} from "@trustbloc/wallet-js-client";
 
     export default {
         name: 'credentials',
@@ -68,7 +69,6 @@ SPDX-License-Identifier: Apache-2.0
             FooterComponent
         },
         created: async function() {
-            await this.$polyfill.loadOnce()
             await this.getRequestForPresentation()
             const credentialQuery = {
                 web: {
@@ -89,7 +89,9 @@ SPDX-License-Identifier: Apache-2.0
                 }
             }
             console.log("rp-adapter: chapi request: " + JSON.stringify(credentialQuery, undefined, 4))
-            const webCredential = await navigator.credentials.get(credentialQuery)
+
+            let walletClient = new WalletClient()
+            const webCredential = await walletClient.get(credentialQuery)
             if (!webCredential) {
                 console.error("no webcredential received from wallet!")
             }
