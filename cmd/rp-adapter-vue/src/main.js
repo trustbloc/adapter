@@ -10,8 +10,6 @@ import VueRouter from "vue-router";
 import routes from "./router/index";
 import "@/assets/css/tailwind.css";
 import axios from "axios"
-import * as polyfill from "credential-handler-polyfill";
-import * as webCredentialHandler from "web-credential-handler";
 
 import { library, dom } from '@fortawesome/fontawesome-svg-core';
 import { fas } from '@fortawesome/free-solid-svg-icons';
@@ -24,9 +22,6 @@ dom.watch()
 Vue.prototype.$http = axios
 
 Vue.component('font-awesome-icon', FontAwesomeIcon)
-
-Vue.prototype.$polyfill = polyfill
-Vue.prototype.$webCredentialHandler = webCredentialHandler
 
 Vue.config.productionTip = false
 
