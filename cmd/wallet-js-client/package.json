@@ -6,7 +6,8 @@
   "browser": "dist/wallet-client.min.js",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
-    "build": "webpack --mode=production"
+    "build": "webpack --mode=production",
+    "prepare": "npm run build"
   },
   "files": [
     "dist"
