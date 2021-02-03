@@ -105,7 +105,8 @@ type IssuerTokenReq struct {
 
 // IssuerTokenResp issuer user data token response.
 type IssuerTokenResp struct {
-	Token string `json:"token,omitempty"`
+	Token  string `json:"token,omitempty"`
+	UserID string `json:"userid,omitempty"`
 }
 
 // ReferenceCredentialData reference credential data.

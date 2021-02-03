@@ -61,7 +61,7 @@ func TestNew(t *testing.T) {
 		c, err := New(config())
 		require.NoError(t, err)
 
-		require.Equal(t, 8, len(c.GetRESTHandlers()))
+		require.Equal(t, 10, len(c.GetRESTHandlers()))
 	})
 
 	t.Run("test new - aries provider fail", func(t *testing.T) {
@@ -300,7 +300,8 @@ func TestConnectWallet(t *testing.T) {
 	urlVars := make(map[string]string)
 
 	tknResp := &IssuerTokenResp{
-		Token: uuid.New().String(),
+		Token:  uuid.New().String(),
+		UserID: "testuser",
 	}
 
 	tknRespBytes, err := json.Marshal(tknResp)
@@ -482,7 +483,7 @@ func TestConnectWallet(t *testing.T) {
 		rr = serveHTTPMux(t, walletConnectHandler, walletConnectEndpoint+"?"+stateQueryParam+"="+state, nil, urlVars)
 
 		require.Equal(t, http.StatusInternalServerError, rr.Code)
-		require.Contains(t, rr.Body.String(), "received empty token from the issuer")
+		require.Contains(t, rr.Body.String(), "received empty token info from the issuer")
 
 		// issuer http call error
 		rr = serveHTTPMux(t, walletConnectHandler, walletConnectEndpoint+"?"+stateQueryParam+"="+state, nil, urlVars)

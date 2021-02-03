@@ -57,7 +57,8 @@ func tokenHandler(rw http.ResponseWriter, req *http.Request) {
 	token := uuid.New().String()
 
 	resp := &issuerTokenResp{
-		Token: token,
+		Token:  token,
+		UserID: "bdduser",
 	}
 
 	respBytes, err := json.Marshal(resp)
@@ -138,7 +139,8 @@ type userDataReq struct {
 }
 
 type issuerTokenResp struct {
-	Token string `json:"token,omitempty"`
+	Token  string `json:"token,omitempty"`
+	UserID string `json:"userid,omitempty"`
 }
 
 type errorResponse struct {
