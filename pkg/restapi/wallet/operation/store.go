@@ -14,9 +14,10 @@ import (
 )
 
 const (
-	storageNamespace = "walletappprofile"
-	invitationKeyFmt = "inv_%s"
-	userIDKeyFmt     = "usr_%s"
+	storageNamespace  = "walletappprofile"
+	invitationKeyFmt  = "inv_%s"
+	userIDKeyFmt      = "usr_%s"
+	preferencesKeyFmt = "prfrnc_%s"
 )
 
 // walletAppProfile is wallet application profile.
@@ -102,6 +103,16 @@ func (w *walletAppProfileStore) GetProfileByUserID(userID string) (*walletAppPro
 	return &profile, nil
 }
 
+// SavePreferences saves user preferences bytes by user ID.
+func (w *walletAppProfileStore) SavePreferences(userID string, preferences []byte) error {
+	return w.store.Put(getPreferencesKeyPrefix(userID), preferences)
+}
+
+// GetPreferences gets user preferences bytes by user ID.
+func (w *walletAppProfileStore) GetPreferences(userID string) ([]byte, error) {
+	return w.store.Get(getPreferencesKeyPrefix(userID))
+}
+
 func (w *walletAppProfileStore) putProfileInStore(prefix func(string) string, key string, profile interface{}) error {
 	profileBytes, err := json.Marshal(profile)
 	if err != nil {
@@ -119,4 +130,8 @@ func getInvitationKeyPrefix(invitationID string) string {
 // getUserIDKeyPrefix is key prefix for wallet application profile user ID key.
 func getUserIDKeyPrefix(userID string) string {
 	return fmt.Sprintf(userIDKeyFmt, userID)
+}
+
+func getPreferencesKeyPrefix(userID string) string {
+	return fmt.Sprintf(preferencesKeyFmt, userID)
 }

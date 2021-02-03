@@ -88,3 +88,42 @@ type CHAPIResponse struct {
 	// in: body
 	Response json.RawMessage `json:"chapiResponse"`
 }
+
+// SaveWalletPreferencesRequest model
+//
+// Request for saving user's wallet preferences.
+//
+// swagger:parameters savePreferences
+type SaveWalletPreferencesRequest struct {
+	// UserID of the user.
+	// required: true
+	UserID string `json:"userID"`
+
+	// Wallet type, supported types 'browser, remote'
+	// required: true
+	WalletType WalletType `json:"walletType"`
+}
+
+// getWalletPreferences model
+//
+// This is used for getting wallet preferences by user.
+//
+// swagger:parameters getPreferences
+type getWalletPreferences struct { // nolint: unused,deadcode
+	// The ID of the user
+	//
+	// in: path
+	// required: true
+	ID string `json:"id"`
+}
+
+// WalletPreferencesResponse model
+//
+// Response for request user wallet preferences.
+//
+// swagger:parameters walletPreferencesResponse
+type WalletPreferencesResponse struct {
+	// Wallet type, supported types 'browser, remote'
+	// required: true
+	WalletType WalletType `json:"walletType"`
+}

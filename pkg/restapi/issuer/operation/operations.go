@@ -376,9 +376,9 @@ func (o *Operation) walletConnectHandler(rw http.ResponseWriter, req *http.Reque
 		return
 	}
 
-	if tknResp.Token == "" {
+	if tknResp.Token == "" || tknResp.UserID == "" {
 		commhttp.WriteErrorResponseWithLog(rw, http.StatusInternalServerError,
-			"received empty token from the issuer", walletConnectEndpoint, logger)
+			"received empty token info from the issuer", walletConnectEndpoint, logger)
 
 		return
 	}

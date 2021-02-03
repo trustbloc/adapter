@@ -48,7 +48,7 @@ func TestNew(t *testing.T) {
 
 		require.NoError(t, err)
 		require.NotEmpty(t, op)
-		require.Len(t, op.GetRESTHandlers(), 3)
+		require.Len(t, op.GetRESTHandlers(), 5)
 	})
 
 	t.Run("create new instance - oob client failure", func(t *testing.T) {
@@ -880,6 +880,183 @@ func TestOperation_WaitForStateCompletion(t *testing.T) {
 		err = op.waitForConnectionCompletion(ctx, &walletAppProfile{InvitationID: sampleInvID})
 		require.Error(t, err)
 		require.Contains(t, err.Error(), sampleErr)
+	})
+}
+
+func TestOperation_SaveWalletPreferences(t *testing.T) {
+	const (
+		validSaveRequest         = `{"userID":"sampleUser", "walletType":"remote"}`
+		missingIDRequest         = `{"walletType":"remote"}`
+		missingWaletTypeRequest  = `{"userID":"sampleUser"}`
+		invalidWalletTypeRequest = `{"userID":"sampleUser", "walletType":"invalid"}`
+	)
+
+	t.Run("test save wallet preferences - success", func(t *testing.T) {
+		op, err := New(newMockConfig())
+		require.NoError(t, err)
+		require.NotEmpty(t, op)
+
+		rw := httptest.NewRecorder()
+		rq := httptest.NewRequest(http.MethodPost, SavePreferencesPath,
+			bytes.NewBufferString(validSaveRequest))
+		op.SaveWalletPreferences(rw, rq)
+
+		require.Equal(t, rw.Code, http.StatusOK)
+		require.Empty(t, rw.Body.String())
+	})
+
+	t.Run("test save wallet preferences - invalid request", func(t *testing.T) {
+		op, err := New(newMockConfig())
+		require.NoError(t, err)
+		require.NotEmpty(t, op)
+
+		rw := httptest.NewRecorder()
+		rq := httptest.NewRequest(http.MethodPost, SavePreferencesPath,
+			bytes.NewBufferString("=="))
+		op.SaveWalletPreferences(rw, rq)
+
+		require.Equal(t, rw.Code, http.StatusBadRequest)
+		require.Contains(t, rw.Body.String(), "invalid character")
+	})
+
+	t.Run("test save wallet preferences - invalid user ID", func(t *testing.T) {
+		op, err := New(newMockConfig())
+		require.NoError(t, err)
+		require.NotEmpty(t, op)
+
+		rw := httptest.NewRecorder()
+		rq := httptest.NewRequest(http.MethodPost, SavePreferencesPath,
+			bytes.NewBufferString(missingIDRequest))
+		op.SaveWalletPreferences(rw, rq)
+
+		require.Equal(t, rw.Code, http.StatusBadRequest)
+		require.Contains(t, rw.Body.String(), invalidIDErr)
+	})
+
+	t.Run("test save wallet preferences - missing wallet Type", func(t *testing.T) {
+		op, err := New(newMockConfig())
+		require.NoError(t, err)
+		require.NotEmpty(t, op)
+
+		rw := httptest.NewRecorder()
+		rq := httptest.NewRequest(http.MethodPost, SavePreferencesPath,
+			bytes.NewBufferString(missingWaletTypeRequest))
+		op.SaveWalletPreferences(rw, rq)
+
+		require.Equal(t, rw.Code, http.StatusBadRequest)
+		require.Contains(t, rw.Body.String(), "invalid wallet type '', supported types are [browser remote]")
+	})
+
+	t.Run("test save wallet preferences - invalid wallet Type", func(t *testing.T) {
+		op, err := New(newMockConfig())
+		require.NoError(t, err)
+		require.NotEmpty(t, op)
+
+		rw := httptest.NewRecorder()
+		rq := httptest.NewRequest(http.MethodPost, SavePreferencesPath,
+			bytes.NewBufferString(invalidWalletTypeRequest))
+		op.SaveWalletPreferences(rw, rq)
+
+		require.Equal(t, rw.Code, http.StatusBadRequest)
+		require.Contains(t, rw.Body.String(), "invalid wallet type 'invalid', supported types are [browser remote]")
+	})
+
+	t.Run("test save wallet preferences - save error", func(t *testing.T) {
+		config := &Config{
+			AriesCtx: &mockprovider.MockProvider{
+				Provider: &ariesmockprovider.Provider{
+					StorageProviderValue: &mockstore.MockStoreProvider{
+						Store: &mockstore.MockStore{
+							ErrPut: fmt.Errorf(sampleErr),
+						},
+					},
+					ProtocolStateStorageProviderValue: mockstore.NewMockStoreProvider(),
+					ServiceMap: map[string]interface{}{
+						didexchangesvc.DIDExchange: &mockdidexsvc.MockDIDExchangeSvc{},
+						outofbandsvc.Name:          &mockoutofband.MockService{},
+						mediator.Coordination:      &mockroute.MockMediatorSvc{},
+					},
+					KMSValue: &mockkms.KeyManager{},
+				},
+			},
+			MsgRegistrar: msghandler.NewRegistrar(),
+			WalletAppURL: sampleAppURL,
+		}
+
+		op, err := New(config)
+		require.NoError(t, err)
+		require.NotEmpty(t, op)
+
+		rw := httptest.NewRecorder()
+		rq := httptest.NewRequest(http.MethodPost, SavePreferencesPath,
+			bytes.NewBufferString(validSaveRequest))
+		op.SaveWalletPreferences(rw, rq)
+
+		require.Equal(t, rw.Code, http.StatusInternalServerError)
+		require.Contains(t, rw.Body.String(), sampleErr)
+	})
+}
+
+func TestOperation_GetWalletPreferences(t *testing.T) {
+	const validSaveRequest = `{"userID":"userID-001", "walletType":"remote"}`
+
+	t.Run("test get wallet preferences - success", func(t *testing.T) {
+		op, err := New(newMockConfig())
+		require.NoError(t, err)
+		require.NotEmpty(t, op)
+
+		// save preference
+		rws := httptest.NewRecorder()
+		rqs := httptest.NewRequest(http.MethodPost, SavePreferencesPath,
+			bytes.NewBufferString(validSaveRequest))
+		op.SaveWalletPreferences(rws, rqs)
+
+		rw := httptest.NewRecorder()
+		rq := httptest.NewRequest(http.MethodPost, GetPreferencesPath,
+			nil)
+
+		rq = mux.SetURLVars(rq, map[string]string{
+			"id": sampleUserID,
+		})
+
+		op.GetWalletPreferences(rw, rq)
+
+		require.Equal(t, rw.Code, http.StatusOK)
+		require.Contains(t, rw.Body.String(), `{"walletType":"remote"}`)
+	})
+
+	t.Run("test save wallet preferences - invalid request", func(t *testing.T) {
+		op, err := New(newMockConfig())
+		require.NoError(t, err)
+		require.NotEmpty(t, op)
+
+		rw := httptest.NewRecorder()
+		rq := httptest.NewRequest(http.MethodPost, GetPreferencesPath,
+			nil)
+
+		op.GetWalletPreferences(rw, rq)
+
+		require.Equal(t, rw.Code, http.StatusBadRequest)
+		require.Contains(t, rw.Body.String(), invalidIDErr)
+	})
+
+	t.Run("test save wallet preferences - data not found", func(t *testing.T) {
+		op, err := New(newMockConfig())
+		require.NoError(t, err)
+		require.NotEmpty(t, op)
+
+		rw := httptest.NewRecorder()
+		rq := httptest.NewRequest(http.MethodPost, GetPreferencesPath,
+			nil)
+
+		rq = mux.SetURLVars(rq, map[string]string{
+			"id": sampleUserID,
+		})
+
+		op.GetWalletPreferences(rw, rq)
+
+		require.Equal(t, rw.Code, http.StatusInternalServerError)
+		require.Contains(t, rw.Body.String(), `data not found`)
 	})
 }
 

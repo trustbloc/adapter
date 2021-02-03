@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/gorilla/mux"
 	"github.com/hyperledger/aries-framework-go/pkg/client/didexchange"
 	"github.com/hyperledger/aries-framework-go/pkg/client/messaging"
 	"github.com/hyperledger/aries-framework-go/pkg/client/outofband"
@@ -40,6 +41,8 @@ const (
 	CreateInvitationPath  = operationID + "/create-invitation"
 	RequestAppProfilePath = operationID + "/request-app-profile"
 	SendCHAPIRequestPath  = operationID + "/send-chapi-request"
+	SavePreferencesPath   = operationID + "/save-preferences"
+	GetPreferencesPath    = operationID + "/get-preferences/{id}"
 
 	invalidIDErr                = "invalid ID"
 	invalidCHAPIRequestErr      = "invalid CHAPI request"
@@ -82,6 +85,26 @@ type Config struct {
 type consentRequestCtx struct {
 	InvitationID string
 	UserDID      string
+}
+
+// WalletType supported wallet types
+type WalletType string
+
+const (
+	// Browser wallet type
+	Browser WalletType = "browser"
+	// Remote wallet type
+	Remote = "remote"
+)
+
+// IsValid checks if underlying wallet type is supported
+func (lt WalletType) IsValid() error {
+	switch lt {
+	case Browser, Remote:
+		return nil
+	}
+
+	return fmt.Errorf("invalid wallet type '%s', supported types are %s", lt, []WalletType{Browser, Remote})
 }
 
 // New returns new wallet bridge REST controller instance.
@@ -130,6 +153,8 @@ func (o *Operation) GetRESTHandlers() []restapi.Handler {
 		support.NewHTTPHandler(CreateInvitationPath, http.MethodPost, o.CreateInvitation),
 		support.NewHTTPHandler(RequestAppProfilePath, http.MethodPost, o.RequestApplicationProfile),
 		support.NewHTTPHandler(SendCHAPIRequestPath, http.MethodPost, o.SendCHAPIRequest),
+		support.NewHTTPHandler(SavePreferencesPath, http.MethodPost, o.SaveWalletPreferences),
+		support.NewHTTPHandler(GetPreferencesPath, http.MethodGet, o.GetWalletPreferences),
 	}
 }
 
@@ -307,6 +332,58 @@ func (o *Operation) SendCHAPIRequest(rw http.ResponseWriter, req *http.Request) 
 	commhttp.WriteResponseWithLog(rw, &CHAPIResponse{response}, SendCHAPIRequestPath, logger)
 }
 
+// SaveWalletPreferences swagger:route POST /wallet-bridge/save-preferences wallet-bridge savePreferences
+//
+//	Saves wallet preferences by user.
+//
+// Responses:
+//    default: genericError
+func (o *Operation) SaveWalletPreferences(rw http.ResponseWriter, req *http.Request) {
+	request, err := prepareSavePreferencesRequest(req.Body)
+	if err != nil {
+		commhttp.WriteErrorResponseWithLog(rw, http.StatusBadRequest, err.Error(), SavePreferencesPath, logger)
+
+		return
+	}
+
+	err = o.store.SavePreferences(request.UserID, []byte(request.WalletType))
+	if err != nil {
+		commhttp.WriteErrorResponseWithLog(rw, http.StatusInternalServerError, err.Error(), SavePreferencesPath, logger)
+
+		return
+	}
+
+	rw.WriteHeader(http.StatusOK)
+	logger.Infof("endpoint=[%s] msg=[%s]", SavePreferencesPath, "success")
+}
+
+// GetWalletPreferences swagger:route GET /wallet-bridge/get-preferences/{id} wallet-bridge getPreferences
+//
+// Gets wallet preferences by user.
+//
+// Responses:
+//    default: genericError
+//    200: walletPreferencesResponse
+func (o *Operation) GetWalletPreferences(rw http.ResponseWriter, req *http.Request) {
+	id, found := getIDFromRequest(req)
+	if !found {
+		commhttp.WriteErrorResponseWithLog(rw, http.StatusBadRequest, invalidIDErr, GetPreferencesPath, logger)
+
+		return
+	}
+
+	prefBytes, err := o.store.GetPreferences(id)
+	if err != nil {
+		commhttp.WriteErrorResponseWithLog(rw, http.StatusInternalServerError, err.Error(), GetPreferencesPath, logger)
+
+		return
+	}
+
+	rw.WriteHeader(http.StatusOK)
+	commhttp.WriteResponseWithLog(rw,
+		&WalletPreferencesResponse{WalletType: WalletType(prefBytes)}, SendCHAPIRequestPath, logger)
+}
+
 func (o *Operation) setupEventHandlers() error {
 	// create state channel subscribers
 	states := make(chan service.StateMsg)
@@ -455,6 +532,34 @@ func prepareCHAPIRequest(r io.Reader) (*CHAPIRequest, error) {
 	}
 
 	return &request, nil
+}
+func prepareSavePreferencesRequest(r io.Reader) (*SaveWalletPreferencesRequest, error) {
+	var request SaveWalletPreferencesRequest
+
+	err := json.NewDecoder(r).Decode(&request)
+	if err != nil {
+		return nil, err
+	}
+
+	if request.UserID == "" {
+		return nil, fmt.Errorf(invalidIDErr)
+	}
+
+	if err := request.WalletType.IsValid(); err != nil {
+		return nil, err
+	}
+
+	return &request, nil
+}
+
+// getIDFromRequest returns ID from request.
+func getIDFromRequest(req *http.Request) (string, bool) {
+	id := mux.Vars(req)["id"]
+	if id == "" {
+		return "", false
+	}
+
+	return id, true
 }
 
 func extractCHAPIResponse(msgBytes []byte) (json.RawMessage, error) {

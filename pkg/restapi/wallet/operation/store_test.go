@@ -16,10 +16,11 @@ import (
 )
 
 const (
-	sampleStoreErr = "sample error"
-	sampleUserID   = "userID-001"
-	sampleInvID    = "invID-001"
-	sampleConnID   = "connID-001"
+	sampleStoreErr    = "sample error"
+	sampleUserID      = "userID-001"
+	sampleInvID       = "invID-001"
+	sampleConnID      = "connID-001"
+	samplePreferences = "remote"
 )
 
 func TestNewWalletAppProfileStore(t *testing.T) {
@@ -227,5 +228,38 @@ func TestWalletAppProfileStore_putProfileInStore(t *testing.T) {
 		err = appProfileStore.putProfileInStore(getUserIDKeyPrefix, sampleUserID, make(chan int))
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "failed to get wallet application profile bytes")
+	})
+}
+
+func TestWalletAppProfileStore_Preferences(t *testing.T) {
+	t.Run("wallet preferences success  - save & get ", func(t *testing.T) {
+		appProfileStore, err := newWalletAppProfileStore(mockstorage.NewMockStoreProvider())
+		require.NoError(t, err)
+
+		err = appProfileStore.SavePreferences(sampleUserID, []byte(samplePreferences))
+		require.NoError(t, err)
+
+		prefBytes, err := appProfileStore.GetPreferences(sampleUserID)
+		require.NoError(t, err)
+		require.Equal(t, string(prefBytes), samplePreferences)
+	})
+
+	t.Run("wallet preferences failure  - save & get", func(t *testing.T) {
+		appProfileStore, err := newWalletAppProfileStore(&mockstorage.MockStoreProvider{
+			Store: &mockstorage.MockStore{
+				ErrPut: fmt.Errorf(sampleErr),
+				ErrGet: fmt.Errorf(sampleErr),
+			},
+		})
+		require.NoError(t, err)
+
+		err = appProfileStore.SavePreferences(sampleUserID, []byte(samplePreferences))
+		require.Error(t, err)
+		require.Equal(t, err.Error(), sampleErr)
+
+		prefBytes, err := appProfileStore.GetPreferences(sampleUserID)
+		require.Empty(t, prefBytes)
+		require.Error(t, err)
+		require.Equal(t, err.Error(), sampleErr)
 	})
 }
