@@ -50,7 +50,13 @@ SPDX-License-Identifier: Apache-2.0
             }
         },
         created: async function () {
-            const invitationUrl = "/issuer/didcomm/chapi/request?txnID=" + this.$route.query.txnID
+            let walletClient = new WalletClient({user: this.$route.query.uID,
+                preferenceGETURL: `/wallet-bridge/get-preferences/${this.$route.query.uID}`,
+                remoteBridge: '/wallet-bridge/send-chapi-request',
+                defaultPreference: 'browser'
+            })
+
+            const invitationUrl = `/issuer/didcomm/chapi/request?txnID=${this.$route.query.txnID}`
 
             let chapiRequest
             await this.$http.get(invitationUrl).then(
@@ -76,8 +82,6 @@ SPDX-License-Identifier: Apache-2.0
             };
 
             console.log("chapi request : ", JSON.stringify(connectionRequest))
-
-            let walletClient = new WalletClient()
 
             const result = await walletClient.get(connectionRequest);
 

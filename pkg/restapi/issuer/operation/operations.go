@@ -64,10 +64,11 @@ const (
 	validateConnectResponseEndpoint = "/connect/validate"
 
 	// http params
-	idPathParam     = "id"
-	txnIDQueryParam = "txnID"
-	stateQueryParam = "state"
-	redirectURLFmt  = "%s?state=%s"
+	idPathParam      = "id"
+	txnIDQueryParam  = "txnID"
+	stateQueryParam  = "state"
+	redirectURLFmt   = "%s?state=%s"
+	userIDQueryParam = "uID"
 
 	txnStoreName   = "issuer_txn"
 	tokenStoreName = "issuer_token"
@@ -392,7 +393,9 @@ func (o *Operation) walletConnectHandler(rw http.ResponseWriter, req *http.Reque
 		return
 	}
 
-	http.Redirect(rw, req, o.uiEndpoint+"?"+txnIDQueryParam+"="+txnID, http.StatusFound)
+	rURL := fmt.Sprintf("%s?%s=%s&%s=%s", o.uiEndpoint, txnIDQueryParam, txnID, userIDQueryParam, tknResp.UserID)
+
+	http.Redirect(rw, req, rURL, http.StatusFound)
 }
 
 func (o *Operation) validateWalletResponseHandler(rw http.ResponseWriter, req *http.Request) { //nolint: funlen

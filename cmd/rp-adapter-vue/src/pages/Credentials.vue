@@ -69,6 +69,8 @@ SPDX-License-Identifier: Apache-2.0
             FooterComponent
         },
         created: async function() {
+            let walletClient = new WalletClient({defaultPreference: 'browser'})
+
             await this.getRequestForPresentation()
             const credentialQuery = {
                 web: {
@@ -90,7 +92,6 @@ SPDX-License-Identifier: Apache-2.0
             }
             console.log("rp-adapter: chapi request: " + JSON.stringify(credentialQuery, undefined, 4))
 
-            let walletClient = new WalletClient()
             const webCredential = await walletClient.get(credentialQuery)
             if (!webCredential) {
                 console.error("no webcredential received from wallet!")
