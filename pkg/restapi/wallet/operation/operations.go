@@ -303,7 +303,7 @@ func (o *Operation) SendCHAPIRequest(rw http.ResponseWriter, req *http.Request) 
 	msgBytes, err := json.Marshal(map[string]interface{}{
 		"@id":   uuid.New().String(),
 		"@type": chapiRqstDIDCommMsgType,
-		"data":  request.Request,
+		"data":  request.Payload,
 	})
 	if err != nil {
 		commhttp.WriteErrorResponseWithLog(rw, http.StatusInternalServerError, err.Error(), SendCHAPIRequestPath, logger)
@@ -334,7 +334,7 @@ func (o *Operation) SendCHAPIRequest(rw http.ResponseWriter, req *http.Request) 
 
 // SaveWalletPreferences swagger:route POST /wallet-bridge/save-preferences wallet-bridge savePreferences
 //
-//	Saves wallet preferences by user.
+// 	Saves wallet preferences by user.
 //
 // Responses:
 //    default: genericError
@@ -431,7 +431,7 @@ func (o *Operation) stateMsgListener(ch <-chan service.StateMsg) {
 	}
 }
 
-//nolint:gocyclo //can't split function further and maintain readability.
+// nolint:gocyclo //can't split function further and maintain readability.
 func (o *Operation) waitForConnectionCompletion(ctx context.Context, profile *walletAppProfile) error {
 	stateCh := make(chan service.StateMsg)
 
@@ -523,7 +523,7 @@ func prepareCHAPIRequest(r io.Reader) (*CHAPIRequest, error) {
 		return nil, fmt.Errorf(invalidIDErr)
 	}
 
-	if len(request.Request) == 0 {
+	if len(request.Payload) == 0 {
 		return nil, fmt.Errorf(invalidCHAPIRequestErr)
 	}
 

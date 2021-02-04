@@ -568,7 +568,7 @@ func TestOperation_RequestApplicationProfile(t *testing.T) {
 func TestOperation_SendCHAPIRequest(t *testing.T) {
 	const chapiRequestSample = `{
 			"userID": "userID-001",
-			"chapiRequest" : {
+			"request" : {
 				"web": {
         			"VerifiablePresentation": {
             			"query": {
@@ -745,7 +745,7 @@ func TestOperation_SendCHAPIRequest(t *testing.T) {
 		rw := httptest.NewRecorder()
 		rq := httptest.NewRequest(http.MethodPost, operationID+SendCHAPIRequestPath, bytes.NewBufferString(`{
 			"userID": "userID-001",
-			"chapiRequest" : {
+			"request" : {
 				"web": {
         			"VerifiablePresentation": {
             			"query": {
@@ -761,7 +761,7 @@ func TestOperation_SendCHAPIRequest(t *testing.T) {
 
 		var response CHAPIResponse
 		require.NoError(t, json.Unmarshal(rw.Body.Bytes(), &response))
-		require.JSONEq(t, string(response.Response), chapiResponseSample, "")
+		require.JSONEq(t, string(response.Data), chapiResponseSample, "")
 	})
 }
 

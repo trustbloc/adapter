@@ -74,7 +74,7 @@ type CHAPIRequest struct {
 	// UserID of wallet application profile.
 	UserID string `json:"userID"`
 	// Request is credential handler request to be sent out.
-	Request json.RawMessage `json:"chapiRequest"`
+	Payload json.RawMessage `json:"request"`
 	// Timeout (in nanoseconds) waiting for reply.
 	Timeout time.Duration `json:"timeout,omitempty"`
 }
@@ -86,7 +86,7 @@ type CHAPIRequest struct {
 // swagger:response chapiResponse
 type CHAPIResponse struct {
 	// in: body
-	Response json.RawMessage `json:"chapiResponse"`
+	Data json.RawMessage `json:"data"`
 }
 
 // SaveWalletPreferencesRequest model

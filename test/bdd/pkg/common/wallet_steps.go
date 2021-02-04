@@ -244,7 +244,7 @@ func (e *WalletSteps) sendCHAPIRequestToRemoteWalletUser(adapterURL, userID, wal
 
 	rqBytes, err := json.Marshal(&walletops.CHAPIRequest{
 		UserID:  userID,
-		Request: chapiRqst,
+		Payload: chapiRqst,
 	})
 	if err != nil {
 		return fmt.Errorf("failed to prepare request for creating wallet-bridge invitation: %w", err)
@@ -269,14 +269,14 @@ func (e *WalletSteps) sendCHAPIRequestToRemoteWalletUser(adapterURL, userID, wal
 		return fmt.Errorf("failed to read response from wallet-bridge send CHAPI request: %w", err)
 	}
 
-	result, err := bddutil.JSONBytesEqual(response.Response, []byte(expectedResponse))
+	result, err := bddutil.JSONBytesEqual(response.Data, []byte(expectedResponse))
 	if err != nil {
 		return fmt.Errorf("failed to assert CHAPI response: %w", err)
 	}
 
 	if !result {
 		return fmt.Errorf("unexpected CHAPI response, \n expected `%s` \nbut got :`%s`",
-			expectedResponse, string(response.Response))
+			expectedResponse, string(response.Data))
 	}
 
 	return nil
