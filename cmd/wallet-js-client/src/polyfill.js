@@ -17,14 +17,6 @@ import * as polyfill from 'credential-handler-polyfill';
  * @class
  */
 export class PolyfillClient {
-    _load() {
-        polyfill.loadOnce()
-    }
-
-    _isLoaded() {
-        return typeof navigator.credentialsPolyfill !== 'undefined'
-    }
-
     // store a credential to browser wallet
     // @param {Object} credential in presentation format (without proof)
     async store(vp) {
@@ -43,5 +35,13 @@ export class PolyfillClient {
         }
 
         return await navigator.credentials.get(wCredRequest)
+    }
+
+    _load() {
+        polyfill.loadOnce()
+    }
+
+    _isLoaded() {
+        return typeof navigator.credentialsPolyfill !== 'undefined'
     }
 }
