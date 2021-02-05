@@ -32,35 +32,51 @@ export class WalletClient {
      * @param remoteBridge - (optional, but required for Remote wallet usage) bridge URL to be used to send credential handler
      * messages to remote wallet.
      */
-    constructor({user = '', preferencePOSTURL = '', preferenceGETURL = '', defaultPreference = 'browser', remoteBridge = ''} = {}) {
+    constructor({user = '', preferencePOSTURL = '', preferenceGETURL = '', defaultPreference = '', remoteBridge = ''} = {}) {
         this.walletInitOpts = {user, remoteBridge}
         this.preference = getWalletPreference(user, {preferencePOSTURL, preferenceGETURL, defaultPreference})
     }
 
-    /** get underlying wallet implementation
-     * @return underlying wallet implementation.
+    isInitialized(){
+        return this.wallet ? true : false
+    }
+
+    /** initializes wallet client based on preference type
+     * @throws {LoadPreferenceError} if fails to fetch preference.
      */
-    async getWallet() {
+    async init(){
         if (!this.wallet) {
             let walletType = walletTypes[await this.preference]
+            if (!walletType) {
+                throw "invalid wallet type"
+            }
+
             this.wallet = new walletType(this.walletInitOpts)
         }
-
-        return this.wallet
     }
+
 
     /** store a credential to wallet
      * @param {Object} credential in presentation format (without proof)
      */
     async store(vp) {
-        return (await this.getWallet()).store(vp)
+        await this.init()
+        return this.wallet.store(vp)
     }
 
     /** get a credential from wallet
      * @param {Object} web credential request
      */
     async get(wCredRequest) {
-        return (await this.getWallet()).get(wCredRequest)
+        await this.init()
+        return this.wallet.get(wCredRequest)
+    }
+}
+
+export class LoadPreferenceError extends Error {
+    constructor(message) {
+        super(message);
+        this.name = "LoadPreferenceError";
     }
 }
 
@@ -86,14 +102,14 @@ async function getWalletPreference(user, opts) {
             console.debug(`choosing wallet type '${opts.defaultPreference}' based on default preference.`)
             preference = opts.defaultPreference
         } else {
-            throw 'failed to select wallet type, provide at least default preference'
+            throw new LoadPreferenceError('failed to select wallet type, provide at least default preference')
         }
     } catch (e) {
         console.error('failed to fetch wallet preference', e)
         if (opts.defaultPreference) {
             return opts.defaultPreference
         } else {
-            throw 'failed to fetch wallet preference'
+            throw new LoadPreferenceError('failed to fetch wallet preference')
         }
     }
 
