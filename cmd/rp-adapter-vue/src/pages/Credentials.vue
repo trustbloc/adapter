@@ -6,6 +6,7 @@ SPDX-License-Identifier: Apache-2.0
 
 <template>
     <div>
+        <wallet-preference :user="$route.query.uID" :show-dialog="showDialog" @clicked="onPreferenceUpdate"/>
         <navbar-component></navbar-component>
         <main>
             <div class="relative pt-16 pb-16 flex content-center items-center justify-center"
@@ -38,6 +39,11 @@ SPDX-License-Identifier: Apache-2.0
                                         </div>
                                     </li>
                                     <li class="py-2 px-4">
+                                        <div>
+                                            <p class="text-2xl font-bold" style="color: red">{{ connectWalletErr }}</p>
+                                        </div>
+                                    </li>
+                                    <li class="py-2 px-4">
                                         <div class="flex items-center">
                                         <div>
                                             <a class="no-underline hover:underline font-bold text-blue-700"
@@ -60,55 +66,88 @@ SPDX-License-Identifier: Apache-2.0
 <script>
     import NavbarComponent from "./components/Navbar.vue";
     import FooterComponent from "./components/Footer.vue";
-    import {WalletClient} from "@trustbloc/wallet-js-client";
+    import WalletPreference from "./WalletPreference.vue";
+    import {LoadPreferenceError, WalletClient} from "@trustbloc/wallet-js-client";
 
     export default {
         name: 'credentials',
         components: {
             NavbarComponent,
-            FooterComponent
+            FooterComponent,
+            WalletPreference
         },
         created: async function() {
-            let walletClient = new WalletClient({defaultPreference: 'browser'})
+            this.walletClient = new WalletClient({
+                user: this.$route.query.uID,
+                preferenceGETURL: `/wallet-bridge/get-preferences/${this.$route.query.uID}`,
+                remoteBridge: '/wallet-bridge/send-chapi-request'
+            })
 
-            await this.getRequestForPresentation()
-            const credentialQuery = {
-                web: {
-                    VerifiablePresentation: {
-                        query: [
-                            {
-                                type: "PresentationDefinitionQuery",
-                                presentationDefinitionQuery: this.presentationRequest.pd
-
-                            },
-                            {
-                                type: "DIDConnect",
-                                invitation: this.presentationRequest.invitation,
-                                credentials: this.presentationRequest.credentials
-                            }
-                        ]
-                    }
+            try {
+                await this.walletClient.init()
+            } catch (e) {
+                if (e instanceof LoadPreferenceError) {
+                    console.debug('failed to initialize wallet selection, presenting user preference selection dialog.')
+                    this.showDialog = true
                 }
-            }
-            console.log("rp-adapter: chapi request: " + JSON.stringify(credentialQuery, undefined, 4))
 
-            const webCredential = await walletClient.get(credentialQuery)
-            if (!webCredential) {
-                console.error("no webcredential received from wallet!")
+                console.error(e)
+                this.connectWalletErr = e.message
+                return
             }
-            console.log("received from user: " + JSON.stringify(webCredential))
-            await this.requestPresentationValidation(webCredential)
-            const redirectURL = await this.validationResult(this.presentationRequest.invitation["@id"])
-            // redirect user
-            console.log(`redirecting user to ${redirectURL}`)
-            window.location.replace(redirectURL)
+
+            console.log('wallet client initialized successfully !')
+            await this.requestCredentials()
         },
         data() {
             return {
-                presentationRequest: null
+                presentationRequest: null,
+                connectWalletErr: null,
+                showDialog: false,
             }
         },
         methods: {
+            async requestCredentials(){
+                try {
+                    await this.sendCHAPRequest()
+                } catch (e) {
+                    console.error(e)
+                    this.connectWalletErr = 'Failed to Connect Wallet'
+                }
+            },
+            async sendCHAPRequest() {
+                await this.getRequestForPresentation()
+                const credentialQuery = {
+                    web: {
+                        VerifiablePresentation: {
+                            query: [
+                                {
+                                    type: "PresentationDefinitionQuery",
+                                    presentationDefinitionQuery: this.presentationRequest.pd
+
+                                },
+                                {
+                                    type: "DIDConnect",
+                                    invitation: this.presentationRequest.invitation,
+                                    credentials: this.presentationRequest.credentials
+                                }
+                            ]
+                        }
+                    }
+                }
+                console.log("rp-adapter: chapi request: " + JSON.stringify(credentialQuery, undefined, 4))
+
+                const webCredential = await this.walletClient.get(credentialQuery)
+                if (!webCredential) {
+                    console.error("no webcredential received from wallet!")
+                }
+                console.log("received from user: " + JSON.stringify(webCredential))
+                await this.requestPresentationValidation(webCredential)
+                const redirectURL = await this.validationResult(this.presentationRequest.invitation["@id"])
+                // redirect user
+                console.log(`redirecting user to ${redirectURL}`)
+                window.location.replace(redirectURL)
+            },
             async getRequestForPresentation() {
                 const handle = this.$route.query.h
                 console.info(`using handle: ${handle}`)
@@ -169,7 +208,26 @@ SPDX-License-Identifier: Apache-2.0
                 }
 
                 return redirectURL
-            }
+            },
+            async onPreferenceUpdate(preference) {
+                this.showDialog = false
+                console.log(`re-initializing wallet client to ${preference}`)
+                this.walletClient = new WalletClient({
+                    user: this.$route.query.uID,
+                    remoteBridge: '/wallet-bridge/send-chapi-request',
+                    defaultPreference: preference
+                })
+
+                try {
+                    await this.walletClient.init()
+                } catch (e) {
+                    console.error(e)
+                    this.connectWalletErr = "Failed to connect to your wallet"
+                    return
+                }
+
+                await this.requestCredentials()
+            },
         }
     }
 </script>

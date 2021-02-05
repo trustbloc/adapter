@@ -658,7 +658,7 @@ func (o *Operation) hydraConsentHandler(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	redirectURL := fmt.Sprintf("%s?h=%s", o.uiEndpoint, handle)
+	redirectURL := fmt.Sprintf("%s?h=%s&uID=%s", o.uiEndpoint, handle, conn.User.Subject)
 
 	http.Redirect(w, r, redirectURL, http.StatusFound)
 	logger.Debugf("redirected to: %s", redirectURL)

@@ -13,12 +13,13 @@
     "@fortawesome/free-brands-svg-icons": "^5.14.0",
     "@fortawesome/free-solid-svg-icons": "^5.14.0",
     "@fortawesome/vue-fontawesome": "^0.1.10",
-    "@trustbloc-cicd/wallet-js-client": "0.1.6-snapshot-3658414",
+    "@trustbloc-cicd/wallet-js-client": "0.1.6-snapshot-9876526",
     "axios": "^0.21.1",
     "core-js": "^3.6.4",
     "font-awesome": "^4.7.0",
     "tailwindcss": "^1.5.1",
     "vue": "^2.6.11",
+    "vue-material": "1.0.0-beta-15",
     "vue-router": "^3.3.2"
   },
   "devDependencies": {
