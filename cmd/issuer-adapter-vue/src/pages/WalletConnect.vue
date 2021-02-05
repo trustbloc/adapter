@@ -6,9 +6,11 @@ SPDX-License-Identifier: Apache-2.0
 
 <template>
     <div>
-    <navbar-component></navbar-component>
+        <wallet-preference :user="$route.query.uID" :show-dialog="showDialog" @clicked="onPreferenceUpdate"/>
+        <navbar-component></navbar-component>
         <div class="container mx-auto px-2">
             <div class="items-center flex flex-wrap">
+
                 <div class="w-full md:w-4/12 ml-auto mr-auto px-4">
                 </div>
                 <div class="w-full md:w-5/12 ml-auto mr-auto px-2">
@@ -17,7 +19,7 @@ SPDX-License-Identifier: Apache-2.0
                             <li class="py-2">
                                 <div class="flex items-center">
                                     <div>
-                                            <p class="text-2xl font-bold" style="color: red">{{ connectWalletErr }}</p>
+                                        <p class="text-2xl font-bold" style="color: red">{{ connectWalletErr }}</p>
                                     </div>
                                 </div>
                             </li>
@@ -39,85 +41,99 @@ SPDX-License-Identifier: Apache-2.0
 </template>
 
 <script>
-    import {WalletClient} from "@trustbloc/wallet-js-client";
+    import WalletPreference from "./WalletPreference.vue";
+    import {LoadPreferenceError, WalletClient} from "@trustbloc/wallet-js-client";
 
     export default {
         name: 'WalletConnect',
+        components: {WalletPreference},
         data() {
             return {
                 connectWalletSuccess: false,
                 connectWalletErr: null,
+                showDialog: false,
             }
         },
         created: async function () {
-            let walletClient = new WalletClient({user: this.$route.query.uID,
+            this.walletClient = new WalletClient({
+                user: this.$route.query.uID,
                 preferenceGETURL: `/wallet-bridge/get-preferences/${this.$route.query.uID}`,
-                remoteBridge: '/wallet-bridge/send-chapi-request',
-                defaultPreference: 'browser'
+                remoteBridge: '/wallet-bridge/send-chapi-request'
             })
 
-            const invitationUrl = `/issuer/didcomm/chapi/request?txnID=${this.$route.query.txnID}`
-
-            let chapiRequest
-            await this.$http.get(invitationUrl).then(
-                resp => {
-                    chapiRequest = resp.data
-                },
-                err => {
-                    console.error(`failed to retrieve didcomm invitation: url=${invitationUrl} err=${err}`)
+            try {
+                await this.walletClient.init()
+            } catch (e) {
+                if (e instanceof LoadPreferenceError) {
+                    console.debug('failed to initialize wallet selection, presenting user preference selection dialog.')
+                    this.showDialog = true
                 }
-            )
 
-            if (chapiRequest === undefined) {
-                this.connectWalletErr = "Failed to Connect to Wallet."
-
-                return;
+                console.error(e)
+                this.connectWalletErr = e.message
+                return
             }
-
-
-            const connectionRequest = {
-                web: {
-                    VerifiablePresentation: chapiRequest
+            
+            console.log('wallet client initialized successfully !')
+            await this.connect()
+        },
+        methods: {
+            async connect() {
+                try {
+                    await this.sendCHAPIRequest()
+                } catch (e) {
+                    console.error(e)
+                    this.connectWalletErr = 'Failed to Connect Wallet'
                 }
-            };
+            },
+            async onPreferenceUpdate(preference) {
+                this.showDialog = false
+                console.log(`re-initializing wallet client to ${preference}`)
+                this.walletClient = new WalletClient({
+                    user: this.$route.query.uID,
+                    remoteBridge: '/wallet-bridge/send-chapi-request',
+                    defaultPreference: preference
+                })
 
-            console.log("chapi request : ", JSON.stringify(connectionRequest))
+                try {
+                    await this.walletClient.init()
+                } catch (e) {
+                    console.error(e)
+                    this.connectWalletErr = "Failed to connect to your wallet"
+                    return
+                }
 
-            const result = await walletClient.get(connectionRequest);
+                await this.connect()
+            },
+            async sendCHAPIRequest() {
+                const invitationUrl = `/issuer/didcomm/chapi/request?txnID=${this.$route.query.txnID}`
+                let chapiRequest = await this.$http.get(invitationUrl)
 
-            console.log("chapi response : ", JSON.stringify(result.data))
-
-            if (!result || !result.data) {
-                console.error("Failed to Connect Wallet - no response")
-                this.connectWalletErr = "Failed to Connect Wallet."
-
-                return;
-            }
-
-            const validateUrl = "/connect/validate?txnID=" + this.$route.query.txnID
-            await this.$http.post(validateUrl, {walletResp: result.data}).then(
-                resp => {
-                    if (resp.status !== 200) {
-                        console.error(`failed to validate wallet response: url=${validateUrl} status=${resp.status} err=${resp.data}`)
-
-                        this.connectWalletErr = "Failed to Connect to Wallet. " + resp.data.errMessage
-                        return
+                const connectionRequest = {
+                    web: {
+                        VerifiablePresentation: chapiRequest.data
                     }
+                };
 
-                    this.connectWalletSuccess = true
-                    const redirectURL = resp.data.redirectURL
+                console.log("CHAPI request : ", JSON.stringify(connectionRequest))
+                const result = await this.walletClient.get(connectionRequest);
+                console.log("CHAPI response : ", JSON.stringify(result.data))
 
-                    console.log(`wallet connected successfully; redirectURL=${redirectURL}`)
-
-                    window.location.href = redirectURL
-                },
-                err => {
-                    console.error(`failed to validate wallet response: url=${validateUrl} err=${err}`)
-                    this.connectWalletErr = "Failed to Connect to Wallet."
-
-                    return;
+                if (!result || !result.data) {
+                    throw  "Failed to Connect Wallet - no response"
                 }
-            )
+
+                const validateUrl = `/connect/validate?txnID=${this.$route.query.txnID}`
+                let resp = await this.$http.post(validateUrl, {walletResp: result.data})
+                if (resp.status !== 200) {
+                    console.error(`failed to validate wallet response: url=${validateUrl} status=${resp.status} err=${resp.data}`)
+                    throw   "Failed to Connect to Wallet. " + resp.data.errMessage
+                }
+
+                this.connectWalletSuccess = true
+                console.log(`wallet connected successfully; redirectURL=${resp.data.redirectURL}`)
+                window.location.href = resp.data.redirectURL
+            }
         }
     }
 </script>

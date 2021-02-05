@@ -14,6 +14,10 @@ import { library, dom } from '@fortawesome/fontawesome-svg-core';
 import { fas } from '@fortawesome/free-solid-svg-icons';
 import { fab } from '@fortawesome/free-brands-svg-icons';
 import { FontAwesomeIcon } from '@fortawesome/vue-fontawesome';
+import VueMaterial from "vue-material";
+import 'vue-material/dist/vue-material.min.css'
+import 'vue-material/dist/theme/default.css'
+import "vue-material/dist/vue-material.css";
 
 library.add(fas, fab)
 dom.watch()
@@ -31,6 +35,7 @@ const router = new VueRouter({
 });
 
 Vue.use(VueRouter);
+Vue.use(VueMaterial);
 
 new Vue({
     el: "#app",
