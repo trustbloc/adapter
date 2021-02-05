@@ -8,6 +8,8 @@ package operation
 
 import (
 	"bytes"
+	"context"
+	"crypto/rand"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -34,6 +36,7 @@ import (
 	mockstore "github.com/hyperledger/aries-framework-go/pkg/mock/storage"
 	mockvdri "github.com/hyperledger/aries-framework-go/pkg/mock/vdr"
 	"github.com/stretchr/testify/require"
+	"github.com/trustbloc/edge-core/pkg/storage"
 	"github.com/trustbloc/edge-core/pkg/storage/memstore"
 
 	"github.com/trustbloc/edge-adapter/pkg/aries"
@@ -74,20 +77,21 @@ func getAriesCtx() aries.CtxProvider {
 }
 
 func config() *Config {
+	oidcClientStoreKey := make([]byte, 32)
+	_, _ = rand.Read(oidcClientStoreKey) // nolint:errcheck
+
 	return &Config{
 		AriesCtx:           getAriesCtx(),
 		StoreProvider:      memstore.NewProvider(),
 		MsgRegistrar:       msghandler.NewRegistrar(),
 		AriesMessenger:     &messenger.MockMessenger{},
 		PublicDIDCreator:   &stubPublicDIDCreator{createValue: mockdiddoc.GetMockDIDDoc("did:example:def567")},
-		GovernanceProvider: &mockgovernance.MockProvider{}}
+		GovernanceProvider: &mockgovernance.MockProvider{},
+		OIDCClientStoreKey: oidcClientStoreKey,
+	}
 }
 
 func getHandler(t *testing.T, op *Operation, lookup string) restapi.Handler {
-	return getHandlerWithError(t, op, lookup)
-}
-
-func getHandlerWithError(t *testing.T, op *Operation, lookup string) restapi.Handler {
 	return handlerLookup(t, op, lookup)
 }
 
@@ -257,6 +261,49 @@ func createProofReqMsg(t *testing.T, msg interface{}, continueFn func(args inter
 	}
 }
 
+func createMockOIDCServer(authorize, token, jwk, userinfo, register string) *httptest.Server { // nolint:unparam
+	openIDConfig := ""
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.RequestURI {
+		case "/authorize":
+			w.Header().Set("Location", authorize)
+			w.WriteHeader(http.StatusFound)
+		case "/token":
+			w.Header().Set("Cache-Control", "no-store")
+			w.Header().Set("Pragma", "no-cache")
+			w.Write([]byte(token)) //nolint:errcheck,gosec
+		case "/jwk":
+			w.Write([]byte(jwk)) //nolint:errcheck,gosec
+		case "/userinfo":
+			w.Write([]byte(userinfo)) //nolint:errcheck,gosec
+		case "/register":
+			w.WriteHeader(http.StatusCreated)
+			w.Write([]byte(register)) //nolint:errcheck,gosec
+		case "/.well-known/openid-configuration":
+			w.Write([]byte(openIDConfig)) //nolint:errcheck,gosec
+		default:
+			w.WriteHeader(http.StatusInternalServerError)
+			//nolint:errcheck,gosec
+			w.Write([]byte(
+				"mock OIDC server does not contain a response for the request URI: `" + r.RequestURI + "'"),
+			)
+		}
+	}))
+
+	openIDConfig = fmt.Sprintf(`{
+    "issuer":"%s",
+    "authorization_endpoint":"%s/authorize",
+    "token_endpoint":"%s/token",
+    "jwks_uri":"%s/jwk",
+    "userinfo_endpoint":"%s/userinfo",
+	"registration_endpoint":"%s/register",
+    "id_token_signing_alg_values_supported":["ES256"]
+}`, server.URL, server.URL, server.URL, server.URL, server.URL, server.URL)
+
+	return server
+}
+
 type actionEventEvent struct {
 	myDID    string
 	theirDID string
@@ -294,6 +341,36 @@ type stubPublicDIDCreator struct {
 
 func (s *stubPublicDIDCreator) Create() (*did.Doc, error) {
 	return s.createValue, s.createErr
+}
+
+type failingStoreProvider struct {
+	// createN calls to Create() succeed, all subsequent calls fail with Err
+	createN int
+	Err     error
+	// SuccessProvider uses this provider for successful calls
+	SuccessProvider storage.Provider
+}
+
+func (f *failingStoreProvider) CreateStore(name string) error {
+	if f.createN <= 0 {
+		return f.Err
+	}
+
+	f.createN--
+
+	return f.SuccessProvider.CreateStore(name)
+}
+
+func (f *failingStoreProvider) OpenStore(name string) (storage.Store, error) {
+	return f.SuccessProvider.OpenStore(name)
+}
+
+func (f *failingStoreProvider) CloseStore(name string) error {
+	return f.SuccessProvider.CloseStore(name)
+}
+
+func (f *failingStoreProvider) Close() error {
+	return f.SuccessProvider.Close()
 }
 
 type mockVCCrypto struct {
@@ -340,6 +417,21 @@ func (d *didexchangeEvent) InvitationID() string {
 
 func (d *didexchangeEvent) All() map[string]interface{} {
 	return make(map[string]interface{})
+}
+
+type mockOIDCClient struct {
+	CreateOIDCRequestValue string
+	CreateOIDCRequestErr   error
+	HandleOIDCCallbackVal  []byte
+	HandleOIDCCallbackErr  error
+}
+
+func (c *mockOIDCClient) CreateOIDCRequest(state, scope string) string {
+	return c.CreateOIDCRequestValue
+}
+
+func (c *mockOIDCClient) HandleOIDCCallback(reqContext context.Context, code string) ([]byte, error) {
+	return c.HandleOIDCCallbackVal, c.HandleOIDCCallbackErr
 }
 
 const (
