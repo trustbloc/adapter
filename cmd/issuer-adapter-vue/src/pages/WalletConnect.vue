@@ -73,7 +73,7 @@ SPDX-License-Identifier: Apache-2.0
                 this.connectWalletErr = e.message
                 return
             }
-            
+
             console.log('wallet client initialized successfully !')
             await this.connect()
         },
@@ -117,7 +117,7 @@ SPDX-License-Identifier: Apache-2.0
 
                 console.log("CHAPI request : ", JSON.stringify(connectionRequest))
                 const result = await this.walletClient.get(connectionRequest);
-                console.log("CHAPI response : ", JSON.stringify(result.data))
+                console.log("CHAPI response : ", result ? JSON.stringify(result.data): '')
 
                 if (!result || !result.data) {
                     throw  "Failed to Connect Wallet - no response"
