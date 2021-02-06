@@ -40,49 +40,37 @@ func newWalletAppProfileStore(p storage.Provider) (*walletAppProfileStore, error
 	return &walletAppProfileStore{store}, nil
 }
 
+// SaveInvitation saves mapping between invitation and userID
+func (w *walletAppProfileStore) SaveInvitation(invitationID, userID string) error {
+	err := w.store.Put(getInvitationKeyPrefix(invitationID), []byte(userID))
+	if err != nil {
+		return fmt.Errorf("failed to save invitation: %w", err)
+	}
+
+	return err
+}
+
 // SaveUserProfile saves wallet app profile by user ID.
-// Due to very frequent get wallet profile by user ID call data model will be saved in below format.
-// UserID --> WalletAppProfile{} & InvitationID --> UserID.
-// For now, Invitation will have one-to-one relationship with User Profile.
-func (w *walletAppProfileStore) SaveProfile(userID string, profile *walletAppProfile) error {
-	err := w.putProfileInStore(getUserIDKeyPrefix, userID, profile)
-	if err != nil {
-		return fmt.Errorf("failed to save wallet application profile: %w", err)
-	}
-
-	err = w.store.Put(getInvitationKeyPrefix(profile.InvitationID), []byte(userID))
-	if err != nil {
-		return fmt.Errorf("failed to save wallet application profile: %w", err)
-	}
-
-	return nil
-}
-
-// UpdateProfile updates wallet app profile in underlying store.
-// returns error if no existing mapping found with any user profile.
-func (w *walletAppProfileStore) UpdateProfile(profile *walletAppProfile) error {
-	userIDBytes, err := w.store.Get(getInvitationKeyPrefix(profile.InvitationID))
-	if err != nil {
-		return fmt.Errorf("failed to get user profile for given wallet profile from store: %w", err)
-	}
-
-	err = w.putProfileInStore(getUserIDKeyPrefix, string(userIDBytes), profile)
-	if err != nil {
-		return fmt.Errorf("failed to update wallet application profile in store: %w", err)
-	}
-
-	return nil
-}
-
-// GetProfileByInvitationID returns wallet application profile by given invitation ID
-// returns error if no existing mapping found with any user profile.
-func (w *walletAppProfileStore) GetProfileByInvitationID(invitationID string) (*walletAppProfile, error) {
+func (w *walletAppProfileStore) SaveProfile(invitationID, connectionID string) error {
 	userIDBytes, err := w.store.Get(getInvitationKeyPrefix(invitationID))
 	if err != nil {
-		return nil, fmt.Errorf("failed to get user profile for given invitationID: %w", err)
+		return fmt.Errorf("failed to get user info for given invitation ID: %w", err)
 	}
 
-	return w.GetProfileByUserID(string(userIDBytes))
+	err = w.putProfileInStore(getUserIDKeyPrefix, string(userIDBytes), &walletAppProfile{
+		InvitationID: invitationID,
+		ConnectionID: connectionID,
+	})
+	if err != nil {
+		return fmt.Errorf("failed to save wallet application profile: %w", err)
+	}
+
+	return nil
+}
+
+// GetUserByInvitationID returns wallet profile user mapped for given invitation ID.
+func (w *walletAppProfileStore) GetUserByInvitationID(invitationID string) ([]byte, error) {
+	return w.store.Get(getInvitationKeyPrefix(invitationID))
 }
 
 // GetProfileByUserID returns wallet application profile by given user profile ID.

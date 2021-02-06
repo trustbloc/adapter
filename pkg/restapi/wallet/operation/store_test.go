@@ -42,60 +42,46 @@ func TestNewWalletAppProfileStore(t *testing.T) {
 	})
 }
 
-func TestWalletAppProfileStore_SaveProfile(t *testing.T) {
-	t.Run("save wallet app profile - success", func(t *testing.T) {
+func TestWalletAppProfileStore_SaveInvitation(t *testing.T) {
+	t.Run("save invitation - success", func(t *testing.T) {
 		appProfileStore, err := newWalletAppProfileStore(mockstorage.NewMockStoreProvider())
-
 		require.NoError(t, err)
 		require.NotEmpty(t, appProfileStore)
 
-		err = appProfileStore.SaveProfile(sampleUserID, &walletAppProfile{InvitationID: sampleInvID})
+		err = appProfileStore.SaveInvitation(sampleInvID, sampleUserID)
 		require.NoError(t, err)
 
 		userIDBytes, err := appProfileStore.store.Get(getInvitationKeyPrefix(sampleInvID))
 		require.NoError(t, err)
-		require.Equal(t, string(userIDBytes), sampleUserID)
-
-		profileIDBytes, err := appProfileStore.store.Get(getUserIDKeyPrefix(sampleUserID))
-		require.NoError(t, err)
-
-		var profile walletAppProfile
-		err = json.Unmarshal(profileIDBytes, &profile)
-		require.NoError(t, err)
-		require.Equal(t, profile.InvitationID, sampleInvID)
+		require.Equal(t, sampleUserID, string(userIDBytes))
 	})
 
-	t.Run("save wallet app profile - failure", func(t *testing.T) {
+	t.Run("save invitation - failure", func(t *testing.T) {
 		provider := mockstorage.NewMockStoreProvider()
 		provider.Store = &mockstorage.MockStore{
 			ErrPut: fmt.Errorf(sampleStoreErr),
 		}
 
 		appProfileStore, err := newWalletAppProfileStore(provider)
-
 		require.NoError(t, err)
 		require.NotEmpty(t, appProfileStore)
 
-		err = appProfileStore.SaveProfile(sampleUserID, &walletAppProfile{InvitationID: sampleInvID})
+		err = appProfileStore.SaveInvitation(sampleInvID, sampleUserID)
 		require.Error(t, err)
 		require.Contains(t, err.Error(), sampleStoreErr)
 	})
 }
 
-func TestWalletAppProfileStore_UpdateProfile(t *testing.T) {
-	t.Run("update wallet app profile - success", func(t *testing.T) {
+func TestWalletAppProfileStore_SaveProfile(t *testing.T) {
+	t.Run("save wallet app profile - success", func(t *testing.T) {
 		appProfileStore, err := newWalletAppProfileStore(mockstorage.NewMockStoreProvider())
-
 		require.NoError(t, err)
 		require.NotEmpty(t, appProfileStore)
 
-		err = appProfileStore.SaveProfile(sampleUserID, &walletAppProfile{InvitationID: sampleInvID})
+		err = appProfileStore.SaveInvitation(sampleInvID, sampleUserID)
 		require.NoError(t, err)
 
-		err = appProfileStore.UpdateProfile(&walletAppProfile{
-			InvitationID: sampleInvID,
-			ConnectionID: sampleConnID,
-		})
+		err = appProfileStore.SaveProfile(sampleInvID, sampleConnID)
 		require.NoError(t, err)
 
 		userIDBytes, err := appProfileStore.store.Get(getInvitationKeyPrefix(sampleInvID))
@@ -112,21 +98,7 @@ func TestWalletAppProfileStore_UpdateProfile(t *testing.T) {
 		require.Equal(t, profile.ConnectionID, sampleConnID)
 	})
 
-	t.Run("update wallet app profile - failure - user profile missing", func(t *testing.T) {
-		appProfileStore, err := newWalletAppProfileStore(mockstorage.NewMockStoreProvider())
-
-		require.NoError(t, err)
-		require.NotEmpty(t, appProfileStore)
-
-		err = appProfileStore.UpdateProfile(&walletAppProfile{
-			InvitationID: sampleInvID,
-			ConnectionID: sampleConnID,
-		})
-		require.Error(t, err)
-		require.Contains(t, err.Error(), "failed to get user profile for given wallet profile")
-	})
-
-	t.Run("update wallet app profile - failure - store error", func(t *testing.T) {
+	t.Run("save wallet app profile - store failure", func(t *testing.T) {
 		provider := mockstorage.NewMockStoreProvider()
 		provider.Store = &mockstorage.MockStore{
 			ErrPut: fmt.Errorf(sampleStoreErr),
@@ -136,17 +108,24 @@ func TestWalletAppProfileStore_UpdateProfile(t *testing.T) {
 		}
 
 		appProfileStore, err := newWalletAppProfileStore(provider)
-
 		require.NoError(t, err)
 		require.NotEmpty(t, appProfileStore)
 
-		err = appProfileStore.UpdateProfile(&walletAppProfile{
-			InvitationID: sampleInvID,
-			ConnectionID: sampleConnID,
-		})
+		err = appProfileStore.SaveProfile(sampleInvID, sampleConnID)
 		require.Error(t, err)
 		require.Contains(t, err.Error(), sampleStoreErr)
-		require.Contains(t, err.Error(), "failed to update wallet application profile in store")
+	})
+
+	t.Run("save wallet app profile - user info not found error", func(t *testing.T) {
+		provider := mockstorage.NewMockStoreProvider()
+
+		appProfileStore, err := newWalletAppProfileStore(provider)
+		require.NoError(t, err)
+		require.NotEmpty(t, appProfileStore)
+
+		err = appProfileStore.SaveProfile(sampleInvID, sampleConnID)
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "failed to get user info for given invitation ID")
 	})
 }
 
@@ -157,29 +136,30 @@ func TestWalletAppProfileStore_Get(t *testing.T) {
 		require.NoError(t, err)
 		require.NotEmpty(t, appProfileStore)
 
-		storedProfile := &walletAppProfile{InvitationID: sampleInvID}
-		err = appProfileStore.SaveProfile(sampleUserID, storedProfile)
+		userBytes, err := appProfileStore.GetUserByInvitationID(sampleInvID)
+		require.Error(t, err)
+		require.Empty(t, userBytes)
+		require.Contains(t, err.Error(), "data not found")
+
+		err = appProfileStore.SaveInvitation(sampleInvID, sampleUserID)
 		require.NoError(t, err)
 
 		profile, err := appProfileStore.GetProfileByUserID(sampleUserID)
-		require.NoError(t, err)
-		require.Equal(t, profile, storedProfile)
+		require.Error(t, err)
+		require.Empty(t, profile)
+		require.Contains(t, err.Error(), "failed to get wallet application profile by user ID")
 
-		profile, err = appProfileStore.GetProfileByInvitationID(sampleInvID)
+		userBytes, err = appProfileStore.GetUserByInvitationID(sampleInvID)
 		require.NoError(t, err)
-		require.Equal(t, profile, storedProfile)
+		require.Equal(t, sampleUserID, string(userBytes))
 
-		storedProfile.ConnectionID = sampleConnID
-		err = appProfileStore.UpdateProfile(storedProfile)
+		err = appProfileStore.SaveProfile(sampleInvID, sampleConnID)
 		require.NoError(t, err)
 
 		profile, err = appProfileStore.GetProfileByUserID(sampleUserID)
 		require.NoError(t, err)
-		require.Equal(t, profile, storedProfile)
-
-		profile, err = appProfileStore.GetProfileByInvitationID(sampleInvID)
-		require.NoError(t, err)
-		require.Equal(t, profile, storedProfile)
+		require.Equal(t, profile.ConnectionID, sampleConnID)
+		require.Equal(t, profile.InvitationID, sampleInvID)
 	})
 
 	t.Run("get wallet app profile  - failure - store error", func(t *testing.T) {
@@ -192,11 +172,6 @@ func TestWalletAppProfileStore_Get(t *testing.T) {
 		require.NoError(t, err)
 
 		profile, err := appProfileStore.GetProfileByUserID(sampleUserID)
-		require.Error(t, err)
-		require.Empty(t, profile)
-		require.Contains(t, err.Error(), sampleStoreErr)
-
-		profile, err = appProfileStore.GetProfileByInvitationID(sampleInvID)
 		require.Error(t, err)
 		require.Empty(t, profile)
 		require.Contains(t, err.Error(), sampleStoreErr)
