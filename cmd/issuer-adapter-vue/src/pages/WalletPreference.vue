@@ -45,7 +45,18 @@ SPDX-License-Identifier: Apache-2.0
 
                 <!-- mobile tool bar-->
                 <md-drawer class="md-right" :md-active.sync="showMobilePanel">
-                    <div class="flex flex-col items-center">
+                    <!-- error state-->
+                    <div v-if="error" class="text-gray-700" style="margin: 0% 5% 0% 5%">
+                        <md-empty-state
+                                md-icon="devices_other"
+                                md-label="Can not register your mobile wallet now."
+                                md-description="Failed get QR Code to register your wallet, please try again later.">
+                            <md-button class="md-raised md-accent" @click="showMobilePanel=false">Cancel</md-button>
+                        </md-empty-state>
+                    </div>
+
+                    <!-- valid state-->
+                    <div v-else class="flex flex-col items-center">
                         <div class="font-sans font-medium text-2xl text-center" style="margin: 5%">
                             <h3 class="text-gray-600">
                                 Mobile Wallet
@@ -54,22 +65,30 @@ SPDX-License-Identifier: Apache-2.0
 
                         <div class="text-gray-700" style="margin: 0% 5% 0% 5%">
                             <p>
-                                Please scan this QR Code to register your mobile wallet and click proceed after you register your mobile wallet.
+                                Please scan this QR Code to register your mobile wallet and click proceed after you
+                                register your mobile wallet.
                             </p>
-                            <div class="w-full md:w-1/2 ml-auto mr-auto">
-                                <img class="max-w-full rounded-lg shadow-lg" src="../assets/img/sample-qrcode.png"/>
+
+                            <div>
+                                <div v-if="!qrDone" class="loading-qr">
+                                    <i class="animate-pulse fas fa-sync fa-spin fa-5x" id="qr-result-wait"></i>
+                                </div>
+
+                                <img class="md:w-1/2 ml-auto mr-auto rounded-lg shadow-lg" src="" id="qr-result"/>
                             </div>
                         </div>
 
                         <div class="flex flex-row" style="margin: 5%">
                             <md-button class="md-raised md-accent" @click="showMobilePanel=false">Cancel</md-button>
-                            <md-button class="md-raised md-primary" @click="save('remote')">Proceed</md-button>
+                            <md-button class="md-raised md-primary" @click="save('remote')">Proceed
+                            </md-button>
                         </div>
 
                         <div>
                             <div>
                                 <a class="no-underline hover:underline font-bold text-blue-700"
-                                   href="https://www.canada.ca/en/financial-consumer-agency/services/payment/mobile-payments/mobile-wallets.html" target="_blank">
+                                   href="https://www.canada.ca/en/financial-consumer-agency/services/payment/mobile-payments/mobile-wallets.html"
+                                   target="_blank">
                                     <i class="fas fa-info-circle text-xl"></i> Find more about mobile wallet here</a>
                             </div>
                         </div>
@@ -102,7 +121,7 @@ SPDX-License-Identifier: Apache-2.0
                             <md-icon>remove_from_queue</md-icon>
                             Browser Wallet
                         </md-button>
-                        <md-button class="md-primary" @click="showMobilePanel = true">
+                        <md-button class="md-primary" @click="showMobilePanel = true; fetchQR()">
                             <md-icon>send_to_mobile</md-icon>
                             Mobile Wallet
                         </md-button>
@@ -120,10 +139,7 @@ SPDX-License-Identifier: Apache-2.0
 
                 </md-content>
 
-
             </div>
-
-
         </md-dialog>
     </div>
 </template>
@@ -131,6 +147,13 @@ SPDX-License-Identifier: Apache-2.0
     @import "//fonts.googleapis.com/icon?family=Material+Icons";
 </style>
 
+<style lang="css">
+    .loading-qr {
+        padding-left: 40%;
+        height: 100px;
+        padding-top: 5%;
+    }
+</style>
 <script>
     export default {
         props: {
@@ -143,14 +166,49 @@ SPDX-License-Identifier: Apache-2.0
         data() {
             return {
                 showBrowserPanel: false,
-                showMobilePanel: false
+                showMobilePanel: false,
+                qrDone: false,
+                error: false,
             }
         },
         methods: {
             save: function (selected) {
+                this.$http.post('/wallet-bridge/save-preferences', {
+                    userID: this.user,
+                    walletType: selected
+                })
                 this.showDialog = false
                 this.$emit('clicked', selected)
             },
+            fetchQR: async function () {
+                if (this.qrDone) {
+                    return
+                }
+
+                let result
+                try {
+                    result = await this.$http.post('/wallet-bridge/create-invitation', {
+                        userID: this.user,
+                    })
+                } catch (e) {
+                    console.log('failed to fetch invitation', e)
+                    this.error = true
+                    this.qrDone = true
+                    return
+                }
+
+
+                let qrResult = () => {
+                    this.qrDone = true
+                }
+
+                let QRCode = require('qrcode')
+                QRCode.toDataURL(result.data.url, function (err, url) {
+                    let canvas = document.getElementById('qr-result')
+                    canvas.src = url
+                    qrResult()
+                })
+            }
         }
     }
 </script>
