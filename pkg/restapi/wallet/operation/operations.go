@@ -52,7 +52,7 @@ const (
 	chapiRqstDIDCommMsgType = "https://trustbloc.dev/chapi/1.0/request"
 	chapiRespDIDCommMsgType = "https://trustbloc.dev/chapi/1.0/response"
 
-	defaultSendMsgTimeout = 20 * time.Second
+	defaultTimeout = 20 * time.Second
 )
 
 // Handler http handler for each controller API endpoint.
@@ -207,7 +207,7 @@ func (o *Operation) CreateInvitation(rw http.ResponseWriter, req *http.Request) 
 		return
 	}
 
-	err = o.store.SaveProfile(request.UserID, &walletAppProfile{InvitationID: invitation.ID})
+	err = o.store.SaveInvitation(invitation.ID, request.UserID)
 	if err != nil {
 		commhttp.WriteErrorResponseWithLog(rw, http.StatusInternalServerError, err.Error(), CreateInvitationPath, logger)
 
@@ -238,21 +238,28 @@ func (o *Operation) RequestApplicationProfile(rw http.ResponseWriter, req *http.
 	}
 
 	profile, err := o.store.GetProfileByUserID(request.UserID)
-	if err != nil {
+	if err != nil && !request.WaitForConnection {
 		commhttp.WriteErrorResponseWithLog(rw, http.StatusInternalServerError, err.Error(), RequestAppProfilePath, logger)
 
 		return
 	}
 
-	// if status is not completed, then wait for completion if 'WaitForConnection=true'
-	var status string
-	if profile.ConnectionID != "" {
+	if profile == nil {
+		profile = &walletAppProfile{}
+	}
+
+	// if status is not completed or profile not found, then wait for completion if 'WaitForConnection=true'
+	var status, invitationID string
+
+	switch {
+	case profile.ConnectionID != "":
 		status = didexchangesvc.StateIDCompleted
-	} else if request.WaitForConnection {
+		invitationID = profile.InvitationID
+	case request.WaitForConnection:
 		ctx, cancel := context.WithTimeout(context.Background(), request.Timeout)
 		defer cancel()
 
-		err = o.waitForConnectionCompletion(ctx, profile)
+		result, err := o.waitForConnectionCompletion(ctx, request.UserID)
 		if err != nil {
 			commhttp.WriteErrorResponseWithLog(rw, http.StatusInternalServerError, err.Error(), RequestAppProfilePath, logger)
 
@@ -260,11 +267,16 @@ func (o *Operation) RequestApplicationProfile(rw http.ResponseWriter, req *http.
 		}
 
 		status = didexchangesvc.StateIDCompleted
+		invitationID = result
+
+	default:
+		status = ""
+		invitationID = profile.InvitationID
 	}
 
 	rw.WriteHeader(http.StatusOK)
 	commhttp.WriteResponseWithLog(rw,
-		&ApplicationProfileResponse{profile.InvitationID, status}, RequestAppProfilePath, logger)
+		&ApplicationProfileResponse{invitationID, status}, RequestAppProfilePath, logger)
 }
 
 // SendCHAPIRequest swagger:route POST /wallet-bridge/send-chapi-request wallet-bridge chapiRequest
@@ -285,7 +297,7 @@ func (o *Operation) SendCHAPIRequest(rw http.ResponseWriter, req *http.Request) 
 
 	profile, err := o.store.GetProfileByUserID(request.UserID)
 	if err != nil {
-		commhttp.WriteErrorResponseWithLog(rw, http.StatusBadRequest, err.Error(), SendCHAPIRequestPath, logger)
+		commhttp.WriteErrorResponseWithLog(rw, http.StatusInternalServerError, err.Error(), SendCHAPIRequestPath, logger)
 
 		return
 	}
@@ -419,24 +431,20 @@ func (o *Operation) stateMsgListener(ch <-chan service.StateMsg) {
 			"Received connection complete event for invitationID=%s connectionID=%s",
 			event.InvitationID(), event.ConnectionID())
 
-		// TODO update profile only wallet bridge didexchange, in this solution below warning will show up
 		// everytime during adapter didexchange completion.
-		err := o.store.UpdateProfile(&walletAppProfile{
-			InvitationID: event.InvitationID(),
-			ConnectionID: event.ConnectionID(),
-		})
+		err := o.store.SaveProfile(event.InvitationID(), event.ConnectionID())
 		if err != nil {
-			logger.Warnf("Failed to update wallet application profile: %w", err)
+			logger.Warnf("Failed to update wallet application profile: %s", err)
 		}
 	}
 }
 
 // nolint:gocyclo //can't split function further and maintain readability.
-func (o *Operation) waitForConnectionCompletion(ctx context.Context, profile *walletAppProfile) error {
+func (o *Operation) waitForConnectionCompletion(ctx context.Context, userID string) (string, error) {
 	stateCh := make(chan service.StateMsg)
 
 	if err := o.didExchange.RegisterMsgEvent(stateCh); err != nil {
-		return fmt.Errorf("register msg event: %w", err)
+		return "", fmt.Errorf("register msg event: %w", err)
 	}
 
 	defer func() {
@@ -464,14 +472,14 @@ func (o *Operation) waitForConnectionCompletion(ctx context.Context, profile *wa
 				continue
 			}
 
-			if event.InvitationID() == profile.InvitationID {
+			userIDBytes, e := o.store.GetUserByInvitationID(event.InvitationID())
+			if e == nil && string(userIDBytes) == userID {
 				logger.Debugf(
-					"Received connection complete event for invitationID=%s", event.InvitationID())
-
-				return nil
+					"Received connection complete event for invitationID=%s & userID=%s", event.InvitationID(), userID)
+				return event.InvitationID(), nil
 			}
 		case <-ctx.Done():
-			return fmt.Errorf("time out waiting for state 'completed'")
+			return "", fmt.Errorf("time out waiting for state 'completed'")
 		}
 	}
 }
@@ -505,7 +513,7 @@ func prepareAppProfileRequest(r io.Reader) (*ApplicationProfileRequest, error) {
 	}
 
 	if request.WaitForConnection && request.Timeout == 0 {
-		request.Timeout = defaultSendMsgTimeout
+		request.Timeout = defaultTimeout
 	}
 
 	return &request, nil
@@ -528,7 +536,7 @@ func prepareCHAPIRequest(r io.Reader) (*CHAPIRequest, error) {
 	}
 
 	if request.Timeout == 0 {
-		request.Timeout = defaultSendMsgTimeout
+		request.Timeout = defaultTimeout
 	}
 
 	return &request, nil

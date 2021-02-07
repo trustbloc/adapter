@@ -279,7 +279,7 @@ func TestOperation_CreateInvitation(t *testing.T) {
 		op.CreateInvitation(rw, rq)
 		require.Equal(t, rw.Code, http.StatusInternalServerError)
 
-		require.Contains(t, rw.Body.String(), `{"errMessage":"failed to save wallet application profile: sample-error"}`)
+		require.Contains(t, rw.Body.String(), `{"errMessage":"failed to save invitation: sample-error"}`)
 	})
 
 	t.Run("create new invitation - failure - save transient store error", func(t *testing.T) {
@@ -324,7 +324,7 @@ func TestOperation_CreateInvitation(t *testing.T) {
 func TestOperation_RequestApplicationProfile(t *testing.T) {
 	sampleReq := fmt.Sprintf(`{"userID":"%s"}`, sampleUserID)
 	sampleReq2 := fmt.Sprintf(`{"userID":"%s", "waitForConnection":true, "timeout":1}`, sampleUserID)
-	sampleReq3 := `{"userID":"invalid-001", "waitForConnection":true}`
+	sampleReq3 := `{"userID":"invalid-001", "waitForConnection":false}`
 
 	t.Run("create application profile - success", func(t *testing.T) {
 		op, err := New(newMockConfig())
@@ -332,8 +332,10 @@ func TestOperation_RequestApplicationProfile(t *testing.T) {
 		require.NoError(t, err)
 		require.NotEmpty(t, op)
 
-		sampleProfile := &walletAppProfile{InvitationID: sampleInvID, ConnectionID: sampleConnID}
-		err = op.store.SaveProfile(sampleUserID, sampleProfile)
+		err = op.store.SaveInvitation(sampleInvID, sampleUserID)
+		require.NoError(t, err)
+
+		err = op.store.SaveProfile(sampleInvID, sampleConnID)
 		require.NoError(t, err)
 
 		rw := httptest.NewRecorder()
@@ -346,7 +348,7 @@ func TestOperation_RequestApplicationProfile(t *testing.T) {
 		response := ApplicationProfileResponse{}
 		err = json.Unmarshal(rw.Body.Bytes(), &response)
 		require.NoError(t, err)
-		require.Equal(t, response.InvitationID, sampleProfile.InvitationID)
+		require.Equal(t, response.InvitationID, sampleInvID)
 		require.Equal(t, response.ConnectionStatus, didexchangesvc.StateIDCompleted)
 	})
 
@@ -356,36 +358,22 @@ func TestOperation_RequestApplicationProfile(t *testing.T) {
 		require.NoError(t, err)
 		require.NotEmpty(t, op)
 
-		sampleProfile := &walletAppProfile{InvitationID: sampleInvID}
-		err = op.store.SaveProfile(sampleUserID, sampleProfile)
+		err = op.store.SaveInvitation(sampleInvID, sampleUserID)
 		require.NoError(t, err)
 
 		rw := httptest.NewRecorder()
 		rq := httptest.NewRequest(http.MethodGet, operationID+RequestAppProfilePath, bytes.NewBufferString(sampleReq))
-		rq = mux.SetURLVars(rq, map[string]string{
-			"id": sampleUserID,
-		})
 
 		op.RequestApplicationProfile(rw, rq)
 
-		require.Equal(t, rw.Code, http.StatusOK)
-
-		response := ApplicationProfileResponse{}
-		err = json.Unmarshal(rw.Body.Bytes(), &response)
-		require.NoError(t, err)
-		require.Equal(t, response.InvitationID, sampleProfile.InvitationID)
-		require.Empty(t, response.ConnectionStatus)
+		require.Equal(t, rw.Code, http.StatusInternalServerError)
+		require.Contains(t, rw.Body.String(), "failed to get wallet application profile by user ID")
 	})
 
 	t.Run("create application profile - invalid request", func(t *testing.T) {
 		op, err := New(newMockConfig())
-
 		require.NoError(t, err)
 		require.NotEmpty(t, op)
-
-		sampleProfile := &walletAppProfile{InvitationID: sampleInvID, ConnectionID: sampleConnID}
-		err = op.store.SaveProfile(sampleUserID, sampleProfile)
-		require.NoError(t, err)
 
 		rw := httptest.NewRecorder()
 		rq := httptest.NewRequest(http.MethodGet, operationID+RequestAppProfilePath, bytes.NewBufferString(`{}`))
@@ -411,9 +399,6 @@ func TestOperation_RequestApplicationProfile(t *testing.T) {
 
 		rw := httptest.NewRecorder()
 		rq := httptest.NewRequest(http.MethodGet, operationID+RequestAppProfilePath, bytes.NewBufferString(sampleReq3))
-		rq = mux.SetURLVars(rq, map[string]string{
-			"id": sampleUserID,
-		})
 
 		op.RequestApplicationProfile(rw, rq)
 
@@ -426,8 +411,7 @@ func TestOperation_RequestApplicationProfile(t *testing.T) {
 		require.NoError(t, err)
 		require.NotEmpty(t, op)
 
-		sampleProfile := &walletAppProfile{InvitationID: sampleInvID}
-		err = op.store.SaveProfile(sampleUserID, sampleProfile)
+		err = op.store.SaveInvitation(sampleInvID, sampleUserID)
 		require.NoError(t, err)
 
 		ch := make(chan service.StateMsg)
@@ -445,9 +429,6 @@ func TestOperation_RequestApplicationProfile(t *testing.T) {
 
 		rw := httptest.NewRecorder()
 		rq := httptest.NewRequest(http.MethodGet, operationID+RequestAppProfilePath, bytes.NewBufferString(sampleReq))
-		rq = mux.SetURLVars(rq, map[string]string{
-			"id": sampleUserID,
-		})
 
 		op.RequestApplicationProfile(rw, rq)
 
@@ -456,7 +437,7 @@ func TestOperation_RequestApplicationProfile(t *testing.T) {
 		response := ApplicationProfileResponse{}
 		err = json.Unmarshal(rw.Body.Bytes(), &response)
 		require.NoError(t, err)
-		require.Equal(t, response.InvitationID, sampleProfile.InvitationID)
+		require.Equal(t, response.InvitationID, sampleInvID)
 		require.Equal(t, response.ConnectionStatus, didexchangesvc.StateIDCompleted)
 	})
 
@@ -507,8 +488,7 @@ func TestOperation_RequestApplicationProfile(t *testing.T) {
 		require.NoError(t, err)
 		require.NotEmpty(t, op)
 
-		sampleProfile := &walletAppProfile{InvitationID: sampleInvID}
-		err = op.store.SaveProfile(sampleUserID, sampleProfile)
+		err = op.store.SaveInvitation(sampleInvID, sampleUserID)
 		require.NoError(t, err)
 
 		ch := make(chan service.StateMsg)
@@ -537,23 +517,16 @@ func TestOperation_RequestApplicationProfile(t *testing.T) {
 
 		op.RequestApplicationProfile(rw, rq)
 
-		require.Equal(t, rw.Code, http.StatusOK)
-
-		response := ApplicationProfileResponse{}
-		err = json.Unmarshal(rw.Body.Bytes(), &response)
-		require.NoError(t, err)
-		require.Equal(t, response.InvitationID, sampleProfile.InvitationID)
-		require.Empty(t, response.ConnectionStatus)
+		require.Equal(t, rw.Code, http.StatusInternalServerError)
+		require.Contains(t, rw.Body.String(), "failed to get wallet application profile by user ID: data not found")
 	})
 
 	t.Run("create application profile - failure wait for completion", func(t *testing.T) {
 		op, err := New(newMockConfig())
-
 		require.NoError(t, err)
 		require.NotEmpty(t, op)
 
-		sampleProfile := &walletAppProfile{InvitationID: sampleInvID}
-		err = op.store.SaveProfile(sampleUserID, sampleProfile)
+		err = op.store.SaveInvitation(sampleInvID, sampleUserID)
 		require.NoError(t, err)
 
 		rw := httptest.NewRecorder()
@@ -562,6 +535,15 @@ func TestOperation_RequestApplicationProfile(t *testing.T) {
 		op.RequestApplicationProfile(rw, rq)
 		require.Equal(t, rw.Code, http.StatusInternalServerError)
 		require.Contains(t, rw.Body.String(), "time out waiting for state 'completed'")
+	})
+
+	t.Run("create application profile - test prepare request", func(t *testing.T) {
+		request, err := prepareAppProfileRequest(bytes.NewBufferString(`{"userID":"test", "waitForConnection":true}`))
+
+		require.NoError(t, err)
+		require.Equal(t, request.WaitForConnection, true)
+		require.Equal(t, request.UserID, "test")
+		require.Equal(t, request.Timeout, defaultTimeout)
 	})
 }
 
@@ -649,7 +631,7 @@ func TestOperation_SendCHAPIRequest(t *testing.T) {
 			bytes.NewBufferString(chapiRequestSample))
 		op.SendCHAPIRequest(rw, rq)
 
-		require.Equal(t, rw.Code, http.StatusBadRequest)
+		require.Equal(t, rw.Code, http.StatusInternalServerError)
 		require.Contains(t, rw.Body.String(), "failed to get wallet application profile by user ID")
 	})
 
@@ -659,7 +641,7 @@ func TestOperation_SendCHAPIRequest(t *testing.T) {
 		require.NoError(t, err)
 		require.NotEmpty(t, op)
 
-		err = op.store.SaveProfile(sampleUserID, &walletAppProfile{InvitationID: sampleInvID})
+		err = op.store.SaveInvitation(sampleInvID, sampleUserID)
 		require.NoError(t, err)
 
 		rw := httptest.NewRecorder()
@@ -668,7 +650,7 @@ func TestOperation_SendCHAPIRequest(t *testing.T) {
 		op.SendCHAPIRequest(rw, rq)
 
 		require.Equal(t, rw.Code, http.StatusInternalServerError)
-		require.Contains(t, rw.Body.String(), "failed to find connection with existing wallet profile")
+		require.Contains(t, rw.Body.String(), "failed to get wallet application profile by user ID")
 	})
 
 	t.Run("test send CHAPI request - message send error", func(t *testing.T) {
@@ -677,7 +659,10 @@ func TestOperation_SendCHAPIRequest(t *testing.T) {
 		require.NoError(t, err)
 		require.NotEmpty(t, op)
 
-		err = op.store.SaveProfile(sampleUserID, &walletAppProfile{InvitationID: sampleInvID, ConnectionID: sampleConnID})
+		err = op.store.SaveInvitation(sampleInvID, sampleUserID)
+		require.NoError(t, err)
+
+		err = op.store.SaveProfile(sampleInvID, sampleConnID)
 		require.NoError(t, err)
 
 		rw := httptest.NewRecorder()
@@ -739,7 +724,10 @@ func TestOperation_SendCHAPIRequest(t *testing.T) {
 		require.NoError(t, err)
 		require.NotEmpty(t, op)
 
-		err = op.store.SaveProfile(sampleUserID, &walletAppProfile{InvitationID: sampleInvID, ConnectionID: sampleConnID})
+		err = op.store.SaveInvitation(sampleInvID, sampleUserID)
+		require.NoError(t, err)
+
+		err = op.store.SaveProfile(sampleInvID, sampleConnID)
 		require.NoError(t, err)
 
 		rw := httptest.NewRecorder()
@@ -762,6 +750,11 @@ func TestOperation_SendCHAPIRequest(t *testing.T) {
 		var response CHAPIResponse
 		require.NoError(t, json.Unmarshal(rw.Body.Bytes(), &response))
 		require.JSONEq(t, string(response.Data), chapiResponseSample, "")
+	})
+
+	t.Run("test send CHAPI request - extract CHAPI response", func(t *testing.T) {
+		_, err := extractCHAPIResponse([]byte("{"))
+		require.Error(t, err)
 	})
 }
 
@@ -789,6 +782,9 @@ func TestOperation_WaitForStateCompletion(t *testing.T) {
 		require.NoError(t, err)
 		require.NotEmpty(t, op)
 
+		err = op.store.SaveInvitation(sampleInvID, sampleUserID)
+		require.NoError(t, err)
+
 		ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
 		defer cancel()
 
@@ -814,8 +810,10 @@ func TestOperation_WaitForStateCompletion(t *testing.T) {
 			}
 		}()
 
-		err = op.waitForConnectionCompletion(ctx, &walletAppProfile{InvitationID: sampleInvID})
+		invID, err := op.waitForConnectionCompletion(ctx, sampleUserID)
 		require.NoError(t, err)
+		require.NotEmpty(t, invID)
+		require.Equal(t, sampleInvID, invID)
 	})
 
 	t.Run("test wait for state completion - timeout error & unregister error", func(t *testing.T) {
@@ -844,7 +842,7 @@ func TestOperation_WaitForStateCompletion(t *testing.T) {
 		ctx, cancel := context.WithTimeout(context.Background(), 1*time.Nanosecond)
 		defer cancel()
 
-		err = op.waitForConnectionCompletion(ctx, &walletAppProfile{InvitationID: sampleInvID})
+		_, err = op.waitForConnectionCompletion(ctx, sampleUserID)
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "time out waiting for state 'completed'")
 	})
@@ -877,7 +875,7 @@ func TestOperation_WaitForStateCompletion(t *testing.T) {
 
 		mockDIDExSvc.RegisterMsgEventErr = fmt.Errorf(sampleErr)
 
-		err = op.waitForConnectionCompletion(ctx, &walletAppProfile{InvitationID: sampleInvID})
+		_, err = op.waitForConnectionCompletion(ctx, sampleUserID)
 		require.Error(t, err)
 		require.Contains(t, err.Error(), sampleErr)
 	})

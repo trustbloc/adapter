@@ -50,7 +50,7 @@ SPDX-License-Identifier: Apache-2.0
                         <md-empty-state
                                 md-icon="devices_other"
                                 md-label="Can not register your mobile wallet now."
-                                md-description="Failed get QR Code to register your wallet, please try again later.">
+                                md-description="Unexpected error occurred, please try again later.">
                             <md-button class="md-raised md-accent" @click="showMobilePanel=false">Cancel</md-button>
                         </md-empty-state>
                     </div>
@@ -68,6 +68,10 @@ SPDX-License-Identifier: Apache-2.0
                                 Please scan this QR Code to register your mobile wallet and click proceed after you
                                 register your mobile wallet.
                             </p>
+                            <p v-if="retry" style="color: #d73a49" >
+                                <i class="fas fa-info-circle text-xl"></i>
+                                failed to register your mobile device, please try again
+                            </p>
 
                             <div>
                                 <div v-if="!qrDone" class="loading-qr">
@@ -80,7 +84,9 @@ SPDX-License-Identifier: Apache-2.0
 
                         <div class="flex flex-row" style="margin: 5%">
                             <md-button class="md-raised md-accent" @click="showMobilePanel=false">Cancel</md-button>
-                            <md-button class="md-raised md-primary" @click="save('remote')">Proceed
+                            <md-button class="md-raised md-primary" @click="showProgress = true && save('remote')"
+                                       :disabled=disableSave>Proceed
+                                <md-progress-bar md-mode="indeterminate" v-if="showProgress"></md-progress-bar>
                             </md-button>
                         </div>
 
@@ -155,6 +161,11 @@ SPDX-License-Identifier: Apache-2.0
     }
 </style>
 <script>
+
+    const requestAppProfile = `/wallet-bridge/request-app-profile`
+    const savePreference = `/wallet-bridge/save-preferences`
+    const createInvitation = `/wallet-bridge/create-invitation`
+
     export default {
         props: {
             user: null,
@@ -167,13 +178,41 @@ SPDX-License-Identifier: Apache-2.0
             return {
                 showBrowserPanel: false,
                 showMobilePanel: false,
+                showProgress: false,
                 qrDone: false,
                 error: false,
+                retry: false,
+            }
+        },
+        computed: {
+            disableSave() {
+                return this.showProgress
             }
         },
         methods: {
-            save: function (selected) {
-                this.$http.post('/wallet-bridge/save-preferences', {
+            save: async function (selected) {
+                if (selected == 'remote') {
+                    this.showProgress = true
+                    this.retry = false
+                    let appProfile
+                    try {
+                        appProfile = await this.$http.post(requestAppProfile, {
+                            userID: this.user,
+                            waitForConnection: true,
+                            timeout: 30 * 1000000000 // 30 sec timeout
+                        })
+                    } catch (e) {
+                        console.log('failed to remote wallet registration status', e)
+                        this.retry = true
+                        return
+                    } finally {
+                        this.showProgress = false
+                    }
+
+                    console.log('remote wallet successfully connected.', appProfile.data)
+                }
+
+                this.$http.post(savePreference, {
                     userID: this.user,
                     walletType: selected
                 })
@@ -187,7 +226,7 @@ SPDX-License-Identifier: Apache-2.0
 
                 let result
                 try {
-                    result = await this.$http.post('/wallet-bridge/create-invitation', {
+                    result = await this.$http.post(createInvitation, {
                         userID: this.user,
                     })
                 } catch (e) {
