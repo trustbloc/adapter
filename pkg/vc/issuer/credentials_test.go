@@ -145,7 +145,7 @@ func TestParseWalletResponse(t *testing.T) {
 
 func TestCreateAuthorizationCredential(t *testing.T) {
 	t.Run("test create didcomm init credential", func(t *testing.T) {
-		didDocument := mockdiddoc.GetMockDIDDoc()
+		didDocument := mockdiddoc.GetMockDIDDoc(t)
 
 		didDocJSON, err := didDocument.JSONBytes()
 		require.NoError(t, err)

@@ -172,7 +172,7 @@ func TestDIDCommMsgListener(t *testing.T) {
 		msgCh := make(chan message.Msg, 1)
 		go c.didCommMsgListener(msgCh)
 
-		didDoc := mockdiddoc.GetMockDIDDoc()
+		didDoc := mockdiddoc.GetMockDIDDoc(t)
 		txnID := uuid.New().String()
 
 		err = c.store.Put(txnID, []byte(didDoc.ID))
@@ -416,7 +416,7 @@ func TestRegisterRouteReq(t *testing.T) { // nolint:gocyclo
 		c, err := New(config)
 		require.NoError(t, err)
 
-		didDoc := mockdiddoc.GetMockDIDDoc()
+		didDoc := mockdiddoc.GetMockDIDDoc(t)
 		didDocBytes, err := didDoc.JSONBytes()
 		require.NoError(t, err)
 
@@ -470,7 +470,7 @@ func TestRegisterRouteReq(t *testing.T) { // nolint:gocyclo
 		msgCh := make(chan message.Msg, 1)
 		go c.didCommMsgListener(msgCh)
 
-		didDoc := mockdiddoc.GetMockDIDDoc()
+		didDoc := mockdiddoc.GetMockDIDDoc(t)
 		txnID := uuid.New().String()
 
 		err = c.store.Put(txnID, []byte(didDoc.ID))
@@ -524,7 +524,7 @@ func TestRegisterRouteReq(t *testing.T) { // nolint:gocyclo
 		msgCh := make(chan message.Msg, 1)
 		go c.didCommMsgListener(msgCh)
 
-		didDoc := mockdiddoc.GetMockDIDDoc()
+		didDoc := mockdiddoc.GetMockDIDDoc(t)
 		txnID := uuid.New().String()
 
 		err = c.store.Put(txnID, []byte(didDoc.ID))
@@ -576,7 +576,7 @@ func TestRegisterRouteReq(t *testing.T) { // nolint:gocyclo
 		msgCh := make(chan message.Msg, 1)
 		go c.didCommMsgListener(msgCh)
 
-		didDoc := mockdiddoc.GetMockDIDDoc()
+		didDoc := mockdiddoc.GetMockDIDDoc(t)
 		txnID := uuid.New().String()
 
 		err = c.store.Put(txnID, []byte(didDoc.ID))
