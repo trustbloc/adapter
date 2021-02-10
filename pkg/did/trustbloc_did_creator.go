@@ -18,7 +18,7 @@ import (
 	"github.com/hyperledger/aries-framework-go/pkg/doc/jose"
 	vdrapi "github.com/hyperledger/aries-framework-go/pkg/framework/aries/api/vdr"
 	"github.com/hyperledger/aries-framework-go/pkg/kms"
-	"github.com/mr-tron/base58"
+	"github.com/hyperledger/aries-framework-go/pkg/vdr/fingerprint"
 )
 
 type trustblocDIDClient interface {
@@ -69,16 +69,18 @@ func (p *TrustblocDIDCreator) Create() (*did.Doc, error) {
 		return nil, fmt.Errorf("failed to update recover key : %w", err)
 	}
 
-	_, didcommRecipientKey, err := p.km.CreateAndExportPubKeyBytes(kms.ED25519Type)
+	_, pubKeyBytes, err := p.km.CreateAndExportPubKeyBytes(kms.ED25519Type)
 	if err != nil {
 		return nil, fmt.Errorf("kms failed to create keyset: %w", err)
 	}
+
+	didcommRecipientKey, _ := fingerprint.CreateDIDKey(pubKeyBytes)
 
 	didDoc.Service = []did.Service{{
 		ID:              "didcomm",
 		Type:            "did-communication",
 		Priority:        0,
-		RecipientKeys:   []string{base58.Encode(didcommRecipientKey)},
+		RecipientKeys:   []string{didcommRecipientKey},
 		ServiceEndpoint: p.didcommInboundURL,
 	}}
 

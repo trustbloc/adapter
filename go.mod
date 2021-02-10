@@ -13,7 +13,7 @@ require (
 	github.com/coreos/go-oidc v2.2.1+incompatible
 	github.com/google/uuid v1.1.2
 	github.com/gorilla/mux v1.7.4
-	github.com/hyperledger/aries-framework-go v0.1.6-0.20210127113808-f60b9683e266
+	github.com/hyperledger/aries-framework-go v0.1.6-0.20210210013602-d14c77b2e8a9
 	github.com/hyperledger/aries-framework-go-ext/component/vdr/sidetree v0.0.0-20210121210840-ee9984a4579c
 	github.com/hyperledger/aries-framework-go-ext/component/vdr/trustbloc v0.0.0-20210125133828-10c25f5d6d37
 	github.com/mr-tron/base58 v1.1.3
