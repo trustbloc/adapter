@@ -154,7 +154,7 @@ The RP Adapter sends a web credentials request to the web browser with the follo
                     "type": "DIDConnect",
                     "invitation": {
                         "@id": "71710bb8-e703-4427-8f72-8b18c7aa38a2",
-                        "@type": "https://didcomm.org/oob-invitation/1.0/invitation",
+                        "@type": "https://didcomm.org/out-of-band/1.0/invitation",
                         "label": "Demo Relying Party",
                         "service": [
                             "did:trustbloc:discovery.trustbloc.example.com:EiDBGODe_WiLwDOxMp_7CI6NKOjk4KbtwqUv0d04EFRiyg"
