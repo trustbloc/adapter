@@ -31,15 +31,24 @@ type Profile struct {
 
 // ProfileData struct for profile.
 type ProfileData struct {
-	ID                          string     `json:"id,omitempty"`
-	Name                        string     `json:"name"`
-	URL                         string     `json:"url"`
-	SupportedVCContexts         []string   `json:"supportedVCContexts"`
-	SupportsAssuranceCredential bool       `json:"supportsAssuranceCredential"`
-	RequiresBlindedRoute        bool       `json:"requiresBlindedRoute"`
-	CredentialSigningKey        string     `json:"credentialSigningKey"`
-	PresentationSigningKey      string     `json:"presentationSigningKey"`
-	CreatedAt                   *time.Time `json:"createdAt"`
+	ID                          string            `json:"id,omitempty"`
+	Name                        string            `json:"name"`
+	URL                         string            `json:"url"`
+	SupportedVCContexts         []string          `json:"supportedVCContexts"`
+	SupportsAssuranceCredential bool              `json:"supportsAssuranceCredential"`
+	RequiresBlindedRoute        bool              `json:"requiresBlindedRoute"`
+	CredentialSigningKey        string            `json:"credentialSigningKey"`
+	PresentationSigningKey      string            `json:"presentationSigningKey"`
+	CreatedAt                   *time.Time        `json:"createdAt"`
+	OIDCProviderURL             string            `json:"oidcProvider"`
+	OIDCClientParams            *OIDCClientParams `json:"oidcParams,omitempty"`
+}
+
+// OIDCClientParams optional set of oidc client parameters that the issuer may set, for static client registration.
+type OIDCClientParams struct {
+	ClientID     string `json:"clientID"`
+	ClientSecret string `json:"clientSecret"`
+	SecretExpiry int    `json:"SecretExpiry"`
 }
 
 // New returns new issuer profile instance.

@@ -8,15 +8,20 @@ package operation
 
 import (
 	"bytes"
+	"crypto/aes"
+	"crypto/cipher"
+	"crypto/rand"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io/ioutil"
 	"net/http"
+	"net/http/httptest"
 	"net/url"
 	"testing"
 	"time"
 
+	"github.com/fxamacker/cbor/v2"
 	"github.com/google/uuid"
 	"github.com/hyperledger/aries-framework-go/pkg/didcomm/common/service"
 	"github.com/hyperledger/aries-framework-go/pkg/didcomm/protocol/decorator"
@@ -81,6 +86,51 @@ func TestNew(t *testing.T) {
 		require.Contains(t, err.Error(), "error creating the store")
 	})
 
+	t.Run("test new - store fail for txnstore", func(t *testing.T) {
+		conf := config()
+
+		conf.StoreProvider = &failingStoreProvider{
+			createN:         1,
+			Err:             fmt.Errorf("error creating the store"),
+			SuccessProvider: conf.StoreProvider,
+		}
+
+		c, err := New(conf)
+		require.Nil(t, c)
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "error creating the store")
+	})
+
+	t.Run("test new - store fail for tokenstore", func(t *testing.T) {
+		conf := config()
+
+		conf.StoreProvider = &failingStoreProvider{
+			createN:         2,
+			Err:             fmt.Errorf("error creating the store"),
+			SuccessProvider: conf.StoreProvider,
+		}
+
+		c, err := New(conf)
+		require.Nil(t, c)
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "error creating the store")
+	})
+
+	t.Run("test new - store fail for oidcstore", func(t *testing.T) {
+		conf := config()
+
+		conf.StoreProvider = &failingStoreProvider{
+			createN:         3,
+			Err:             fmt.Errorf("error creating the store"),
+			SuccessProvider: conf.StoreProvider,
+		}
+
+		c, err := New(conf)
+		require.Nil(t, c)
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "error creating the store")
+	})
+
 	t.Run("test get txn store - create store error", func(t *testing.T) {
 		s, err := getTxnStore(&mockstorage.Provider{ErrCreateStore: errors.New("error creating the store")})
 		require.Error(t, err)
@@ -104,6 +154,20 @@ func TestNew(t *testing.T) {
 
 	t.Run("test get token store - open store error", func(t *testing.T) {
 		s, err := getTokenStore(&mockstorage.Provider{ErrOpenStoreHandle: errors.New("error opening the store")})
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "error opening the store")
+		require.Nil(t, s)
+	})
+
+	t.Run("test get oidc store - create store error", func(t *testing.T) {
+		s, err := getOIDCClientStore(&mockstorage.Provider{ErrCreateStore: errors.New("error creating the store")})
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "error creating the store")
+		require.Nil(t, s)
+	})
+
+	t.Run("test get oidc store - open store error", func(t *testing.T) {
+		s, err := getOIDCClientStore(&mockstorage.Provider{ErrOpenStoreHandle: errors.New("error opening the store")})
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "error opening the store")
 		require.Nil(t, s)
@@ -150,15 +214,539 @@ func TestNew(t *testing.T) {
 	})
 }
 
+func Test_OIDCClientData(t *testing.T) {
+	t.Run("success: encrypt then decrypt", func(t *testing.T) {
+		data := oidcClientData{
+			ID:     "abcd",
+			Secret: "this is a secret value",
+			Expiry: 1000,
+		}
+
+		key := make([]byte, 32)
+		_, err := rand.Read(key)
+		require.NoError(t, err)
+
+		enc, err := encryptClientData("abdc.website", key, &data)
+		require.NoError(t, err)
+
+		var wrapper oidcClientDataWrapper
+
+		err = cbor.Unmarshal(enc, &wrapper)
+		require.NoError(t, err)
+
+		dec, err := decryptClientData(key, enc)
+		require.NoError(t, err)
+
+		require.Equal(t, data.ID, dec.ID)
+		require.Equal(t, data.Secret, dec.Secret)
+		require.Equal(t, data.Expiry, dec.Expiry)
+	})
+
+	t.Run("encrypt error: bad key", func(t *testing.T) {
+		data := oidcClientData{
+			ID:     "abcd",
+			Secret: "this is a secret value",
+			Expiry: 1000,
+		}
+
+		badKey := make([]byte, 5) // bad length
+
+		_, err := encryptClientData("abdc.website", badKey, &data)
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "error creating AES cipher")
+	})
+
+	t.Run("decrypt error: bad key", func(t *testing.T) {
+		data := oidcClientData{
+			ID:     "abcd",
+			Secret: "this is a secret value",
+			Expiry: 1000,
+		}
+
+		key := make([]byte, 32)
+		_, err := rand.Read(key)
+		require.NoError(t, err)
+
+		badKey := make([]byte, 5) // bad length
+
+		enc, err := encryptClientData("abdc.website", key, &data)
+		require.NoError(t, err)
+
+		_, err = decryptClientData(badKey, enc)
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "error creating AES cipher")
+	})
+
+	t.Run("decrypt error: garbled wrapper", func(t *testing.T) {
+		data := oidcClientData{
+			ID:     "abcd",
+			Secret: "this is a secret value",
+			Expiry: 1000,
+		}
+
+		key := make([]byte, 32)
+		_, err := rand.Read(key)
+		require.NoError(t, err)
+
+		enc, err := encryptClientData("abdc.website", key, &data)
+		require.NoError(t, err)
+
+		if len(enc) != 0 {
+			enc[0]++
+		}
+
+		_, err = decryptClientData(key, enc)
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "error unmarshaling wrapper")
+	})
+
+	t.Run("decrypt error: incorrect encrypted payload", func(t *testing.T) {
+		data := oidcClientData{
+			ID:     "abcd",
+			Secret: "this is a secret value",
+			Expiry: 1000,
+		}
+
+		key := make([]byte, 32)
+		_, err := rand.Read(key)
+		require.NoError(t, err)
+
+		enc, err := encryptClientData("abdc.website", key, &data)
+		require.NoError(t, err)
+
+		wrapper := oidcClientDataWrapper{}
+		require.NoError(t, cbor.Unmarshal(enc, &wrapper))
+
+		if len(wrapper.Payload) != 0 {
+			wrapper.Payload[0]++
+		}
+
+		enc, err = cbor.Marshal(wrapper)
+		require.NoError(t, err)
+
+		_, err = decryptClientData(key, enc)
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "error decrypting client data")
+	})
+
+	t.Run("decrypt error: garbled wrapped data", func(t *testing.T) {
+		data := oidcClientData{
+			ID:     "abcd",
+			Secret: "this is a secret value",
+			Expiry: 1000,
+		}
+
+		key := make([]byte, 32)
+		_, err := rand.Read(key)
+		require.NoError(t, err)
+
+		// perform encryptClientData except the data gets garbled before encryption
+		dataBytes, err := cbor.Marshal(data)
+		require.NoError(t, err)
+
+		// garble dataBytes
+		if len(dataBytes) != 0 {
+			dataBytes[0]++
+		}
+
+		nonce, err := makeNonce([]byte("provider.url"))
+		require.NoError(t, err)
+
+		block, err := aes.NewCipher(key)
+		require.NoError(t, err)
+
+		gcm, err := cipher.NewGCM(block)
+		require.NoError(t, err)
+
+		cipherText := gcm.Seal(nil, nonce, dataBytes, nil)
+
+		dataWrapper := oidcClientDataWrapper{
+			Nonce:   nonce,
+			Payload: cipherText,
+		}
+
+		wrappedBytes, err := cbor.Marshal(dataWrapper)
+		require.NoError(t, err)
+
+		_, err = decryptClientData(key, wrappedBytes)
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "error unmarshaling client data")
+	})
+}
+
+func Test_OIDCClientStore(t *testing.T) {
+	t.Run("success - save then load oidc client data", func(t *testing.T) {
+		conf := config()
+
+		op, err := New(conf)
+		require.NoError(t, err)
+
+		data := oidcClientData{
+			ID:     "abcd",
+			Secret: "this is a secret value",
+			Expiry: 1000,
+		}
+
+		require.NoError(t, op.saveOIDCClientData("provider.url", &data))
+
+		out, err := op.loadOIDCClientData("provider.url")
+		require.NoError(t, err)
+
+		require.Equal(t, data.ID, out.ID)
+		require.Equal(t, data.Secret, out.Secret)
+		require.Equal(t, data.Expiry, out.Expiry)
+	})
+
+	t.Run("save error - error encrypting client data", func(t *testing.T) {
+		conf := config()
+
+		op, err := New(conf)
+		require.NoError(t, err)
+
+		op.oidcClientStoreKey = make([]byte, 5) // bad key size
+
+		data := oidcClientData{
+			ID:     "abcd",
+			Secret: "this is a secret value",
+			Expiry: 1000,
+		}
+
+		err = op.saveOIDCClientData("provider.url", &data)
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "error encrypting client data")
+	})
+
+	t.Run("save error - error storing to oidc client data store", func(t *testing.T) {
+		conf := config()
+
+		op, err := New(conf)
+		require.NoError(t, err)
+
+		op.oidcClientStore = &mockstorage.MockStore{
+			Store:  map[string][]byte{},
+			ErrPut: fmt.Errorf("test err"),
+		}
+
+		data := oidcClientData{
+			ID:     "abcd",
+			Secret: "this is a secret value",
+			Expiry: 1000,
+		}
+
+		err = op.saveOIDCClientData("provider.url", &data)
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "error storing client data")
+	})
+
+	t.Run("load error - error loading from oidc client data store", func(t *testing.T) {
+		conf := config()
+
+		op, err := New(conf)
+		require.NoError(t, err)
+
+		op.oidcClientStore = &mockstorage.MockStore{
+			Store:  map[string][]byte{},
+			ErrGet: fmt.Errorf("test err"),
+		}
+
+		data := oidcClientData{
+			ID:     "abcd",
+			Secret: "this is a secret value",
+			Expiry: 1000,
+		}
+
+		require.NoError(t, op.saveOIDCClientData("provider.url", &data))
+
+		_, err = op.loadOIDCClientData("provider.url")
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "error loading client data")
+	})
+
+	t.Run("load error - error decrypting client data", func(t *testing.T) {
+		conf := config()
+
+		op, err := New(conf)
+		require.NoError(t, err)
+
+		// save some garbage data
+		require.NoError(t, op.oidcClientStore.Put("provider.url", []byte("abcd blah blah")))
+
+		_, err = op.loadOIDCClientData("provider.url")
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "error decrypting client data")
+	})
+}
+
+func Test_CreateOIDCClient(t *testing.T) {
+	t.Run("success: with multiple create calls", func(t *testing.T) {
+		conf := config()
+
+		op, err := New(conf)
+		require.NoError(t, err)
+
+		mockOIDCServer := createMockOIDCServer("", "", "", "", fmt.Sprintf(
+			`{"client_id":"example_client","client_secret":"abcdefg","client_secret_expires_at":%d}`,
+			time.Now().Add(time.Hour*300).Unix()))
+
+		defer mockOIDCServer.Close()
+
+		pd := issuer.ProfileData{
+			ID:              "abcd",
+			Name:            "issuer",
+			OIDCProviderURL: mockOIDCServer.URL,
+		}
+
+		// call twice with the same issuer
+		_, err = op.createOIDCClient(&pd)
+		require.NoError(t, err)
+
+		_, err = op.createOIDCClient(&pd)
+		require.NoError(t, err)
+
+		//	new ID but same oidc provider
+		pd = issuer.ProfileData{
+			ID:              "123abc",
+			Name:            "issuer",
+			OIDCProviderURL: mockOIDCServer.URL,
+		}
+
+		_, err = op.createOIDCClient(&pd)
+		require.NoError(t, err)
+	})
+
+	t.Run("success: bypassing client registration", func(t *testing.T) {
+		conf := config()
+
+		op, err := New(conf)
+		require.NoError(t, err)
+
+		mockOIDCServer := createMockOIDCServer("", "", "", "", "")
+
+		defer mockOIDCServer.Close()
+
+		pd := issuer.ProfileData{
+			ID:              "abcd",
+			Name:            "issuer",
+			OIDCProviderURL: mockOIDCServer.URL,
+			OIDCClientParams: &issuer.OIDCClientParams{
+				ClientID:     "example_client",
+				ClientSecret: "abcdefg",
+				SecretExpiry: int(time.Now().Add(time.Hour * 300).Unix()),
+			},
+		}
+
+		_, err = op.createOIDCClient(&pd)
+		require.NoError(t, err)
+	})
+
+	t.Run("failure: error checking store for client data", func(t *testing.T) {
+		conf := config()
+
+		op, err := New(conf)
+		require.NoError(t, err)
+
+		mockOIDCServer := createMockOIDCServer("", "", "", "", "")
+
+		defer mockOIDCServer.Close()
+
+		op.oidcClientStore = &mockstorage.MockStore{
+			Store: map[string][]byte{
+				mockOIDCServer.URL: nil,
+			},
+			ErrGet: fmt.Errorf("test err"),
+		}
+
+		pd := issuer.ProfileData{
+			ID:              "abcd",
+			Name:            "issuer",
+			OIDCProviderURL: mockOIDCServer.URL,
+		}
+
+		_, err = op.createOIDCClient(&pd)
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "error getting client data")
+	})
+
+	t.Run("failure: error getting oidc provider configuration", func(t *testing.T) {
+		conf := config()
+
+		op, err := New(conf)
+		require.NoError(t, err)
+
+		badServer := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+			writer.WriteHeader(http.StatusInternalServerError)
+		}))
+
+		defer badServer.Close()
+
+		pd := issuer.ProfileData{
+			ID:              "abcd",
+			Name:            "issuer",
+			OIDCProviderURL: badServer.URL,
+		}
+
+		_, err = op.createOIDCClient(&pd)
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "error getting provider openid configuration")
+	})
+
+	t.Run("failure: error unmarshaling oidc provider configuration", func(t *testing.T) {
+		conf := config()
+
+		op, err := New(conf)
+		require.NoError(t, err)
+
+		badServer := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+			writer.Write([]byte("this is not a json payload")) // nolint:errcheck,gosec
+		}))
+
+		defer badServer.Close()
+
+		pd := issuer.ProfileData{
+			ID:              "abcd",
+			Name:            "issuer",
+			OIDCProviderURL: badServer.URL,
+		}
+
+		_, err = op.createOIDCClient(&pd)
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "error getting provider openid configuration")
+	})
+
+	t.Run("failure: error registering with oidc provider", func(t *testing.T) {
+		conf := config()
+
+		op, err := New(conf)
+		require.NoError(t, err)
+
+		mockOIDCServer := createMockOIDCServer("", "", "", "", "")
+
+		defer mockOIDCServer.Close()
+
+		pd := issuer.ProfileData{
+			ID:              "abcd",
+			Name:            "issuer",
+			OIDCProviderURL: mockOIDCServer.URL,
+		}
+
+		_, err = op.createOIDCClient(&pd)
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "error registering oidc client")
+	})
+
+	t.Run("failure: error saving registered client parameters", func(t *testing.T) {
+		conf := config()
+
+		op, err := New(conf)
+		require.NoError(t, err)
+
+		op.oidcClientStore = &mockstorage.MockStore{
+			Store:  map[string][]byte{},
+			ErrPut: fmt.Errorf("test err"),
+		}
+
+		mockOIDCServer := createMockOIDCServer("", "", "", "", fmt.Sprintf(
+			`{"client_id":"example_client","client_secret":"abcdefg","client_secret_expires_at":%d}`,
+			time.Now().Add(time.Hour*300).Unix()))
+
+		defer mockOIDCServer.Close()
+
+		pd := issuer.ProfileData{
+			ID:              "abcd",
+			Name:            "issuer",
+			OIDCProviderURL: mockOIDCServer.URL,
+		}
+
+		_, err = op.createOIDCClient(&pd)
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "error saving oidc client data")
+	})
+
+	t.Run("failure: error initializing oidc client", func(t *testing.T) {
+		conf := config()
+
+		op, err := New(conf)
+		require.NoError(t, err)
+
+		mockOIDCServer := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+			_, e := writer.Write([]byte("{}"))
+			require.NoError(t, e)
+		}))
+
+		defer mockOIDCServer.Close()
+
+		pd := issuer.ProfileData{
+			ID:              "abcd",
+			Name:            "issuer",
+			OIDCProviderURL: mockOIDCServer.URL,
+			OIDCClientParams: &issuer.OIDCClientParams{
+				ClientID:     "example_client",
+				ClientSecret: "abcdefg",
+				SecretExpiry: int(time.Now().Add(time.Hour * 300).Unix()),
+			},
+		}
+
+		_, err = op.createOIDCClient(&pd)
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "creating oidc client")
+	})
+}
+
+func TestRegisterOAuthClient(t *testing.T) {
+	t.Run("success", func(t *testing.T) {
+		conf := config()
+
+		op, err := New(conf)
+		require.NoError(t, err)
+
+		mockOIDCServer := createMockOIDCServer("", "", "", "", fmt.Sprintf(
+			`{"client_id":"example_client","client_secret":"abcdefg","client_secret_expires_at":%d}`,
+			time.Now().Add(time.Hour*300).Unix()))
+
+		defer mockOIDCServer.Close()
+
+		_, err = op.registerOAuthClient(mockOIDCServer.URL + "/register")
+		require.NoError(t, err)
+	})
+
+	t.Run("failure - server error", func(t *testing.T) {
+		conf := config()
+
+		op, err := New(conf)
+		require.NoError(t, err)
+
+		badServer := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+			writer.WriteHeader(http.StatusInternalServerError)
+		}))
+
+		defer badServer.Close()
+
+		_, err = op.registerOAuthClient(badServer.URL + "/register")
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "error response")
+	})
+}
+
 func TestCreateProfile(t *testing.T) {
 	op, err := New(config())
 	require.NoError(t, err)
+
+	mockOIDC := mockOIDCClient{}
+
+	op.oidcClientFunc = func(profileData *issuer.ProfileData) (oidcClient, error) {
+		return &mockOIDC, nil
+	}
 
 	endpoint := profileEndpoint
 	handler := getHandler(t, op, endpoint)
 
 	t.Run("create profile - success", func(t *testing.T) {
 		vReq := createProfileData(uuid.New().String())
+		vReq.OIDCClientParams = &issuer.OIDCClientParams{
+			ClientID:     "client id",
+			ClientSecret: "client secret",
+			SecretExpiry: 0,
+		}
 
 		vReqBytes, err := json.Marshal(vReq)
 		require.NoError(t, err)
@@ -176,9 +764,44 @@ func TestCreateProfile(t *testing.T) {
 		require.Equal(t, vReq.SupportsAssuranceCredential, profileRes.SupportsAssuranceCredential)
 	})
 
+	t.Run("create profile - success with default oidc", func(t *testing.T) {
+		op2, err := New(config())
+		require.NoError(t, err)
+
+		mockOIDCServer := createMockOIDCServer("", "", "", "", fmt.Sprintf(
+			`{"client_id":"example_client","client_secret":"abcdefg","client_secret_expires_at":%d}`,
+			time.Now().Add(time.Hour*300).Unix()))
+
+		defer mockOIDCServer.Close()
+
+		handler2 := getHandler(t, op2, endpoint)
+
+		vReq := createProfileData(uuid.New().String())
+		vReq.OIDCProviderURL = mockOIDCServer.URL
+
+		vReqBytes, err := json.Marshal(vReq)
+		require.NoError(t, err)
+
+		rr := serveHTTP(t, handler2.Handle(), http.MethodPost, endpoint, vReqBytes)
+
+		require.Equal(t, http.StatusCreated, rr.Code)
+
+		profileRes := &issuer.ProfileData{}
+		err = json.Unmarshal(rr.Body.Bytes(), &profileRes)
+		require.NoError(t, err)
+		require.Equal(t, vReq.ID, profileRes.ID)
+		require.Equal(t, vReq.Name, profileRes.Name)
+		require.Equal(t, vReq.URL, profileRes.URL)
+		require.Equal(t, vReq.SupportsAssuranceCredential, profileRes.SupportsAssuranceCredential)
+	})
+
 	t.Run("create profile - failed to issue governance vc", func(t *testing.T) {
 		op, err := New(config())
 		require.NoError(t, err)
+
+		op.oidcClientFunc = func(profileData *issuer.ProfileData) (oidcClient, error) {
+			return &mockOIDC, nil
+		}
 
 		op.governanceProvider = &mockgovernance.MockProvider{
 			IssueCredentialFunc: func(didID, profileID string) ([]byte, error) {
@@ -208,6 +831,10 @@ func TestCreateProfile(t *testing.T) {
 	t.Run("create profile - did creation failure", func(t *testing.T) {
 		ops, err := New(config())
 		require.NoError(t, err)
+
+		ops.oidcClientFunc = func(profileData *issuer.ProfileData) (oidcClient, error) {
+			return &mockOIDC, nil
+		}
 
 		ops.publicDIDCreator = &stubPublicDIDCreator{createErr: errors.New("did create error")}
 
@@ -254,11 +881,39 @@ func TestCreateProfile(t *testing.T) {
 		require.Equal(t, http.StatusBadRequest, rr.Code)
 		require.Contains(t, rr.Body.String(), "failed to create profile: profile id mandatory")
 	})
+
+	t.Run("create profile - oidc error", func(t *testing.T) {
+		ops, err := New(config())
+		require.NoError(t, err)
+
+		vReq := createProfileData(uuid.New().String())
+
+		vReqBytes, err := json.Marshal(vReq)
+		require.NoError(t, err)
+
+		rr := serveHTTP(t, getHandler(t, ops, endpoint).Handle(), http.MethodPost, endpoint, vReqBytes)
+
+		require.Equal(t, http.StatusInternalServerError, rr.Code)
+
+		resErr := struct {
+			ErrMessage string `json:"errMessage"`
+		}{}
+		err = json.Unmarshal(rr.Body.Bytes(), &resErr)
+		require.NoError(t, err)
+
+		require.Contains(t, resErr.ErrMessage, "create oidc client")
+	})
 }
 
 func TestGetProfile(t *testing.T) {
 	op, err := New(config())
 	require.NoError(t, err)
+
+	mockOIDC := mockOIDCClient{}
+
+	op.oidcClientFunc = func(profileData *issuer.ProfileData) (oidcClient, error) {
+		return &mockOIDC, nil
+	}
 
 	endpoint := getProfileEndpoint
 	handler := getHandler(t, op, endpoint)
@@ -307,9 +962,15 @@ func TestConnectWallet(t *testing.T) {
 	tknRespBytes, err := json.Marshal(tknResp)
 	require.NoError(t, err)
 
+	mockOIDC := mockOIDCClient{}
+
 	t.Run("test connect wallet - success", func(t *testing.T) {
 		c, err := New(config())
 		require.NoError(t, err)
+
+		c.oidcClientFunc = func(profileData *issuer.ProfileData) (oidcClient, error) {
+			return &mockOIDC, nil
+		}
 
 		c.uiEndpoint = uiEndpoint
 		c.httpClient = &mockHTTPClient{
@@ -336,6 +997,10 @@ func TestConnectWallet(t *testing.T) {
 		c, err := New(config())
 		require.NoError(t, err)
 
+		c.oidcClientFunc = func(profileData *issuer.ProfileData) (oidcClient, error) {
+			return &mockOIDC, nil
+		}
+
 		c.httpClient = &mockHTTPClient{
 			respValue: &http.Response{
 				StatusCode: http.StatusOK, Body: ioutil.NopCloser(bytes.NewReader(tknRespBytes)),
@@ -355,6 +1020,10 @@ func TestConnectWallet(t *testing.T) {
 	t.Run("test connect wallet - no state in the url", func(t *testing.T) {
 		c, err := New(config())
 		require.NoError(t, err)
+
+		c.oidcClientFunc = func(profileData *issuer.ProfileData) (oidcClient, error) {
+			return &mockOIDC, nil
+		}
 
 		c.httpClient = &mockHTTPClient{
 			respValue: &http.Response{
@@ -397,6 +1066,10 @@ func TestConnectWallet(t *testing.T) {
 		c, err := New(config)
 		require.NoError(t, err)
 
+		c.oidcClientFunc = func(profileData *issuer.ProfileData) (oidcClient, error) {
+			return &mockOIDC, nil
+		}
+
 		c.httpClient = &mockHTTPClient{
 			respValue: &http.Response{
 				StatusCode: http.StatusOK, Body: ioutil.NopCloser(bytes.NewReader(tknRespBytes)),
@@ -420,6 +1093,10 @@ func TestConnectWallet(t *testing.T) {
 	t.Run("test connect wallet - txn data store error", func(t *testing.T) {
 		c, err := New(config())
 		require.NoError(t, err)
+
+		c.oidcClientFunc = func(profileData *issuer.ProfileData) (oidcClient, error) {
+			return &mockOIDC, nil
+		}
 
 		c.httpClient = &mockHTTPClient{
 			respValue: &http.Response{
@@ -449,6 +1126,10 @@ func TestConnectWallet(t *testing.T) {
 	t.Run("test connect wallet - retrieve token errors", func(t *testing.T) {
 		c, err := New(config())
 		require.NoError(t, err)
+
+		c.oidcClientFunc = func(profileData *issuer.ProfileData) (oidcClient, error) {
+			return &mockOIDC, nil
+		}
 
 		c.httpClient = &mockHTTPClient{
 			respValue: &http.Response{

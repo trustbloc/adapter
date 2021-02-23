@@ -81,6 +81,7 @@ func (e *Steps) createProfile(id, name, issuerURL, supportedVCContexts,
 		SupportedVCContexts:         strings.Split(supportedVCContexts, ","),
 		SupportsAssuranceCredential: supportsAssuranceCred,
 		RequiresBlindedRoute:        requiresBlindedRoute,
+		OIDCProviderURL:             "https://issuer-hydra.trustbloc.local:9044/",
 	}
 
 	requestBytes, err := json.Marshal(profileReq)

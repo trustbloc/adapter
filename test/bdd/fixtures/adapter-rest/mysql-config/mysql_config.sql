@@ -26,6 +26,13 @@ CREATE USER 'issueradapter'@'%' IDENTIFIED BY 'issueradapter-secret-pw';
 GRANT ALL PRIVILEGES ON `issueradapter\_%` . * TO 'issueradapter'@'%';
 
 /*
+Issuer Adapter's Hydra instance
+*/
+CREATE USER 'issueradapterhydra'@'%' IDENTIFIED BY 'issueradapterhydra-secret-pw';
+CREATE DATABASE issueradapterhydra;
+GRANT ALL PRIVILEGES ON issueradapterhydra.* TO 'issueradapterhydra'@'%';
+
+/*
 Aries
 */
 CREATE USER 'aries'@'%' IDENTIFIED BY 'aries-secret-pw';

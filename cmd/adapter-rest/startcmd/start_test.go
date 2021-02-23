@@ -6,6 +6,7 @@ SPDX-License-Identifier: Apache-2.0
 package startcmd
 
 import (
+	"crypto/rand"
 	"fmt"
 	"io/ioutil"
 	"net"
@@ -331,16 +332,29 @@ func TestStartCmdDIDComm(t *testing.T) {
 	t.Run("test start didcomm - success", func(t *testing.T) {
 		startCmd := GetStartCmd(&mockServer{})
 
+		file, err := ioutil.TempFile("", "*.key")
+		require.NoError(t, err)
+
+		key := make([]byte, 32)
+		_, err = rand.Read(key)
+		require.NoError(t, err)
+
+		_, err = file.Write(key)
+		require.NoError(t, err)
+
+		defer func() { require.NoError(t, os.Remove(file.Name())) }()
+
 		args := []string{
 			"--" + modeFlagName, issuerMode,
 			"--" + hostURLFlagName, "localhost:8080",
 			"--" + didCommInboundHostFlagName, randomURL(),
 			"--" + datasourceNameFlagName, "mem://test",
 			"--" + datasourceTimeoutFlagName, "30",
+			"--" + issuerOIDCClientStoreKeyFlagName, file.Name(),
 		}
 		startCmd.SetArgs(args)
 
-		err := startCmd.Execute()
+		err = startCmd.Execute()
 		require.NoError(t, err)
 	})
 
@@ -393,6 +407,18 @@ func TestAdapterModes(t *testing.T) {
 
 		testInboundHostURL := randomURL()
 
+		file, err := ioutil.TempFile("", "*.key")
+		require.NoError(t, err)
+
+		key := make([]byte, 32)
+		_, err = rand.Read(key)
+		require.NoError(t, err)
+
+		_, err = file.Write(key)
+		require.NoError(t, err)
+
+		defer func() { require.NoError(t, os.Remove(file.Name())) }()
+
 		args := []string{
 			"--" + modeFlagName, issuerMode,
 			"--" + hostURLFlagName, "localhost:8080",
@@ -400,10 +426,11 @@ func TestAdapterModes(t *testing.T) {
 			"--" + datasourceNameFlagName, "mem://test",
 			"--" + datasourceTimeoutFlagName, "30",
 			"--" + governanceVCSURLFlagName, "http://example.vcs.com",
+			"--" + issuerOIDCClientStoreKeyFlagName, file.Name(),
 		}
 		startCmd.SetArgs(args)
 
-		err := startCmd.Execute()
+		err = startCmd.Execute()
 		require.NoError(t, err)
 	})
 
@@ -446,12 +473,51 @@ func TestAdapterModes(t *testing.T) {
 		require.Contains(t, err.Error(), "unsupported storage driver: invaldidb")
 	})
 
+	t.Run("test adapter mode - issuer client store key error", func(t *testing.T) {
+		startCmd := GetStartCmd(&mockServer{})
+
+		testInboundHostURL := randomURL()
+
+		file, err := ioutil.TempFile("", "*.key")
+		require.NoError(t, err)
+
+		defer func() { require.NoError(t, os.Remove(file.Name())) }()
+
+		args := []string{
+			"--" + modeFlagName, issuerMode,
+			"--" + hostURLFlagName, "localhost:8080",
+			"--" + didCommInboundHostFlagName, testInboundHostURL,
+			"--" + datasourceNameFlagName, "mem://test",
+			"--" + datasourceTimeoutFlagName, "30",
+			"--" + governanceVCSURLFlagName, "http://example.vcs.com",
+			"--" + issuerOIDCClientStoreKeyFlagName, file.Name() + "-nonexistent",
+		}
+		startCmd.SetArgs(args)
+
+		err = startCmd.Execute()
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "failed to read key")
+	})
+
 	t.Run("test adapter mode - wallet handler errors", func(t *testing.T) {
+		file, err := ioutil.TempFile("", "*.key")
+		require.NoError(t, err)
+
+		key := make([]byte, 32)
+		_, err = rand.Read(key)
+		require.NoError(t, err)
+
+		_, err = file.Write(key)
+		require.NoError(t, err)
+
+		defer func() { require.NoError(t, os.Remove(file.Name())) }()
+
 		parameters := &adapterRestParameters{
 			dsnParams: &dsnParams{
 				dsn: "mem://test",
 			},
-			didCommParameters: &didCommParameters{},
+			didCommParameters:   &didCommParameters{},
+			oidcClientDBKeyPath: file.Name(),
 		}
 
 		issuerAries, err := aries.New(aries.WithStoreProvider(&storage.MockStoreProvider{

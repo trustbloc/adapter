@@ -16,12 +16,21 @@ import (
 
 // ProfileDataRequest req for profile creation.
 type ProfileDataRequest struct {
-	ID                          string   `json:"id,omitempty"`
-	Name                        string   `json:"name"`
-	SupportedVCContexts         []string `json:"supportedVCContexts"`
-	SupportsAssuranceCredential bool     `json:"supportsAssuranceCredential"`
-	RequiresBlindedRoute        bool     `json:"requiresBlindedRoute"`
-	URL                         string   `json:"url"`
+	ID                          string            `json:"id,omitempty"`
+	Name                        string            `json:"name"`
+	SupportedVCContexts         []string          `json:"supportedVCContexts"`
+	SupportsAssuranceCredential bool              `json:"supportsAssuranceCredential"`
+	RequiresBlindedRoute        bool              `json:"requiresBlindedRoute"`
+	URL                         string            `json:"url"`
+	OIDCProviderURL             string            `json:"oidcProvider"`
+	OIDCClientParams            *OIDCClientParams `json:"oidcParams,omitempty"`
+}
+
+// OIDCClientParams optional parameters for setting the adapter's oidc client parameters statically.
+type OIDCClientParams struct {
+	ClientID     string `json:"client_id"`
+	ClientSecret string `json:"client_secret"`
+	SecretExpiry int    `json:"client_secret_expires_at"`
 }
 
 // WalletConnect response from wallet.

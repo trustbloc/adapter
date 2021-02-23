@@ -11,9 +11,11 @@ import (
 	"crypto/x509"
 	"errors"
 	"fmt"
+	"io/ioutil"
 	"net/http"
 	"net/url"
 	"os"
+	"path"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -61,6 +63,11 @@ const (
 	hostURLFlagShorthand = "u"
 	hostURLFlagUsage     = "URL to run the adapter-rest instance on. Format: HostName:Port."
 	hostURLEnvKey        = "ADAPTER_REST_HOST_URL"
+
+	externalURLFlagName  = "external-url"
+	externalURLEnvKey    = "ADAPTER_REST_EXTERNAL_URL"
+	externalURLFlagUsage = "URL that the adapter-rest instance is exposed on. " +
+		" Alternatively, this can be set with the following environment variable: " + externalURLEnvKey
 
 	datasourceNameFlagName  = "dsn"
 	datasourceNameFlagUsage = "Datasource Name with credentials if required." +
@@ -121,6 +128,13 @@ const (
 	modeFlagUsage = "Mode in which the edge-adapter service will run. Possible values: " +
 		"['issuer', 'rp']."
 	modeEnvKey = "ADAPTER_REST_MODE"
+
+	// AES256GCM symmetric key file for encrypting data in the oidc client store
+	issuerOIDCClientStoreKeyFlagName  = "oidc-store-key"
+	issuerOIDCClientStoreKeyEnvKey    = "OIDC_STORE_KEY"
+	issuerOIDCClientStoreKeyFlagUsage = "Symmetric key file for encrypting data " +
+		"in the issuer adapter's oidc client store. " +
+		"Alternatively, this can be set with the following environment variable: " + issuerOIDCClientStoreKeyEnvKey
 
 	// inbound host url flag
 	didCommInboundHostFlagName  = "didcomm-inbound-host"
@@ -238,6 +252,8 @@ type adapterRestParameters struct {
 	governanceVCSURL     string
 	requestTokens        map[string]string
 	walletAppURL         string
+	oidcClientDBKeyPath  string
+	externalURL          string
 }
 
 // governanceProvider governance provider.
@@ -306,6 +322,11 @@ func getAdapterRestParameters(cmd *cobra.Command) (*adapterRestParameters, error
 		return nil, err
 	}
 
+	externalURL, err := cmdutils.GetUserSetVarFromString(cmd, externalURLFlagName, externalURLEnvKey, true)
+	if err != nil {
+		return nil, err
+	}
+
 	oidcURL, err := cmdutils.GetUserSetVarFromString(cmd, oidcProviderURLFlagName, oidcProviderEnvKey, true)
 	if err != nil {
 		return nil, err
@@ -328,6 +349,12 @@ func getAdapterRestParameters(cmd *cobra.Command) (*adapterRestParameters, error
 	}
 
 	hydraURL, err := cmdutils.GetUserSetVarFromString(cmd, hydraURLFlagName, hydraURLEnvKey, true)
+	if err != nil {
+		return nil, err
+	}
+
+	issuerOIDCKeyPath, err := cmdutils.GetUserSetVarFromString(cmd, issuerOIDCClientStoreKeyFlagName,
+		issuerOIDCClientStoreKeyEnvKey, true)
 	if err != nil {
 		return nil, err
 	}
@@ -392,6 +419,8 @@ func getAdapterRestParameters(cmd *cobra.Command) (*adapterRestParameters, error
 		governanceVCSURL:            governanceVCSURL,
 		requestTokens:               requestTokens,
 		walletAppURL:                walletAppURL,
+		oidcClientDBKeyPath:         issuerOIDCKeyPath,
+		externalURL:                 externalURL,
 	}, nil
 }
 
@@ -564,6 +593,8 @@ func createFlags(startCmd *cobra.Command) {
 		universalResolverURLFlagUsage)
 	startCmd.Flags().StringP(logLevelFlagName, "", "INFO", logLevelFlagUsage)
 	startCmd.Flags().StringP(walletAppURLFlagName, "", "", walletAppURLFlagUsage)
+	startCmd.Flags().StringP(issuerOIDCClientStoreKeyFlagName, "", "", issuerOIDCClientStoreKeyFlagUsage)
+	startCmd.Flags().StringP(externalURLFlagName, "", "", externalURLFlagUsage)
 }
 
 func startAdapterService(parameters *adapterRestParameters, srv server) error {
@@ -712,6 +743,7 @@ func addRPHandlers(parameters *adapterRestParameters, framework *aries.Aries, ro
 	return nil
 }
 
+// nolint:funlen
 func addIssuerHandlers(parameters *adapterRestParameters, framework *aries.Aries, router *mux.Router,
 	rootCAs *x509.CertPool, msgRegistrar *msghandler.Registrar) error {
 	store, err := initEdgeStore(parameters.dsnParams.dsn, parameters.dsnParams.timeout, issuerAdapterStorePrefix)
@@ -736,6 +768,11 @@ func addIssuerHandlers(parameters *adapterRestParameters, framework *aries.Aries
 		return fmt.Errorf("aries-framework - failed to get aries context : %w", err)
 	}
 
+	clientStoreKey, err := getIssuerOIDCClientStoreKey(parameters.oidcClientDBKeyPath)
+	if err != nil {
+		return err
+	}
+
 	// add issuer endpoints
 	issuerService, err := issuer.New(&issuerops.Config{
 		AriesCtx:       ariesCtx,
@@ -751,6 +788,8 @@ func addIssuerHandlers(parameters *adapterRestParameters, framework *aries.Aries
 		),
 		TLSConfig:          &tls.Config{RootCAs: rootCAs, MinVersion: tls.VersionTLS12},
 		GovernanceProvider: governanceProv,
+		OIDCClientStoreKey: clientStoreKey,
+		ExternalURL:        parameters.externalURL,
 	})
 
 	if err != nil {
@@ -769,6 +808,15 @@ func addIssuerHandlers(parameters *adapterRestParameters, framework *aries.Aries
 		HandlerFunc(uiHandler(parameters.staticFiles, http.ServeFile))
 
 	return nil
+}
+
+func getIssuerOIDCClientStoreKey(keyPath string) ([]byte, error) {
+	bytes, errRead := ioutil.ReadFile(path.Clean(keyPath))
+	if errRead != nil {
+		return nil, fmt.Errorf("failed to read key '%s': %w", keyPath, errRead)
+	}
+
+	return bytes, nil
 }
 
 func newGovernanceProvider(governanceVCSURL string, rootCAs *x509.CertPool,

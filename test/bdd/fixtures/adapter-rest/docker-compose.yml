@@ -24,6 +24,8 @@ services:
       - ADAPTER_REST_DSN=mysql://issueradapter:issueradapter-secret-pw@tcp(mysql:3306)/
       - ADAPTER_REST_DSN_TIMEOUT=45
       - ADAPTER_REST_WALLET_APP_URL=http://demoapp/load
+      - OIDC_STORE_KEY=/etc/store-keys/oidc-enc.key
+      - ADAPTER_REST_EXTERNAL_URL=http://issuer.adapter.rest.example.com:9070/cb
     ports:
       - 9070:9070
       - 9071:9071
@@ -31,6 +33,7 @@ services:
     command:  /bin/sh -c "adapter-rest start"
     volumes:
       - ../keys/tls:/etc/tls
+      - ../keys/issuer-stores:/etc/store-keys
     networks:
       - bdd_net
 
@@ -85,6 +88,37 @@ services:
       - OIDC_SUBJECT_TYPE_PAIRWISE_SALT=testSecretsSystem
       - SERVE_TLS_KEY_PATH=/etc/tls/ec-key.pem
       - SERVE_TLS_CERT_PATH=/etc/tls/ec-pubCert.pem
+    restart: unless-stopped
+    volumes:
+      - ../keys/tls:/etc/tls
+    depends_on:
+      - mysql
+    networks:
+      - bdd_net
+
+  # TODO: figure out how to make dynamic client registration endpoint be included in openid-configuration
+  issuer-hydra:
+    container_name: issuer-hydra.trustbloc.local
+    image: oryd/hydra:v1.3.2-alpine
+    ports:
+      - "9044:9044" # Public port
+      - "9045:9045" # Admin port
+    command:  /bin/sh -c "hydra migrate sql --read-from-env --yes; hydra serve all"
+    entrypoint: ""
+    environment:
+      - SERVE_PUBLIC_PORT=9044
+      - SERVE_ADMIN_PORT=9045
+      - DSN=mysql://issueradapterhydra:issueradapterhydra-secret-pw@tcp(mysql:3306)/issueradapterhydra?max_conns=20&max_idle_conns=4
+      - URLS_SELF_ISSUER=https://issuer-hydra.trustbloc.local:9044
+      - URLS_CONSENT=https://localhost:8070/consent
+      - URLS_LOGIN=https://localhost:8070/login
+      - SECRETS_SYSTEM=testSecretsSystem
+      - OIDC_SUBJECT_TYPES_SUPPORTED=public
+      - OIDC_SUBJECT_TYPE_PAIRWISE_SALT=testSecretsSystem
+      - SERVE_TLS_KEY_PATH=/etc/tls/ec-key.pem
+      - SERVE_TLS_CERT_PATH=/etc/tls/ec-pubCert.pem
+      - OIDC_DYNAMIC_CLIENT_REGISTRATION_DEFAULT_SCOPE=openid
+      - WEBFINGER_OIDC_DISCOVERY_CLIENT_REGISTRATION_URL=https://issuer-hydra.trustbloc.local:9045/clients/
     restart: unless-stopped
     volumes:
       - ../keys/tls:/etc/tls
