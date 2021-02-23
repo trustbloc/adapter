@@ -1002,7 +1002,7 @@ func (o *Operation) collectedUserData(ref *userDataCollection) (map[string]*veri
 
 	for descriptorID, rawCred := range ref.Local {
 		// credential's proof has been validated upstream in the flow
-		cred, err := verifiable.ParseUnverifiedCredential(rawCred)
+		cred, err := verifiable.ParseCredential(rawCred, verifiable.WithDisabledProofCheck())
 		if err != nil {
 			return nil, fmt.Errorf("failed to parse credential [%s]: %w", rawCred, err)
 		}
@@ -1019,7 +1019,7 @@ func (o *Operation) collectedUserData(ref *userDataCollection) (map[string]*veri
 		}
 
 		// credential's proof has been validated upstream in the flow
-		cred, err := verifiable.ParseUnverifiedCredential(bits)
+		cred, err := verifiable.ParseCredential(bits, verifiable.WithDisabledProofCheck())
 		if err != nil {
 			return nil, fmt.Errorf("failed to parse credential [%s]: %w", bits, err)
 		}
@@ -1425,7 +1425,7 @@ func (o *Operation) createOAuth2Client(scopes []string, callback string) (*admin
 
 // TODO add an LD proof that contains the issuer's challenge: https://github.com/trustbloc/edge-adapter/issues/145
 func (o *Operation) toMarshalledVP(authZ *verifiable.Credential, signingDID string) ([]byte, error) {
-	vp, err := authZ.Presentation()
+	vp, err := verifiable.NewPresentation(verifiable.WithCredentials(authZ))
 	if err != nil {
 		return nil, fmt.Errorf("failed to convert authz credential to presentation: %w", err)
 	}

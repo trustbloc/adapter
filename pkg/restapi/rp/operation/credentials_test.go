@@ -98,7 +98,7 @@ func TestParseWalletResponse(t *testing.T) {
 		relyingParty, issuer, subject := trio(t)
 		authorizationVC := newAuthorizationVC(t,
 			newPeerDID(t, subject).ID, newPeerDID(t, relyingParty), newPeerDID(t, issuer))
-		vp, err := authorizationVC.Presentation()
+		vp, err := verifiable.NewPresentation(verifiable.WithCredentials(authorizationVC))
 		require.NoError(t, err)
 		_, _, err = parseWalletResponse(nil, nil, marshal(t, vp))
 		require.True(t, errors.Is(err, errInvalidCredential))
@@ -257,29 +257,13 @@ func TestParseIssuerResponse(t *testing.T) {
 func newPresentationSubmissionVP(t *testing.T, holder *ariesctx.Provider, signingDID *did.Doc,
 	submission *presexch.PresentationSubmission,
 	credentials ...*verifiable.Credential) *verifiable.Presentation {
-	vp := &verifiable.Presentation{
-		Context: []string{
-			"https://www.w3.org/2018/credentials/v1",
-			"https://trustbloc.github.io/context/vp/presentation-exchange-submission-v1.jsonld",
-		},
-		Type: []string{
-			"VerifiablePresentation",
-			"PresentationSubmission",
-		},
-		CustomFields: map[string]interface{}{
-			"presentation_submission": submission,
-		},
-	}
+	vp, err := verifiable.NewPresentation(verifiable.WithCredentials(credentials...))
+	require.NoError(t, err)
 
-	if len(credentials) > 0 {
-		allCreds := make([]interface{}, len(credentials))
-
-		for i := range credentials {
-			allCreds[i] = credentials[i]
-		}
-
-		err := vp.SetCredentials(allCreds...)
-		require.NoError(t, err)
+	vp.Context = append(vp.Context, "https://trustbloc.github.io/context/vp/presentation-exchange-submission-v1.jsonld")
+	vp.Type = append(vp.Type, "PresentationSubmission")
+	vp.CustomFields = map[string]interface{}{
+		"presentation_submission": submission,
 	}
 
 	return signVP(t, holder, signingDID, vp)

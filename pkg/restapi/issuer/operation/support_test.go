@@ -147,7 +147,7 @@ func getTestVP(t *testing.T, inviteeDID, inviterDID, threadID string) []byte { /
 	vc, err := verifiable.ParseCredential([]byte(fmt.Sprintf(vcFmt, inviteeDID, inviterDID, threadID)))
 	require.NoError(t, err)
 
-	vp, err := vc.Presentation()
+	vp, err := verifiable.NewPresentation(verifiable.WithCredentials(vc))
 	require.NoError(t, err)
 
 	vpJSON, err := vp.MarshalJSON()
@@ -239,7 +239,8 @@ func createCredentialReqMsg(t *testing.T, msg interface{}, continueFn func(args 
 
 func createProofReqMsg(t *testing.T, msg interface{}, continueFn func(args interface{}),
 	stopFn func(err error)) service.DIDCommAction {
-	vp, err := createAuthorizationCredential(t).Presentation()
+	vc := createAuthorizationCredential(t)
+	vp, err := verifiable.NewPresentation(verifiable.WithCredentials(vc))
 	require.NoError(t, err)
 
 	if msg == nil {

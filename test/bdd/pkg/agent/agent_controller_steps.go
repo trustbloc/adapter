@@ -318,7 +318,7 @@ func (a *Steps) handleDIDCommConnectRequest(agentID, supportedVCContexts, issuer
 		Subject: subject,
 	}
 
-	vp, err := vc.Presentation()
+	vp, err := verifiable.NewPresentation(verifiable.WithCredentials(&vc))
 	if err != nil {
 		return err
 	}
@@ -409,7 +409,7 @@ func (a *Steps) didConnectReqWithRouting(agentID, routerURL, issuerID string) er
 		Subject: subject,
 	}
 
-	vp, err := vc.Presentation()
+	vp, err := verifiable.NewPresentation(verifiable.WithCredentials(&vc))
 	if err != nil {
 		return err
 	}
@@ -753,7 +753,7 @@ func (a *Steps) fetchPresentation(agentID, issuerID, expectedScope, supportsAssu
 		return fmt.Errorf("unable to find the the authorization credential for agent [%s]", agentID)
 	}
 
-	vp, err := vc.Presentation()
+	vp, err := verifiable.NewPresentation(verifiable.WithCredentials(vc))
 	if err != nil {
 		return err
 	}
@@ -925,7 +925,7 @@ func (a *Steps) SignCredential(agent, signingDID string, cred *verifiable.Creden
 		return nil, fmt.Errorf("'%s' failed to sign credential: %w", agent, err)
 	}
 
-	output, err := verifiable.ParseUnverifiedCredential(response.VerifiableCredential)
+	output, err := verifiable.ParseCredential(response.VerifiableCredential, verifiable.WithDisabledProofCheck())
 	if err != nil {
 		return nil, fmt.Errorf("'%s' failed to parse their own signed credential: %w", agent, err)
 	}
@@ -981,7 +981,7 @@ func (a *Steps) GeneratePresentation(agent, signingDID, verificationMethod strin
 		return nil, fmt.Errorf("'%s' failed to generate their own presentation: %w", agent, err)
 	}
 
-	signedVP, err := verifiable.ParseUnverifiedPresentation(response.VerifiablePresentation)
+	signedVP, err := verifiable.ParsePresentation(response.VerifiablePresentation, verifiable.WithPresDisabledProofCheck())
 	if err != nil {
 		return nil, fmt.Errorf("'%s' failed to parse their own presentation: %w", agent, err)
 	}
@@ -1321,7 +1321,7 @@ func validateManifestCred(manifestVCBytes []byte, supportedVCContexts string) er
 }
 
 func validateGovernance(governanceVCBytes json.RawMessage) error {
-	governanceVC, err := verifiable.ParseUnverifiedCredential(governanceVCBytes)
+	governanceVC, err := verifiable.ParseCredential(governanceVCBytes, verifiable.WithDisabledProofCheck())
 	if err != nil {
 		return err
 	}
