@@ -20,31 +20,15 @@ var testDocumentLoader = createTestJSONLDDocumentLoader()
 
 func newPresentationSubmissionVP(submission *presexch.PresentationSubmission,
 	credentials ...*verifiable.Credential) (*verifiable.Presentation, error) {
-	vp := &verifiable.Presentation{
-		Context: []string{
-			"https://www.w3.org/2018/credentials/v1",
-			"https://trustbloc.github.io/context/vp/presentation-exchange-submission-v1.jsonld",
-		},
-		Type: []string{
-			"VerifiablePresentation",
-			"PresentationSubmission",
-		},
-		CustomFields: map[string]interface{}{
-			"presentation_submission": submission,
-		},
+	vp, err := verifiable.NewPresentation(verifiable.WithCredentials(credentials...))
+	if err != nil {
+		return nil, err
 	}
 
-	if len(credentials) > 0 {
-		creds := make([]interface{}, len(credentials))
-
-		for i := range credentials {
-			creds[i] = credentials[i]
-		}
-
-		err := vp.SetCredentials(creds...)
-		if err != nil {
-			return nil, err
-		}
+	vp.Context = append(vp.Context, "https://trustbloc.github.io/context/vp/presentation-exchange-submission-v1.jsonld")
+	vp.Type = append(vp.Type, "PresentationSubmission")
+	vp.CustomFields = map[string]interface{}{
+		"presentation_submission": submission,
 	}
 
 	return vp, nil

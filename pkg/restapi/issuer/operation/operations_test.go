@@ -2090,7 +2090,7 @@ func TestPresentProofHandler(t *testing.T) {
 			err = c.storeAuthorizationCredHandle(handle)
 			require.NoError(t, err)
 
-			vp, err := vc.Presentation()
+			vp, err := verifiable.NewPresentation(verifiable.WithCredentials(vc))
 			require.NoError(t, err)
 
 			done := make(chan struct{})
@@ -2173,7 +2173,7 @@ func TestPresentProofHandler(t *testing.T) {
 			err = c.txnStore.Put(handle.Token, refCredDataBytes)
 			require.NoError(t, err)
 
-			vp, err := vc.Presentation()
+			vp, err := verifiable.NewPresentation(verifiable.WithCredentials(vc))
 			require.NoError(t, err)
 
 			done := make(chan struct{})
@@ -2289,7 +2289,7 @@ func TestPresentProofHandler(t *testing.T) {
 			}
 
 			vc := createAuthorizationCredential(t)
-			vp, err := vc.Presentation()
+			vp, err := verifiable.NewPresentation(verifiable.WithCredentials(vc))
 			require.NoError(t, err)
 
 			err = c.txnStore.Put(vc.ID, []byte("invalid data"))
@@ -2510,7 +2510,7 @@ func TestPresentProofHandler(t *testing.T) {
 			done := make(chan struct{})
 
 			vc := createAuthorizationCredential(t)
-			vp, err := vc.Presentation()
+			vp, err := verifiable.NewPresentation(verifiable.WithCredentials(vc))
 			require.NoError(t, err)
 
 			issuerID := uuid.New().String()
@@ -2677,7 +2677,7 @@ func TestPresentProofHandler(t *testing.T) {
 			err = c.storeAuthorizationCredHandle(handle)
 			require.NoError(t, err)
 
-			vp, err := vc.Presentation()
+			vp, err := verifiable.NewPresentation(verifiable.WithCredentials(vc))
 			require.NoError(t, err)
 
 			done := make(chan struct{})

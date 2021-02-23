@@ -537,7 +537,7 @@ func validatePresentationDefinitions(pd *presexch.PresentationDefinitions, scope
 }
 
 func validateGovernance(governanceVCBytes []byte) error {
-	governanceVC, err := verifiable.ParseUnverifiedCredential(governanceVCBytes)
+	governanceVC, err := verifiable.ParseCredential(governanceVCBytes, verifiable.WithDisabledProofCheck())
 	if err != nil {
 		return err
 	}

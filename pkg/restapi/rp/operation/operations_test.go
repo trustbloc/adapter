@@ -2527,7 +2527,7 @@ func TestHandleIssuerPresentationMsg(t *testing.T) {
 		bits, err := o.transientStore.Get(thid)
 		require.NoError(t, err)
 
-		actual, err := verifiable.ParseUnverifiedCredential(bits)
+		actual, err := verifiable.ParseCredential(bits, verifiable.WithDisabledProofCheck())
 		require.NoError(t, err)
 
 		require.Equal(t, expected.ID, actual.ID)

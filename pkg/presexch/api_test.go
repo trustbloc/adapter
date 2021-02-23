@@ -273,15 +273,19 @@ func TestE2E(t *testing.T) {
 	// holder sends VP over the wire to the verifier
 	vpBytes := marshal(t, vp)
 
+	// load json-ld contexts
+	loader := jsonldContextLoader(t, verifierDefinitions.InputDescriptors[0].Schema.URI)
+
 	// verifier parses the vp
-	receivedVP, err := verifiable.ParseUnverifiedPresentation(vpBytes)
+	receivedVP, err := verifiable.ParsePresentation(vpBytes,
+		verifiable.WithPresJSONLDDocumentLoader(loader),
+		verifiable.WithPresDisabledProofCheck())
 	require.NoError(t, err)
 
 	// verifier matches the received VP against their definitions
 	matched, err := verifierDefinitions.Match(
 		receivedVP,
-		WithJSONLDDocumentLoader(
-			jsonldContextLoader(t, verifierDefinitions.InputDescriptors[0].Schema.URI)))
+		WithJSONLDDocumentLoader(loader))
 	require.NoError(t, err)
 	require.Len(t, matched, 1)
 	result, ok := matched[verifierDefinitions.InputDescriptors[0].ID]
@@ -311,31 +315,15 @@ func newVC(context []string) *verifiable.Credential {
 }
 
 func newVP(t *testing.T, submission *PresentationSubmission, vcs ...*verifiable.Credential) *verifiable.Presentation {
-	vp := &verifiable.Presentation{
-		Context: []string{
-			"https://www.w3.org/2018/credentials/v1",
-			"https://trustbloc.github.io/context/vp/presentation-exchange-submission-v1.jsonld",
-		},
-		Type: []string{
-			"VerifiablePresentation",
-			"PresentationSubmission",
-		},
-	}
+	vp, err := verifiable.NewPresentation(verifiable.WithCredentials(vcs...))
+	require.NoError(t, err)
+
+	vp.Context = append(vp.Context, "https://trustbloc.github.io/context/vp/presentation-exchange-submission-v1.jsonld")
+	vp.Type = append(vp.Type, "PresentationSubmission")
 
 	if submission != nil {
 		vp.CustomFields = make(map[string]interface{})
 		vp.CustomFields["presentation_submission"] = toMap(t, submission)
-	}
-
-	if len(vcs) > 0 {
-		creds := make([]interface{}, len(vcs))
-
-		for i := range vcs {
-			creds[i] = vcs[i]
-		}
-
-		err := vp.SetCredentials(creds...)
-		require.NoError(t, err)
 	}
 
 	return vp

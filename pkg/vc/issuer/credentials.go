@@ -140,5 +140,5 @@ func CreateAuthorizationCredential(did string, docJSON []byte, rpDIDDoc,
 
 // CreatePresentation creates presentation to be sent to the rp.
 func CreatePresentation(vc *verifiable.Credential) (*verifiable.Presentation, error) {
-	return vc.Presentation()
+	return verifiable.NewPresentation(verifiable.WithCredentials(vc))
 }

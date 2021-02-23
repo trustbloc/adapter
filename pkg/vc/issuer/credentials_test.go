@@ -112,7 +112,7 @@ func TestParseWalletResponse(t *testing.T) {
 			Types:   []string{"VerifiablePresentation"},
 		}
 
-		vp, err := vc.Presentation()
+		vp, err := verifiable.NewPresentation(verifiable.WithCredentials(&vc))
 		require.NoError(t, err)
 
 		vpJSON, err := vp.MarshalJSON()
@@ -130,7 +130,7 @@ func TestParseWalletResponse(t *testing.T) {
 
 		vc.Types = []string{"VerifiableCredential"}
 
-		vp, err := vc.Presentation()
+		vp, err := verifiable.NewPresentation(verifiable.WithCredentials(vc))
 		require.NoError(t, err)
 
 		vpJSON, err := vp.MarshalJSON()
@@ -200,7 +200,7 @@ func getTestVP(t *testing.T) []byte {
 	vc, err := verifiable.ParseCredential([]byte(vc))
 	require.NoError(t, err)
 
-	vp, err := vc.Presentation()
+	vp, err := verifiable.NewPresentation(verifiable.WithCredentials(vc))
 	require.NoError(t, err)
 
 	vpJSON, err := vp.MarshalJSON()
