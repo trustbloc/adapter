@@ -10,9 +10,9 @@ import (
 	"fmt"
 	"testing"
 
+	"github.com/hyperledger/aries-framework-go/component/storageutil/mem"
 	"github.com/hyperledger/aries-framework-go/pkg/doc/did"
 	"github.com/hyperledger/aries-framework-go/pkg/framework/aries"
-	"github.com/hyperledger/aries-framework-go/pkg/storage/mem"
 	"github.com/stretchr/testify/require"
 
 	"github.com/trustbloc/edge-adapter/pkg/crypto"

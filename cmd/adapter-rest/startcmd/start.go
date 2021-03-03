@@ -23,7 +23,8 @@ import (
 
 	"github.com/cenkalti/backoff"
 	"github.com/gorilla/mux"
-	ariesmysql "github.com/hyperledger/aries-framework-go-ext/component/storage/mysql"
+	"github.com/hyperledger/aries-framework-go-ext/component/storage/mysql"
+	"github.com/hyperledger/aries-framework-go/component/storageutil/mem"
 	"github.com/hyperledger/aries-framework-go/pkg/client/didexchange"
 	"github.com/hyperledger/aries-framework-go/pkg/client/outofband"
 	"github.com/hyperledger/aries-framework-go/pkg/client/presentproof"
@@ -33,15 +34,11 @@ import (
 	"github.com/hyperledger/aries-framework-go/pkg/framework/aries"
 	"github.com/hyperledger/aries-framework-go/pkg/framework/aries/api"
 	"github.com/hyperledger/aries-framework-go/pkg/framework/aries/defaults"
-	ariesstorage "github.com/hyperledger/aries-framework-go/pkg/storage"
-	ariesmem "github.com/hyperledger/aries-framework-go/pkg/storage/mem"
 	"github.com/hyperledger/aries-framework-go/pkg/vdr/httpbinding"
+	"github.com/hyperledger/aries-framework-go/spi/storage"
 	"github.com/rs/cors"
 	"github.com/spf13/cobra"
 	"github.com/trustbloc/edge-core/pkg/log"
-	"github.com/trustbloc/edge-core/pkg/storage"
-	"github.com/trustbloc/edge-core/pkg/storage/memstore"
-	"github.com/trustbloc/edge-core/pkg/storage/mysql"
 	cmdutils "github.com/trustbloc/edge-core/pkg/utils/cmd"
 	tlsutils "github.com/trustbloc/edge-core/pkg/utils/tls"
 
@@ -200,22 +197,12 @@ const (
 )
 
 // nolint:gochecknoglobals
-var supportedEdgeStorageProviders = map[string]func(string, string) (storage.Provider, error){
+var supportedStorageProviders = map[string]func(string, string) (storage.Provider, error){
 	"mysql": func(dsn, prefix string) (storage.Provider, error) {
 		return mysql.NewProvider(dsn, mysql.WithDBPrefix(prefix))
 	},
 	"mem": func(_, _ string) (storage.Provider, error) { // nolint:unparam
-		return memstore.NewProvider(), nil
-	},
-}
-
-// nolint:gochecknoglobals
-var supportedAriesStorageProviders = map[string]func(string, string) (ariesstorage.Provider, error){
-	"mysql": func(dsn, prefix string) (ariesstorage.Provider, error) {
-		return ariesmysql.NewProvider(dsn, ariesmysql.WithDBPrefix(prefix))
-	},
-	"mem": func(_, _ string) (ariesstorage.Provider, error) { // nolint:unparam
-		return ariesmem.NewProvider(), nil
+		return mem.NewProvider(), nil
 	},
 }
 
@@ -686,7 +673,8 @@ func addRPHandlers(parameters *adapterRestParameters, framework *aries.Aries, ro
 		return err
 	}
 
-	store, tStore, err := initRPAdapterEdgeStores(parameters.dsnParams.dsn, parameters.dsnParams.timeout)
+	store, tStore, err := initStores(parameters.dsnParams.dsn, parameters.dsnParams.timeout,
+		"", rpAdapterPersistentStorePrefix, rpAdapterTransientStorePrefix)
 	if err != nil {
 		return fmt.Errorf("failed to init edge storage: %w", err)
 	}
@@ -746,7 +734,7 @@ func addRPHandlers(parameters *adapterRestParameters, framework *aries.Aries, ro
 // nolint:funlen
 func addIssuerHandlers(parameters *adapterRestParameters, framework *aries.Aries, router *mux.Router,
 	rootCAs *x509.CertPool, msgRegistrar *msghandler.Registrar) error {
-	store, err := initEdgeStore(parameters.dsnParams.dsn, parameters.dsnParams.timeout, issuerAdapterStorePrefix)
+	store, err := initStore(parameters.dsnParams.dsn, parameters.dsnParams.timeout, issuerAdapterStorePrefix)
 	if err != nil {
 		return fmt.Errorf("failed to init storage provider : %w", err)
 	}
@@ -791,7 +779,6 @@ func addIssuerHandlers(parameters *adapterRestParameters, framework *aries.Aries
 		OIDCClientStoreKey: clientStoreKey,
 		ExternalURL:        parameters.externalURL,
 	})
-
 	if err != nil {
 		return err
 	}
@@ -847,20 +834,6 @@ func constructCORSHandler(handler http.Handler) http.Handler {
 	).Handler(handler)
 }
 
-func initRPAdapterEdgeStores(dbURL string, timeout uint64) (persistent, transient storage.Provider, err error) {
-	persistent, err = initEdgeStore(dbURL, timeout, rpAdapterPersistentStorePrefix)
-	if err != nil {
-		return nil, nil, fmt.Errorf("failed to init edge persistent storage: %w", err)
-	}
-
-	transient, err = initEdgeStore(dbURL, timeout, rpAdapterTransientStorePrefix)
-	if err != nil {
-		return nil, nil, fmt.Errorf("failed to init edge transient storage: %w", err)
-	}
-
-	return persistent, transient, nil
-}
-
 func getDBParams(dbURL string) (driver, dsn string, err error) {
 	const (
 		urlParts = 2
@@ -896,40 +869,13 @@ func retry(fn func() error, timeout uint64) error {
 	)
 }
 
-// nolint: dupl
-func initAriesStore(dbURL string, timeout uint64, prefix string) (ariesstorage.Provider, error) {
+func initStore(dbURL string, timeout uint64, prefix string) (storage.Provider, error) {
 	driver, dsn, err := getDBParams(dbURL)
 	if err != nil {
 		return nil, err
 	}
 
-	providerFunc, supported := supportedAriesStorageProviders[driver]
-	if !supported {
-		return nil, fmt.Errorf("unsupported storage driver: %s", driver)
-	}
-
-	var store ariesstorage.Provider
-
-	err = retry(func() error {
-		var openErr error
-		store, openErr = providerFunc(dsn, prefix)
-		return openErr
-	}, timeout)
-	if err != nil {
-		return nil, fmt.Errorf("ariesstore init - failed to connect to storage at %s : %w", dsn, err)
-	}
-
-	return store, nil
-}
-
-// nolint: dupl
-func initEdgeStore(dbURL string, timeout uint64, prefix string) (storage.Provider, error) {
-	driver, dsn, err := getDBParams(dbURL)
-	if err != nil {
-		return nil, err
-	}
-
-	providerFunc, supported := supportedEdgeStorageProviders[driver]
+	providerFunc, supported := supportedStorageProviders[driver]
 	if !supported {
 		return nil, fmt.Errorf("unsupported storage driver: %s", driver)
 	}
@@ -942,25 +888,25 @@ func initEdgeStore(dbURL string, timeout uint64, prefix string) (storage.Provide
 		return openErr
 	}, timeout)
 	if err != nil {
-		return nil, fmt.Errorf("edgestore init - failed to connect to storage at %s : %w", dsn, err)
+		return nil, fmt.Errorf("store init - failed to connect to storage at %s : %w", dsn, err)
 	}
 
 	return store, nil
 }
 
-func initAriesStores(dbURL string, timeout uint64, dbPrefix string) (persistent,
-	protocolStateStore ariesstorage.Provider, err error) {
-	persistent, err = initAriesStore(dbURL, timeout, dbPrefix+"_aries")
+func initStores(dbURL string, timeout uint64, dbPrefix, persistentUsagePrefix, transientUsagePrefix string) (persistent,
+	transient storage.Provider, err error) {
+	persistent, err = initStore(dbURL, timeout, dbPrefix+persistentUsagePrefix)
 	if err != nil {
-		return nil, nil, fmt.Errorf("failed to init aries persistent storage: %w", err)
+		return nil, nil, fmt.Errorf("failed to init persistent storage: %w", err)
 	}
 
-	protocolStateStore, err = initAriesStore(dbURL, timeout, dbPrefix+"_ariesps")
+	transient, err = initStore(dbURL, timeout, dbPrefix+transientUsagePrefix)
 	if err != nil {
-		return nil, nil, fmt.Errorf("failed to init aries protocol state storage: %w", err)
+		return nil, nil, fmt.Errorf("failed to init transient state storage: %w", err)
 	}
 
-	return persistent, protocolStateStore, nil
+	return persistent, transient, nil
 }
 
 func acceptsDID(method string) bool {
@@ -999,7 +945,8 @@ func createAriesAgent(parameters *adapterRestParameters, tlsConfig *tls.Config, 
 		opts = append(opts, aries.WithVDR(universalResolverVDRI))
 	}
 
-	store, tStore, err := initAriesStores(parameters.dsnParams.dsn, parameters.dsnParams.timeout, dbPrefix)
+	store, tStore, err := initStores(parameters.dsnParams.dsn, parameters.dsnParams.timeout, dbPrefix,
+		"_aries", "_ariesps")
 	if err != nil {
 		return nil, fmt.Errorf("failed to init edge storage: %w", err)
 	}

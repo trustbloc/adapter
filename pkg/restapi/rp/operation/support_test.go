@@ -9,13 +9,13 @@ package operation
 import (
 	"testing"
 
+	"github.com/hyperledger/aries-framework-go/component/storageutil/mem"
 	"github.com/hyperledger/aries-framework-go/pkg/didcomm/messaging/msghandler"
 	"github.com/hyperledger/aries-framework-go/pkg/doc/did"
 	"github.com/hyperledger/aries-framework-go/pkg/doc/verifiable"
 	"github.com/hyperledger/aries-framework-go/pkg/framework/aries"
 	vdrapi "github.com/hyperledger/aries-framework-go/pkg/framework/aries/api/vdr"
 	ariesctx "github.com/hyperledger/aries-framework-go/pkg/framework/context"
-	"github.com/hyperledger/aries-framework-go/pkg/storage/mem"
 	"github.com/hyperledger/aries-framework-go/pkg/vdr/peer"
 	"github.com/stretchr/testify/require"
 
@@ -100,7 +100,8 @@ func newPeerDID(t *testing.T, agent *ariesctx.Provider) *did.Doc {
 
 	d, err := agent.VDRegistry().Create(
 		peer.DIDMethod, &did.Doc{
-			Service: []did.Service{{ServiceEndpoint: "http://agent.example.com/didcomm", Type: "did-communication"}}},
+			Service: []did.Service{{ServiceEndpoint: "http://agent.example.com/didcomm", Type: "did-communication"}},
+		},
 	)
 	require.NoError(t, err)
 

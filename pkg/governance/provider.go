@@ -15,8 +15,8 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/hyperledger/aries-framework-go/spi/storage"
 	"github.com/trustbloc/edge-core/pkg/log"
-	"github.com/trustbloc/edge-core/pkg/storage"
 )
 
 var logger = log.New("edge-adapter/governance")
@@ -51,26 +51,23 @@ type Provider struct {
 // New return new provider for governance provider.
 func New(governanceVCSUrl string, tlsConfig *tls.Config, s storage.Provider,
 	requestTokens map[string]string, domain string) (*Provider, error) {
-	err := s.CreateStore(storeName)
-	if err != nil && !errors.Is(err, storage.ErrDuplicateStore) {
-		return nil, fmt.Errorf("failed to create store: %w", err)
-	}
-
 	store, err := s.OpenStore(storeName)
 	if err != nil {
 		return nil, fmt.Errorf("failed to open store : %w", err)
 	}
 
-	return &Provider{governanceVCSUrl: governanceVCSUrl,
-		httpClient: &http.Client{Transport: &http.Transport{TLSClientConfig: tlsConfig}}, store: store,
-		requestTokens: requestTokens, domain: domain}, nil
+	return &Provider{
+		governanceVCSUrl: governanceVCSUrl,
+		httpClient:       &http.Client{Transport: &http.Transport{TLSClientConfig: tlsConfig}}, store: store,
+		requestTokens: requestTokens, domain: domain,
+	}, nil
 }
 
 // IssueCredential issue credential.
 func (p *Provider) IssueCredential(didID, profileID string) ([]byte, error) {
 	_, err := p.GetCredential(profileID)
 	if err != nil {
-		if errors.Is(err, storage.ErrValueNotFound) {
+		if errors.Is(err, storage.ErrDataNotFound) {
 			return p.issueCredential(p.replaceCanonicalDIDWithDomainDID(didID), profileID)
 		}
 
@@ -104,14 +101,12 @@ func (p *Provider) issueCredential(didID, profileID string) ([]byte, error) {
 	endpointURL := fmt.Sprintf(issueCredentialURLFormat, p.governanceVCSUrl, governanceProfileName)
 
 	httpReq, err := http.NewRequest(http.MethodPost, endpointURL, bytes.NewBuffer(reqBytes))
-
 	if err != nil {
 		return nil, err
 	}
 
 	data, err := sendHTTPRequest(httpReq, p.httpClient, http.StatusCreated,
 		p.requestTokens[vcsGovernanceRequestTokenName])
-
 	if err != nil {
 		return nil, err
 	}

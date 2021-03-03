@@ -55,7 +55,7 @@ func TestMain(m *testing.M) {
 func runBDDTests(tags, format string) int { //nolint: gocognit
 	return godog.RunWithOptions("godogs", func(s *godog.Suite) {
 		var composition []*dockerutil.Composition
-		var composeFiles = []string{"./fixtures/adapter-rest", "./fixtures/did-trustbloc", "./fixtures/integration"}
+		composeFiles := []string{"./fixtures/adapter-rest", "./fixtures/did-trustbloc", "./fixtures/integration"}
 		s.BeforeSuite(func() {
 			if os.Getenv("DISABLE_COMPOSITION") != "true" {
 				// Need a unique name, but docker does not allow '-' in names
@@ -88,7 +88,7 @@ func runBDDTests(tags, format string) int { //nolint: gocognit
 			for _, c := range composition {
 				if c != nil {
 					if err := c.GenerateLogs(c.Dir, "docker-compose.log"); err != nil {
-						panic(err)
+						fmt.Println("failed to generate Docker logs to a file: ", err.Error())
 					}
 					if _, err := c.Decompose(c.Dir); err != nil {
 						panic(err)

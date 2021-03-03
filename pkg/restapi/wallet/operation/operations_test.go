@@ -30,7 +30,6 @@ import (
 	mockstore "github.com/hyperledger/aries-framework-go/pkg/mock/storage"
 	"github.com/hyperledger/aries-framework-go/pkg/store/connection"
 	"github.com/stretchr/testify/require"
-	edgemockstore "github.com/trustbloc/edge-core/pkg/storage/mockstore"
 
 	mockoutofband "github.com/trustbloc/edge-adapter/pkg/internal/mock/outofband"
 	mockprotocol "github.com/trustbloc/edge-adapter/pkg/restapi/internal/mocks/protocol"
@@ -298,8 +297,7 @@ func TestOperation_CreateInvitation(t *testing.T) {
 			},
 			MsgRegistrar: msghandler.NewRegistrar(),
 			WalletAppURL: sampleAppURL,
-			AdapterTransientStore: &edgemockstore.MockStore{
-				Store:  make(map[string][]byte),
+			AdapterTransientStore: &mockstore.MockStore{
 				ErrPut: fmt.Errorf(sampleErr),
 			},
 		})
@@ -681,7 +679,7 @@ func TestOperation_SendCHAPIRequest(t *testing.T) {
 		})
 		require.NoError(t, err)
 
-		mockStore := &mockstore.MockStore{Store: make(map[string][]byte)}
+		mockStore := &mockstore.MockStore{Store: make(map[string]mockstore.DBEntry)}
 		require.NoError(t, mockStore.Put("conn_"+sampleConnID, connBytes))
 
 		registrar := mockmsghandler.NewMockMsgServiceProvider()

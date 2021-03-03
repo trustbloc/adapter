@@ -35,12 +35,11 @@ import (
 	"github.com/hyperledger/aries-framework-go/pkg/doc/verifiable"
 	vdrapi "github.com/hyperledger/aries-framework-go/pkg/framework/aries/api/vdr"
 	"github.com/hyperledger/aries-framework-go/pkg/kms"
-	ariesstorage "github.com/hyperledger/aries-framework-go/pkg/storage"
 	"github.com/hyperledger/aries-framework-go/pkg/store/connection"
+	"github.com/hyperledger/aries-framework-go/spi/storage"
 	"github.com/ory/hydra-client-go/client/admin"
 	"github.com/ory/hydra-client-go/models"
 	"github.com/trustbloc/edge-core/pkg/log"
-	"github.com/trustbloc/edge-core/pkg/storage"
 
 	"github.com/trustbloc/edge-adapter/pkg/aries"
 	"github.com/trustbloc/edge-adapter/pkg/aries/message"
@@ -150,8 +149,8 @@ type GovernanceProvider interface {
 
 // AriesContextProvider is the dependency interface for the connection.Recorder.
 type AriesContextProvider interface {
-	StorageProvider() ariesstorage.Provider
-	ProtocolStateStorageProvider() ariesstorage.Provider
+	StorageProvider() storage.Provider
+	ProtocolStateStorageProvider() storage.Provider
 	VDRegistry() vdrapi.Registry
 	KMS() kms.KeyManager
 	Crypto() ariescrypto.Crypto
@@ -387,7 +386,7 @@ func (o *Operation) hydraLoginHandlerIterOne(w http.ResponseWriter, r *http.Requ
 	}
 
 	_, err = o.rpStore.GetUserConnection(login.GetPayload().Client.ClientID, subject)
-	if err != nil && !errors.Is(err, storage.ErrValueNotFound) {
+	if err != nil && !errors.Is(err, storage.ErrDataNotFound) {
 		msg := fmt.Sprintf("failed to query rp user connections : %s", err)
 		logger.Errorf(msg)
 		commhttp.WriteErrorResponse(w, http.StatusInternalServerError, msg)
@@ -395,7 +394,7 @@ func (o *Operation) hydraLoginHandlerIterOne(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
-	if errors.Is(err, storage.ErrValueNotFound) {
+	if errors.Is(err, storage.ErrDataNotFound) {
 		err = o.rpStore.SaveUserConnection(&rp.UserConnection{
 			User: &rp.User{
 				Subject: subject,
@@ -794,7 +793,7 @@ func (o *Operation) chapiResponseHandler(w http.ResponseWriter, r *http.Request)
 	}
 
 	crCtx, err := newTransientStorage(o.transientStore).GetConsentRequest(request.InvitationID)
-	if errors.Is(err, storage.ErrValueNotFound) {
+	if errors.Is(err, storage.ErrDataNotFound) {
 		handleError(w, http.StatusBadRequest, "stale or invalid invitation ID")
 
 		return
@@ -1094,7 +1093,7 @@ func (o *Operation) listenForIncomingConnections() {
 // has a parent invitation ID found in our transient store.
 func (o *Operation) handleIncomingDIDExchangeRequestAction(action service.DIDCommAction) {
 	_, err := newTransientStorage(o.transientStore).GetConsentRequest(action.Message.ParentThreadID())
-	if errors.Is(err, storage.ErrValueNotFound) {
+	if errors.Is(err, storage.ErrDataNotFound) {
 		msg := fmt.Sprintf("no such context for id %s", action.Message.ParentThreadID())
 
 		logger.Errorf(msg)
@@ -1356,7 +1355,7 @@ func (o *Operation) createRPTenant(w http.ResponseWriter, r *http.Request) {
 	}
 
 	_, err = o.rpStore.GetRP(created.Payload.ClientID)
-	if !errors.Is(err, storage.ErrValueNotFound) {
+	if !errors.Is(err, storage.ErrDataNotFound) {
 		msg := fmt.Sprintf(
 			"either failed to query rp store or rp tenant with clientID=%s already exists", created.Payload.ClientID)
 		logger.Errorf(msg)
@@ -1461,20 +1460,10 @@ func removeOIDCScope(scopes []string) []string {
 }
 
 func transientStore(p storage.Provider) (storage.Store, error) {
-	err := p.CreateStore(transientStoreName)
-	if err != nil && !errors.Is(err, storage.ErrDuplicateStore) {
-		return nil, fmt.Errorf("failed to create transient store : %w", err)
-	}
-
 	return p.OpenStore(transientStoreName)
 }
 
 func persistenceStore(p storage.Provider) (storage.Store, error) {
-	err := p.CreateStore(persistenceStoreName)
-	if err != nil && !errors.Is(err, storage.ErrDuplicateStore) {
-		return nil, fmt.Errorf("failed to create persistence store : %w", err)
-	}
-
 	return p.OpenStore(persistenceStoreName)
 }
 

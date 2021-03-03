@@ -8,6 +8,7 @@ package issuer
 import (
 	"testing"
 
+	"github.com/hyperledger/aries-framework-go/component/storageutil/mem"
 	"github.com/hyperledger/aries-framework-go/pkg/didcomm/messaging/msghandler"
 	"github.com/hyperledger/aries-framework-go/pkg/didcomm/protocol/didexchange"
 	issuecredsvc "github.com/hyperledger/aries-framework-go/pkg/didcomm/protocol/issuecredential"
@@ -17,9 +18,7 @@ import (
 	mocksvc "github.com/hyperledger/aries-framework-go/pkg/mock/didcomm/protocol/didexchange"
 	mockroute "github.com/hyperledger/aries-framework-go/pkg/mock/didcomm/protocol/mediator"
 	ariesmockprovider "github.com/hyperledger/aries-framework-go/pkg/mock/provider"
-	mockstore "github.com/hyperledger/aries-framework-go/pkg/mock/storage"
 	"github.com/stretchr/testify/require"
-	"github.com/trustbloc/edge-core/pkg/storage/memstore"
 
 	"github.com/trustbloc/edge-adapter/pkg/internal/mock/issuecredential"
 	"github.com/trustbloc/edge-adapter/pkg/internal/mock/messenger"
@@ -33,8 +32,8 @@ func TestNew(t *testing.T) {
 	t.Run("test new - success", func(t *testing.T) {
 		ariesCtx := &mockprovider.MockProvider{
 			Provider: &ariesmockprovider.Provider{
-				ProtocolStateStorageProviderValue: mockstore.NewMockStoreProvider(),
-				StorageProviderValue:              mockstore.NewMockStoreProvider(),
+				ProtocolStateStorageProviderValue: mem.NewProvider(),
+				StorageProviderValue:              mem.NewProvider(),
 				ServiceMap: map[string]interface{}{
 					didexchange.DIDExchange: &mocksvc.MockDIDExchangeSvc{},
 					mediator.Coordination:   &mockroute.MockMediatorSvc{},
@@ -42,11 +41,12 @@ func TestNew(t *testing.T) {
 					presentproofsvc.Name:    &presentproof.MockPresentProofSvc{},
 					outofbandsvc.Name:       &outofband.MockService{},
 				},
-			}}
+			},
+		}
 
 		controller, err := New(&operation.Config{
 			AriesCtx:       ariesCtx,
-			StoreProvider:  memstore.NewProvider(),
+			StoreProvider:  mem.NewProvider(),
 			MsgRegistrar:   msghandler.NewRegistrar(),
 			AriesMessenger: &messenger.MockMessenger{},
 		})

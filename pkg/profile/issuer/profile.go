@@ -12,7 +12,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/trustbloc/edge-core/pkg/storage"
+	"github.com/hyperledger/aries-framework-go/spi/storage"
 
 	"github.com/trustbloc/edge-adapter/pkg/internal/common/adapterutil"
 )
@@ -53,11 +53,6 @@ type OIDCClientParams struct {
 
 // New returns new issuer profile instance.
 func New(provider storage.Provider) (*Profile, error) {
-	err := provider.CreateStore(storeName)
-	if err != nil && !errors.Is(err, storage.ErrDuplicateStore) {
-		return nil, err
-	}
-
 	store, err := provider.OpenStore(storeName)
 	if err != nil {
 		return nil, err
@@ -75,7 +70,7 @@ func (c *Profile) SaveProfile(data *ProfileData) error {
 
 	// verify profile exists
 	profile, err := c.GetProfile(data.ID)
-	if err != nil && !errors.Is(err, storage.ErrValueNotFound) {
+	if err != nil && !errors.Is(err, storage.ErrDataNotFound) {
 		return err
 	}
 

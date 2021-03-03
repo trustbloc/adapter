@@ -8,12 +8,11 @@ package rp
 import (
 	"testing"
 
+	"github.com/hyperledger/aries-framework-go/component/storageutil/mem"
 	"github.com/hyperledger/aries-framework-go/pkg/didcomm/messaging/msghandler"
 	"github.com/hyperledger/aries-framework-go/pkg/framework/aries"
 	ariesctx "github.com/hyperledger/aries-framework-go/pkg/framework/context"
-	"github.com/hyperledger/aries-framework-go/pkg/storage/mem"
 	"github.com/stretchr/testify/require"
-	"github.com/trustbloc/edge-core/pkg/storage/memstore"
 
 	"github.com/trustbloc/edge-adapter/pkg/internal/mock/didexchange"
 	"github.com/trustbloc/edge-adapter/pkg/internal/mock/messenger"
@@ -26,8 +25,8 @@ func TestController_New(t *testing.T) {
 		controller, err := New(&operation.Config{
 			DIDExchClient: &didexchange.MockClient{},
 			Storage: &operation.Storage{
-				Persistent: memstore.NewProvider(),
-				Transient:  memstore.NewProvider(),
+				Persistent: mem.NewProvider(),
+				Transient:  mem.NewProvider(),
 			},
 			AriesContextProvider: agent(t),
 			PresentProofClient:   &mockpresentproof.MockClient{},
