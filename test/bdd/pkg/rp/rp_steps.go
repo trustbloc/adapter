@@ -216,11 +216,14 @@ func (s *Steps) createTenant(label, scopesStr, blindedRouteStr string) error {
 }
 
 func (s *Steps) resolveDID(label string) error {
-	vdri := trustbloc.New(nil,
+	vdri, err := trustbloc.New(nil,
 		trustbloc.WithTLSConfig(s.context.TLSConfig()),
 		trustbloc.WithResolverURL(resolverURL),
 		trustbloc.WithDomain("testnet.trustbloc.local"),
 	)
+	if err != nil {
+		return err
+	}
 
 	const (
 		maxRetries = 3
@@ -229,10 +232,10 @@ func (s *Steps) resolveDID(label string) error {
 
 	publicDID := s.tenantCtx[label].PublicDID
 
-	err := backoff.RetryNotify(
+	err = backoff.RetryNotify(
 		func() error {
-			_, err := vdri.Read(publicDID)
-			return err
+			_, errRead := vdri.Read(publicDID)
+			return errRead
 		},
 		backoff.WithMaxRetries(backoff.NewConstantBackOff(sleep), maxRetries),
 		func(retryErr error, sleep time.Duration) {
@@ -262,8 +265,11 @@ func (s *Steps) newTrustBlocDID(agentID string) (*did.Doc, error) {
 		}
 	}
 
-	trustblocClient := trustbloc.New(nil, trustbloc.WithDomain(trustblocDIDMethodDomain),
+	trustblocClient, err := trustbloc.New(nil, trustbloc.WithDomain(trustblocDIDMethodDomain),
 		trustbloc.WithTLSConfig(&tls.Config{RootCAs: s.context.TLSConfig().RootCAs, MinVersion: tls.VersionTLS12}))
+	if err != nil {
+		return nil, err
+	}
 
 	didDoc := did.Doc{}
 

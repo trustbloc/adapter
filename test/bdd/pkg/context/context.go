@@ -91,11 +91,16 @@ func createVDRI(didResolverURL string) (vdriapi.Registry, error) {
 		return nil, fmt.Errorf("create new vdri peer failed: %w", err)
 	}
 
+	blocVDR, err := trustbloc.New(nil, trustbloc.WithResolverURL(didResolverURL),
+		trustbloc.WithDomain("testnet.trustbloc.local"))
+	if err != nil {
+		return nil, err
+	}
+
 	return vdripkg.New(
 		vdriProvider,
 		vdripkg.WithVDR(p),
-		vdripkg.WithVDR(trustbloc.New(nil, trustbloc.WithResolverURL(didResolverURL),
-			trustbloc.WithDomain("testnet.trustbloc.local"))),
+		vdripkg.WithVDR(blocVDR),
 		vdripkg.WithVDR(didResolverVDRI),
 	), nil
 }

@@ -19,7 +19,8 @@ import (
 
 func TestNewTrustblocDIDCreator(t *testing.T) {
 	t.Run("returns did creator", func(t *testing.T) {
-		c := NewTrustblocDIDCreator("", "", &mockKeyManager{}, nil)
+		c, err := NewTrustblocDIDCreator("", "", &mockKeyManager{}, nil)
+		require.NoError(t, err)
 		require.NotNil(t, c)
 	})
 }
@@ -32,7 +33,8 @@ func TestTrustblocDIDCreator_Create(t *testing.T) {
 		_, pubKey, err := ed25519.GenerateKey(rand.Reader)
 		require.NoError(t, err)
 
-		c := NewTrustblocDIDCreator(domain, didcommURL, &mockKeyManager{v: pubKey}, nil)
+		c, err := NewTrustblocDIDCreator(domain, didcommURL, &mockKeyManager{v: pubKey}, nil)
+		require.NoError(t, err)
 		c.tblocDIDs = &stubTrustblocClient{
 			createFunc: func(keyManager kms.KeyManager, didDoc *did.Doc,
 				opts ...vdrapi.DIDMethodOption) (*did.DocResolution, error) {
@@ -46,24 +48,27 @@ func TestTrustblocDIDCreator_Create(t *testing.T) {
 
 	t.Run("error creating keys", func(t *testing.T) {
 		expected := errors.New("test")
-		c := NewTrustblocDIDCreator("", "", &mockKeyManager{err: expected}, nil)
-		_, err := c.Create()
+		c, err := NewTrustblocDIDCreator("", "", &mockKeyManager{err: expected}, nil)
+		require.NoError(t, err)
+		_, err = c.Create()
 		require.Error(t, err)
 		require.True(t, errors.Is(err, expected))
 	})
 
 	t.Run("error creating didcomm keys", func(t *testing.T) {
 		expected := errors.New("test")
-		c := NewTrustblocDIDCreator("", "", &mockKeyManager{err: expected}, nil)
-		_, err := c.Create()
+		c, err := NewTrustblocDIDCreator("", "", &mockKeyManager{err: expected}, nil)
+		require.NoError(t, err)
+		_, err = c.Create()
 		require.Error(t, err)
 		require.True(t, errors.Is(err, expected))
 	})
 
 	t.Run("error exporting public key bytes", func(t *testing.T) {
 		expected := errors.New("test")
-		c := NewTrustblocDIDCreator("", "", &mockKeyManager{err: expected}, nil)
-		_, err := c.Create()
+		c, err := NewTrustblocDIDCreator("", "", &mockKeyManager{err: expected}, nil)
+		require.NoError(t, err)
+		_, err = c.Create()
 		require.Error(t, err)
 		require.True(t, errors.Is(err, expected))
 	})
@@ -73,7 +78,8 @@ func TestTrustblocDIDCreator_Create(t *testing.T) {
 		require.NoError(t, err)
 
 		expected := errors.New("test")
-		c := NewTrustblocDIDCreator("", "", &mockKeyManager{v: pubKey}, nil)
+		c, err := NewTrustblocDIDCreator("", "", &mockKeyManager{v: pubKey}, nil)
+		require.NoError(t, err)
 		c.tblocDIDs = &stubTrustblocClient{
 			createFunc: func(keyManager kms.KeyManager, did *did.Doc,
 				opts ...vdrapi.DIDMethodOption) (*did.DocResolution, error) {

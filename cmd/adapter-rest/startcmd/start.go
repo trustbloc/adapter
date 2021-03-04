@@ -693,6 +693,15 @@ func addRPHandlers(parameters *adapterRestParameters, framework *aries.Aries, ro
 
 	// TODO init OIDC stuff in iteration 2 - https://github.com/trustbloc/edge-adapter/issues/24
 
+	didCreator, err := did.NewTrustblocDIDCreator(
+		parameters.trustblocDomain,
+		parameters.didCommParameters.inboundHostExternal,
+		ctx.KMS(),
+		rootCAs)
+	if err != nil {
+		return err
+	}
+
 	// add rp endpoints
 	rpService, err := rp.New(&rpops.Config{
 		PresentationExProvider: presentationExProvider,
@@ -701,17 +710,13 @@ func addRPHandlers(parameters *adapterRestParameters, framework *aries.Aries, ro
 		OOBClient:              oobClient,
 		DIDExchClient:          didClient,
 		Storage:                &rpops.Storage{Persistent: store, Transient: tStore},
-		PublicDIDCreator: did.NewTrustblocDIDCreator(
-			parameters.trustblocDomain,
-			parameters.didCommParameters.inboundHostExternal,
-			ctx.KMS(),
-			rootCAs),
-		AriesContextProvider: ctx,
-		AriesMessenger:       framework.Messenger(),
-		MsgRegistrar:         msgRegistrar,
-		GovernanceProvider:   governanceProv,
-		PresentProofClient:   presentProofClient,
-		WalletBridgeAppURL:   parameters.walletAppURL,
+		PublicDIDCreator:       didCreator,
+		AriesContextProvider:   ctx,
+		AriesMessenger:         framework.Messenger(),
+		MsgRegistrar:           msgRegistrar,
+		GovernanceProvider:     governanceProv,
+		PresentProofClient:     presentProofClient,
+		WalletBridgeAppURL:     parameters.walletAppURL,
 	})
 	if err != nil {
 		return err
@@ -761,19 +766,24 @@ func addIssuerHandlers(parameters *adapterRestParameters, framework *aries.Aries
 		return err
 	}
 
+	didCreator, err := did.NewTrustblocDIDCreator(
+		parameters.trustblocDomain,
+		parameters.didCommParameters.inboundHostExternal,
+		ariesCtx.KMS(),
+		rootCAs,
+	)
+	if err != nil {
+		return err
+	}
+
 	// add issuer endpoints
 	issuerService, err := issuer.New(&issuerops.Config{
-		AriesCtx:       ariesCtx,
-		AriesMessenger: framework.Messenger(),
-		MsgRegistrar:   msgRegistrar,
-		UIEndpoint:     uiEndpoint,
-		StoreProvider:  store,
-		PublicDIDCreator: did.NewTrustblocDIDCreator(
-			parameters.trustblocDomain,
-			parameters.didCommParameters.inboundHostExternal,
-			ariesCtx.KMS(),
-			rootCAs,
-		),
+		AriesCtx:           ariesCtx,
+		AriesMessenger:     framework.Messenger(),
+		MsgRegistrar:       msgRegistrar,
+		UIEndpoint:         uiEndpoint,
+		StoreProvider:      store,
+		PublicDIDCreator:   didCreator,
 		TLSConfig:          &tls.Config{RootCAs: rootCAs, MinVersion: tls.VersionTLS12},
 		GovernanceProvider: governanceProv,
 		OIDCClientStoreKey: clientStoreKey,
