@@ -40,16 +40,21 @@ type TrustblocDIDCreator struct {
 
 // NewTrustblocDIDCreator returns a new TrustblocDIDCreator.
 func NewTrustblocDIDCreator(blocDomain, didcommInboundURL string,
-	km KeyManager, rootCAs *x509.CertPool) *TrustblocDIDCreator {
+	km KeyManager, rootCAs *x509.CertPool) (*TrustblocDIDCreator, error) {
+	blocVDR, err := trustbloc.New(nil, trustbloc.WithDomain(blocDomain), trustbloc.WithTLSConfig(&tls.Config{
+		RootCAs:    rootCAs,
+		MinVersion: tls.VersionTLS12,
+	}))
+	if err != nil {
+		return nil, err
+	}
+
 	return &TrustblocDIDCreator{
 		blocDomain:        blocDomain,
 		didcommInboundURL: didcommInboundURL,
 		km:                km,
-		tblocDIDs: trustbloc.New(nil, trustbloc.WithDomain(blocDomain), trustbloc.WithTLSConfig(&tls.Config{
-			RootCAs:    rootCAs,
-			MinVersion: tls.VersionTLS12,
-		})),
-	}
+		tblocDIDs:         blocVDR,
+	}, nil
 }
 
 // Create a new did:trustbloc DID.

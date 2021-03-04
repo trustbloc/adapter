@@ -14,8 +14,9 @@ require (
 	github.com/google/uuid v1.1.2
 	github.com/gorilla/mux v1.7.4
 	github.com/hyperledger/aries-framework-go v0.1.6-0.20210227013717-0ea0a23d87d3
-	github.com/hyperledger/aries-framework-go-ext/component/vdr/sidetree v0.0.0-20210121210840-ee9984a4579c
-	github.com/hyperledger/aries-framework-go-ext/component/vdr/trustbloc v0.0.0-20210125133828-10c25f5d6d37
+	github.com/hyperledger/aries-framework-go-ext/component/storage/mysql v0.0.0-20210303194824-a55a12f8d063 // indirect
+	github.com/hyperledger/aries-framework-go-ext/component/vdr/sidetree v0.0.0-20210303194824-a55a12f8d063
+	github.com/hyperledger/aries-framework-go-ext/component/vdr/trustbloc v0.0.0-20210303194824-a55a12f8d063
 	github.com/hyperledger/aries-framework-go/component/storageutil v0.0.0-20210302153503-0e00e248f14d
 	github.com/hyperledger/aries-framework-go/spi v0.0.0-20210227013717-0ea0a23d87d3
 	github.com/niemeyer/pretty v0.0.0-20200227124842-a10e7caefd8e // indirect
