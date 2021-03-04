@@ -18,6 +18,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/gorilla/mux"
+	"github.com/hyperledger/aries-framework-go/component/storageutil/mem"
 	"github.com/hyperledger/aries-framework-go/pkg/didcomm/common/service"
 	"github.com/hyperledger/aries-framework-go/pkg/didcomm/messaging/msghandler"
 	"github.com/hyperledger/aries-framework-go/pkg/didcomm/protocol/decorator"
@@ -35,9 +36,8 @@ import (
 	ariesmockprovider "github.com/hyperledger/aries-framework-go/pkg/mock/provider"
 	mockstore "github.com/hyperledger/aries-framework-go/pkg/mock/storage"
 	mockvdri "github.com/hyperledger/aries-framework-go/pkg/mock/vdr"
+	"github.com/hyperledger/aries-framework-go/spi/storage"
 	"github.com/stretchr/testify/require"
-	"github.com/trustbloc/edge-core/pkg/storage"
-	"github.com/trustbloc/edge-core/pkg/storage/memstore"
 
 	"github.com/trustbloc/edge-adapter/pkg/aries"
 	mockdiddoc "github.com/trustbloc/edge-adapter/pkg/internal/mock/diddoc"
@@ -82,7 +82,7 @@ func config() *Config {
 
 	return &Config{
 		AriesCtx:           getAriesCtx(),
-		StoreProvider:      memstore.NewProvider(),
+		StoreProvider:      mem.NewProvider(),
 		MsgRegistrar:       msghandler.NewRegistrar(),
 		AriesMessenger:     &messenger.MockMessenger{},
 		PublicDIDCreator:   &stubPublicDIDCreator{createValue: mockdiddoc.GetMockDIDDoc("did:example:def567")},
@@ -345,29 +345,33 @@ func (s *stubPublicDIDCreator) Create() (*did.Doc, error) {
 }
 
 type failingStoreProvider struct {
-	// createN calls to Create() succeed, all subsequent calls fail with Err
-	createN int
-	Err     error
+	// openN calls to OpenStore() succeed, all subsequent calls fail with Err
+	openN int
+	Err   error
 	// SuccessProvider uses this provider for successful calls
 	SuccessProvider storage.Provider
 }
 
-func (f *failingStoreProvider) CreateStore(name string) error {
-	if f.createN <= 0 {
-		return f.Err
-	}
+func (f *failingStoreProvider) SetStoreConfig(name string, config storage.StoreConfiguration) error {
+	panic("implement me")
+}
 
-	f.createN--
+func (f *failingStoreProvider) GetStoreConfig(name string) (storage.StoreConfiguration, error) {
+	panic("implement me")
+}
 
-	return f.SuccessProvider.CreateStore(name)
+func (f *failingStoreProvider) GetOpenStores() []storage.Store {
+	panic("implement me")
 }
 
 func (f *failingStoreProvider) OpenStore(name string) (storage.Store, error) {
-	return f.SuccessProvider.OpenStore(name)
-}
+	if f.openN <= 0 {
+		return nil, f.Err
+	}
 
-func (f *failingStoreProvider) CloseStore(name string) error {
-	return f.SuccessProvider.CloseStore(name)
+	f.openN--
+
+	return f.SuccessProvider.OpenStore(name)
 }
 
 func (f *failingStoreProvider) Close() error {

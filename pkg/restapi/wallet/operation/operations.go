@@ -24,8 +24,8 @@ import (
 	"github.com/hyperledger/aries-framework-go/pkg/controller/command"
 	"github.com/hyperledger/aries-framework-go/pkg/didcomm/common/service"
 	didexchangesvc "github.com/hyperledger/aries-framework-go/pkg/didcomm/protocol/didexchange"
+	"github.com/hyperledger/aries-framework-go/spi/storage"
 	"github.com/trustbloc/edge-core/pkg/log"
-	edgestore "github.com/trustbloc/edge-core/pkg/storage"
 
 	"github.com/trustbloc/edge-adapter/pkg/aries"
 	"github.com/trustbloc/edge-adapter/pkg/internal/common/support"
@@ -70,7 +70,7 @@ type Operation struct {
 	outOfBand             *outofband.Client
 	didExchange           *didexchange.Client
 	messenger             *messaging.Client
-	adapterTransientStore edgestore.Store
+	adapterTransientStore storage.Store
 }
 
 // Config defines configuration for wallet adapter operations.
@@ -79,7 +79,7 @@ type Config struct {
 	MsgRegistrar          command.MessageHandler
 	WalletAppURL          string
 	DefaultLabel          string
-	AdapterTransientStore edgestore.Store
+	AdapterTransientStore storage.Store
 }
 
 type consentRequestCtx struct {
@@ -541,6 +541,7 @@ func prepareCHAPIRequest(r io.Reader) (*CHAPIRequest, error) {
 
 	return &request, nil
 }
+
 func prepareSavePreferencesRequest(r io.Reader) (*SaveWalletPreferencesRequest, error) {
 	var request SaveWalletPreferencesRequest
 

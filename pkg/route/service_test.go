@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	mockstorage "github.com/hyperledger/aries-framework-go/component/storageutil/mock"
 	"github.com/hyperledger/aries-framework-go/pkg/client/didexchange"
 	"github.com/hyperledger/aries-framework-go/pkg/didcomm/common/service"
 	"github.com/hyperledger/aries-framework-go/pkg/didcomm/protocol/decorator"
@@ -20,8 +21,8 @@ import (
 	mockroute "github.com/hyperledger/aries-framework-go/pkg/mock/didcomm/protocol/mediator"
 	mockdiddoc "github.com/hyperledger/aries-framework-go/pkg/mock/diddoc"
 	mockvdr "github.com/hyperledger/aries-framework-go/pkg/mock/vdr"
+	"github.com/hyperledger/aries-framework-go/spi/storage"
 	"github.com/stretchr/testify/require"
-	mockstorage "github.com/trustbloc/edge-core/pkg/storage/mockstore"
 
 	"github.com/trustbloc/edge-adapter/pkg/aries/message"
 	mockconn "github.com/trustbloc/edge-adapter/pkg/internal/mock/connection"
@@ -39,16 +40,10 @@ func TestNew(t *testing.T) {
 
 	t.Run("store error", func(t *testing.T) {
 		config := config()
-		config.Store = &mockstorage.Provider{ErrCreateStore: errors.New("create db error")}
 
-		c, err := New(config)
-		require.Error(t, err)
-		require.Contains(t, err.Error(), "store: create db error")
-		require.Empty(t, c)
+		config.Store = &mockstorage.Provider{ErrOpenStore: errors.New("open db error")}
 
-		config.Store = &mockstorage.Provider{ErrOpenStoreHandle: errors.New("open db error")}
-
-		_, err = New(config)
+		_, err := New(config)
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "store: open db error")
 	})
@@ -259,7 +254,7 @@ func TestDIDDocReq(t *testing.T) {
 		c, err := New(config)
 		require.NoError(t, err)
 
-		c.store = &mockstorage.MockStore{Store: make(map[string][]byte), ErrPut: errors.New("save error")}
+		c.store = &mockstorage.Store{ErrPut: errors.New("save error")}
 
 		msgCh := make(chan message.Msg, 1)
 		go c.didCommMsgListener(msgCh)
@@ -661,6 +656,8 @@ func TestGetDIDService(t *testing.T) {
 			},
 		}
 
+		config.Store = &mockstorage.Provider{OpenStoreReturn: &mockstorage.Store{ErrGet: storage.ErrDataNotFound}}
+
 		c, err := New(config)
 		require.NoError(t, err)
 
@@ -678,6 +675,8 @@ func TestGetDIDService(t *testing.T) {
 				return mediatorConfig, nil
 			},
 		}
+
+		config.Store = &mockstorage.Provider{OpenStoreReturn: &mockstorage.Store{ErrGet: storage.ErrDataNotFound}}
 
 		c, err := New(config)
 		require.NoError(t, err)
@@ -713,7 +712,7 @@ func TestGetDIDService(t *testing.T) {
 		c, err := New(config)
 		require.NoError(t, err)
 
-		c.store = &mockstorage.MockStore{Store: make(map[string][]byte), ErrGet: errors.New("get error")}
+		c.store = &mockstorage.Store{ErrGet: errors.New("get error")}
 
 		connID := uuid.New().String()
 		err = c.store.Put(connID, []byte(uuid.New().String()))

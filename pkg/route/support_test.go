@@ -8,11 +8,11 @@ package route
 
 import (
 	"github.com/google/uuid"
+	"github.com/hyperledger/aries-framework-go/component/storageutil/mem"
 	"github.com/hyperledger/aries-framework-go/pkg/didcomm/messaging/msghandler"
 	"github.com/hyperledger/aries-framework-go/pkg/doc/did"
 	mockroute "github.com/hyperledger/aries-framework-go/pkg/mock/didcomm/protocol/mediator"
 	mockvdr "github.com/hyperledger/aries-framework-go/pkg/mock/vdr"
-	"github.com/trustbloc/edge-core/pkg/storage/memstore"
 
 	mockconn "github.com/trustbloc/edge-adapter/pkg/internal/mock/connection"
 	mockdidex "github.com/trustbloc/edge-adapter/pkg/internal/mock/didexchange"
@@ -28,7 +28,7 @@ func config() *Config {
 		AriesMessenger:    &messenger.MockMessenger{},
 		MsgRegistrar:      msghandler.NewRegistrar(),
 		VDRIRegistry:      &mockvdr.MockVDRegistry{},
-		Store:             memstore.NewProvider(),
+		Store:             mem.NewProvider(),
 		ConnectionLookup:  &mockconn.MockConnectionsLookup{ConnIDByDIDs: uuid.New().String()},
 		MediatorSvc:       &mockroute.MockMediatorSvc{},
 	}

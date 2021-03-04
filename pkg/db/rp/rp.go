@@ -8,10 +8,9 @@ package rp
 
 import (
 	"encoding/json"
-	"errors"
 	"fmt"
 
-	"github.com/trustbloc/edge-core/pkg/storage"
+	"github.com/hyperledger/aries-framework-go/spi/storage"
 )
 
 const (
@@ -25,11 +24,6 @@ type Store struct {
 
 // New returns the Store.
 func New(p storage.Provider) (*Store, error) {
-	err := p.CreateStore(storeName)
-	if err != nil && !errors.Is(err, storage.ErrDuplicateStore) {
-		return nil, fmt.Errorf("failed to create store: %w", err)
-	}
-
 	store, err := p.OpenStore(storeName)
 	if err != nil {
 		return nil, fmt.Errorf("failed to open store : %w", err)

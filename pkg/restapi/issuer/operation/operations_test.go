@@ -21,8 +21,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/fxamacker/cbor/v2"
 	"github.com/google/uuid"
+	mockstorage "github.com/hyperledger/aries-framework-go/component/storageutil/mock"
 	"github.com/hyperledger/aries-framework-go/pkg/didcomm/common/service"
 	"github.com/hyperledger/aries-framework-go/pkg/didcomm/protocol/decorator"
 	"github.com/hyperledger/aries-framework-go/pkg/didcomm/protocol/didexchange"
@@ -38,9 +38,8 @@ import (
 	mockstore "github.com/hyperledger/aries-framework-go/pkg/mock/storage"
 	mockvdr "github.com/hyperledger/aries-framework-go/pkg/mock/vdr"
 	"github.com/hyperledger/aries-framework-go/pkg/store/connection"
+	"github.com/hyperledger/aries-framework-go/spi/storage"
 	"github.com/stretchr/testify/require"
-	"github.com/trustbloc/edge-core/pkg/storage"
-	mockstorage "github.com/trustbloc/edge-core/pkg/storage/mockstore"
 
 	"github.com/trustbloc/edge-adapter/pkg/aries"
 	mockconn "github.com/trustbloc/edge-adapter/pkg/internal/mock/connection"
@@ -79,95 +78,74 @@ func TestNew(t *testing.T) {
 	t.Run("test new - store fail", func(t *testing.T) {
 		c, err := New(&Config{
 			AriesCtx:      getAriesCtx(),
-			StoreProvider: &mockstorage.Provider{ErrCreateStore: errors.New("error creating the store")},
+			StoreProvider: &mockstorage.Provider{ErrOpenStore: errors.New("error opening the store")},
 		})
 		require.Nil(t, c)
 		require.Error(t, err)
-		require.Contains(t, err.Error(), "error creating the store")
+		require.Contains(t, err.Error(), "error opening the store")
 	})
 
 	t.Run("test new - store fail for txnstore", func(t *testing.T) {
 		conf := config()
 
 		conf.StoreProvider = &failingStoreProvider{
-			createN:         1,
-			Err:             fmt.Errorf("error creating the store"),
+			openN:           1,
+			Err:             fmt.Errorf("error opening the store"),
 			SuccessProvider: conf.StoreProvider,
 		}
 
 		c, err := New(conf)
 		require.Nil(t, c)
 		require.Error(t, err)
-		require.Contains(t, err.Error(), "error creating the store")
+		require.Contains(t, err.Error(), "error opening the store")
 	})
 
 	t.Run("test new - store fail for tokenstore", func(t *testing.T) {
 		conf := config()
 
 		conf.StoreProvider = &failingStoreProvider{
-			createN:         2,
-			Err:             fmt.Errorf("error creating the store"),
+			openN:           2,
+			Err:             fmt.Errorf("error opening the store"),
 			SuccessProvider: conf.StoreProvider,
 		}
 
 		c, err := New(conf)
 		require.Nil(t, c)
 		require.Error(t, err)
-		require.Contains(t, err.Error(), "error creating the store")
+		require.Contains(t, err.Error(), "error opening the store")
 	})
 
 	t.Run("test new - store fail for oidcstore", func(t *testing.T) {
 		conf := config()
 
 		conf.StoreProvider = &failingStoreProvider{
-			createN:         3,
-			Err:             fmt.Errorf("error creating the store"),
+			openN:           3,
+			Err:             fmt.Errorf("error opening the store"),
 			SuccessProvider: conf.StoreProvider,
 		}
 
 		c, err := New(conf)
 		require.Nil(t, c)
 		require.Error(t, err)
-		require.Contains(t, err.Error(), "error creating the store")
-	})
-
-	t.Run("test get txn store - create store error", func(t *testing.T) {
-		s, err := getTxnStore(&mockstorage.Provider{ErrCreateStore: errors.New("error creating the store")})
-		require.Error(t, err)
-		require.Contains(t, err.Error(), "error creating the store")
-		require.Nil(t, s)
+		require.Contains(t, err.Error(), "error opening the store")
 	})
 
 	t.Run("test get txn store - open store error", func(t *testing.T) {
-		s, err := getTxnStore(&mockstorage.Provider{ErrOpenStoreHandle: errors.New("error opening the store")})
+		s, err := getTxnStore(&mockstorage.Provider{ErrOpenStore: errors.New("error opening the store")})
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "error opening the store")
-		require.Nil(t, s)
-	})
-
-	t.Run("test get token store - create store error", func(t *testing.T) {
-		s, err := getTokenStore(&mockstorage.Provider{ErrCreateStore: errors.New("error creating the store")})
-		require.Error(t, err)
-		require.Contains(t, err.Error(), "error creating the store")
 		require.Nil(t, s)
 	})
 
 	t.Run("test get token store - open store error", func(t *testing.T) {
-		s, err := getTokenStore(&mockstorage.Provider{ErrOpenStoreHandle: errors.New("error opening the store")})
+		s, err := getTokenStore(&mockstorage.Provider{ErrOpenStore: errors.New("error opening the store")})
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "error opening the store")
 		require.Nil(t, s)
 	})
 
-	t.Run("test get oidc store - create store error", func(t *testing.T) {
-		s, err := getOIDCClientStore(&mockstorage.Provider{ErrCreateStore: errors.New("error creating the store")})
-		require.Error(t, err)
-		require.Contains(t, err.Error(), "error creating the store")
-		require.Nil(t, s)
-	})
-
 	t.Run("test get oidc store - open store error", func(t *testing.T) {
-		s, err := getOIDCClientStore(&mockstorage.Provider{ErrOpenStoreHandle: errors.New("error opening the store")})
+		s, err := getOIDCClientStore(&mockstorage.Provider{ErrOpenStore: errors.New("error opening the store")})
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "error opening the store")
 		require.Nil(t, s)
@@ -231,7 +209,7 @@ func Test_OIDCClientData(t *testing.T) {
 
 		var wrapper oidcClientDataWrapper
 
-		err = cbor.Unmarshal(enc, &wrapper)
+		err = json.Unmarshal(enc, &wrapper)
 		require.NoError(t, err)
 
 		dec, err := decryptClientData(key, enc)
@@ -315,13 +293,13 @@ func Test_OIDCClientData(t *testing.T) {
 		require.NoError(t, err)
 
 		wrapper := oidcClientDataWrapper{}
-		require.NoError(t, cbor.Unmarshal(enc, &wrapper))
+		require.NoError(t, json.Unmarshal(enc, &wrapper))
 
 		if len(wrapper.Payload) != 0 {
 			wrapper.Payload[0]++
 		}
 
-		enc, err = cbor.Marshal(wrapper)
+		enc, err = json.Marshal(wrapper)
 		require.NoError(t, err)
 
 		_, err = decryptClientData(key, enc)
@@ -341,7 +319,7 @@ func Test_OIDCClientData(t *testing.T) {
 		require.NoError(t, err)
 
 		// perform encryptClientData except the data gets garbled before encryption
-		dataBytes, err := cbor.Marshal(data)
+		dataBytes, err := json.Marshal(data)
 		require.NoError(t, err)
 
 		// garble dataBytes
@@ -365,7 +343,7 @@ func Test_OIDCClientData(t *testing.T) {
 			Payload: cipherText,
 		}
 
-		wrappedBytes, err := cbor.Marshal(dataWrapper)
+		wrappedBytes, err := json.Marshal(dataWrapper)
 		require.NoError(t, err)
 
 		_, err = decryptClientData(key, wrappedBytes)
@@ -422,8 +400,7 @@ func Test_OIDCClientStore(t *testing.T) {
 		op, err := New(conf)
 		require.NoError(t, err)
 
-		op.oidcClientStore = &mockstorage.MockStore{
-			Store:  map[string][]byte{},
+		op.oidcClientStore = &mockstorage.Store{
 			ErrPut: fmt.Errorf("test err"),
 		}
 
@@ -444,8 +421,7 @@ func Test_OIDCClientStore(t *testing.T) {
 		op, err := New(conf)
 		require.NoError(t, err)
 
-		op.oidcClientStore = &mockstorage.MockStore{
-			Store:  map[string][]byte{},
+		op.oidcClientStore = &mockstorage.Store{
 			ErrGet: fmt.Errorf("test err"),
 		}
 
@@ -549,10 +525,7 @@ func Test_CreateOIDCClient(t *testing.T) {
 
 		defer mockOIDCServer.Close()
 
-		op.oidcClientStore = &mockstorage.MockStore{
-			Store: map[string][]byte{
-				mockOIDCServer.URL: nil,
-			},
+		op.oidcClientStore = &mockstorage.Store{
 			ErrGet: fmt.Errorf("test err"),
 		}
 
@@ -640,8 +613,8 @@ func Test_CreateOIDCClient(t *testing.T) {
 		op, err := New(conf)
 		require.NoError(t, err)
 
-		op.oidcClientStore = &mockstorage.MockStore{
-			Store:  map[string][]byte{},
+		op.oidcClientStore = &mockstorage.Store{
+			ErrGet: storage.ErrDataNotFound,
 			ErrPut: fmt.Errorf("test err"),
 		}
 
@@ -806,7 +779,8 @@ func TestCreateProfile(t *testing.T) {
 		op.governanceProvider = &mockgovernance.MockProvider{
 			IssueCredentialFunc: func(didID, profileID string) ([]byte, error) {
 				return nil, fmt.Errorf("failed to issue governance vc")
-			}}
+			},
+		}
 
 		h := getHandler(t, op, endpoint)
 
@@ -943,7 +917,7 @@ func TestGetProfile(t *testing.T) {
 		rr := serveHTTPMux(t, handler, endpoint, nil, urlVars)
 
 		require.Equal(t, http.StatusBadRequest, rr.Code)
-		require.Contains(t, rr.Body.String(), storage.ErrValueNotFound.Error())
+		require.Contains(t, rr.Body.String(), storage.ErrDataNotFound.Error())
 	})
 }
 
@@ -1014,7 +988,7 @@ func TestConnectWallet(t *testing.T) {
 		rr := serveHTTPMux(t, walletConnectHandler, walletConnectEndpoint, nil, urlVars)
 
 		require.Equal(t, http.StatusBadRequest, rr.Code)
-		require.Contains(t, rr.Body.String(), storage.ErrValueNotFound.Error())
+		require.Contains(t, rr.Body.String(), storage.ErrDataNotFound.Error())
 	})
 
 	t.Run("test connect wallet - no state in the url", func(t *testing.T) {
@@ -1112,8 +1086,7 @@ func TestConnectWallet(t *testing.T) {
 
 		urlVars[idPathParam] = profileID
 
-		c.txnStore = &mockstorage.MockStore{
-			Store:  make(map[string][]byte),
+		c.txnStore = &mockstorage.Store{
 			ErrPut: errors.New("error inserting data"),
 		}
 
@@ -1418,7 +1391,7 @@ func TestValidateWalletResponse(t *testing.T) {
 		id, err := ops.createTxn(createProfileData(profileID), state, token)
 		require.NoError(t, err)
 
-		ops.tokenStore = &mockstorage.MockStore{Store: make(map[string][]byte), ErrPut: errors.New("error put")}
+		ops.tokenStore = &mockstorage.Store{ErrPut: errors.New("error put")}
 
 		handler := getHandler(t, ops, validateConnectResponseEndpoint)
 
@@ -1611,7 +1584,8 @@ func TestIssueCredentialHandler(t *testing.T) {
 			Provider: &ariesmockprovider.Provider{
 				ServiceMap: map[string]interface{}{
 					issuecredsvc.Name: &issuecredential.MockIssueCredentialSvc{
-						RegisterActionEventErr: errors.New("register error")},
+						RegisterActionEventErr: errors.New("register error"),
+					},
 				},
 			},
 		}, actionCh)
@@ -1635,7 +1609,8 @@ func TestIssueCredentialHandler(t *testing.T) {
 			Provider: &ariesmockprovider.Provider{
 				ServiceMap: map[string]interface{}{
 					presentproofsvc.Name: &presentproof.MockPresentProofSvc{
-						RegisterActionEventErr: errors.New("register error")},
+						RegisterActionEventErr: errors.New("register error"),
+					},
 				},
 			},
 		}, actionCh)
@@ -1730,21 +1705,22 @@ func TestIssueCredentialHandler(t *testing.T) {
 			actionCh := make(chan service.DIDCommAction, 1)
 
 			config := config()
-			config.AriesCtx = &mockprovider.MockProvider{Provider: &ariesmockprovider.Provider{
-				ProtocolStateStorageProviderValue: mockstore.NewMockStoreProvider(),
-				StorageProviderValue:              mockstore.NewMockStoreProvider(),
-				ServiceMap: map[string]interface{}{
-					didexchange.DIDExchange: &mocksvc.MockDIDExchangeSvc{},
-					mediator.Coordination:   &mockroute.MockMediatorSvc{},
-					issuecredsvc.Name:       &issuecredential.MockIssueCredentialSvc{},
-					presentproofsvc.Name:    &presentproof.MockPresentProofSvc{},
-					outofbandsvc.Name:       &mockoutofband.MockService{},
+			config.AriesCtx = &mockprovider.MockProvider{
+				Provider: &ariesmockprovider.Provider{
+					ProtocolStateStorageProviderValue: mockstore.NewMockStoreProvider(),
+					StorageProviderValue:              mockstore.NewMockStoreProvider(),
+					ServiceMap: map[string]interface{}{
+						didexchange.DIDExchange: &mocksvc.MockDIDExchangeSvc{},
+						mediator.Coordination:   &mockroute.MockMediatorSvc{},
+						issuecredsvc.Name:       &issuecredential.MockIssueCredentialSvc{},
+						presentproofsvc.Name:    &presentproof.MockPresentProofSvc{},
+						outofbandsvc.Name:       &mockoutofband.MockService{},
+					},
+					ServiceEndpointValue: "endpoint",
+					VDRegistryValue: &mockvdr.MockVDRegistry{
+						CreateErr: errors.New("did create error"),
+					},
 				},
-				ServiceEndpointValue: "endpoint",
-				VDRegistryValue: &mockvdr.MockVDRegistry{
-					CreateErr: errors.New("did create error"),
-				},
-			},
 			}
 
 			c, err := New(config)
@@ -1864,8 +1840,7 @@ func TestIssueCredentialHandler(t *testing.T) {
 			})
 			require.NoError(t, err)
 
-			c.txnStore = &mockstorage.MockStore{
-				Store:  make(map[string][]byte),
+			c.txnStore = &mockstorage.Store{
 				ErrPut: errors.New("error inserting data"),
 			}
 
@@ -1882,9 +1857,7 @@ func TestIssueCredentialHandler(t *testing.T) {
 			}
 
 			// signing error
-			c.txnStore = &mockstorage.MockStore{
-				Store: make(map[string][]byte),
-			}
+			c.txnStore = &mockstorage.Store{}
 			c.vccrypto = &mockVCCrypto{signVCErr: errors.New("sign error")}
 
 			actionCh <- createCredentialReqMsg(t, nil, nil, func(err error) {

@@ -460,15 +460,7 @@ func TestAdapterModes(t *testing.T) {
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "failed to init storage provider : invalid dbURL")
 
-		_, _, err = initRPAdapterEdgeStores("", 10)
-		require.Error(t, err)
-		require.Contains(t, err.Error(), "failed to init edge persistent storage: invalid dbURL")
-
-		_, err = initEdgeStore("invaldidb://test", 10, "")
-		require.Error(t, err)
-		require.Contains(t, err.Error(), "unsupported storage driver: invaldidb")
-
-		_, err = initAriesStore("invaldidb://test", 10, "")
+		_, err = initStore("invaldidb://test", 10, "")
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "unsupported storage driver: invaldidb")
 	})

@@ -11,33 +11,21 @@ import (
 	"errors"
 	"testing"
 
+	"github.com/hyperledger/aries-framework-go/component/storageutil/mem"
+	mockstorage "github.com/hyperledger/aries-framework-go/component/storageutil/mock"
+	"github.com/hyperledger/aries-framework-go/spi/storage"
 	"github.com/stretchr/testify/require"
-	"github.com/trustbloc/edge-core/pkg/storage"
-	mockstorage "github.com/trustbloc/edge-core/pkg/storage/mockstore"
 )
 
 func TestNew(t *testing.T) {
 	t.Run("test new - success", func(t *testing.T) {
-		record, err := New(mockstorage.NewMockStoreProvider())
+		record, err := New(mem.NewProvider())
 		require.NoError(t, err)
 		require.NotNil(t, record)
 	})
 
-	t.Run("test new - success (store exists already)", func(t *testing.T) {
-		record, err := New(&mockstorage.Provider{ErrCreateStore: storage.ErrDuplicateStore})
-		require.NoError(t, err)
-		require.NotNil(t, record)
-	})
-
-	t.Run("test new - success", func(t *testing.T) {
-		record, err := New(&mockstorage.Provider{ErrCreateStore: errors.New("db provider error")})
-		require.Error(t, err)
-		require.Contains(t, err.Error(), "db provider error")
-		require.Nil(t, record)
-	})
-
-	t.Run("test new - success", func(t *testing.T) {
-		record, err := New(&mockstorage.Provider{ErrOpenStoreHandle: errors.New("error opening the handler")})
+	t.Run("test new - fail to open store", func(t *testing.T) {
+		record, err := New(&mockstorage.Provider{ErrOpenStore: errors.New("error opening the handler")})
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "error opening the handler")
 		require.Nil(t, record)
@@ -46,7 +34,7 @@ func TestNew(t *testing.T) {
 
 func TestCredentialRecord_SaveProfile(t *testing.T) {
 	t.Run("test save profile - success", func(t *testing.T) {
-		record, err := New(mockstorage.NewMockStoreProvider())
+		record, err := New(mem.NewProvider())
 		require.NoError(t, err)
 		require.NotNil(t, record)
 
@@ -67,7 +55,7 @@ func TestCredentialRecord_SaveProfile(t *testing.T) {
 	})
 
 	t.Run("test save profile - validation failure", func(t *testing.T) {
-		record, err := New(mockstorage.NewMockStoreProvider())
+		record, err := New(mem.NewProvider())
 		require.NoError(t, err)
 		require.NotNil(t, record)
 
@@ -94,7 +82,7 @@ func TestCredentialRecord_SaveProfile(t *testing.T) {
 	})
 
 	t.Run("test save profile - profile already exists", func(t *testing.T) {
-		record, err := New(mockstorage.NewMockStoreProvider())
+		record, err := New(mem.NewProvider())
 		require.NoError(t, err)
 		require.NotNil(t, record)
 
@@ -117,10 +105,9 @@ func TestCredentialRecord_SaveProfile(t *testing.T) {
 
 func TestGetProfile(t *testing.T) {
 	t.Run("test get profile - success", func(t *testing.T) {
-		s := make(map[string][]byte)
-		require.Equal(t, 0, len(s))
+		memProvider := mem.NewProvider()
 
-		profileStore, err := New(&mockstorage.Provider{Store: &mockstorage.MockStore{Store: s}})
+		profileStore, err := New(memProvider)
 		require.NoError(t, err)
 		require.NotNil(t, profileStore)
 
@@ -131,7 +118,11 @@ func TestGetProfile(t *testing.T) {
 		profileJSON, err := json.Marshal(profileData)
 		require.NoError(t, err)
 
-		s[getDBKey(profileData.Name)] = profileJSON
+		issuerStore, err := memProvider.OpenStore(storeName)
+		require.NoError(t, err)
+
+		err = issuerStore.Put(getDBKey(profileData.Name), profileJSON)
+		require.NoError(t, err)
 
 		resp, err := profileStore.GetProfile(profileData.Name)
 		require.NoError(t, err)
@@ -140,26 +131,29 @@ func TestGetProfile(t *testing.T) {
 	})
 
 	t.Run("test get profile - no data", func(t *testing.T) {
-		profileStore, err := New(&mockstorage.Provider{Store: &mockstorage.MockStore{Store: make(map[string][]byte)}})
+		profileStore, err := New(mem.NewProvider())
 		require.NoError(t, err)
 		require.NotNil(t, profileStore)
 		require.NotNil(t, profileStore)
 
 		resp, err := profileStore.GetProfile("issuer-1")
 		require.Error(t, err)
-		require.Contains(t, err.Error(), storage.ErrValueNotFound.Error())
+		require.Contains(t, err.Error(), storage.ErrDataNotFound.Error())
 		require.Nil(t, resp)
 	})
 
 	t.Run("test get profile - invalid json", func(t *testing.T) {
-		s := make(map[string][]byte)
-		require.Equal(t, 0, len(s))
+		memProvider := mem.NewProvider()
 
-		profileStore, err := New(&mockstorage.Provider{Store: &mockstorage.MockStore{Store: s}})
+		profileStore, err := New(memProvider)
 		require.NoError(t, err)
 		require.NotNil(t, profileStore)
 
-		s[getDBKey("issuer-1")] = []byte("invalid-data")
+		issuerStore, err := memProvider.OpenStore(storeName)
+		require.NoError(t, err)
+
+		err = issuerStore.Put(getDBKey("issuer-1"), []byte("invalid-data"))
+		require.NoError(t, err)
 
 		resp, err := profileStore.GetProfile("issuer-1")
 		require.Error(t, err)

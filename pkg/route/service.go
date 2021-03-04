@@ -18,8 +18,8 @@ import (
 	"github.com/hyperledger/aries-framework-go/pkg/doc/did"
 	"github.com/hyperledger/aries-framework-go/pkg/framework/aries/api/vdr"
 	"github.com/hyperledger/aries-framework-go/pkg/vdr/peer"
+	"github.com/hyperledger/aries-framework-go/spi/storage"
 	"github.com/trustbloc/edge-core/pkg/log"
-	"github.com/trustbloc/edge-core/pkg/storage"
 
 	"github.com/trustbloc/edge-adapter/pkg/aries/message"
 )
@@ -119,11 +119,11 @@ func New(config *Config) (*Service, error) {
 func (o *Service) GetDIDDoc(connID string, requiresBlindedRoute bool) (*did.Doc, error) { //nolint:gocyclo
 	// get routers connection ID
 	routerConnID, err := o.store.Get(connID)
-	if err != nil && !errors.Is(err, storage.ErrValueNotFound) {
+	if err != nil && !errors.Is(err, storage.ErrDataNotFound) {
 		return nil, fmt.Errorf("get conn id to router conn id mapping: %w", err)
 	}
 
-	if errors.Is(err, storage.ErrValueNotFound) {
+	if errors.Is(err, storage.ErrDataNotFound) {
 		if requiresBlindedRoute {
 			return nil, errors.New("no router registered to support blinded routing")
 		}
@@ -303,11 +303,6 @@ func (o *Service) handleRouteRegistration(msg message.Msg) (service.DIDCommMsgMa
 }
 
 func getTxnStore(prov storage.Provider) (storage.Store, error) {
-	err := prov.CreateStore(txnStoreName)
-	if err != nil && !errors.Is(err, storage.ErrDuplicateStore) {
-		return nil, err
-	}
-
 	txnStore, err := prov.OpenStore(txnStoreName)
 	if err != nil {
 		return nil, err

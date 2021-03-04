@@ -102,8 +102,8 @@ func TestWalletAppProfileStore_SaveProfile(t *testing.T) {
 		provider := mockstorage.NewMockStoreProvider()
 		provider.Store = &mockstorage.MockStore{
 			ErrPut: fmt.Errorf(sampleStoreErr),
-			Store: map[string][]byte{
-				getInvitationKeyPrefix(sampleInvID): []byte(sampleUserID),
+			Store: map[string]mockstorage.DBEntry{
+				getInvitationKeyPrefix(sampleInvID): {Value: []byte(sampleUserID)},
 			},
 		}
 
@@ -180,8 +180,8 @@ func TestWalletAppProfileStore_Get(t *testing.T) {
 	t.Run("get wallet app profile  - failure - invalid data", func(t *testing.T) {
 		provider := mockstorage.NewMockStoreProvider()
 		provider.Store = &mockstorage.MockStore{
-			Store: map[string][]byte{
-				getUserIDKeyPrefix(sampleUserID): []byte("--"),
+			Store: map[string]mockstorage.DBEntry{
+				getUserIDKeyPrefix(sampleUserID): {Value: []byte("--")},
 			},
 		}
 

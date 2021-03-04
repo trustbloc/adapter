@@ -12,28 +12,23 @@ import (
 	"net/http"
 	"testing"
 
+	"github.com/hyperledger/aries-framework-go/component/storageutil/mem"
+	mockstorage "github.com/hyperledger/aries-framework-go/component/storageutil/mock"
+	"github.com/hyperledger/aries-framework-go/spi/storage"
 	"github.com/stretchr/testify/require"
-	mockstorage "github.com/trustbloc/edge-core/pkg/storage/mockstore"
 )
 
 func TestNew(t *testing.T) {
 	t.Run("test success", func(t *testing.T) {
-		p, err := New("", nil, &mockstorage.Provider{}, nil, "")
+		p, err := New("", nil, mem.NewProvider(), nil, "")
 		require.NoError(t, err)
 		require.NotNil(t, p)
 	})
 
-	t.Run("test failed to create store", func(t *testing.T) {
-		p, err := New("", nil, &mockstorage.Provider{
-			ErrCreateStore: fmt.Errorf("failed to create store")}, nil, "")
-		require.Error(t, err)
-		require.Contains(t, err.Error(), "failed to create store")
-		require.Nil(t, p)
-	})
-
 	t.Run("test failed to open store", func(t *testing.T) {
 		p, err := New("", nil, &mockstorage.Provider{
-			ErrOpenStoreHandle: fmt.Errorf("failed to open store")}, nil, "")
+			ErrOpenStore: fmt.Errorf("failed to open store"),
+		}, nil, "")
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "failed to open store")
 		require.Nil(t, p)
@@ -42,8 +37,15 @@ func TestNew(t *testing.T) {
 
 func TestProvider_IssueCredential(t *testing.T) {
 	t.Run("test error governance vc already issued", func(t *testing.T) {
-		p, err := New("", nil, &mockstorage.Provider{Store: &mockstorage.MockStore{
-			Store: map[string][]byte{fmt.Sprintf(governanceVCKey, "p1"): []byte("value")}}}, nil, "")
+		memProvider := mem.NewProvider()
+
+		store, err := memProvider.OpenStore(storeName)
+		require.NoError(t, err)
+
+		err = store.Put(fmt.Sprintf(governanceVCKey, "p1"), []byte("value"))
+		require.NoError(t, err)
+
+		p, err := New("", nil, memProvider, nil, "")
 		require.NoError(t, err)
 
 		_, err = p.IssueCredential("did:example:123", "p1")
@@ -53,9 +55,9 @@ func TestProvider_IssueCredential(t *testing.T) {
 
 	t.Run("test failed to get governance vc from store", func(t *testing.T) {
 		p, err := New("", nil, &mockstorage.Provider{
-			Store: &mockstorage.MockStore{Store: map[string][]byte{
-				fmt.Sprintf(governanceVCKey, "p1"): []byte("value")},
-				ErrGet: fmt.Errorf("failed to get")}}, nil, "")
+			OpenStoreReturn: &mockstorage.Store{ErrGet: fmt.Errorf("failed to get")},
+		},
+			nil, "")
 		require.NoError(t, err)
 
 		_, err = p.IssueCredential("did:example:123", "p1")
@@ -64,8 +66,8 @@ func TestProvider_IssueCredential(t *testing.T) {
 	})
 
 	t.Run("test failed to send http request", func(t *testing.T) {
-		p, err := New("", nil, &mockstorage.Provider{
-			Store: &mockstorage.MockStore{}}, map[string]string{vcsGovernanceRequestTokenName: "token"}, "")
+		p, err := New("", nil, mem.NewProvider(),
+			map[string]string{vcsGovernanceRequestTokenName: "token"}, "")
 		require.NoError(t, err)
 
 		p.httpClient = &mockHTTPClient{respErr: fmt.Errorf("failed to send http request")}
@@ -76,12 +78,14 @@ func TestProvider_IssueCredential(t *testing.T) {
 	})
 
 	t.Run("test vcs return 500 status code", func(t *testing.T) {
-		p, err := New("", nil, &mockstorage.Provider{
-			Store: &mockstorage.MockStore{}}, map[string]string{vcsGovernanceRequestTokenName: "token"}, "")
+		p, err := New("", nil, mem.NewProvider(),
+			map[string]string{vcsGovernanceRequestTokenName: "token"}, "")
 		require.NoError(t, err)
 
-		p.httpClient = &mockHTTPClient{respValue: &http.Response{StatusCode: http.StatusInternalServerError,
-			Body: ioutil.NopCloser(bytes.NewReader([]byte("failed ot issue vc")))}}
+		p.httpClient = &mockHTTPClient{respValue: &http.Response{
+			StatusCode: http.StatusInternalServerError,
+			Body:       ioutil.NopCloser(bytes.NewReader([]byte("failed ot issue vc"))),
+		}}
 
 		_, err = p.IssueCredential("did:example:123", "p1")
 		require.Error(t, err)
@@ -90,12 +94,15 @@ func TestProvider_IssueCredential(t *testing.T) {
 
 	t.Run("test put vc in db", func(t *testing.T) {
 		p, err := New("", nil, &mockstorage.Provider{
-			Store: &mockstorage.MockStore{Store: map[string][]byte{}, ErrPut: fmt.Errorf("error put")}},
+			OpenStoreReturn: &mockstorage.Store{ErrGet: storage.ErrDataNotFound, ErrPut: fmt.Errorf("error put")},
+		},
 			map[string]string{vcsGovernanceRequestTokenName: "token"}, "")
 		require.NoError(t, err)
 
-		p.httpClient = &mockHTTPClient{respValue: &http.Response{StatusCode: http.StatusCreated,
-			Body: ioutil.NopCloser(bytes.NewReader([]byte("vc success")))}}
+		p.httpClient = &mockHTTPClient{respValue: &http.Response{
+			StatusCode: http.StatusCreated,
+			Body:       ioutil.NopCloser(bytes.NewReader([]byte("vc success"))),
+		}}
 
 		_, err = p.IssueCredential("did:example:123", "p1")
 		require.Error(t, err)
@@ -103,13 +110,14 @@ func TestProvider_IssueCredential(t *testing.T) {
 	})
 
 	t.Run("test success", func(t *testing.T) {
-		p, err := New("", nil, &mockstorage.Provider{
-			Store: &mockstorage.MockStore{Store: map[string][]byte{}}},
+		p, err := New("", nil, mem.NewProvider(),
 			map[string]string{vcsGovernanceRequestTokenName: "token"}, "")
 		require.NoError(t, err)
 
-		p.httpClient = &mockHTTPClient{respValue: &http.Response{StatusCode: http.StatusCreated,
-			Body: ioutil.NopCloser(bytes.NewReader([]byte("vc success")))}}
+		p.httpClient = &mockHTTPClient{respValue: &http.Response{
+			StatusCode: http.StatusCreated,
+			Body:       ioutil.NopCloser(bytes.NewReader([]byte("vc success"))),
+		}}
 
 		data, err := p.IssueCredential("did:example:123", "p1")
 		require.NoError(t, err)
