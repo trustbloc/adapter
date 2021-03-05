@@ -8,5 +8,5 @@ go 1.15
 
 require (
 	github.com/gorilla/mux v1.8.0
-	github.com/trustbloc/edge-core v0.1.6-0.20210212172534-81ab3a5abf5b
+	github.com/trustbloc/edge-core v0.1.6-0.20210305000733-14a89fe44ae8
 )

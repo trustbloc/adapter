@@ -680,6 +680,8 @@ func (s *Steps) respondWithAuthZ(wallet, tenant, issuer, routerURL string) error
 		return fmt.Errorf("failed to marshal chapi response : %w", err)
 	}
 
+	fmt.Println(string(vpBytes))
+
 	resp, err := tenantCtx.browser.Post( // nolint:bodyclose
 		AdapterURL+"/presentations/handleResponse", "application/json", bytes.NewReader(chapiResponseBytes))
 	if err != nil {
