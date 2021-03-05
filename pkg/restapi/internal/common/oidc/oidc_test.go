@@ -211,7 +211,7 @@ func TestClient_HandleOIDCCallback(t *testing.T) {
 	require.NoError(t, err)
 
 	t.Run("success", func(t *testing.T) {
-		_, err := o.HandleOIDCCallback(context.TODO(), "blahblah")
+		_, err := o.GetIDTokenClaims(context.TODO(), "blahblah")
 		require.NoError(t, err)
 	})
 
@@ -219,7 +219,7 @@ func TestClient_HandleOIDCCallback(t *testing.T) {
 		goodToken := mockServerData.Token
 		mockServerData.Token = nil
 
-		_, err := o.HandleOIDCCallback(context.TODO(), "blahblah")
+		_, err := o.GetIDTokenClaims(context.TODO(), "blahblah")
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "exchange oauth2 code for token")
 
@@ -230,7 +230,7 @@ func TestClient_HandleOIDCCallback(t *testing.T) {
 		goodToken := mockServerData.Token
 		mockServerData.Token = []byte(`{"access_token":"tokenTokenTokenToken","token_type":"bearer"}`)
 
-		_, err := o.HandleOIDCCallback(context.TODO(), "blahblah")
+		_, err := o.GetIDTokenClaims(context.TODO(), "blahblah")
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "missing id_token")
 
@@ -241,7 +241,7 @@ func TestClient_HandleOIDCCallback(t *testing.T) {
 		goodToken := mockServerData.Token
 		mockServerData.Token = []byte(`{"access_token":"tokenTokenTokenToken","token_type":"bearer","id_token":"abcd"}`)
 
-		_, err := o.HandleOIDCCallback(context.TODO(), "blahblah")
+		_, err := o.GetIDTokenClaims(context.TODO(), "blahblah")
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "verify id_token")
 

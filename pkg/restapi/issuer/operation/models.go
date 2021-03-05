@@ -79,6 +79,7 @@ type AuthorizationCredentialHandle struct {
 	RPConnectionID   string `json:"rpConnectionID,omitempty"`
 	Token            string `json:"token,omitempty"`
 	IssuerID         string `json:"issuerID,omitempty"`
+	OauthID          string `json:"oauthid,omitempty"`
 }
 
 // UserConnectionMapping stores mapping between the connectionID and issuer.
@@ -86,6 +87,7 @@ type UserConnectionMapping struct {
 	ConnectionID string `json:"connectionID,omitempty"`
 	IssuerID     string `json:"issuerID,omitempty"`
 	Token        string `json:"token,omitempty"`
+	OauthID      string `json:"oauthid,omitempty"`
 }
 
 // UserDataReq request to issuer for the user data.

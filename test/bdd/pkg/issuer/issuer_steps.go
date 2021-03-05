@@ -28,7 +28,7 @@ import (
 
 const (
 	// AdapterURL is issuer adapter endpoint.
-	AdapterURL = "https://localhost:9070"
+	AdapterURL = "https://issuer-adapter-rest.trustbloc.local:9070"
 )
 
 // Steps is steps for VC BDD tests.
@@ -36,6 +36,7 @@ type Steps struct {
 	bddContext *context.BDDContext
 	txnIDs     map[string]string
 	states     map[string]string
+	userIDs    map[string]string
 }
 
 // NewSteps returns new agent from client SDK.
@@ -44,6 +45,7 @@ func NewSteps(ctx *context.BDDContext) *Steps {
 		bddContext: ctx,
 		txnIDs:     make(map[string]string),
 		states:     make(map[string]string),
+		userIDs:    make(map[string]string),
 	}
 }
 
@@ -51,19 +53,32 @@ func NewSteps(ctx *context.BDDContext) *Steps {
 func (e *Steps) RegisterSteps(s *godog.Suite) {
 	s.Step(`^Issuer Profile with id "([^"]*)", name "([^"]*)", issuerURL "([^"]*)", supportedVCContexts "([^"]*)", requiresBlindedRoute "([^"]*)" and supportsAssuranceCred "([^"]*)"$`, // nolint: lll
 		e.createProfile)
+	s.Step(`^Issuer Profile with id "([^"]*)", name "([^"]*)", issuerURL "([^"]*)", supportedVCContexts "([^"]*)", requiresBlindedRoute "([^"]*)", supportsAssuranceCred "([^"]*)" and oidc provider "([^"]*)"$`, // nolint: lll
+		e.createProfileWithOIDC)
 	s.Step(`^Retrieved profile with id "([^"]*)" contains name "([^"]*)", issuerURL "([^"]*)", supportedVCContexts "([^"]*)", requiresBlindedRoute "([^"]*)" and supportsAssuranceCred "([^"]*)"$`, // nolint: lll
 		e.retrieveProfile)
+	s.Step(`^Retrieved profile with id "([^"]*)" contains name "([^"]*)", issuerURL "([^"]*)", supportedVCContexts "([^"]*)", requiresBlindedRoute "([^"]*)", supportsAssuranceCred "([^"]*)" and oidc provider "([^"]*)"$`, // nolint: lll
+		e.retrieveProfileWithOIDC)
 	s.Step(`^Issuer adapter shows the wallet connect UI when the issuer "([^"]*)" wants to connect to the wallet$`,
 		e.walletConnect)
+	s.Step(`^Issuer adapter gets oidc authorization for the issuer "([^"]*)"$`,
+		e.oidcLogin)
 	s.Step(`^Issuer adapter \("([^"]*)"\) creates DIDComm connection invitation for "([^"]*)"$`,
 		e.didcommConnectionInvitation)
 	s.Step(`^Issuer adapter \("([^"]*)"\) validates response from "([^"]*)" and redirects to "([^"]*)"$`,
 		e.validateConnectResp)
-	s.Step(`^Issuer has a profile with name "([^"]*)", issuerURL "([^"]*)" and supportedVCContexts "([^"]*)"$`, e.createAndValidateProfile) // nolint: lll
+	s.Step(`^Issuer has a profile with name "([^"]*)", issuerURL "([^"]*)" and supportedVCContexts "([^"]*)"$`, e.createAndValidateProfile)                                  // nolint: lll
+	s.Step(`^Issuer has a profile with name "([^"]*)", issuerURL "([^"]*)", oidc provider "([^"]*)" and supportedVCContexts "([^"]*)"$`, e.createAndValidateProfileWithOIDC) // nolint: lll
 }
 
 func (e *Steps) createProfile(id, name, issuerURL, supportedVCContexts,
 	requiresBlindedRouteStr, supportsAssuranceCredStr string) error {
+	return e.createProfileWithOIDC(id, name, issuerURL, supportedVCContexts,
+		requiresBlindedRouteStr, supportsAssuranceCredStr, "")
+}
+
+func (e *Steps) createProfileWithOIDC(id, name, issuerURL, supportedVCContexts,
+	requiresBlindedRouteStr, supportsAssuranceCredStr, oidcProvider string) error {
 	supportsAssuranceCred, err := strconv.ParseBool(supportsAssuranceCredStr)
 	if err != nil {
 		return err
@@ -81,7 +96,7 @@ func (e *Steps) createProfile(id, name, issuerURL, supportedVCContexts,
 		SupportedVCContexts:         strings.Split(supportedVCContexts, ","),
 		SupportsAssuranceCredential: supportsAssuranceCred,
 		RequiresBlindedRoute:        requiresBlindedRoute,
-		OIDCProviderURL:             "https://issuer-hydra.trustbloc.local:9044/",
+		OIDCProviderURL:             oidcProvider,
 	}
 
 	requestBytes, err := json.Marshal(profileReq)
@@ -110,9 +125,15 @@ func (e *Steps) createProfile(id, name, issuerURL, supportedVCContexts,
 	return nil
 }
 
-// nolint:funlen,gomnd,gocyclo
 func (e *Steps) retrieveProfile(id, name, issuerURL, supportedVCContexts,
 	requiresBlindedRouteStr, supportsAssuranceCredStr string) error {
+	return e.retrieveProfileWithOIDC(id, name, issuerURL, supportedVCContexts,
+		requiresBlindedRouteStr, supportsAssuranceCredStr, "")
+}
+
+// nolint:funlen,gomnd,gocyclo
+func (e *Steps) retrieveProfileWithOIDC(id, name, issuerURL, supportedVCContexts,
+	requiresBlindedRouteStr, supportsAssuranceCredStr, oidcProvider string) error {
 	resp, err := bddutil.HTTPDo(http.MethodGet, //nolint: bodyclose
 		fmt.Sprintf(AdapterURL+"/profile/%s", id), "", "", nil, e.bddContext.TLSConfig())
 	if err != nil {
@@ -144,6 +165,11 @@ func (e *Steps) retrieveProfile(id, name, issuerURL, supportedVCContexts,
 	if profileResponse.URL != issuerURL {
 		return fmt.Errorf("profile callback url doesn't match : expected=%s actual=%s",
 			issuerURL, profileResponse.URL)
+	}
+
+	if profileResponse.OIDCProviderURL != oidcProvider {
+		return fmt.Errorf("profile oidc provider url doesn't match : expected=%s actual=%s",
+			oidcProvider, profileResponse.OIDCProviderURL)
 	}
 
 	if len(profileResponse.SupportedVCContexts) != len(strings.Split(supportedVCContexts, ",")) {
@@ -212,6 +238,36 @@ func (e *Steps) walletConnect(issuerID string) error {
 	}
 
 	e.txnIDs[issuerID] = resp.Request.URL.Query().Get("txnID")
+	e.userIDs[issuerID] = resp.Request.URL.Query().Get("uID")
+
+	return nil
+}
+
+func (e *Steps) oidcLogin(issuerID string) error {
+	txnID := e.txnIDs[issuerID]
+	uID := e.userIDs[issuerID]
+
+	reqData := fmt.Sprintf(`?txnID=%s&uID=%s`, txnID, uID)
+
+	resp, err := bddutil.HTTPDo(http.MethodGet, //nolint: bodyclose
+		AdapterURL+"/oidc/request"+reqData, "", "", nil, e.bddContext.TLSConfig())
+	if err != nil {
+		return err
+	}
+
+	body, err := ioutil.ReadAll(resp.Body)
+	if err != nil {
+		return err
+	}
+
+	defer bddutil.CloseResponseBody(resp.Body)
+
+	// validating only status code as the vue page needs javascript support
+	if resp.StatusCode != http.StatusOK {
+		return bddutil.ExpectedStatusCodeError(http.StatusOK, resp.StatusCode, body)
+	}
+
+	println("body:", string(body))
 
 	return nil
 }
@@ -313,6 +369,22 @@ func (e *Steps) createAndValidateProfile(name, issuerURL, supportedVCContexts st
 	}
 
 	err = e.retrieveProfile(id, name, issuerURL, supportedVCContexts, "false", "false")
+	if err != nil {
+		return fmt.Errorf("failed to retrieve profile for id='%s', err:%w", id, err)
+	}
+
+	return nil
+}
+
+func (e *Steps) createAndValidateProfileWithOIDC(name, issuerURL, oidcProvider, supportedVCContexts string) error {
+	id := uuid.New().String()
+
+	err := e.createProfileWithOIDC(id, name, issuerURL, supportedVCContexts, "false", "false", oidcProvider)
+	if err != nil {
+		return fmt.Errorf("failed to create profile for id='%s', err:%w", id, err)
+	}
+
+	err = e.retrieveProfileWithOIDC(id, name, issuerURL, supportedVCContexts, "false", "false", oidcProvider)
 	if err != nil {
 		return fmt.Errorf("failed to retrieve profile for id='%s', err:%w", id, err)
 	}

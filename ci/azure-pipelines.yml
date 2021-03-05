@@ -51,6 +51,9 @@ jobs:
           echo '127.0.0.1 testnet.trustbloc.local' | sudo tee -a /etc/hosts
           echo '127.0.0.1 stakeholder-one.trustbloc.local' | sudo tee -a /etc/hosts
           echo '127.0.0.1 sidetree-mock.trustbloc.local' | sudo tee -a /etc/hosts
+          echo '127.0.0.1 issuer-adapter-rest.trustbloc.local' | sudo tee -a /etc/hosts
+          echo '127.0.0.1 issuer-hydra.trustbloc.local' | sudo tee -a /etc/hosts
+          echo '127.0.0.1 mock-issuer-login.trustbloc.local' | sudo tee -a /etc/hosts
           echo '//npm.pkg.github.com/:_authToken=${DOCKER_PASSWORD}' > ~/.npmrc
           echo '@hyperledger:registry=https://npm.pkg.github.com' >> ~/.npmrc
           echo '@trustbloc-cicd:registry=https://npm.pkg.github.com' >> ~/.npmrc

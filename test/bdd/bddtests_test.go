@@ -85,11 +85,13 @@ func runBDDTests(tags, format string) int { //nolint: gocognit
 			}
 		})
 		s.AfterSuite(func() {
+			err := dockerutil.GenerateSplitLogs("docker-compose.log")
+			if err != nil {
+				fmt.Println("failed to generate Docker logs to a file: ", err.Error())
+			}
+
 			for _, c := range composition {
 				if c != nil {
-					if err := c.GenerateLogs(c.Dir, "docker-compose.log"); err != nil {
-						fmt.Println("failed to generate Docker logs to a file: ", err.Error())
-					}
 					if _, err := c.Decompose(c.Dir); err != nil {
 						panic(err)
 					}

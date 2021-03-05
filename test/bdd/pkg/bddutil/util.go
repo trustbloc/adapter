@@ -14,6 +14,8 @@ import (
 	"io"
 	"io/ioutil"
 	"net/http"
+	"net/http/cookiejar"
+	urllib "net/url"
 	"reflect"
 	"strings"
 	"time"
@@ -25,12 +27,35 @@ import (
 
 var logger = log.New("hub-router/bddutil")
 
+func checkRedirect(req *http.Request, via []*http.Request) error {
+	logger.Infof("Redirect: method=%s url=%s", req.Method, req.URL.String())
+
+	CookieData(req.URL)
+
+	return nil
+}
+
+type suffixList struct{}
+
+func (sl *suffixList) PublicSuffix(string) string {
+	return ""
+}
+
+func (sl *suffixList) String() string {
+	return "nil suffixlist - allows all cookie sharing"
+}
+
+// nolint:gochecknoglobals
+var sharedJar *cookiejar.Jar
+
 // HTTPDo util to send http requests.
 func HTTPDo(method, url, contentType, token string, body io.Reader, tlsConfig *tls.Config) (*http.Response, error) {
 	req, err := http.NewRequest(method, url, body)
 	if err != nil {
 		return nil, err
 	}
+
+	CookieData(req.URL)
 
 	if contentType != "" {
 		req.Header.Add("Content-Type", contentType)
@@ -40,9 +65,37 @@ func HTTPDo(method, url, contentType, token string, body io.Reader, tlsConfig *t
 		req.Header.Add("Authorization", "Bearer "+token)
 	}
 
-	httpClient := &http.Client{Transport: &http.Transport{TLSClientConfig: tlsConfig}}
+	if sharedJar == nil {
+		sharedJar, err = cookiejar.New(&cookiejar.Options{PublicSuffixList: &suffixList{}})
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	httpClient := &http.Client{
+		Jar: sharedJar,
+		Transport: &http.Transport{
+			TLSClientConfig: tlsConfig,
+		},
+		CheckRedirect: checkRedirect,
+	}
 
 	return httpClient.Do(req)
+}
+
+// CookieData logs the cookies contained within the bdd shared cookie jar for the given url.
+func CookieData(url *urllib.URL) {
+	if sharedJar == nil {
+		return
+	}
+
+	cookies := sharedJar.Cookies(url)
+
+	logger.Infof("cookies for url: %s", url.String())
+
+	for _, cookie := range cookies {
+		logger.Infof("  %#v", cookie)
+	}
 }
 
 // ExpectedStatusCodeError formats the status code error message.
