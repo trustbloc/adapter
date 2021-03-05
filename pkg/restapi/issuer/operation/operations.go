@@ -353,17 +353,6 @@ func (o *Operation) createIssuerProfileHandler(rw http.ResponseWriter, req *http
 		return
 	}
 
-	if o.governanceProvider != nil {
-		_, err = o.governanceProvider.IssueCredential(newDidDoc.ID, data.ID)
-		if err != nil {
-			commhttp.WriteErrorResponseWithLog(rw, http.StatusInternalServerError,
-				fmt.Sprintf("failed to issue governance vc: %s", err.Error()),
-				profileEndpoint, logger)
-
-			return
-		}
-	}
-
 	profileData, err := mapProfileReqToData(data, newDidDoc)
 	if err != nil {
 		commhttp.WriteErrorResponseWithLog(rw, http.StatusInternalServerError,
@@ -371,6 +360,15 @@ func (o *Operation) createIssuerProfileHandler(rw http.ResponseWriter, req *http
 			profileEndpoint, logger)
 
 		return
+	}
+
+	if profileData.OIDCProviderURL != "" {
+		_, err = o.createOIDCClientFunc(profileData)
+		if err != nil {
+			commhttp.WriteErrorResponseWithLog(rw, http.StatusInternalServerError,
+				fmt.Sprintf("failed to create oidc client: %s", err.Error()), profileEndpoint, logger)
+			return
+		}
 	}
 
 	err = o.profileStore.SaveProfile(profileData)
@@ -381,11 +379,12 @@ func (o *Operation) createIssuerProfileHandler(rw http.ResponseWriter, req *http
 		return
 	}
 
-	if profileData.OIDCProviderURL != "" {
-		_, err = o.createOIDCClientFunc(profileData)
+	if o.governanceProvider != nil {
+		_, err = o.governanceProvider.IssueCredential(newDidDoc.ID, data.ID)
 		if err != nil {
 			commhttp.WriteErrorResponseWithLog(rw, http.StatusInternalServerError,
-				fmt.Sprintf("failed to create oidc client: %s", err.Error()), profileEndpoint, logger)
+				fmt.Sprintf("failed to issue governance vc: %s", err.Error()), profileEndpoint, logger)
+
 			return
 		}
 	}
