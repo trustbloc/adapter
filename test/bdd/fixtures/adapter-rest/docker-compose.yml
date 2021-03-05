@@ -96,7 +96,6 @@ services:
     networks:
       - bdd_net
 
-  # TODO: figure out how to make dynamic client registration endpoint be included in openid-configuration
   issuer-hydra.trustbloc.local:
     container_name: issuer-hydra.trustbloc.local
     image: oryd/hydra:v1.3.2-alpine
