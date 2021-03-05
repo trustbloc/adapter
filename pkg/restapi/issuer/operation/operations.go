@@ -9,19 +9,17 @@ package operation
 import (
 	"bytes"
 	"context"
-	"crypto"
-	"crypto/aes"
-	"crypto/cipher"
+	"crypto/rand"
 	"crypto/tls"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io/ioutil"
 	"net/http"
-	"strings"
-	"sync/atomic"
 	"time"
 
+	oidclib "github.com/coreos/go-oidc"
 	"github.com/google/uuid"
 	"github.com/gorilla/mux"
 	"github.com/hyperledger/aries-framework-go/pkg/client/didexchange"
@@ -43,6 +41,7 @@ import (
 	"github.com/hyperledger/aries-framework-go/pkg/store/connection"
 	"github.com/hyperledger/aries-framework-go/spi/storage"
 	"github.com/trustbloc/edge-core/pkg/log"
+	"golang.org/x/oauth2"
 
 	"github.com/trustbloc/edge-adapter/pkg/aries"
 	adaptercrypto "github.com/trustbloc/edge-adapter/pkg/crypto"
@@ -50,7 +49,6 @@ import (
 	"github.com/trustbloc/edge-adapter/pkg/profile/issuer"
 	"github.com/trustbloc/edge-adapter/pkg/restapi"
 	commhttp "github.com/trustbloc/edge-adapter/pkg/restapi/internal/common/http"
-	"github.com/trustbloc/edge-adapter/pkg/restapi/internal/common/oidc"
 	walletops "github.com/trustbloc/edge-adapter/pkg/restapi/wallet/operation"
 	"github.com/trustbloc/edge-adapter/pkg/route"
 	adaptervc "github.com/trustbloc/edge-adapter/pkg/vc"
@@ -70,7 +68,8 @@ const (
 	getCHAPIRequestEndpoint         = didCommBasePath + "/chapi/request"
 	validateConnectResponseEndpoint = "/connect/validate"
 
-	oidcCallbackEndpoint = "/cb"
+	oidcAuthRequestEndpoint = "/oidc/request"
+	oidcCallbackEndpoint    = "/oidc/cb"
 
 	// http params
 	idPathParam      = "id"
@@ -79,9 +78,10 @@ const (
 	redirectURLFmt   = "%s?state=%s"
 	userIDQueryParam = "uID"
 
-	txnStoreName        = "issuer_txn"
-	tokenStoreName      = "issuer_token"
-	oidcClientStoreName = "issuer_oidc_client"
+	txnStoreName          = "issuer_txn"
+	tokenStoreName        = "issuer_token"
+	oidcClientStoreName   = "issuer_oidc_client"
+	refreshTokenStoreName = "issuer_refresh_token"
 
 	// protocol
 	didExCompletedState = "completed"
@@ -193,6 +193,11 @@ func New(config *Config) (*Operation, error) { // nolint:funlen,gocyclo
 		return nil, err
 	}
 
+	refreshStore, err := getRefreshTokenStore(config.StoreProvider)
+	if err != nil {
+		return nil, err
+	}
+
 	connectionLookup, err := connection.NewLookup(config.AriesCtx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to initialize connection lookup : %w", err)
@@ -259,9 +264,12 @@ func New(config *Config) (*Operation, error) { // nolint:funlen,gocyclo
 		oidcClientStore:    oidcClientStore,
 		oidcClientStoreKey: config.OIDCClientStoreKey,
 		oidcCallbackURL:    config.ExternalURL + oidcCallbackEndpoint,
+		userTokens:         map[string]*oauth2.Token{},
+		refreshTokenStore:  refreshStore,
 	}
 
-	op.oidcClientFunc = op.createOIDCClient
+	op.createOIDCClientFunc = op.getOrCreateOIDCClient
+	op.getOIDCClientFunc = op.getOIDCClient
 
 	go op.didCommActionListener(actionCh)
 
@@ -275,42 +283,41 @@ type httpClient interface {
 }
 
 type oidcClient interface {
-	CreateOIDCRequest(string, string) string
-	HandleOIDCCallback(context.Context, string) ([]byte, error)
+	CreateOIDCRequest(state, scope string) string
+	HandleOIDCCallback(context.Context, string) (*oauth2.Token, *oidclib.IDToken, error)
+	CheckRefresh(tok *oauth2.Token) (*oauth2.Token, error)
 }
 
 // Operation defines handlers for rp operations.
 type Operation struct {
-	oobClient          *outofband.Client
-	didExClient        didExClient
-	issueCredClient    *issuecredential.Client
-	presentProofClient *presentproof.Client
-	uiEndpoint         string
-	profileStore       *issuer.Profile
-	txnStore           storage.Store
-	tokenStore         storage.Store
-	connectionLookup   connections
-	vdriRegistry       vdr.Registry
-	vccrypto           adaptervc.Crypto
-	serviceEndpoint    string
-	publicDIDCreator   PublicDIDCreator
-	httpClient         httpClient
-	governanceProvider GovernanceProvider
-	routeSvc           routeService
-	messenger          service.Messenger
-	walletBridge       *walletops.Operation
-	tlsConfig          *tls.Config
-	oidcCallbackURL    string
-	oidcClientFunc     func(profileData *issuer.ProfileData) (oidcClient, error)
-	cachedOIDCClients  map[string]oidcClient
-	oidcClientStore    storage.Store
-	oidcClientStoreKey []byte
+	oobClient            *outofband.Client
+	didExClient          didExClient
+	issueCredClient      *issuecredential.Client
+	presentProofClient   *presentproof.Client
+	uiEndpoint           string
+	profileStore         *issuer.Profile
+	txnStore             storage.Store
+	tokenStore           storage.Store
+	connectionLookup     connections
+	vdriRegistry         vdr.Registry
+	vccrypto             adaptervc.Crypto
+	serviceEndpoint      string
+	publicDIDCreator     PublicDIDCreator
+	httpClient           httpClient
+	governanceProvider   GovernanceProvider
+	routeSvc             routeService
+	messenger            service.Messenger
+	walletBridge         *walletops.Operation
+	tlsConfig            *tls.Config
+	oidcCallbackURL      string
+	cachedOIDCClients    map[string]oidcClient
+	userTokens           map[string]*oauth2.Token // keyed by the txn ID
+	oidcClientStore      storage.Store
+	oidcClientStoreKey   []byte
+	refreshTokenStore    storage.Store
+	createOIDCClientFunc func(profileData *issuer.ProfileData) (oidcClient, error)
+	getOIDCClientFunc    func(string) (oidcClient, error)
 }
-
-// TODO integrate OIDC client:
-//  - whenever we need an oidc client for an issuer flow, recreate it if it's not in the cache
-//    (eg, if issuer restarted)
-//  - put each flow behind oauth with oidc token
 
 // GetRESTHandlers get all controller API handler available for this service.
 func (o *Operation) GetRESTHandlers() []restapi.Handler {
@@ -323,6 +330,8 @@ func (o *Operation) GetRESTHandlers() []restapi.Handler {
 		support.NewHTTPHandler(walletConnectEndpoint, http.MethodGet, o.walletConnectHandler),
 		support.NewHTTPHandler(validateConnectResponseEndpoint, http.MethodPost, o.validateWalletResponseHandler),
 		support.NewHTTPHandler(getCHAPIRequestEndpoint, http.MethodGet, o.getCHAPIRequestHandler),
+		support.NewHTTPHandler(oidcAuthRequestEndpoint, http.MethodGet, o.requestOIDCAuthHandler),
+		support.NewHTTPHandler(oidcCallbackEndpoint, http.MethodGet, o.oidcAuthCallback),
 	}, o.walletBridge.GetRESTHandlers()...)
 }
 
@@ -372,11 +381,13 @@ func (o *Operation) createIssuerProfileHandler(rw http.ResponseWriter, req *http
 		return
 	}
 
-	_, err = o.oidcClientFunc(profileData)
-	if err != nil {
-		commhttp.WriteErrorResponseWithLog(rw, http.StatusInternalServerError,
-			fmt.Sprintf("failed to create oidc client: %s", err.Error()), profileEndpoint, logger)
-		return
+	if profileData.OIDCProviderURL != "" {
+		_, err = o.createOIDCClientFunc(profileData)
+		if err != nil {
+			commhttp.WriteErrorResponseWithLog(rw, http.StatusInternalServerError,
+				fmt.Sprintf("failed to create oidc client: %s", err.Error()), profileEndpoint, logger)
+			return
+		}
 	}
 
 	rw.WriteHeader(http.StatusCreated)
@@ -440,9 +451,226 @@ func (o *Operation) walletConnectHandler(rw http.ResponseWriter, req *http.Reque
 		return
 	}
 
-	rURL := fmt.Sprintf("%s?%s=%s&%s=%s", o.uiEndpoint, txnIDQueryParam, txnID, userIDQueryParam, tknResp.UserID)
+	rURL := fmt.Sprintf("%s?%s=%s&%s=%s", o.uiEndpoint, txnIDQueryParam,
+		txnID, userIDQueryParam, tknResp.UserID)
+
+	// if we're using oidc, redirect to oidc initiation instead
+	if profile.OIDCProviderURL != "" {
+		rURL = fmt.Sprintf("%s?%s=%s&%s=%s", oidcAuthRequestEndpoint,
+			txnIDQueryParam, txnID, userIDQueryParam, tknResp.UserID)
+	}
 
 	http.Redirect(rw, req, rURL, http.StatusFound)
+}
+
+// requestOIDCAuthHandler endpoint requests OIDC authorization from the current user
+// expects a GET containing txnID and uID query parameters.
+// responds with an http redirect to the requested oidc provider's authorization endpoint
+func (o *Operation) requestOIDCAuthHandler(rw http.ResponseWriter, req *http.Request) { // nolint:funlen
+	txnID := req.FormValue(txnIDQueryParam)
+	if txnID == "" {
+		commhttp.WriteErrorResponseWithLog(rw, http.StatusBadRequest,
+			"missing txn ID from request", profileEndpoint, logger)
+
+		return
+	}
+
+	userID := req.FormValue(userIDQueryParam)
+	if userID == "" {
+		commhttp.WriteErrorResponseWithLog(rw, http.StatusBadRequest,
+			"missing user ID from request", profileEndpoint, logger)
+
+		return
+	}
+
+	txn, err := o.getTxn(txnID)
+	if err != nil {
+		commhttp.WriteErrorResponseWithLog(rw, http.StatusBadRequest,
+			"invalid txn ID", profileEndpoint, logger)
+
+		return
+	}
+
+	profile, err := o.profileStore.GetProfile(txn.IssuerID)
+	if err != nil {
+		commhttp.WriteErrorResponseWithLog(rw, http.StatusBadRequest,
+			"invalid request, issuer ID was not registered with adapter", profileEndpoint, logger)
+
+		return
+	}
+
+	client, err := o.getOIDCClientFunc(profile.OIDCProviderURL)
+	if err != nil {
+		commhttp.WriteErrorResponseWithLog(rw, http.StatusInternalServerError,
+			"server error", profileEndpoint, logger)
+
+		return
+	}
+
+	// TODO: package and encrypt data cookies into a single ciphertext to create the state variable
+
+	stateBytes := make([]byte, 24)
+
+	_, err = rand.Read(stateBytes)
+	if err != nil {
+		commhttp.WriteErrorResponseWithLog(rw, http.StatusInternalServerError,
+			"server error", profileEndpoint, logger)
+
+		return
+	}
+
+	state := base64.RawURLEncoding.EncodeToString(stateBytes)
+
+	expire := time.Now().AddDate(0, 0, 1)
+	stateCookie := http.Cookie{
+		Name:    "oidcState",
+		Value:   state,
+		Expires: expire,
+	}
+	http.SetCookie(rw, &stateCookie)
+
+	opURLCookie := http.Cookie{
+		Name:    "oidcProvider",
+		Value:   profile.OIDCProviderURL,
+		Expires: expire,
+	}
+	http.SetCookie(rw, &opURLCookie)
+
+	issuerURLCookie := http.Cookie{
+		Name:    "issuerURL",
+		Value:   profile.URL,
+		Expires: expire,
+	}
+	http.SetCookie(rw, &issuerURLCookie)
+
+	txnIDCookie := http.Cookie{
+		Name:    "txnID",
+		Value:   txnID,
+		Expires: expire,
+	}
+	http.SetCookie(rw, &txnIDCookie)
+
+	userIDCookie := http.Cookie{
+		Name:    "userID",
+		Value:   userID,
+		Expires: expire,
+	}
+	http.SetCookie(rw, &userIDCookie)
+
+	authURL := client.CreateOIDCRequest(state, "openid offline_access")
+
+	http.Redirect(rw, req, authURL, http.StatusFound)
+}
+
+// OIDC callback from the OIDC provider through the auth code flow
+func (o *Operation) oidcAuthCallback(rw http.ResponseWriter, req *http.Request) { // nolint:funlen
+	logger.Infof("request host: %s", req.URL.Host)
+
+	stateCookie, err := req.Cookie("oidcState")
+	if err != nil {
+		commhttp.WriteErrorResponseWithLog(rw, http.StatusInternalServerError,
+			fmt.Sprintf("missing state cookie: %v", err), oidcCallbackEndpoint, logger)
+
+		return
+	}
+
+	cbState := req.FormValue("state")
+	if stateCookie.Value != cbState {
+		commhttp.WriteErrorResponseWithLog(rw, http.StatusUnauthorized,
+			"oauth state variable does not match", oidcCallbackEndpoint, logger)
+
+		return
+	}
+
+	txnCookie, err := req.Cookie("txnID")
+	if err != nil {
+		commhttp.WriteErrorResponseWithLog(rw, http.StatusInternalServerError,
+			fmt.Sprintf("missing txn id cookie: %v", err), oidcCallbackEndpoint, logger)
+
+		return
+	}
+
+	userCookie, err := req.Cookie("userID")
+	if err != nil {
+		commhttp.WriteErrorResponseWithLog(rw, http.StatusInternalServerError,
+			fmt.Sprintf("missing user id cookie: %v", err), oidcCallbackEndpoint, logger)
+
+		return
+	}
+
+	providerCookie, err := req.Cookie("oidcProvider")
+	if err != nil {
+		commhttp.WriteErrorResponseWithLog(rw, http.StatusInternalServerError,
+			fmt.Sprintf("missing oidc provider cookie: %v", err), oidcCallbackEndpoint, logger)
+
+		return
+	}
+
+	authCode := req.FormValue("code")
+
+	client, err := o.getOIDCClientFunc(providerCookie.Value)
+	if err != nil {
+		commhttp.WriteErrorResponseWithLog(rw, http.StatusInternalServerError,
+			fmt.Sprintf("failed to initialize oidc client: %v", err), oidcCallbackEndpoint, logger)
+
+		return
+	}
+
+	token, _, err := client.HandleOIDCCallback(req.Context(), authCode)
+	if err != nil {
+		commhttp.WriteErrorResponseWithLog(rw, http.StatusInternalServerError,
+			fmt.Sprintf("failed to handle oidc callback: %v", err), oidcCallbackEndpoint, logger)
+
+		return
+	}
+
+	err = o.refreshTokenStore.Put(txnCookie.Value, []byte(token.RefreshToken))
+	if err != nil {
+		commhttp.WriteErrorResponseWithLog(rw, http.StatusInternalServerError,
+			fmt.Sprintf("failed to save refresh token: %v", err), oidcCallbackEndpoint, logger)
+
+		return
+	}
+
+	o.userTokens[txnCookie.Value] = token
+
+	rURL := fmt.Sprintf("%s?%s=%s&%s=%s", o.uiEndpoint,
+		txnIDQueryParam, txnCookie.Value, userIDQueryParam, userCookie.Value)
+
+	http.Redirect(rw, req, rURL, http.StatusFound)
+}
+
+func (o *Operation) getOIDCAccessToken(txnID, oidcProviderURL string) (string, error) {
+	tok, ok := o.userTokens[txnID]
+	if !ok {
+		refresh, err := o.refreshTokenStore.Get(txnID)
+		if err != nil {
+			return "", err
+		}
+
+		tok = &oauth2.Token{RefreshToken: string(refresh)}
+	}
+
+	client, err := o.getOIDCClientFunc(oidcProviderURL)
+	if err != nil {
+		return "", err
+	}
+
+	tok2, err := client.CheckRefresh(tok)
+	if err != nil {
+		return "", err
+	}
+
+	o.userTokens[txnID] = tok2
+
+	if tok2.RefreshToken != tok.RefreshToken {
+		err = o.refreshTokenStore.Put(txnID, []byte(tok2.RefreshToken))
+		if err != nil {
+			return "", err
+		}
+	}
+
+	return tok2.AccessToken, nil
 }
 
 func (o *Operation) validateWalletResponseHandler(rw http.ResponseWriter, req *http.Request) { //nolint: funlen
@@ -504,6 +732,7 @@ func (o *Operation) validateWalletResponseHandler(rw http.ResponseWriter, req *h
 		ConnectionID: conn.ConnectionID,
 		IssuerID:     txnData.IssuerID,
 		Token:        txnData.Token,
+		OauthID:      txnID,
 	}
 
 	err = o.storeUserConnectionMapping(userConnMap)
@@ -522,7 +751,7 @@ func (o *Operation) validateWalletResponseHandler(rw http.ResponseWriter, req *h
 		&ValidateConnectResp{RedirectURL: redirectURL}, validateConnectResponseEndpoint, logger)
 }
 
-func (o *Operation) getCHAPIRequestHandler(rw http.ResponseWriter, req *http.Request) { // nolint:funlen
+func (o *Operation) getCHAPIRequestHandler(rw http.ResponseWriter, req *http.Request) { // nolint:funlen,gocyclo
 	// get the txnID
 	txnID := req.URL.Query().Get(txnIDQueryParam)
 
@@ -558,11 +787,21 @@ func (o *Operation) getCHAPIRequestHandler(rw http.ResponseWriter, req *http.Req
 		return
 	}
 
+	// optional oidc + oauth
+	oauthToken := ""
+
+	if profile.OIDCProviderURL != "" {
+		oauthToken, err = o.getOIDCAccessToken(txnID, profile.OIDCProviderURL)
+		if err != nil {
+			return
+		}
+	}
+
 	// prepare credentials to be sent and append manifest credential
 	credentials := append([]json.RawMessage{}, manifestVC)
 
 	if profile.SupportsAssuranceCredential {
-		vcBytes, err := o.createReferenceCredential(txnData.Token, profile)
+		vcBytes, err := o.createReferenceCredential(txnData.Token, oauthToken, profile)
 		if err != nil {
 			commhttp.WriteErrorResponseWithLog(rw, http.StatusInternalServerError,
 				fmt.Sprintf("error creating reference credential : %s", err.Error()), getCHAPIRequestEndpoint, logger)
@@ -593,8 +832,9 @@ func (o *Operation) getCHAPIRequestHandler(rw http.ResponseWriter, req *http.Req
 	}, getCHAPIRequestEndpoint, logger)
 }
 
-func (o *Operation) createReferenceCredential(token string, profile *issuer.ProfileData) ([]byte, error) {
-	vc, err := o.createCredential(getUserDataURL(profile.URL), token, profile.CredentialSigningKey, false, profile)
+func (o *Operation) createReferenceCredential(token, oauthToken string, profile *issuer.ProfileData) ([]byte, error) {
+	vc, err := o.createCredential(getUserDataURL(profile.URL), token, oauthToken,
+		profile.CredentialSigningKey, false, profile)
 	if err != nil {
 		return nil, fmt.Errorf("create credential : %w", err)
 	}
@@ -620,325 +860,6 @@ func (o *Operation) createReferenceCredential(token string, profile *issuer.Prof
 	}
 
 	return vcBytes, nil
-}
-
-// createOIDCClient creates an oidc client for a particular issuer.
-// can recreate the client as needed - client data is persisted,
-// and client is only registered if the persistent client data is not present.
-func (o *Operation) createOIDCClient(profileData *issuer.ProfileData) (oidcClient, error) {
-	if client, present := o.cachedOIDCClients[profileData.ID]; present {
-		return client, nil
-	}
-
-	// TODO:
-	//  - when using oidcClient, need to check if secret is expired
-
-	clientData, err := o.getClientData(profileData)
-	if err != nil {
-		return nil, err
-	}
-
-	client, err := oidc.New(&oidc.Config{
-		TLSConfig:              o.tlsConfig,
-		OIDCProviderURL:        profileData.OIDCProviderURL,
-		OIDCClientID:           clientData.ID,
-		OIDCClientSecret:       clientData.Secret,
-		OIDCClientSecretExpiry: clientData.Expiry,
-		OIDCCallbackURL:        o.oidcCallbackURL,
-	})
-	if err != nil {
-		return nil, fmt.Errorf("creating oidc client: %w", err)
-	}
-
-	o.cachedOIDCClients[profileData.ID] = client
-
-	return client, nil
-}
-
-func (o *Operation) getClientData(profileData *issuer.ProfileData) (*oidcClientData, error) {
-	if profileData.OIDCClientParams != nil {
-		return &oidcClientData{
-			ID:     profileData.OIDCClientParams.ClientID,
-			Secret: profileData.OIDCClientParams.ClientSecret,
-			Expiry: profileData.OIDCClientParams.SecretExpiry,
-		}, nil
-	}
-
-	clientData, err := o.loadOIDCClientData(profileData.OIDCProviderURL)
-	if err == nil {
-		return clientData, nil
-	}
-
-	if !errors.Is(err, storage.ErrDataNotFound) {
-		return nil, fmt.Errorf("error getting client data: %w", err)
-	}
-
-	providerConfig, e := o.getOpenIDConfiguration(profileData.OIDCProviderURL)
-	if e != nil {
-		return nil, fmt.Errorf("error getting provider openid configuration: %w", e)
-	}
-
-	clientData, e = o.registerOAuthClient(providerConfig.Register)
-	if e != nil {
-		return nil, fmt.Errorf("error registering oidc client: %w", e)
-	}
-
-	e = o.saveOIDCClientData(profileData.OIDCProviderURL, clientData)
-	if e != nil {
-		return nil, fmt.Errorf("error saving oidc client data: %w", e)
-	}
-
-	return clientData, nil
-}
-
-type openidConfig struct {
-	Issuer   string   `json:"issuer,omitempty"`
-	Auth     string   `json:"authorization_endpoint"`
-	Token    string   `json:"token_endpoint"`
-	JWKs     string   `json:"jwks_uri"`
-	UserInfo string   `json:"userinfo_endpoint"`
-	Register string   `json:"registration_endpoint"`
-	Algs     []string `json:"id_token_signing_alg_values_supported"`
-}
-
-func (o *Operation) getOpenIDConfiguration(providerURL string) (*openidConfig, error) {
-	wellKnown := strings.TrimSuffix(providerURL, "/") + "/.well-known/openid-configuration"
-
-	respData, err := o.httpRequestHelper(http.MethodGet, wellKnown, http.StatusOK, nil)
-	if err != nil {
-		return nil, fmt.Errorf("error response for openid configuration request: %w", err)
-	}
-
-	response := openidConfig{}
-
-	err = json.Unmarshal(respData, &response)
-	if err != nil {
-		return nil, fmt.Errorf("error unmarshaling openID config: %w", err)
-	}
-
-	return &response, nil
-}
-
-type oidcClientRegisterRequest struct {
-	RedirectURIs            []string `json:"redirect_uris"`
-	TokenEndpointAuthMethod string   `json:"token_endpoint_auth_method"`
-	Scope                   string   `json:"scope,omitempty"`
-	GrantTypes              []string `json:"grant_types,omitempty"`
-	ResponseTypes           []string `json:"response_types,omitempty"`
-}
-
-type oidcClientRegisterResponse struct {
-	ID           string `json:"client_id"`
-	Secret       string `json:"client_secret"`
-	SecretExpiry int    `json:"client_secret_expires_at"`
-}
-
-// registerOAuthClient registers the issuer adapter as an OAuth2.0 client
-// for the Oauth2.0 provider whose register endpoint is registerURL.
-// Implements https://tools.ietf.org/html/rfc7591 (partially)
-func (o *Operation) registerOAuthClient(registerURL string) (*oidcClientData, error) {
-	reqData := oidcClientRegisterRequest{
-		RedirectURIs:            []string{o.oidcCallbackURL},
-		TokenEndpointAuthMethod: "client_secret_basic",  // TODO spec unclear, is basic auth still the standard mode?
-		Scope:                   "openid,profile,email", // TODO custom scopes need to be configurable
-		GrantTypes:              []string{"authorization_code", "refresh_token"},
-		ResponseTypes:           []string{"code", "id_token"},
-	}
-
-	reqBytes, err := json.Marshal(reqData)
-	if err != nil {
-		return nil, err
-	}
-
-	respData, err := o.httpRequestHelper(http.MethodPost, registerURL, http.StatusCreated, reqBytes)
-	if err != nil {
-		return nil, fmt.Errorf("error response for register request: %w", err)
-	}
-
-	var response oidcClientRegisterResponse
-
-	err = json.Unmarshal(respData, &response)
-	if err != nil {
-		return nil, err
-	}
-
-	return &oidcClientData{
-		ID:     response.ID,
-		Secret: response.Secret,
-		Expiry: response.SecretExpiry,
-	}, nil
-}
-
-func (o *Operation) httpRequestHelper(method, url string, statusCode int, reqBody []byte) ([]byte, error) {
-	req, err := http.NewRequest(method, url, bytes.NewReader(reqBody))
-	if err != nil {
-		return nil, err
-	}
-
-	resp, err := o.httpClient.Do(req)
-	if err != nil {
-		return nil, err
-	}
-
-	defer resp.Body.Close() // nolint:errcheck
-
-	respData, err := ioutil.ReadAll(resp.Body)
-	if err != nil {
-		return nil, err
-	}
-
-	if resp.StatusCode != statusCode {
-		return nil, fmt.Errorf("expected %d, got %d, %s", statusCode, resp.StatusCode, string(respData))
-	}
-
-	return respData, nil
-}
-
-type oidcClientDataWrapper struct {
-	Nonce   []byte `json:"nonce"`
-	Payload []byte `json:"pld"`
-}
-
-type oidcClientData struct {
-	ID     string `json:"id"`
-	Secret string `json:"secret"`
-	Expiry int    `json:"exp"`
-}
-
-func (o *Operation) saveOIDCClientData(providerURL string, data *oidcClientData) error {
-	wrappedBytes, err := encryptClientData(providerURL, o.oidcClientStoreKey, data)
-	if err != nil {
-		return fmt.Errorf("error encrypting client data: %w", err)
-	}
-
-	err = o.oidcClientStore.Put(providerURL, wrappedBytes)
-	if err != nil {
-		return fmt.Errorf("error storing client data: %w", err)
-	}
-
-	return nil
-}
-
-func (o *Operation) loadOIDCClientData(providerURL string) (*oidcClientData, error) {
-	readBytes, err := o.oidcClientStore.Get(providerURL)
-	if err != nil {
-		if errors.Is(err, storage.ErrDataNotFound) {
-			return nil, err
-		}
-
-		return nil, fmt.Errorf("error loading client data: %w", err)
-	}
-
-	data, err := decryptClientData(o.oidcClientStoreKey, readBytes)
-	if err != nil {
-		return nil, fmt.Errorf("error decrypting client data: %w", err)
-	}
-
-	return data, nil
-}
-
-func encryptClientData(providerURL string, key []byte, data *oidcClientData) ([]byte, error) {
-	dataBytes, err := json.Marshal(data)
-	if err != nil {
-		return nil, fmt.Errorf("error marshaling data: %w", err)
-	}
-
-	nonce, err := makeNonce([]byte(providerURL))
-	if err != nil {
-		return nil, fmt.Errorf("error generating nonce: %w", err)
-	}
-
-	block, err := aes.NewCipher(key)
-	if err != nil {
-		return nil, fmt.Errorf("error creating AES cipher: %w", err)
-	}
-
-	gcm, err := cipher.NewGCM(block)
-	if err != nil {
-		return nil, fmt.Errorf("error creating GCM cipher: %w", err)
-	}
-
-	cipherText := gcm.Seal(nil, nonce, dataBytes, nil)
-
-	dataWrapper := oidcClientDataWrapper{
-		Nonce:   nonce,
-		Payload: cipherText,
-	}
-
-	wrappedBytes, err := json.Marshal(dataWrapper)
-	if err != nil {
-		return nil, fmt.Errorf("error marshaling wrapper: %w", err)
-	}
-
-	return wrappedBytes, nil
-}
-
-func decryptClientData(key, readBytes []byte) (*oidcClientData, error) {
-	wrapper := oidcClientDataWrapper{}
-
-	err := json.Unmarshal(readBytes, &wrapper)
-	if err != nil {
-		return nil, fmt.Errorf("error unmarshaling wrapper containing data %v: %w", string(readBytes), err)
-	}
-
-	block, err := aes.NewCipher(key)
-	if err != nil {
-		return nil, fmt.Errorf("error creating AES cipher: %w", err)
-	}
-
-	gcm, err := cipher.NewGCM(block)
-	if err != nil {
-		return nil, fmt.Errorf("error creating GCM cipher: %w", err)
-	}
-
-	plainText, err := gcm.Open(nil, wrapper.Nonce, wrapper.Payload, nil)
-	if err != nil {
-		return nil, fmt.Errorf("error decrypting client data: %w", err)
-	}
-
-	var data oidcClientData
-
-	err = json.Unmarshal(plainText, &data)
-	if err != nil {
-		return nil, fmt.Errorf("error unmarshaling client data: %w", err)
-	}
-
-	return &data, nil
-}
-
-// nolint:gochecknoglobals
-var nonceCounter uint32 = 0
-
-// generate a 12-byte AES GCM nonce by from a counter, timestamp, and additional mixin data
-func makeNonce(data []byte) ([]byte, error) {
-	sha := crypto.SHA256.New()
-
-	timestamp, err := time.Now().MarshalBinary()
-	if err != nil {
-		return nil, err
-	}
-
-	_, err = sha.Write(timestamp)
-	if err != nil {
-		return nil, err
-	}
-
-	_, err = sha.Write(data)
-	if err != nil {
-		return nil, err
-	}
-
-	counter := atomic.AddUint32(&nonceCounter, 1)
-
-	// nolint:gomnd
-	sum := sha.Sum([]byte{
-		byte(counter),
-		byte(counter >> 8),
-		byte(counter >> 16),
-		byte(counter >> 24),
-	})
-
-	return sum[:12], nil
 }
 
 func (o *Operation) validateAndGetConnection(connectData *issuervc.DIDConnectCredentialSubject) (*connection.Record, error) { // nolint: lll
@@ -1140,6 +1061,7 @@ func (o *Operation) handleRequestCredential(msg service.DIDCommAction) (interfac
 		UserConnectionID: connID,
 		Token:            userConnMap.Token,
 		IssuerID:         userConnMap.IssuerID,
+		OauthID:          userConnMap.OauthID,
 	}
 
 	err = o.storeAuthorizationCredHandle(handle)
@@ -1207,7 +1129,7 @@ func (o *Operation) handleRequestPresentation(msg service.DIDCommAction) (interf
 	}), nil
 }
 
-func (o *Operation) createRemoteCredential(token, signingKey string, profile *issuer.ProfileData) (*verifiable.Credential, error) { // nolint:lll
+func (o *Operation) createRemoteCredential(token, oauthToken, signingKey string, profile *issuer.ProfileData) (*verifiable.Credential, error) { // nolint:lll
 	assuranceCred := false
 	url := getUserDataURL(profile.URL)
 
@@ -1216,7 +1138,7 @@ func (o *Operation) createRemoteCredential(token, signingKey string, profile *is
 		url = getAssuranceDataURL(profile.URL)
 	}
 
-	vc, err := o.createCredential(url, token, signingKey, assuranceCred, profile)
+	vc, err := o.createCredential(url, token, oauthToken, signingKey, assuranceCred, profile)
 	if err != nil {
 		return nil, fmt.Errorf("sign vc : %w", err)
 	}
@@ -1224,7 +1146,7 @@ func (o *Operation) createRemoteCredential(token, signingKey string, profile *is
 	return vc, nil
 }
 
-func (o *Operation) createCredential(url, token, signingKey string, assuranceCred bool, profile *issuer.ProfileData) (*verifiable.Credential, error) { // nolint:lll,funlen,gocyclo
+func (o *Operation) createCredential(url, token, oauthToken, signingKey string, assuranceCred bool, profile *issuer.ProfileData) (*verifiable.Credential, error) { // nolint:lll,funlen,gocyclo
 	dataReq := &UserDataReq{Token: token}
 
 	reqBytes, err := json.Marshal(dataReq)
@@ -1237,7 +1159,7 @@ func (o *Operation) createCredential(url, token, signingKey string, assuranceCre
 		return nil, err
 	}
 
-	dataBytes, err := sendHTTPRequest(req, o.httpClient, http.StatusOK, "")
+	dataBytes, err := sendHTTPRequest(req, o.httpClient, http.StatusOK, oauthToken)
 	if err != nil {
 		return nil, err
 	}
@@ -1308,7 +1230,15 @@ func (o *Operation) generateUserPresentation(handle *AuthorizationCredentialHand
 			issuerDIDDoc.ID, err)
 	}
 
-	vc, err := o.createRemoteCredential(handle.Token, verificationMethod, profile)
+	oauthToken := ""
+	if profile.OIDCProviderURL != "" {
+		oauthToken, err = o.getOIDCAccessToken(handle.OauthID, profile.OIDCProviderURL)
+		if err != nil {
+			return nil, fmt.Errorf("getting access token for oidc issuer: %w", err)
+		}
+	}
+
+	vc, err := o.createRemoteCredential(handle.Token, oauthToken, verificationMethod, profile)
 	if err != nil {
 		return nil, fmt.Errorf("create remote data credential : %w", err)
 	}
@@ -1490,6 +1420,10 @@ func getTokenStore(prov storage.Provider) (storage.Store, error) {
 
 func getOIDCClientStore(prov storage.Provider) (storage.Store, error) {
 	return prov.OpenStore(oidcClientStoreName)
+}
+
+func getRefreshTokenStore(prov storage.Provider) (storage.Store, error) {
+	return prov.OpenStore(refreshTokenStoreName)
 }
 
 func fetchAuthorizationCreReq(msg service.DIDCommAction) (*AuthorizationCredentialReq, error) { // nolint: gocyclo

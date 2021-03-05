@@ -65,7 +65,7 @@ func TestNew(t *testing.T) {
 		c, err := New(config())
 		require.NoError(t, err)
 
-		require.Equal(t, 10, len(c.GetRESTHandlers()))
+		require.Equal(t, 12, len(c.GetRESTHandlers()))
 	})
 
 	t.Run("test new - aries provider fail", func(t *testing.T) {
@@ -425,14 +425,6 @@ func Test_OIDCClientStore(t *testing.T) {
 			ErrGet: fmt.Errorf("test err"),
 		}
 
-		data := oidcClientData{
-			ID:     "abcd",
-			Secret: "this is a secret value",
-			Expiry: 1000,
-		}
-
-		require.NoError(t, op.saveOIDCClientData("provider.url", &data))
-
 		_, err = op.loadOIDCClientData("provider.url")
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "error loading client data")
@@ -473,10 +465,10 @@ func Test_CreateOIDCClient(t *testing.T) {
 		}
 
 		// call twice with the same issuer
-		_, err = op.createOIDCClient(&pd)
+		_, err = op.getOrCreateOIDCClient(&pd)
 		require.NoError(t, err)
 
-		_, err = op.createOIDCClient(&pd)
+		_, err = op.getOrCreateOIDCClient(&pd)
 		require.NoError(t, err)
 
 		//	new ID but same oidc provider
@@ -486,7 +478,7 @@ func Test_CreateOIDCClient(t *testing.T) {
 			OIDCProviderURL: mockOIDCServer.URL,
 		}
 
-		_, err = op.createOIDCClient(&pd)
+		_, err = op.getOrCreateOIDCClient(&pd)
 		require.NoError(t, err)
 	})
 
@@ -511,7 +503,7 @@ func Test_CreateOIDCClient(t *testing.T) {
 			},
 		}
 
-		_, err = op.createOIDCClient(&pd)
+		_, err = op.getOrCreateOIDCClient(&pd)
 		require.NoError(t, err)
 	})
 
@@ -535,7 +527,7 @@ func Test_CreateOIDCClient(t *testing.T) {
 			OIDCProviderURL: mockOIDCServer.URL,
 		}
 
-		_, err = op.createOIDCClient(&pd)
+		_, err = op.getOrCreateOIDCClient(&pd)
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "error getting client data")
 	})
@@ -558,7 +550,7 @@ func Test_CreateOIDCClient(t *testing.T) {
 			OIDCProviderURL: badServer.URL,
 		}
 
-		_, err = op.createOIDCClient(&pd)
+		_, err = op.getOrCreateOIDCClient(&pd)
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "error getting provider openid configuration")
 	})
@@ -581,7 +573,7 @@ func Test_CreateOIDCClient(t *testing.T) {
 			OIDCProviderURL: badServer.URL,
 		}
 
-		_, err = op.createOIDCClient(&pd)
+		_, err = op.getOrCreateOIDCClient(&pd)
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "error getting provider openid configuration")
 	})
@@ -602,7 +594,7 @@ func Test_CreateOIDCClient(t *testing.T) {
 			OIDCProviderURL: mockOIDCServer.URL,
 		}
 
-		_, err = op.createOIDCClient(&pd)
+		_, err = op.getOrCreateOIDCClient(&pd)
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "error registering oidc client")
 	})
@@ -630,7 +622,7 @@ func Test_CreateOIDCClient(t *testing.T) {
 			OIDCProviderURL: mockOIDCServer.URL,
 		}
 
-		_, err = op.createOIDCClient(&pd)
+		_, err = op.getOrCreateOIDCClient(&pd)
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "error saving oidc client data")
 	})
@@ -659,7 +651,7 @@ func Test_CreateOIDCClient(t *testing.T) {
 			},
 		}
 
-		_, err = op.createOIDCClient(&pd)
+		_, err = op.getOrCreateOIDCClient(&pd)
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "creating oidc client")
 	})
@@ -706,7 +698,11 @@ func TestCreateProfile(t *testing.T) {
 
 	mockOIDC := mockOIDCClient{}
 
-	op.oidcClientFunc = func(profileData *issuer.ProfileData) (oidcClient, error) {
+	op.createOIDCClientFunc = func(*issuer.ProfileData) (oidcClient, error) {
+		return &mockOIDC, nil
+	}
+
+	op.getOIDCClientFunc = func(string) (oidcClient, error) {
 		return &mockOIDC, nil
 	}
 
@@ -769,20 +765,24 @@ func TestCreateProfile(t *testing.T) {
 	})
 
 	t.Run("create profile - failed to issue governance vc", func(t *testing.T) {
-		op, err := New(config())
+		op2, err := New(config())
 		require.NoError(t, err)
 
-		op.oidcClientFunc = func(profileData *issuer.ProfileData) (oidcClient, error) {
+		op2.createOIDCClientFunc = func(*issuer.ProfileData) (oidcClient, error) {
 			return &mockOIDC, nil
 		}
 
-		op.governanceProvider = &mockgovernance.MockProvider{
+		op2.getOIDCClientFunc = func(string) (oidcClient, error) {
+			return &mockOIDC, nil
+		}
+
+		op2.governanceProvider = &mockgovernance.MockProvider{
 			IssueCredentialFunc: func(didID, profileID string) ([]byte, error) {
 				return nil, fmt.Errorf("failed to issue governance vc")
 			},
 		}
 
-		h := getHandler(t, op, endpoint)
+		h := getHandler(t, op2, endpoint)
 
 		vReq := createProfileData(uuid.New().String())
 
@@ -806,7 +806,11 @@ func TestCreateProfile(t *testing.T) {
 		ops, err := New(config())
 		require.NoError(t, err)
 
-		ops.oidcClientFunc = func(profileData *issuer.ProfileData) (oidcClient, error) {
+		ops.createOIDCClientFunc = func(*issuer.ProfileData) (oidcClient, error) {
+			return &mockOIDC, nil
+		}
+
+		op.getOIDCClientFunc = func(string) (oidcClient, error) {
 			return &mockOIDC, nil
 		}
 
@@ -862,6 +866,8 @@ func TestCreateProfile(t *testing.T) {
 
 		vReq := createProfileData(uuid.New().String())
 
+		vReq.OIDCProviderURL = "abcd"
+
 		vReqBytes, err := json.Marshal(vReq)
 		require.NoError(t, err)
 
@@ -885,7 +891,11 @@ func TestGetProfile(t *testing.T) {
 
 	mockOIDC := mockOIDCClient{}
 
-	op.oidcClientFunc = func(profileData *issuer.ProfileData) (oidcClient, error) {
+	op.createOIDCClientFunc = func(*issuer.ProfileData) (oidcClient, error) {
+		return &mockOIDC, nil
+	}
+
+	op.getOIDCClientFunc = func(string) (oidcClient, error) {
 		return &mockOIDC, nil
 	}
 
@@ -942,7 +952,11 @@ func TestConnectWallet(t *testing.T) {
 		c, err := New(config())
 		require.NoError(t, err)
 
-		c.oidcClientFunc = func(profileData *issuer.ProfileData) (oidcClient, error) {
+		c.createOIDCClientFunc = func(*issuer.ProfileData) (oidcClient, error) {
+			return &mockOIDC, nil
+		}
+
+		c.getOIDCClientFunc = func(string) (oidcClient, error) {
 			return &mockOIDC, nil
 		}
 
@@ -971,7 +985,11 @@ func TestConnectWallet(t *testing.T) {
 		c, err := New(config())
 		require.NoError(t, err)
 
-		c.oidcClientFunc = func(profileData *issuer.ProfileData) (oidcClient, error) {
+		c.createOIDCClientFunc = func(*issuer.ProfileData) (oidcClient, error) {
+			return &mockOIDC, nil
+		}
+
+		c.getOIDCClientFunc = func(string) (oidcClient, error) {
 			return &mockOIDC, nil
 		}
 
@@ -995,7 +1013,11 @@ func TestConnectWallet(t *testing.T) {
 		c, err := New(config())
 		require.NoError(t, err)
 
-		c.oidcClientFunc = func(profileData *issuer.ProfileData) (oidcClient, error) {
+		c.createOIDCClientFunc = func(*issuer.ProfileData) (oidcClient, error) {
+			return &mockOIDC, nil
+		}
+
+		c.getOIDCClientFunc = func(string) (oidcClient, error) {
 			return &mockOIDC, nil
 		}
 
@@ -1040,7 +1062,11 @@ func TestConnectWallet(t *testing.T) {
 		c, err := New(config)
 		require.NoError(t, err)
 
-		c.oidcClientFunc = func(profileData *issuer.ProfileData) (oidcClient, error) {
+		c.createOIDCClientFunc = func(profileData *issuer.ProfileData) (oidcClient, error) {
+			return &mockOIDC, nil
+		}
+
+		c.getOIDCClientFunc = func(string) (oidcClient, error) {
 			return &mockOIDC, nil
 		}
 
@@ -1068,7 +1094,11 @@ func TestConnectWallet(t *testing.T) {
 		c, err := New(config())
 		require.NoError(t, err)
 
-		c.oidcClientFunc = func(profileData *issuer.ProfileData) (oidcClient, error) {
+		c.createOIDCClientFunc = func(profileData *issuer.ProfileData) (oidcClient, error) {
+			return &mockOIDC, nil
+		}
+
+		c.getOIDCClientFunc = func(string) (oidcClient, error) {
 			return &mockOIDC, nil
 		}
 
@@ -1100,7 +1130,7 @@ func TestConnectWallet(t *testing.T) {
 		c, err := New(config())
 		require.NoError(t, err)
 
-		c.oidcClientFunc = func(profileData *issuer.ProfileData) (oidcClient, error) {
+		c.createOIDCClientFunc = func(profileData *issuer.ProfileData) (oidcClient, error) {
 			return &mockOIDC, nil
 		}
 

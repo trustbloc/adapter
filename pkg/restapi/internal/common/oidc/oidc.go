@@ -19,21 +19,19 @@ import (
 	"golang.org/x/oauth2"
 )
 
-const (
-	oauth2CallbackPath = "/oauth2/callback"
-)
-
 var logger = log.New("oidc")
 
 // Client for oidc
 type Client struct {
-	oidcProvider     *oidc.Provider
-	oidcClientID     string
-	oidcClientSecret string
-	secretExpiry     int // TODO use
-	oidcCallbackURL  string
-	oauth2ConfigFunc func(...string) *oauth2.Config
-	tlsConfig        *tls.Config
+	oidcProvider       *oidc.Provider
+	oidcClientID       string
+	oidcClientSecret   string
+	secretExpiry       int // TODO use
+	oidcCallbackURL    string
+	oauth2ConfigFunc   func(...string) *oauth2.Config
+	tlsConfig          *tls.Config
+	tokenSource        oauth2.TokenSource
+	defaultOAuthConfig *oauth2.Config
 }
 
 // Config defines configuration for oidc client
@@ -44,7 +42,11 @@ type Config struct {
 	OIDCClientSecret       string
 	OIDCClientSecretExpiry int
 	OIDCCallbackURL        string
+	RefreshToken           string
 }
+
+// TODO: add an oauth2.TokenSource (which is given the refresh token) to the Client,
+//  for getting the access token with automatic refreshing
 
 // New returns client instance
 func New(config *Config) (*Client, error) {
@@ -76,8 +78,7 @@ func New(config *Config) (*Client, error) {
 			ClientID:     svc.oidcClientID,
 			ClientSecret: svc.oidcClientSecret,
 			Endpoint:     svc.oidcProvider.Endpoint(),
-			RedirectURL:  fmt.Sprintf("%s%s", svc.oidcCallbackURL, oauth2CallbackPath),
-			Scopes:       []string{oidc.ScopeOpenID},
+			RedirectURL:  svc.oidcCallbackURL,
 		}
 
 		if len(scopes) > 0 {
@@ -87,20 +88,28 @@ func New(config *Config) (*Client, error) {
 		return config
 	}
 
+	svc.defaultOAuthConfig = svc.oauth2ConfigFunc()
+
+	if config.RefreshToken != "" {
+		// without an access token, this will refresh the first time the token source is used
+		tok := oauth2.Token{RefreshToken: config.RefreshToken}
+		svc.tokenSource = svc.defaultOAuthConfig.TokenSource(context.Background(), &tok)
+	}
+
 	return svc, nil
 }
 
 // CreateOIDCRequest create oidc request
 func (c *Client) CreateOIDCRequest(state, scope string) string {
-	redirectURL := c.oauth2ConfigFunc(strings.Split(scope, " ")...).AuthCodeURL(state, oauth2.AccessTypeOnline)
+	redirectURL := c.oauth2ConfigFunc(strings.Split(scope, " ")...).AuthCodeURL(state, oauth2.AccessTypeOffline)
 
 	logger.Debugf("redirectURL: %s", redirectURL)
 
 	return redirectURL
 }
 
-// HandleOIDCCallback handle oidc callback
-func (c *Client) HandleOIDCCallback(reqContext context.Context, code string) ([]byte, error) {
+// GetIDTokenClaims handle oidc callback and get claims from ID token
+func (c *Client) GetIDTokenClaims(reqContext context.Context, code string) ([]byte, error) {
 	oauthToken, err := c.oauth2ConfigFunc().Exchange(
 		context.WithValue(
 			reqContext,
@@ -114,7 +123,7 @@ func (c *Client) HandleOIDCCallback(reqContext context.Context, code string) ([]
 
 	rawIDToken, ok := oauthToken.Extra("id_token").(string)
 	if !ok {
-		return nil, fmt.Errorf("missing id_token : %s", err)
+		return nil, fmt.Errorf("missing id_token")
 	}
 
 	oidcToken, err := c.oidcProvider.Verifier(&oidc.Config{
@@ -137,4 +146,44 @@ func (c *Client) HandleOIDCCallback(reqContext context.Context, code string) ([]
 	}
 
 	return bits, nil
+}
+
+// CheckRefresh refreshes the given token if necessary, returning the original token if not.
+func (c *Client) CheckRefresh(tok *oauth2.Token) (*oauth2.Token, error) {
+	ts := c.oauth2ConfigFunc().TokenSource(context.Background(), tok)
+
+	newTok, err := ts.Token()
+	if err != nil {
+		return nil, fmt.Errorf("%w", err)
+	}
+
+	return newTok, nil
+}
+
+// HandleOIDCCallback handle oidc callback and returns access token and optional refresh and ID tokens
+func (c *Client) HandleOIDCCallback(reqContext context.Context, code string) (*oauth2.Token, *oidc.IDToken, error) {
+	oauthToken, err := c.oauth2ConfigFunc().Exchange(
+		context.WithValue(
+			reqContext,
+			oauth2.HTTPClient,
+			&http.Client{Transport: &http.Transport{TLSClientConfig: c.tlsConfig}},
+		),
+		code)
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to exchange oauth2 code for token : %s", err)
+	}
+
+	rawIDToken, ok := oauthToken.Extra("id_token").(string)
+	if !ok {
+		return oauthToken, nil, nil
+	}
+
+	oidcToken, err := c.oidcProvider.Verifier(&oidc.Config{
+		ClientID: c.oidcClientID,
+	}).Verify(reqContext, rawIDToken)
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to verify id_token : %s", err)
+	}
+
+	return oauthToken, oidcToken, nil
 }

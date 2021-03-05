@@ -11,6 +11,7 @@ require (
 	github.com/PaesslerAG/jsonpath v0.1.1
 	github.com/cenkalti/backoff/v4 v4.1.0 // indirect
 	github.com/coreos/go-oidc v2.2.1+incompatible
+	github.com/fxamacker/cbor/v2 v2.2.0
 	github.com/google/uuid v1.1.2
 	github.com/gorilla/mux v1.7.4
 	github.com/hyperledger/aries-framework-go v0.1.6-0.20210227013717-0ea0a23d87d3

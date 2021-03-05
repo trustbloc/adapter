@@ -7,7 +7,9 @@ SPDX-License-Identifier: Apache-2.0
 package dockerutil
 
 import (
+	"bufio"
 	"fmt"
+	"os"
 	"os/exec"
 	"strings"
 )
@@ -72,6 +74,94 @@ func (d *dockerCmdlineHelper) RemoveContainersWithNamePrefix(namePrefix string) 
 		if err != nil {
 			return fmt.Errorf("failed to issue docker command:  %w", err)
 		}
+	}
+
+	return nil
+}
+
+// returns the ansi terminal format reset code and a list of ansi color codes
+func ansiColors() (string, []string) {
+	return "\033[0m", []string{
+		"\033[31m", // red
+		"\033[32m", // green
+		"\033[34m", // blue
+		"\033[90m", // gray
+		"\033[91m", // bright red
+		"\033[94m", // bright blue
+		"\033[33m", // yellow
+		"\033[36m", // cyan
+		"\033[35m", // magenta
+		"\033[92m", // bright green
+		"\033[95m", // bright magenta
+		// "\033[96m", // bright cyan
+		// "\033[93m", // bright yellow
+	}
+}
+
+// GenerateSplitLogs generates a log file named logName, formatted similarly to docker-compose logs,
+// but without all the output from all the containers being mixed in together.
+// Each container has all its output in one section of the log, for easy reading.
+func GenerateSplitLogs(logName string) error { // nolint:funlen
+	helper := dockerCmdlineHelper{}
+
+	containerNames, err := helper.issueDockerCommand([]string{
+		"ps",
+		"--filter", "label=com.docker.compose.project",
+		"--format", `{{.Names}}`,
+	})
+	if err != nil {
+		return fmt.Errorf("failed to get list of containers: %w", err)
+	}
+
+	// each line is a comma-separated list of names for a container
+	nameLists := splitDockerCommandResults(containerNames)
+
+	noColor, colorList := ansiColors()
+	colorIdx := 0
+
+	f, err := os.OpenFile(logName, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0600) // nolint: gosec
+	if err != nil {
+		return err
+	}
+
+	defer func() {
+		if errClose := f.Close(); errClose != nil {
+			fmt.Println(errClose.Error())
+		}
+	}()
+
+	out := bufio.NewWriter(f)
+
+	for _, namesString := range nameLists {
+		names := strings.Split(namesString, ",")
+		if len(names) == 0 || names[0] == "" {
+			continue
+		}
+
+		name := names[0]
+
+		formattedName := fmt.Sprintf("%s| %s | %s", colorList[colorIdx], name, noColor)
+
+		var logLines []string
+
+		rawLog, _ := helper.issueDockerCommand([]string{"logs", name}) // nolint:errcheck
+		logLines = splitDockerCommandResults(rawLog)
+
+		for _, line := range logLines {
+			_, _ = out.WriteString(formattedName) // nolint:errcheck
+			_, _ = out.WriteString(line)          // nolint:errcheck
+			_ = out.WriteByte('\n')               // nolint:errcheck
+		}
+
+		colorIdx++
+		if colorIdx >= len(colorList) {
+			colorIdx = 0
+		}
+	}
+
+	err = out.Flush()
+	if err != nil {
+		return fmt.Errorf("failed to write log file: %w", err)
 	}
 
 	return nil

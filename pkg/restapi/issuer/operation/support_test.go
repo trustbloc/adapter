@@ -16,6 +16,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
+	"github.com/coreos/go-oidc"
 	"github.com/google/uuid"
 	"github.com/gorilla/mux"
 	"github.com/hyperledger/aries-framework-go/component/storageutil/mem"
@@ -38,6 +39,7 @@ import (
 	mockvdri "github.com/hyperledger/aries-framework-go/pkg/mock/vdr"
 	"github.com/hyperledger/aries-framework-go/spi/storage"
 	"github.com/stretchr/testify/require"
+	"golang.org/x/oauth2"
 
 	"github.com/trustbloc/edge-adapter/pkg/aries"
 	mockdiddoc "github.com/trustbloc/edge-adapter/pkg/internal/mock/diddoc"
@@ -425,18 +427,25 @@ func (d *didexchangeEvent) All() map[string]interface{} {
 }
 
 type mockOIDCClient struct {
-	CreateOIDCRequestValue string
-	CreateOIDCRequestErr   error
-	HandleOIDCCallbackVal  []byte
-	HandleOIDCCallbackErr  error
+	CreateOIDCRequestValue  string
+	CreateOIDCRequestErr    error
+	HandleOIDCCallbackTok   *oauth2.Token
+	HandleOIDCCallbackIDTok *oidc.IDToken
+	HandleOIDCCallbackErr   error
+	CheckRefreshTok         *oauth2.Token
+	CheckRefreshErr         error
 }
 
-func (c *mockOIDCClient) CreateOIDCRequest(state, scope string) string {
+func (c *mockOIDCClient) CreateOIDCRequest(string, string) string {
 	return c.CreateOIDCRequestValue
 }
 
-func (c *mockOIDCClient) HandleOIDCCallback(reqContext context.Context, code string) ([]byte, error) {
-	return c.HandleOIDCCallbackVal, c.HandleOIDCCallbackErr
+func (c *mockOIDCClient) HandleOIDCCallback(context.Context, string) (*oauth2.Token, *oidc.IDToken, error) {
+	return c.HandleOIDCCallbackTok, c.HandleOIDCCallbackIDTok, c.HandleOIDCCallbackErr
+}
+
+func (c *mockOIDCClient) CheckRefresh(*oauth2.Token) (*oauth2.Token, error) {
+	return c.CheckRefreshTok, c.CheckRefreshErr
 }
 
 const (

@@ -7,8 +7,8 @@ version: '2'
 
 services:
 
-  issuer.adapter.rest.example.com:
-    container_name: issuer.adapter.rest.example.com
+  issuer-adapter-rest.trustbloc.local:
+    container_name: issuer-adapter-rest.trustbloc.local
     image: ${ISSUER_ADAPTER_REST_IMAGE}:latest
     environment:
       - ADAPTER_REST_HOST_URL=0.0.0.0:9070
@@ -18,14 +18,14 @@ services:
       - ADAPTER_REST_TLS_SERVE_CERT=/etc/tls/ec-pubCert.pem
       - ADAPTER_REST_TLS_SERVE_KEY=/etc/tls/ec-key.pem
       - ADAPTER_REST_DIDCOMM_INBOUND_HOST=0.0.0.0:9071
-      - ADAPTER_REST_DIDCOMM_INBOUND_HOST_EXTERNAL=http://issuer.adapter.rest.example.com:9071
+      - ADAPTER_REST_DIDCOMM_INBOUND_HOST_EXTERNAL=http://issuer-adapter-rest.trustbloc.local:9071
       - ADAPTER_REST_TRUSTBLOC_DOMAIN=${BLOC_DOMAIN}
       - ADAPTER_REST_UNIVERSAL_RESOLVER_URL=http://did.rest.example.com:8072/1.0/identifiers
       - ADAPTER_REST_DSN=mysql://issueradapter:issueradapter-secret-pw@tcp(mysql:3306)/
       - ADAPTER_REST_DSN_TIMEOUT=45
       - ADAPTER_REST_WALLET_APP_URL=http://demoapp/load
       - OIDC_STORE_KEY=/etc/store-keys/oidc-enc.key
-      - ADAPTER_REST_EXTERNAL_URL=http://issuer.adapter.rest.example.com:9070/cb
+      - ADAPTER_REST_EXTERNAL_URL=https://issuer-adapter-rest.trustbloc.local:9070
     ports:
       - 9070:9070
       - 9071:9071
@@ -97,7 +97,7 @@ services:
       - bdd_net
 
   # TODO: figure out how to make dynamic client registration endpoint be included in openid-configuration
-  issuer-hydra:
+  issuer-hydra.trustbloc.local:
     container_name: issuer-hydra.trustbloc.local
     image: oryd/hydra:v1.3.2-alpine
     ports:
@@ -110,20 +110,37 @@ services:
       - SERVE_ADMIN_PORT=9045
       - DSN=mysql://issueradapterhydra:issueradapterhydra-secret-pw@tcp(mysql:3306)/issueradapterhydra?max_conns=20&max_idle_conns=4
       - URLS_SELF_ISSUER=https://issuer-hydra.trustbloc.local:9044
-      - URLS_CONSENT=https://localhost:8070/consent
-      - URLS_LOGIN=https://localhost:8070/login
+      - URLS_CONSENT=https://mock-issuer-login.trustbloc.local:${ISSUER_LOGIN_CONSENT_PORT}/consent
+      - URLS_LOGIN=https://mock-issuer-login.trustbloc.local:${ISSUER_LOGIN_CONSENT_PORT}/login
       - SECRETS_SYSTEM=testSecretsSystem
       - OIDC_SUBJECT_TYPES_SUPPORTED=public
       - OIDC_SUBJECT_TYPE_PAIRWISE_SALT=testSecretsSystem
       - SERVE_TLS_KEY_PATH=/etc/tls/ec-key.pem
       - SERVE_TLS_CERT_PATH=/etc/tls/ec-pubCert.pem
-      - OIDC_DYNAMIC_CLIENT_REGISTRATION_DEFAULT_SCOPE=openid
+      - OIDC_DYNAMIC_CLIENT_REGISTRATION_DEFAULT_SCOPE=openid,offline_access
       - WEBFINGER_OIDC_DISCOVERY_CLIENT_REGISTRATION_URL=https://issuer-hydra.trustbloc.local:9045/clients/
+      - SERVE_COOKIES_SAME_SITE_MODE=Lax
     restart: unless-stopped
     volumes:
       - ../keys/tls:/etc/tls
     depends_on:
       - mysql
+    networks:
+      - bdd_net
+
+  mock-issuer-login.trustbloc.local:
+    container_name: mock-issuer-login.trustbloc.local
+    image: ghcr.io/trustbloc/edge-adapter/mock-issuer-login-consent:latest
+    environment:
+      - ISSUER_LOGIN_CONSENT_PORT=${ISSUER_LOGIN_CONSENT_PORT}
+      - ISSUER_HYDRA_ADMIN_URL=${ISSUER_HYDRA_ADMIN_URL}
+      - MOCK_ISSUER_LOGIN_TLS_SERVE_CERT=/etc/tls/ec-pubCert.pem
+      - MOCK_ISSUER_LOGIN_TLS_SERVE_KEY=/etc/tls/ec-key.pem
+      - MOCK_ISSUER_LOGIN_TLS_CACERTS=/etc/tls/ec-cacert.pem
+    ports:
+      - ${ISSUER_LOGIN_CONSENT_PORT}:${ISSUER_LOGIN_CONSENT_PORT}
+    volumes:
+      - ../keys/tls:/etc/tls
     networks:
       - bdd_net
 

@@ -10,6 +10,7 @@ ADAPTER_REST_BASE_IMAGE_NAME ?= trustbloc/edge-adapter/adapter-base
 ISSUER_ADAPTER_REST_IMAGE_NAME   ?= trustbloc/issuer-adapter
 RP_ADAPTER_REST_IMAGE_NAME   ?= trustbloc/rp-adapter
 MOCK_ISSUER_IMAGE_NAME ?= trustbloc/edge-adapter/mock-issuer
+MOCK_ISSUER_LOGIN_CONSENT_IMAGE_NAME ?= trustbloc/edge-adapter/mock-issuer-login-consent
 MOCK_WEBHOOK_IMAGE_NAME ?= trustbloc/edge-adapter/mock-webhook
 
 # Tool commands (overridable)
@@ -78,7 +79,7 @@ unit-test:
 	@scripts/check_unit.sh
 
 .PHONY: bdd-test
-bdd-test: clean rp-adapter-rest-docker issuer-adapter-rest-docker mock-issuer-docker mock-webhook-docker generate-test-config generate-test-keys
+bdd-test: clean rp-adapter-rest-docker issuer-adapter-rest-docker mock-issuer-docker mock-webhook-docker mock-issuer-login-consent-docker generate-test-config generate-test-keys
 	@scripts/check_integration.sh
 
 .PHONY: generate-test-config
@@ -103,6 +104,21 @@ mock-issuer:
 mock-issuer-docker:
 	@echo "Building mock issuer server docker image"
 	@docker build -f ./test/mock/images/issuer/Dockerfile --no-cache -t $(DOCKER_OUTPUT_NS)/$(MOCK_ISSUER_IMAGE_NAME):latest \
+	--build-arg GO_VER=$(GO_VER) \
+	--build-arg ALPINE_VER=$(ALPINE_VER) \
+	--build-arg GO_TAGS=$(GO_TAGS) \
+	--build-arg GOPROXY=$(GOPROXY) .
+
+.PHONY: mock-issuer-login-consent
+mock-issuer-login-consent:
+	@echo "Building mock issuer login&consent server"
+	@mkdir -p ./.build/bin
+	@go build -o ./.build/bin/issuer-login-consent-server test/mock/cmd/issuer-login-consent/main.go
+
+.PHONY: mock-issuer-login-consent-docker
+mock-issuer-login-consent-docker:
+	@echo "Building mock issuer login&consent server docker image"
+	@docker build -f ./test/mock/images/issuer-login-consent/Dockerfile --no-cache -t $(DOCKER_OUTPUT_NS)/$(MOCK_ISSUER_LOGIN_CONSENT_IMAGE_NAME):latest \
 	--build-arg GO_VER=$(GO_VER) \
 	--build-arg ALPINE_VER=$(ALPINE_VER) \
 	--build-arg GO_TAGS=$(GO_TAGS) \
