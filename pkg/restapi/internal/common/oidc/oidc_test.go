@@ -20,6 +20,7 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/require"
+	"golang.org/x/oauth2"
 	"gopkg.in/square/go-jose.v2"
 )
 
@@ -121,7 +122,7 @@ type idTokenJSONType struct {
 	} `json:"_claim_sources,omitempty"`
 }
 
-func TestClient_HandleOIDCCallback(t *testing.T) {
+func TestClient_GetIDTokenClaims(t *testing.T) {
 	sigPriv, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
 	require.NoError(t, err)
 
@@ -246,5 +247,85 @@ func TestClient_HandleOIDCCallback(t *testing.T) {
 		require.Contains(t, err.Error(), "verify id_token")
 
 		mockServerData.Token = goodToken
+	})
+}
+
+func TestClient_CheckRefresh(t *testing.T) {
+	mockServerData := struct {
+		Config []byte
+		Token  []byte
+		JWKSet []byte
+	}{
+		[]byte(""),
+		[]byte(""),
+		[]byte(""),
+	}
+
+	mockOIDCServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		p := r.URL.Path
+		switch {
+		case strings.Contains(p, ".well-known/openid-configuration"):
+			_, e := w.Write(mockServerData.Config)
+			require.NoError(t, e)
+		case strings.Contains(p, "token"):
+			w.Header().Set("Content-Type", "application/json")
+			_, e := w.Write(mockServerData.Token)
+			require.NoError(t, e)
+		case strings.Contains(p, "jwk_endpoint"):
+			w.Header().Set("Content-Type", "application/json")
+			_, e := w.Write(mockServerData.JWKSet)
+			require.NoError(t, e)
+		}
+	}))
+
+	defer mockOIDCServer.Close()
+
+	mockServerData.Config = []byte(fmt.Sprintf(`{
+    "issuer":"%s",
+    "authorization_endpoint":"%s/authorize",
+    "token_endpoint":"%s/token",
+    "jwks_uri":"%s/jwk_endpoint",
+    "userinfo_endpoint":"%s/userinfo",
+    "id_token_signing_alg_values_supported":["ES256","EdDSA"]
+}`, mockOIDCServer.URL, mockOIDCServer.URL, mockOIDCServer.URL, mockOIDCServer.URL, mockOIDCServer.URL))
+
+	o, err := New(&Config{
+		TLSConfig:        nil,
+		OIDCProviderURL:  mockOIDCServer.URL,
+		OIDCClientID:     "abcd",
+		OIDCClientSecret: "ab cd ef gh ij kl mn op qr st uv wx yz",
+		OIDCCallbackURL:  "http://localhost/abcde",
+	})
+	require.NoError(t, err)
+
+	t.Run("success - no refresh", func(t *testing.T) {
+		tok := oauth2.Token{AccessToken: "abcd", RefreshToken: "abcd"}
+
+		_, err := o.CheckRefresh(&tok)
+		require.NoError(t, err)
+	})
+
+	t.Run("success - must refresh", func(t *testing.T) {
+		tok := oauth2.Token{RefreshToken: "abcd"}
+
+		mockServerData.Token = []byte(`{
+	"access_token":"abcd",
+	"refresh_token":"abcd"
+}`)
+
+		_, err := o.CheckRefresh(&tok)
+		require.NoError(t, err)
+	})
+
+	t.Run("failure - missing refresh token on expired token", func(t *testing.T) {
+		tok := oauth2.Token{AccessToken: "abcd", Expiry: time.Unix(0, 0)}
+
+		mockServerData.Token = []byte(`{
+	"access_token":"abcd",
+	"refresh_token":"abcd"
+}`)
+
+		_, err := o.CheckRefresh(&tok)
+		require.Error(t, err)
 	})
 }

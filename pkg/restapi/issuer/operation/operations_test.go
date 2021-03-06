@@ -40,6 +40,7 @@ import (
 	"github.com/hyperledger/aries-framework-go/pkg/store/connection"
 	"github.com/hyperledger/aries-framework-go/spi/storage"
 	"github.com/stretchr/testify/require"
+	"golang.org/x/oauth2"
 
 	"github.com/trustbloc/edge-adapter/pkg/aries"
 	mockconn "github.com/trustbloc/edge-adapter/pkg/internal/mock/connection"
@@ -75,80 +76,23 @@ func TestNew(t *testing.T) {
 		require.Contains(t, err.Error(), "failed to create aries outofband client")
 	})
 
-	t.Run("test new - store fail", func(t *testing.T) {
-		c, err := New(&Config{
-			AriesCtx:      getAriesCtx(),
-			StoreProvider: &mockstorage.Provider{ErrOpenStore: errors.New("error opening the store")},
-		})
-		require.Nil(t, c)
-		require.Error(t, err)
-		require.Contains(t, err.Error(), "error opening the store")
-	})
+	t.Run("test new - store fails", func(t *testing.T) {
+		const numStores = 6
 
-	t.Run("test new - store fail for txnstore", func(t *testing.T) {
-		conf := config()
+		for i := 0; i < numStores; i++ {
+			conf := config()
 
-		conf.StoreProvider = &failingStoreProvider{
-			openN:           1,
-			Err:             fmt.Errorf("error opening the store"),
-			SuccessProvider: conf.StoreProvider,
+			conf.StoreProvider = &failingStoreProvider{
+				openN:           i,
+				Err:             fmt.Errorf("error opening the store"),
+				SuccessProvider: conf.StoreProvider,
+			}
+
+			c, err := New(conf)
+			require.Nil(t, c)
+			require.Error(t, err)
+			require.Contains(t, err.Error(), "error opening the store")
 		}
-
-		c, err := New(conf)
-		require.Nil(t, c)
-		require.Error(t, err)
-		require.Contains(t, err.Error(), "error opening the store")
-	})
-
-	t.Run("test new - store fail for tokenstore", func(t *testing.T) {
-		conf := config()
-
-		conf.StoreProvider = &failingStoreProvider{
-			openN:           2,
-			Err:             fmt.Errorf("error opening the store"),
-			SuccessProvider: conf.StoreProvider,
-		}
-
-		c, err := New(conf)
-		require.Nil(t, c)
-		require.Error(t, err)
-		require.Contains(t, err.Error(), "error opening the store")
-	})
-
-	t.Run("test new - store fail for oidcstore", func(t *testing.T) {
-		conf := config()
-
-		conf.StoreProvider = &failingStoreProvider{
-			openN:           3,
-			Err:             fmt.Errorf("error opening the store"),
-			SuccessProvider: conf.StoreProvider,
-		}
-
-		c, err := New(conf)
-		require.Nil(t, c)
-		require.Error(t, err)
-		require.Contains(t, err.Error(), "error opening the store")
-	})
-
-	t.Run("test get txn store - open store error", func(t *testing.T) {
-		s, err := getTxnStore(&mockstorage.Provider{ErrOpenStore: errors.New("error opening the store")})
-		require.Error(t, err)
-		require.Contains(t, err.Error(), "error opening the store")
-		require.Nil(t, s)
-	})
-
-	t.Run("test get token store - open store error", func(t *testing.T) {
-		s, err := getTokenStore(&mockstorage.Provider{ErrOpenStore: errors.New("error opening the store")})
-		require.Error(t, err)
-		require.Contains(t, err.Error(), "error opening the store")
-		require.Nil(t, s)
-	})
-
-	t.Run("test get oidc store - open store error", func(t *testing.T) {
-		s, err := getOIDCClientStore(&mockstorage.Provider{ErrOpenStore: errors.New("error opening the store")})
-		require.Error(t, err)
-		require.Contains(t, err.Error(), "error opening the store")
-		require.Nil(t, s)
 	})
 
 	t.Run("mediator client error", func(t *testing.T) {
@@ -442,218 +386,6 @@ func Test_OIDCClientStore(t *testing.T) {
 		_, err = op.loadOIDCClientData("provider.url")
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "error decrypting client data")
-	})
-}
-
-func Test_CreateOIDCClient(t *testing.T) {
-	t.Run("success: with multiple create calls", func(t *testing.T) {
-		conf := config()
-
-		op, err := New(conf)
-		require.NoError(t, err)
-
-		mockOIDCServer := createMockOIDCServer("", "", "", "", fmt.Sprintf(
-			`{"client_id":"example_client","client_secret":"abcdefg","client_secret_expires_at":%d}`,
-			time.Now().Add(time.Hour*300).Unix()))
-
-		defer mockOIDCServer.Close()
-
-		pd := issuer.ProfileData{
-			ID:              "abcd",
-			Name:            "issuer",
-			OIDCProviderURL: mockOIDCServer.URL,
-		}
-
-		// call twice with the same issuer
-		_, err = op.getOrCreateOIDCClient(&pd)
-		require.NoError(t, err)
-
-		_, err = op.getOrCreateOIDCClient(&pd)
-		require.NoError(t, err)
-
-		//	new ID but same oidc provider
-		pd = issuer.ProfileData{
-			ID:              "123abc",
-			Name:            "issuer",
-			OIDCProviderURL: mockOIDCServer.URL,
-		}
-
-		_, err = op.getOrCreateOIDCClient(&pd)
-		require.NoError(t, err)
-	})
-
-	t.Run("success: bypassing client registration", func(t *testing.T) {
-		conf := config()
-
-		op, err := New(conf)
-		require.NoError(t, err)
-
-		mockOIDCServer := createMockOIDCServer("", "", "", "", "")
-
-		defer mockOIDCServer.Close()
-
-		pd := issuer.ProfileData{
-			ID:              "abcd",
-			Name:            "issuer",
-			OIDCProviderURL: mockOIDCServer.URL,
-			OIDCClientParams: &issuer.OIDCClientParams{
-				ClientID:     "example_client",
-				ClientSecret: "abcdefg",
-				SecretExpiry: int(time.Now().Add(time.Hour * 300).Unix()),
-			},
-		}
-
-		_, err = op.getOrCreateOIDCClient(&pd)
-		require.NoError(t, err)
-	})
-
-	t.Run("failure: error checking store for client data", func(t *testing.T) {
-		conf := config()
-
-		op, err := New(conf)
-		require.NoError(t, err)
-
-		mockOIDCServer := createMockOIDCServer("", "", "", "", "")
-
-		defer mockOIDCServer.Close()
-
-		op.oidcClientStore = &mockstorage.Store{
-			ErrGet: fmt.Errorf("test err"),
-		}
-
-		pd := issuer.ProfileData{
-			ID:              "abcd",
-			Name:            "issuer",
-			OIDCProviderURL: mockOIDCServer.URL,
-		}
-
-		_, err = op.getOrCreateOIDCClient(&pd)
-		require.Error(t, err)
-		require.Contains(t, err.Error(), "error getting client data")
-	})
-
-	t.Run("failure: error getting oidc provider configuration", func(t *testing.T) {
-		conf := config()
-
-		op, err := New(conf)
-		require.NoError(t, err)
-
-		badServer := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
-			writer.WriteHeader(http.StatusInternalServerError)
-		}))
-
-		defer badServer.Close()
-
-		pd := issuer.ProfileData{
-			ID:              "abcd",
-			Name:            "issuer",
-			OIDCProviderURL: badServer.URL,
-		}
-
-		_, err = op.getOrCreateOIDCClient(&pd)
-		require.Error(t, err)
-		require.Contains(t, err.Error(), "error getting provider openid configuration")
-	})
-
-	t.Run("failure: error unmarshaling oidc provider configuration", func(t *testing.T) {
-		conf := config()
-
-		op, err := New(conf)
-		require.NoError(t, err)
-
-		badServer := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
-			writer.Write([]byte("this is not a json payload")) // nolint:errcheck,gosec
-		}))
-
-		defer badServer.Close()
-
-		pd := issuer.ProfileData{
-			ID:              "abcd",
-			Name:            "issuer",
-			OIDCProviderURL: badServer.URL,
-		}
-
-		_, err = op.getOrCreateOIDCClient(&pd)
-		require.Error(t, err)
-		require.Contains(t, err.Error(), "error getting provider openid configuration")
-	})
-
-	t.Run("failure: error registering with oidc provider", func(t *testing.T) {
-		conf := config()
-
-		op, err := New(conf)
-		require.NoError(t, err)
-
-		mockOIDCServer := createMockOIDCServer("", "", "", "", "")
-
-		defer mockOIDCServer.Close()
-
-		pd := issuer.ProfileData{
-			ID:              "abcd",
-			Name:            "issuer",
-			OIDCProviderURL: mockOIDCServer.URL,
-		}
-
-		_, err = op.getOrCreateOIDCClient(&pd)
-		require.Error(t, err)
-		require.Contains(t, err.Error(), "error registering oidc client")
-	})
-
-	t.Run("failure: error saving registered client parameters", func(t *testing.T) {
-		conf := config()
-
-		op, err := New(conf)
-		require.NoError(t, err)
-
-		op.oidcClientStore = &mockstorage.Store{
-			ErrGet: storage.ErrDataNotFound,
-			ErrPut: fmt.Errorf("test err"),
-		}
-
-		mockOIDCServer := createMockOIDCServer("", "", "", "", fmt.Sprintf(
-			`{"client_id":"example_client","client_secret":"abcdefg","client_secret_expires_at":%d}`,
-			time.Now().Add(time.Hour*300).Unix()))
-
-		defer mockOIDCServer.Close()
-
-		pd := issuer.ProfileData{
-			ID:              "abcd",
-			Name:            "issuer",
-			OIDCProviderURL: mockOIDCServer.URL,
-		}
-
-		_, err = op.getOrCreateOIDCClient(&pd)
-		require.Error(t, err)
-		require.Contains(t, err.Error(), "error saving oidc client data")
-	})
-
-	t.Run("failure: error initializing oidc client", func(t *testing.T) {
-		conf := config()
-
-		op, err := New(conf)
-		require.NoError(t, err)
-
-		mockOIDCServer := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
-			_, e := writer.Write([]byte("{}"))
-			require.NoError(t, e)
-		}))
-
-		defer mockOIDCServer.Close()
-
-		pd := issuer.ProfileData{
-			ID:              "abcd",
-			Name:            "issuer",
-			OIDCProviderURL: mockOIDCServer.URL,
-			OIDCClientParams: &issuer.OIDCClientParams{
-				ClientID:     "example_client",
-				ClientSecret: "abcdefg",
-				SecretExpiry: int(time.Now().Add(time.Hour * 300).Unix()),
-			},
-		}
-
-		_, err = op.getOrCreateOIDCClient(&pd)
-		require.Error(t, err)
-		require.Contains(t, err.Error(), "creating oidc client")
 	})
 }
 
@@ -979,6 +711,41 @@ func TestConnectWallet(t *testing.T) {
 
 		require.Equal(t, http.StatusFound, rr.Code)
 		require.Contains(t, rr.Header().Get("Location"), uiEndpoint)
+	})
+
+	t.Run("test connect wallet - success and redirect to oidc auth", func(t *testing.T) {
+		c, err := New(config())
+		require.NoError(t, err)
+
+		c.createOIDCClientFunc = func(*issuer.ProfileData) (oidcClient, error) {
+			return &mockOIDC, nil
+		}
+
+		c.getOIDCClientFunc = func(string) (oidcClient, error) {
+			return &mockOIDC, nil
+		}
+
+		c.uiEndpoint = uiEndpoint
+		c.httpClient = &mockHTTPClient{
+			respValue: &http.Response{
+				StatusCode: http.StatusOK, Body: ioutil.NopCloser(bytes.NewReader(tknRespBytes)),
+			},
+		}
+
+		data := createProfileData(profileID)
+		data.OIDCProviderURL = "mock-issuer.website"
+
+		err = c.profileStore.SaveProfile(data)
+		require.NoError(t, err)
+
+		walletConnectHandler := getHandler(t, c, endpoint)
+
+		urlVars[idPathParam] = profileID
+
+		rr := serveHTTPMux(t, walletConnectHandler, walletConnectEndpoint+"?"+stateQueryParam+"="+state, nil, urlVars)
+
+		require.Equal(t, http.StatusFound, rr.Code)
+		require.Contains(t, rr.Header().Get("Location"), "/oidc/request")
 	})
 
 	t.Run("test connect wallet - profile doesn't exists", func(t *testing.T) {
@@ -1440,10 +1207,454 @@ func TestValidateWalletResponse(t *testing.T) {
 	})
 }
 
+func TestRequestOIDCAuthHandler(t *testing.T) {
+	uiEndpoint := "/mock-ui-endpoint"
+	profileID := "test-1"
+	userID := "user_123"
+	oidcProvider := "https://mock-issuer.local"
+
+	mockToken := oauth2.Token{
+		AccessToken:  "access-token",
+		RefreshToken: "refresh-token",
+	}
+
+	mockOIDC := mockOIDCClient{
+		CreateOIDCRequestValue: oidcProvider,
+		CheckRefreshTok:        &mockToken,
+	}
+
+	defaultConf := config()
+	c, err := New(defaultConf)
+	require.NoError(t, err)
+
+	c.uiEndpoint = uiEndpoint
+
+	c.createOIDCClientFunc = func(*issuer.ProfileData) (oidcClient, error) {
+		return &mockOIDC, nil
+	}
+
+	c.getOIDCClientFunc = func(string) (oidcClient, error) {
+		return &mockOIDC, nil
+	}
+
+	data := createProfileData(profileID)
+	data.OIDCProviderURL = oidcProvider
+
+	err = c.profileStore.SaveProfile(data)
+	require.NoError(t, err)
+
+	txnID, err := c.createTxn(data, "state", "token")
+	require.NoError(t, err)
+
+	t.Run("success", func(t *testing.T) {
+		authHandler := getHandler(t, c, oidcAuthRequestEndpoint)
+
+		reqPath := fmt.Sprintf("%s?%s=%s&%s=%s", oidcAuthRequestEndpoint,
+			txnIDQueryParam, txnID, userIDQueryParam, userID)
+
+		rr := serveHTTPMux(t, authHandler, reqPath, nil, nil)
+
+		require.Equal(t, http.StatusFound, rr.Code)
+		require.Contains(t, rr.Header().Get("Location"), data.OIDCProviderURL)
+	})
+
+	t.Run("failure: missing txnID query param", func(t *testing.T) {
+		authHandler := getHandler(t, c, oidcAuthRequestEndpoint)
+
+		reqPath := fmt.Sprintf("%s?%s=%s", oidcAuthRequestEndpoint, userIDQueryParam, userID)
+
+		rr := serveHTTPMux(t, authHandler, reqPath, nil, nil)
+
+		require.Equal(t, http.StatusBadRequest, rr.Code)
+	})
+
+	t.Run("failure: missing userID query param", func(t *testing.T) {
+		authHandler := getHandler(t, c, oidcAuthRequestEndpoint)
+
+		reqPath := fmt.Sprintf("%s?%s=%s", oidcAuthRequestEndpoint, txnIDQueryParam, txnID)
+
+		rr := serveHTTPMux(t, authHandler, reqPath, nil, nil)
+
+		require.Equal(t, http.StatusBadRequest, rr.Code)
+	})
+
+	t.Run("failure: missing txn record", func(t *testing.T) {
+		authHandler := getHandler(t, c, oidcAuthRequestEndpoint)
+
+		reqPath := fmt.Sprintf("%s?%s=%s&%s=%s", oidcAuthRequestEndpoint,
+			txnIDQueryParam, "bad-txn-id", userIDQueryParam, userID)
+
+		rr := serveHTTPMux(t, authHandler, reqPath, nil, nil)
+
+		require.Equal(t, http.StatusBadRequest, rr.Code)
+	})
+
+	t.Run("failure: missing profile record", func(t *testing.T) {
+		authHandler := getHandler(t, c, oidcAuthRequestEndpoint)
+
+		data2 := createProfileData(profileID + "_version_2")
+
+		txnID2, err := c.createTxn(data2, "state2", "token2")
+		require.NoError(t, err)
+
+		reqPath := fmt.Sprintf("%s?%s=%s&%s=%s", oidcAuthRequestEndpoint,
+			txnIDQueryParam, txnID2, userIDQueryParam, userID)
+
+		rr := serveHTTPMux(t, authHandler, reqPath, nil, nil)
+
+		require.Equal(t, http.StatusBadRequest, rr.Code)
+	})
+
+	t.Run("success - valid token available", func(t *testing.T) {
+		authHandler := getHandler(t, c, oidcAuthRequestEndpoint)
+
+		reqPath := fmt.Sprintf("%s?%s=%s&%s=%s", oidcAuthRequestEndpoint,
+			txnIDQueryParam, txnID, userIDQueryParam, userID)
+
+		c.userTokens[txnID] = &mockToken
+
+		rr := serveHTTPMux(t, authHandler, reqPath, nil, nil)
+
+		require.Equal(t, http.StatusFound, rr.Code)
+		require.Contains(t, rr.Header().Get("Location"), uiEndpoint)
+
+		delete(c.userTokens, txnID)
+	})
+
+	t.Run("failure - error getting oidc client", func(t *testing.T) {
+		prevClientFunc := c.getOIDCClientFunc
+
+		c.getOIDCClientFunc = func(string) (oidcClient, error) {
+			return nil, fmt.Errorf("test error")
+		}
+
+		authHandler := getHandler(t, c, oidcAuthRequestEndpoint)
+
+		reqPath := fmt.Sprintf("%s?%s=%s&%s=%s", oidcAuthRequestEndpoint,
+			txnIDQueryParam, txnID, userIDQueryParam, userID)
+
+		rr := serveHTTPMux(t, authHandler, reqPath, nil, nil)
+
+		require.Equal(t, http.StatusInternalServerError, rr.Code)
+
+		c.getOIDCClientFunc = prevClientFunc
+	})
+}
+
+func TestOIDCCallback(t *testing.T) {
+	uiEndpoint := "/mock-ui-endpoint"
+	profileID := "test-profile"
+	userID := "user_123"
+	oidcProvider := "https://oidc-provider.xyz"
+
+	defaultConf := config()
+	c, err := New(defaultConf)
+	require.NoError(t, err)
+
+	c.uiEndpoint = uiEndpoint
+
+	mockToken := oauth2.Token{
+		AccessToken:  "access-token",
+		RefreshToken: "refresh-token",
+	}
+
+	mockOIDC := mockOIDCClient{
+		CreateOIDCRequestValue: oidcProvider,
+		CheckRefreshTok:        &mockToken,
+		HandleOIDCCallbackTok:  &mockToken,
+	}
+
+	c.createOIDCClientFunc = func(*issuer.ProfileData) (oidcClient, error) {
+		return &mockOIDC, nil
+	}
+
+	c.getOIDCClientFunc = func(string) (oidcClient, error) {
+		return &mockOIDC, nil
+	}
+
+	data := createProfileData(profileID)
+	data.OIDCProviderURL = oidcProvider
+
+	err = c.profileStore.SaveProfile(data)
+	require.NoError(t, err)
+
+	txnID, err := c.createTxn(data, "state", "token")
+	require.NoError(t, err)
+
+	t.Run("success", func(t *testing.T) {
+		cbHandler := getHandler(t, c, oidcCallbackEndpoint)
+
+		reqPath := fmt.Sprintf("%s?%s=%s&%s=%s", oidcCallbackEndpoint,
+			"state", "state-value", "code", "auth-code-value")
+
+		rr := httptest.NewRecorder()
+
+		req, err := http.NewRequest(http.MethodGet, reqPath, nil)
+		require.NoError(t, err)
+
+		req.AddCookie(&http.Cookie{Name: "oidcState", Value: "state-value"})
+		req.AddCookie(&http.Cookie{Name: "txnID", Value: txnID})
+		req.AddCookie(&http.Cookie{Name: "userID", Value: userID})
+		req.AddCookie(&http.Cookie{Name: "oidcProvider", Value: oidcProvider})
+
+		cbHandler.Handle().ServeHTTP(rr, req)
+
+		require.Equal(t, http.StatusFound, rr.Code)
+		require.Contains(t, rr.Header().Get("Location"), uiEndpoint)
+	})
+
+	t.Run("failure - missing state url param", func(t *testing.T) {
+		cbHandler := getHandler(t, c, oidcCallbackEndpoint)
+
+		reqPath := fmt.Sprintf("%s?%s=%s", oidcCallbackEndpoint, "code", "auth-code-value")
+
+		rr := httptest.NewRecorder()
+
+		req, err := http.NewRequest(http.MethodGet, reqPath, nil)
+		require.NoError(t, err)
+
+		req.AddCookie(&http.Cookie{Name: "oidcState", Value: "state-value"})
+		req.AddCookie(&http.Cookie{Name: "txnID", Value: txnID})
+		req.AddCookie(&http.Cookie{Name: "userID", Value: userID})
+		req.AddCookie(&http.Cookie{Name: "oidcProvider", Value: oidcProvider})
+
+		cbHandler.Handle().ServeHTTP(rr, req)
+
+		require.Equal(t, http.StatusUnauthorized, rr.Code)
+	})
+
+	t.Run("failure - missing cookies", func(t *testing.T) {
+		cbHandler := getHandler(t, c, oidcCallbackEndpoint)
+
+		reqPath := fmt.Sprintf("%s?%s=%s&%s=%s", oidcCallbackEndpoint,
+			"state", "state-value", "code", "auth-code-value")
+
+		cookies := []http.Cookie{
+			{Name: "oidcState", Value: "state-value"},
+			{Name: "txnID", Value: txnID},
+			{Name: "userID", Value: userID},
+			{Name: "oidcProvider", Value: oidcProvider},
+		}
+
+		for i := 0; i < 4; i++ {
+			rr := httptest.NewRecorder()
+
+			req, err := http.NewRequest(http.MethodGet, reqPath, nil)
+			require.NoError(t, err)
+
+			for j := 0; j < 4; j++ {
+				if i == j {
+					continue
+				}
+
+				req.AddCookie(&cookies[j])
+			}
+
+			cbHandler.Handle().ServeHTTP(rr, req)
+			require.Equal(t, http.StatusInternalServerError, rr.Code)
+		}
+	})
+
+	t.Run("failure - initializing oidc client", func(t *testing.T) {
+		prevClientFunc := c.getOIDCClientFunc
+
+		c.getOIDCClientFunc = func(string) (oidcClient, error) {
+			return nil, fmt.Errorf("client create error")
+		}
+
+		cbHandler := getHandler(t, c, oidcCallbackEndpoint)
+
+		reqPath := fmt.Sprintf("%s?%s=%s&%s=%s", oidcCallbackEndpoint,
+			"state", "state-value", "code", "auth-code-value")
+
+		rr := httptest.NewRecorder()
+
+		req, err := http.NewRequest(http.MethodGet, reqPath, nil)
+		require.NoError(t, err)
+
+		req.AddCookie(&http.Cookie{Name: "oidcState", Value: "state-value"})
+		req.AddCookie(&http.Cookie{Name: "txnID", Value: txnID})
+		req.AddCookie(&http.Cookie{Name: "userID", Value: userID})
+		req.AddCookie(&http.Cookie{Name: "oidcProvider", Value: oidcProvider})
+
+		cbHandler.Handle().ServeHTTP(rr, req)
+
+		require.Equal(t, http.StatusInternalServerError, rr.Code)
+
+		c.getOIDCClientFunc = prevClientFunc
+	})
+
+	t.Run("failure - handling oauth callback", func(t *testing.T) {
+		prevClientFunc := c.getOIDCClientFunc
+
+		c.getOIDCClientFunc = func(string) (oidcClient, error) {
+			return &mockOIDCClient{HandleOIDCCallbackErr: fmt.Errorf("handle error")}, nil
+		}
+
+		cbHandler := getHandler(t, c, oidcCallbackEndpoint)
+
+		reqPath := fmt.Sprintf("%s?%s=%s&%s=%s", oidcCallbackEndpoint,
+			"state", "state-value", "code", "auth-code-value")
+
+		rr := httptest.NewRecorder()
+
+		req, err := http.NewRequest(http.MethodGet, reqPath, nil)
+		require.NoError(t, err)
+
+		req.AddCookie(&http.Cookie{Name: "oidcState", Value: "state-value"})
+		req.AddCookie(&http.Cookie{Name: "txnID", Value: txnID})
+		req.AddCookie(&http.Cookie{Name: "userID", Value: userID})
+		req.AddCookie(&http.Cookie{Name: "oidcProvider", Value: oidcProvider})
+
+		cbHandler.Handle().ServeHTTP(rr, req)
+
+		require.Equal(t, http.StatusInternalServerError, rr.Code)
+
+		c.getOIDCClientFunc = prevClientFunc
+	})
+
+	t.Run("failure - handling oauth callback", func(t *testing.T) {
+		prevStore := c.refreshTokenStore
+
+		c.refreshTokenStore = &mockstorage.Store{ErrPut: fmt.Errorf("err put")}
+
+		cbHandler := getHandler(t, c, oidcCallbackEndpoint)
+
+		reqPath := fmt.Sprintf("%s?%s=%s&%s=%s", oidcCallbackEndpoint,
+			"state", "state-value", "code", "auth-code-value")
+
+		rr := httptest.NewRecorder()
+
+		req, err := http.NewRequest(http.MethodGet, reqPath, nil)
+		require.NoError(t, err)
+
+		req.AddCookie(&http.Cookie{Name: "oidcState", Value: "state-value"})
+		req.AddCookie(&http.Cookie{Name: "txnID", Value: txnID})
+		req.AddCookie(&http.Cookie{Name: "userID", Value: userID})
+		req.AddCookie(&http.Cookie{Name: "oidcProvider", Value: oidcProvider})
+
+		cbHandler.Handle().ServeHTTP(rr, req)
+
+		require.Equal(t, http.StatusInternalServerError, rr.Code)
+
+		c.refreshTokenStore = prevStore
+	})
+}
+
+func TestGetOIDCAccessToken(t *testing.T) {
+	conf := config()
+	c, err := New(conf)
+	require.NoError(t, err)
+
+	oidcProvider := "https://auth.issuer.local"
+
+	mockToken := oauth2.Token{
+		AccessToken:  "access-token",
+		RefreshToken: "refresh-token",
+	}
+
+	mockOIDC := mockOIDCClient{
+		CreateOIDCRequestValue: oidcProvider,
+		CheckRefreshTok:        &mockToken,
+		HandleOIDCCallbackTok:  &mockToken,
+	}
+
+	c.createOIDCClientFunc = func(*issuer.ProfileData) (oidcClient, error) {
+		return &mockOIDC, nil
+	}
+
+	c.getOIDCClientFunc = func(string) (oidcClient, error) {
+		return &mockOIDC, nil
+	}
+
+	t.Run("success - token present in cache", func(t *testing.T) {
+		txnID := "txn-id-0"
+		c.userTokens[txnID] = &mockToken
+
+		tok, err := c.getOIDCAccessToken(txnID, oidcProvider)
+		require.NoError(t, err)
+		require.Equal(t, mockToken.AccessToken, tok)
+	})
+
+	t.Run("success - loading refresh token from store", func(t *testing.T) {
+		txnID := "txn-id-1"
+
+		err := c.refreshTokenStore.Put(txnID, []byte("refresh-token"))
+		require.NoError(t, err)
+
+		tok, err := c.getOIDCAccessToken(txnID, oidcProvider)
+		require.NoError(t, err)
+		require.Equal(t, mockToken.AccessToken, tok)
+	})
+
+	t.Run("failure - refresh token missing from store", func(t *testing.T) {
+		tok, err := c.getOIDCAccessToken("txn-id-2", oidcProvider)
+		require.Error(t, err)
+		require.Equal(t, "", tok)
+		require.ErrorIs(t, err, storage.ErrDataNotFound)
+	})
+
+	t.Run("failure - error getting oidc client", func(t *testing.T) {
+		prevClientFunc := c.getOIDCClientFunc
+
+		c.getOIDCClientFunc = func(string) (oidcClient, error) {
+			return nil, fmt.Errorf("client create error")
+		}
+
+		txnID := "txn-id-3"
+		c.userTokens[txnID] = &mockToken
+
+		tok, err := c.getOIDCAccessToken(txnID, oidcProvider)
+		require.Error(t, err)
+		require.Equal(t, "", tok)
+		require.Contains(t, err.Error(), "client create error")
+
+		c.getOIDCClientFunc = prevClientFunc
+	})
+
+	t.Run("failure - error refreshing token", func(t *testing.T) {
+		prevClientFunc := c.getOIDCClientFunc
+
+		c.getOIDCClientFunc = func(string) (oidcClient, error) {
+			return &mockOIDCClient{CheckRefreshErr: fmt.Errorf("refresh error")}, nil
+		}
+
+		txnID := "txn-id-4"
+		c.userTokens[txnID] = &mockToken
+
+		tok, err := c.getOIDCAccessToken(txnID, oidcProvider)
+		require.Error(t, err)
+		require.Equal(t, "", tok)
+		require.Contains(t, err.Error(), "refresh error")
+
+		c.getOIDCClientFunc = prevClientFunc
+	})
+
+	t.Run("failure - error storing refresh token", func(t *testing.T) {
+		prevStore := c.refreshTokenStore
+
+		txnID := "txn-id-5"
+
+		c.userTokens[txnID] = &oauth2.Token{
+			AccessToken:  "old-access-token",
+			RefreshToken: "old-refresh-token",
+		}
+
+		c.refreshTokenStore = &mockstorage.Store{ErrPut: fmt.Errorf("store error")}
+
+		tok, err := c.getOIDCAccessToken(txnID, oidcProvider)
+		require.Error(t, err)
+		require.Equal(t, "", tok)
+		require.Contains(t, err.Error(), "store error")
+
+		c.refreshTokenStore = prevStore
+	})
+}
+
 func TestCHAPIRequest(t *testing.T) {
 	t.Run("test fetch chapi request - success", func(t *testing.T) {
-		c, err := New(config())
-		require.NoError(t, err)
+		c, e := New(config())
+		require.NoError(t, e)
 
 		c.governanceProvider = &mockgovernance.MockProvider{GetCredentialFunc: func(profileID string) ([]byte, error) {
 			return []byte(`{"key":"value"}`), nil
@@ -1452,7 +1663,7 @@ func TestCHAPIRequest(t *testing.T) {
 		t.Run("without assurance support", func(t *testing.T) {
 			profile := createProfileData("profile1")
 
-			err = c.profileStore.SaveProfile(profile)
+			err := c.profileStore.SaveProfile(profile)
 			require.NoError(t, err)
 
 			txnID, txnErr := c.createTxn(profile, uuid.New().String(), uuid.New().String())
@@ -1485,11 +1696,56 @@ func TestCHAPIRequest(t *testing.T) {
 			profile.SupportsAssuranceCredential = true
 			profile.CredentialSigningKey = mockdiddoc.GetMockDIDDoc("did:example:def567").VerificationMethod[0].ID
 
-			err = c.profileStore.SaveProfile(profile)
+			err := c.profileStore.SaveProfile(profile)
 			require.NoError(t, err)
 
 			txnID, err := c.createTxn(profile, uuid.New().String(), uuid.New().String())
 			require.NoError(t, err)
+
+			getCHAPIRequestHandler := getHandler(t, c, getCHAPIRequestEndpoint)
+
+			rr := serveHTTP(t, getCHAPIRequestHandler.Handle(), http.MethodGet,
+				getCHAPIRequestEndpoint+"?"+txnIDQueryParam+"="+txnID, nil)
+
+			require.Equal(t, http.StatusOK, rr.Code)
+
+			chapiReq := &CHAPIRequest{}
+			err = json.Unmarshal(rr.Body.Bytes(), &chapiReq)
+			require.NoError(t, err)
+			require.Equal(t, DIDConnectCHAPIQueryType, chapiReq.Query.Type)
+			require.Equal(t, "https://didcomm.org/out-of-band/1.0/invitation", chapiReq.DIDCommInvitation.Type)
+			require.Equal(t, `{"key":"value"}`, string(chapiReq.Credentials[2]))
+			require.Equal(t, 3, len(chapiReq.Credentials))
+		})
+
+		t.Run("with assurance credential using oidc", func(t *testing.T) {
+			c.httpClient = &mockHTTPClient{
+				respValue: &http.Response{
+					StatusCode: http.StatusOK, Body: ioutil.NopCloser(bytes.NewReader([]byte(prCardData))),
+				},
+			}
+
+			profile := createProfileData("profile3")
+			profile.SupportsAssuranceCredential = true
+			profile.CredentialSigningKey = mockdiddoc.GetMockDIDDoc("did:example:def567").VerificationMethod[0].ID
+
+			profile.OIDCProviderURL = "mock.provider.local"
+
+			mockToken := oauth2.Token{RefreshToken: "refresh-token", AccessToken: "access-token"}
+
+			c.getOIDCClientFunc = func(string) (oidcClient, error) {
+				return &mockOIDCClient{
+					CheckRefreshTok: &mockToken,
+				}, nil
+			}
+
+			err := c.profileStore.SaveProfile(profile)
+			require.NoError(t, err)
+
+			txnID, err := c.createTxn(profile, uuid.New().String(), uuid.New().String())
+			require.NoError(t, err)
+
+			c.userTokens[txnID] = &mockToken
 
 			getCHAPIRequestHandler := getHandler(t, c, getCHAPIRequestEndpoint)
 
@@ -2062,6 +2318,16 @@ func TestPresentProofHandler(t *testing.T) {
 			profile.PresentationSigningKey = mockdiddoc.GetMockDIDDoc("did:example:def567").VerificationMethod[0].ID
 			profile.CredentialSigningKey = mockdiddoc.GetMockDIDDoc("did:example:def567").VerificationMethod[0].ID
 
+			profile.OIDCProviderURL = "mock.provider.local"
+
+			mockToken := oauth2.Token{RefreshToken: "refresh-token", AccessToken: "access-token"}
+
+			c.getOIDCClientFunc = func(string) (oidcClient, error) {
+				return &mockOIDCClient{
+					CheckRefreshTok: &mockToken,
+				}, nil
+			}
+
 			err = c.profileStore.SaveProfile(profile)
 			require.NoError(t, err)
 
@@ -2081,6 +2347,8 @@ func TestPresentProofHandler(t *testing.T) {
 
 			vc := createAuthorizationCredential(t)
 
+			txnID := "txn-id"
+
 			handle := &AuthorizationCredentialHandle{
 				ID:         vc.ID,
 				IssuerDID:  didDocument.ID,
@@ -2088,7 +2356,10 @@ func TestPresentProofHandler(t *testing.T) {
 				RPDID:      rpDIDDoc.ID,
 				Token:      uuid.New().String(),
 				IssuerID:   issuerID,
+				OauthID:    txnID,
 			}
+
+			c.userTokens[txnID] = &mockToken
 
 			err = c.storeAuthorizationCredHandle(handle)
 			require.NoError(t, err)
