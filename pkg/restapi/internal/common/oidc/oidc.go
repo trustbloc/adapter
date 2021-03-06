@@ -30,7 +30,6 @@ type Client struct {
 	oidcCallbackURL    string
 	oauth2ConfigFunc   func(...string) *oauth2.Config
 	tlsConfig          *tls.Config
-	tokenSource        oauth2.TokenSource
 	defaultOAuthConfig *oauth2.Config
 }
 
@@ -42,11 +41,7 @@ type Config struct {
 	OIDCClientSecret       string
 	OIDCClientSecretExpiry int
 	OIDCCallbackURL        string
-	RefreshToken           string
 }
-
-// TODO: add an oauth2.TokenSource (which is given the refresh token) to the Client,
-//  for getting the access token with automatic refreshing
 
 // New returns client instance
 func New(config *Config) (*Client, error) {
@@ -90,12 +85,6 @@ func New(config *Config) (*Client, error) {
 
 	svc.defaultOAuthConfig = svc.oauth2ConfigFunc()
 
-	if config.RefreshToken != "" {
-		// without an access token, this will refresh the first time the token source is used
-		tok := oauth2.Token{RefreshToken: config.RefreshToken}
-		svc.tokenSource = svc.defaultOAuthConfig.TokenSource(context.Background(), &tok)
-	}
-
 	return svc, nil
 }
 
@@ -110,27 +99,13 @@ func (c *Client) CreateOIDCRequest(state, scope string) string {
 
 // GetIDTokenClaims handle oidc callback and get claims from ID token
 func (c *Client) GetIDTokenClaims(reqContext context.Context, code string) ([]byte, error) {
-	oauthToken, err := c.oauth2ConfigFunc().Exchange(
-		context.WithValue(
-			reqContext,
-			oauth2.HTTPClient,
-			&http.Client{Transport: &http.Transport{TLSClientConfig: c.tlsConfig}},
-		),
-		code)
+	_, oidcToken, err := c.HandleOIDCCallback(reqContext, code)
 	if err != nil {
-		return nil, fmt.Errorf("failed to exchange oauth2 code for token : %s", err)
+		return nil, fmt.Errorf("failed to retrieve tokens : %s", err)
 	}
 
-	rawIDToken, ok := oauthToken.Extra("id_token").(string)
-	if !ok {
+	if oidcToken == nil {
 		return nil, fmt.Errorf("missing id_token")
-	}
-
-	oidcToken, err := c.oidcProvider.Verifier(&oidc.Config{
-		ClientID: c.oidcClientID,
-	}).Verify(reqContext, rawIDToken)
-	if err != nil {
-		return nil, fmt.Errorf("failed to verify id_token : %s", err)
 	}
 
 	userData := make(map[string]interface{})

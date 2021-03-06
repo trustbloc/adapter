@@ -178,22 +178,22 @@ func New(config *Config) (*Operation, error) { // nolint:funlen,gocyclo
 		return nil, err
 	}
 
-	txnStore, err := getTxnStore(config.StoreProvider)
+	txnStore, err := config.StoreProvider.OpenStore(txnStoreName)
 	if err != nil {
 		return nil, err
 	}
 
-	tokenStore, err := getTokenStore(config.StoreProvider)
+	tokenStore, err := config.StoreProvider.OpenStore(tokenStoreName)
 	if err != nil {
 		return nil, err
 	}
 
-	oidcClientStore, err := getOIDCClientStore(config.StoreProvider)
+	oidcClientStore, err := config.StoreProvider.OpenStore(oidcClientStoreName)
 	if err != nil {
 		return nil, err
 	}
 
-	refreshStore, err := getRefreshTokenStore(config.StoreProvider)
+	refreshStore, err := config.StoreProvider.OpenStore(refreshTokenStoreName)
 	if err != nil {
 		return nil, err
 	}
@@ -469,7 +469,7 @@ func (o *Operation) requestOIDCAuthHandler(rw http.ResponseWriter, req *http.Req
 	txnID := req.FormValue(txnIDQueryParam)
 	if txnID == "" {
 		commhttp.WriteErrorResponseWithLog(rw, http.StatusBadRequest,
-			"missing txn ID from request", profileEndpoint, logger)
+			"missing txn ID from request", oidcAuthRequestEndpoint, logger)
 
 		return
 	}
@@ -477,7 +477,7 @@ func (o *Operation) requestOIDCAuthHandler(rw http.ResponseWriter, req *http.Req
 	userID := req.FormValue(userIDQueryParam)
 	if userID == "" {
 		commhttp.WriteErrorResponseWithLog(rw, http.StatusBadRequest,
-			"missing user ID from request", profileEndpoint, logger)
+			"missing user ID from request", oidcAuthRequestEndpoint, logger)
 
 		return
 	}
@@ -485,7 +485,7 @@ func (o *Operation) requestOIDCAuthHandler(rw http.ResponseWriter, req *http.Req
 	txn, err := o.getTxn(txnID)
 	if err != nil {
 		commhttp.WriteErrorResponseWithLog(rw, http.StatusBadRequest,
-			"invalid txn ID", profileEndpoint, logger)
+			"invalid txn ID", oidcAuthRequestEndpoint, logger)
 
 		return
 	}
@@ -493,7 +493,17 @@ func (o *Operation) requestOIDCAuthHandler(rw http.ResponseWriter, req *http.Req
 	profile, err := o.profileStore.GetProfile(txn.IssuerID)
 	if err != nil {
 		commhttp.WriteErrorResponseWithLog(rw, http.StatusBadRequest,
-			"invalid request, issuer ID was not registered with adapter", profileEndpoint, logger)
+			"invalid request, issuer ID was not registered with adapter", oidcAuthRequestEndpoint, logger)
+
+		return
+	}
+
+	_, err = o.getOIDCAccessToken(txnID, profile.OIDCProviderURL)
+	if err == nil { // if there was NO error, we still have a valid access/refresh token, and can skip login&consent
+		rURL := fmt.Sprintf("%s?%s=%s&%s=%s", o.uiEndpoint,
+			txnIDQueryParam, txnID, userIDQueryParam, userID)
+
+		http.Redirect(rw, req, rURL, http.StatusFound)
 
 		return
 	}
@@ -501,7 +511,7 @@ func (o *Operation) requestOIDCAuthHandler(rw http.ResponseWriter, req *http.Req
 	client, err := o.getOIDCClientFunc(profile.OIDCProviderURL)
 	if err != nil {
 		commhttp.WriteErrorResponseWithLog(rw, http.StatusInternalServerError,
-			"server error", profileEndpoint, logger)
+			"server error", oidcAuthRequestEndpoint, logger)
 
 		return
 	}
@@ -513,7 +523,7 @@ func (o *Operation) requestOIDCAuthHandler(rw http.ResponseWriter, req *http.Req
 	_, err = rand.Read(stateBytes)
 	if err != nil {
 		commhttp.WriteErrorResponseWithLog(rw, http.StatusInternalServerError,
-			"server error", profileEndpoint, logger)
+			"server error", oidcAuthRequestEndpoint, logger)
 
 		return
 	}
@@ -563,8 +573,6 @@ func (o *Operation) requestOIDCAuthHandler(rw http.ResponseWriter, req *http.Req
 
 // OIDC callback from the OIDC provider through the auth code flow
 func (o *Operation) oidcAuthCallback(rw http.ResponseWriter, req *http.Request) { // nolint:funlen
-	logger.Infof("request host: %s", req.URL.Host)
-
 	stateCookie, err := req.Cookie("oidcState")
 	if err != nil {
 		commhttp.WriteErrorResponseWithLog(rw, http.StatusInternalServerError,
@@ -1407,22 +1415,6 @@ func presentProofClient(prov presentproof.Provider, actionCh chan service.DIDCom
 	}
 
 	return presentProofClient, nil
-}
-
-func getTxnStore(prov storage.Provider) (storage.Store, error) {
-	return prov.OpenStore(txnStoreName)
-}
-
-func getTokenStore(prov storage.Provider) (storage.Store, error) {
-	return prov.OpenStore(tokenStoreName)
-}
-
-func getOIDCClientStore(prov storage.Provider) (storage.Store, error) {
-	return prov.OpenStore(oidcClientStoreName)
-}
-
-func getRefreshTokenStore(prov storage.Provider) (storage.Store, error) {
-	return prov.OpenStore(refreshTokenStoreName)
 }
 
 func fetchAuthorizationCreReq(msg service.DIDCommAction) (*AuthorizationCredentialReq, error) { // nolint: gocyclo
