@@ -31,6 +31,7 @@ type Client struct {
 	oauth2ConfigFunc   func(...string) *oauth2.Config
 	tlsConfig          *tls.Config
 	defaultOAuthConfig *oauth2.Config
+	candidateScopes    map[string]struct{}
 }
 
 // Config defines configuration for oidc client
@@ -41,6 +42,8 @@ type Config struct {
 	OIDCClientSecret       string
 	OIDCClientSecretExpiry int
 	OIDCCallbackURL        string
+	// Scopes scopes that oidc.Client is allowed to request.
+	Scopes []string
 }
 
 // New returns client instance
@@ -51,6 +54,11 @@ func New(config *Config) (*Client, error) {
 		secretExpiry:     config.OIDCClientSecretExpiry,
 		oidcCallbackURL:  config.OIDCCallbackURL,
 		tlsConfig:        config.TLSConfig,
+		candidateScopes:  map[string]struct{}{},
+	}
+
+	for _, scope := range config.Scopes {
+		svc.candidateScopes[scope] = struct{}{}
 	}
 
 	idp, err := oidc.NewProvider(
@@ -89,8 +97,18 @@ func New(config *Config) (*Client, error) {
 }
 
 // CreateOIDCRequest create oidc request
-func (c *Client) CreateOIDCRequest(state, scope string) string {
-	redirectURL := c.oauth2ConfigFunc(strings.Split(scope, " ")...).AuthCodeURL(state, oauth2.AccessTypeOffline)
+func (c *Client) CreateOIDCRequest(state, scopeString string) string {
+	potentialScopes := strings.Split(scopeString, " ")
+
+	var scopes []string
+
+	for _, scope := range potentialScopes {
+		if _, ok := c.candidateScopes[scope]; ok {
+			scopes = append(scopes, scope)
+		}
+	}
+
+	redirectURL := c.oauth2ConfigFunc(scopes...).AuthCodeURL(state, oauth2.AccessTypeOffline)
 
 	logger.Debugf("redirectURL: %s", redirectURL)
 

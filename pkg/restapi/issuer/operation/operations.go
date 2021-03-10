@@ -17,6 +17,7 @@ import (
 	"fmt"
 	"io/ioutil"
 	"net/http"
+	"strings"
 	"time"
 
 	oidclib "github.com/coreos/go-oidc"
@@ -72,11 +73,12 @@ const (
 	oidcCallbackEndpoint    = "/oidc/cb"
 
 	// http params
-	idPathParam      = "id"
-	txnIDQueryParam  = "txnID"
-	stateQueryParam  = "state"
-	redirectURLFmt   = "%s?state=%s"
-	userIDQueryParam = "uID"
+	idPathParam         = "id"
+	txnIDQueryParam     = "txnID"
+	stateQueryParam     = "state"
+	redirectURLFmt      = "%s?state=%s"
+	userIDQueryParam    = "uID"
+	credScopeQueryParam = "cred"
 
 	txnStoreName          = "issuer_txn"
 	tokenStoreName        = "issuer_token"
@@ -319,6 +321,13 @@ type Operation struct {
 	getOIDCClientFunc    func(string) (oidcClient, error)
 }
 
+/**
+TODO: Include the scope for the credential type in the oauth request made by the issuer adapter for a given credential
+ - when creating the issuer profile, adapter should be given a list of scopes
+ - when invoking an OIDC login (in the issuer adapter), the issuer-adapter should be told
+   what credential scope to request and should include that scope in the authorization request.
+*/
+
 // GetRESTHandlers get all controller API handler available for this service.
 func (o *Operation) GetRESTHandlers() []restapi.Handler {
 	return append([]restapi.Handler{
@@ -420,6 +429,12 @@ func (o *Operation) walletConnectHandler(rw http.ResponseWriter, req *http.Reque
 
 	state := req.URL.Query().Get(stateQueryParam)
 	if state == "" {
+		cred := strings.Trim(req.FormValue(credScopeQueryParam), " ")
+		if cred != "" {
+			o.credScopeHandler(rw, req, profile, cred)
+			return
+		}
+
 		commhttp.WriteErrorResponseWithLog(rw, http.StatusBadRequest,
 			"failed to get state from the url", walletConnectEndpoint, logger)
 
@@ -462,6 +477,37 @@ func (o *Operation) walletConnectHandler(rw http.ResponseWriter, req *http.Reque
 	http.Redirect(rw, req, rURL, http.StatusFound)
 }
 
+func (o *Operation) credScopeHandler(rw http.ResponseWriter, req *http.Request, profile *issuer.ProfileData,
+	credScope string) {
+	has := false
+
+	for _, scope := range profile.CredentialScopes {
+		if scope == credScope {
+			has = true
+			break
+		}
+	}
+
+	if !has {
+		commhttp.WriteErrorResponseWithLog(rw, http.StatusBadRequest,
+			"issuer profile does not allow request of credential scope "+credScope, walletConnectEndpoint, logger)
+
+		return
+	}
+
+	txnID, err := o.createTxnWithCredScope(profile, credScope)
+	if err != nil {
+		commhttp.WriteErrorResponseWithLog(rw, http.StatusInternalServerError,
+			fmt.Sprintf("failed to create txn : %s", err.Error()), walletConnectEndpoint, logger)
+
+		return
+	}
+
+	rURL := fmt.Sprintf("%s?%s=%s", oidcAuthRequestEndpoint, txnIDQueryParam, txnID)
+
+	http.Redirect(rw, req, rURL, http.StatusFound)
+}
+
 // requestOIDCAuthHandler endpoint requests OIDC authorization from the current user
 // expects a GET containing txnID and uID query parameters.
 // responds with an http redirect to the requested oidc provider's authorization endpoint
@@ -470,14 +516,6 @@ func (o *Operation) requestOIDCAuthHandler(rw http.ResponseWriter, req *http.Req
 	if txnID == "" {
 		commhttp.WriteErrorResponseWithLog(rw, http.StatusBadRequest,
 			"missing txn ID from request", oidcAuthRequestEndpoint, logger)
-
-		return
-	}
-
-	userID := req.FormValue(userIDQueryParam)
-	if userID == "" {
-		commhttp.WriteErrorResponseWithLog(rw, http.StatusBadRequest,
-			"missing user ID from request", oidcAuthRequestEndpoint, logger)
 
 		return
 	}
@@ -498,7 +536,19 @@ func (o *Operation) requestOIDCAuthHandler(rw http.ResponseWriter, req *http.Req
 		return
 	}
 
-	_, err = o.getOIDCAccessToken(txnID, profile.OIDCProviderURL)
+	expire := time.Now().AddDate(0, 0, 1)
+
+	userID := req.FormValue(userIDQueryParam)
+	if userID != "" {
+		userIDCookie := http.Cookie{
+			Name:    "userID",
+			Value:   userID,
+			Expires: expire,
+		}
+		http.SetCookie(rw, &userIDCookie)
+	}
+
+	_, err = o.getOIDCAccessToken(txnID, profile)
 	if err == nil { // if there was NO error, we still have a valid access/refresh token, and can skip login&consent
 		rURL := fmt.Sprintf("%s?%s=%s&%s=%s", o.uiEndpoint,
 			txnIDQueryParam, txnID, userIDQueryParam, userID)
@@ -508,7 +558,7 @@ func (o *Operation) requestOIDCAuthHandler(rw http.ResponseWriter, req *http.Req
 		return
 	}
 
-	client, err := o.getOIDCClientFunc(profile.OIDCProviderURL)
+	client, err := o.getOIDCClientFunc(profile.ID)
 	if err != nil {
 		commhttp.WriteErrorResponseWithLog(rw, http.StatusInternalServerError,
 			"server error", oidcAuthRequestEndpoint, logger)
@@ -530,7 +580,6 @@ func (o *Operation) requestOIDCAuthHandler(rw http.ResponseWriter, req *http.Req
 
 	state := base64.RawURLEncoding.EncodeToString(stateBytes)
 
-	expire := time.Now().AddDate(0, 0, 1)
 	stateCookie := http.Cookie{
 		Name:    "oidcState",
 		Value:   state,
@@ -545,13 +594,6 @@ func (o *Operation) requestOIDCAuthHandler(rw http.ResponseWriter, req *http.Req
 	}
 	http.SetCookie(rw, &opURLCookie)
 
-	issuerURLCookie := http.Cookie{
-		Name:    "issuerURL",
-		Value:   profile.URL,
-		Expires: expire,
-	}
-	http.SetCookie(rw, &issuerURLCookie)
-
 	txnIDCookie := http.Cookie{
 		Name:    "txnID",
 		Value:   txnID,
@@ -559,20 +601,19 @@ func (o *Operation) requestOIDCAuthHandler(rw http.ResponseWriter, req *http.Req
 	}
 	http.SetCookie(rw, &txnIDCookie)
 
-	userIDCookie := http.Cookie{
-		Name:    "userID",
-		Value:   userID,
-		Expires: expire,
-	}
-	http.SetCookie(rw, &userIDCookie)
+	scopes := "openid offline_access"
 
-	authURL := client.CreateOIDCRequest(state, "openid offline_access")
+	if txn.CredScope != "" {
+		scopes += " " + txn.CredScope
+	}
+
+	authURL := client.CreateOIDCRequest(state, scopes)
 
 	http.Redirect(rw, req, authURL, http.StatusFound)
 }
 
 // OIDC callback from the OIDC provider through the auth code flow
-func (o *Operation) oidcAuthCallback(rw http.ResponseWriter, req *http.Request) { // nolint:funlen
+func (o *Operation) oidcAuthCallback(rw http.ResponseWriter, req *http.Request) { // nolint:funlen,gocyclo
 	stateCookie, err := req.Cookie("oidcState")
 	if err != nil {
 		commhttp.WriteErrorResponseWithLog(rw, http.StatusInternalServerError,
@@ -597,25 +638,17 @@ func (o *Operation) oidcAuthCallback(rw http.ResponseWriter, req *http.Request) 
 		return
 	}
 
-	userCookie, err := req.Cookie("userID")
+	txn, err := o.getTxn(txnCookie.Value)
 	if err != nil {
 		commhttp.WriteErrorResponseWithLog(rw, http.StatusInternalServerError,
-			fmt.Sprintf("missing user id cookie: %v", err), oidcCallbackEndpoint, logger)
-
-		return
-	}
-
-	providerCookie, err := req.Cookie("oidcProvider")
-	if err != nil {
-		commhttp.WriteErrorResponseWithLog(rw, http.StatusInternalServerError,
-			fmt.Sprintf("missing oidc provider cookie: %v", err), oidcCallbackEndpoint, logger)
+			"invalid txn ID", oidcAuthRequestEndpoint, logger)
 
 		return
 	}
 
 	authCode := req.FormValue("code")
 
-	client, err := o.getOIDCClientFunc(providerCookie.Value)
+	client, err := o.getOIDCClientFunc(txn.IssuerID)
 	if err != nil {
 		commhttp.WriteErrorResponseWithLog(rw, http.StatusInternalServerError,
 			fmt.Sprintf("failed to initialize oidc client: %v", err), oidcCallbackEndpoint, logger)
@@ -639,15 +672,57 @@ func (o *Operation) oidcAuthCallback(rw http.ResponseWriter, req *http.Request) 
 		return
 	}
 
+	profile, err := o.profileStore.GetProfile(txn.IssuerID)
+	if err != nil {
+		commhttp.WriteErrorResponseWithLog(rw, http.StatusInternalServerError,
+			"invalid request, issuer ID was not registered with adapter", oidcAuthRequestEndpoint, logger)
+
+		return
+	}
+
 	o.userTokens[txnCookie.Value] = token
 
+	userID := ""
+
+	userCookie, err := req.Cookie("userID")
+	if err == nil {
+		userID = userCookie.Value
+	} else if userID, err = o.retrieveUserID(profile.URL, token.AccessToken); err != nil {
+		commhttp.WriteErrorResponseWithLog(rw, http.StatusInternalServerError,
+			fmt.Sprintf("missing userID cookie, failed to fetch userID from issuer: %v", err),
+			oidcCallbackEndpoint, logger)
+
+		return
+	}
+
 	rURL := fmt.Sprintf("%s?%s=%s&%s=%s", o.uiEndpoint,
-		txnIDQueryParam, txnCookie.Value, userIDQueryParam, userCookie.Value)
+		txnIDQueryParam, txnCookie.Value, userIDQueryParam, userID)
 
 	http.Redirect(rw, req, rURL, http.StatusFound)
 }
 
-func (o *Operation) getOIDCAccessToken(txnID, oidcProviderURL string) (string, error) {
+func (o *Operation) retrieveUserID(issuerURL, bearerToken string) (string, error) {
+	req, err := http.NewRequest(http.MethodGet, getUserIDURL(issuerURL), nil)
+	if err != nil {
+		return "", fmt.Errorf("create userID request : %w", err)
+	}
+
+	respBytes, err := sendHTTPRequest(req, o.httpClient, http.StatusOK, bearerToken)
+	if err != nil {
+		return "", fmt.Errorf("call issuer userID service : %w", err)
+	}
+
+	var dataResp *IssuerTokenResp
+
+	err = json.Unmarshal(respBytes, &dataResp)
+	if err != nil {
+		return "", fmt.Errorf("issuer response parse error : %w", err)
+	}
+
+	return dataResp.UserID, nil
+}
+
+func (o *Operation) getOIDCAccessToken(txnID string, profile *issuer.ProfileData) (string, error) {
 	tok, ok := o.userTokens[txnID]
 	if !ok {
 		refresh, err := o.refreshTokenStore.Get(txnID)
@@ -658,7 +733,7 @@ func (o *Operation) getOIDCAccessToken(txnID, oidcProviderURL string) (string, e
 		tok = &oauth2.Token{RefreshToken: string(refresh)}
 	}
 
-	client, err := o.getOIDCClientFunc(oidcProviderURL)
+	client, err := o.getOIDCClientFunc(profile.ID)
 	if err != nil {
 		return "", err
 	}
@@ -798,7 +873,7 @@ func (o *Operation) getCHAPIRequestHandler(rw http.ResponseWriter, req *http.Req
 	oauthToken := ""
 
 	if profile.OIDCProviderURL != "" {
-		oauthToken, err = o.getOIDCAccessToken(txnID, profile.OIDCProviderURL)
+		oauthToken, err = o.getOIDCAccessToken(txnID, profile)
 		if err != nil {
 			return
 		}
@@ -906,6 +981,37 @@ func (o *Operation) createTxn(profile *issuer.ProfileData, state, token string) 
 		IssuerID:          profile.ID,
 		State:             state,
 		DIDCommInvitation: invitation,
+		Token:             token,
+	}
+
+	dataBytes, err := json.Marshal(data)
+	if err != nil {
+		return "", err
+	}
+
+	err = o.txnStore.Put(txnID, dataBytes)
+	if err != nil {
+		return "", err
+	}
+
+	return txnID, nil
+}
+
+func (o *Operation) createTxnWithCredScope(profile *issuer.ProfileData, credScope string) (string, error) {
+	invitation, err := o.oobClient.CreateInvitation(nil, outofband.WithLabel("issuer"))
+	if err != nil {
+		return "", fmt.Errorf("failed to create invitation : %w", err)
+	}
+
+	txnID := uuid.New().String()
+
+	token := uuid.New().String()
+
+	// store the txn data
+	data := &txnData{
+		IssuerID:          profile.ID,
+		DIDCommInvitation: invitation,
+		CredScope:         credScope,
 		Token:             token,
 	}
 
@@ -1239,7 +1345,7 @@ func (o *Operation) generateUserPresentation(handle *AuthorizationCredentialHand
 
 	oauthToken := ""
 	if profile.OIDCProviderURL != "" {
-		oauthToken, err = o.getOIDCAccessToken(handle.OauthID, profile.OIDCProviderURL)
+		oauthToken, err = o.getOIDCAccessToken(handle.OauthID, profile)
 		if err != nil {
 			return nil, fmt.Errorf("getting access token for oidc issuer: %w", err)
 		}
@@ -1532,6 +1638,10 @@ func getTokenURL(issuerURL string) string {
 	return fmt.Sprintf("%s/token", issuerURL)
 }
 
+func getUserIDURL(issuerURL string) string {
+	return fmt.Sprintf("%s/uid", issuerURL)
+}
+
 func getAssuranceDataURL(issuerURL string) string {
 	return fmt.Sprintf("%s/assurance", issuerURL)
 }
@@ -1610,5 +1720,6 @@ func mapProfileReqToData(data *ProfileDataRequest, didDoc *did.Doc) (*issuer.Pro
 		OIDCProviderURL:             data.OIDCProviderURL,
 		CreatedAt:                   &created,
 		OIDCClientParams:            clientParams,
+		CredentialScopes:            data.CredentialScopes,
 	}, nil
 }

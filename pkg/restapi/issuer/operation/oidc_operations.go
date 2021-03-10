@@ -25,19 +25,19 @@ import (
 	"github.com/trustbloc/edge-adapter/pkg/restapi/internal/common/oidc"
 )
 
-func (o *Operation) getOIDCClient(providerURL string) (oidcClient, error) {
-	if client, present := o.cachedOIDCClients[providerURL]; present {
+func (o *Operation) getOIDCClient(issuerID string) (oidcClient, error) {
+	if client, present := o.cachedOIDCClients[issuerID]; present {
 		return client, nil
 	}
 
-	clientData, err := o.loadOIDCClientData(providerURL)
+	clientData, err := o.loadOIDCClientData(issuerID)
 	if err != nil {
 		return nil, fmt.Errorf("error loading oidc client data: %w", err)
 	}
 
 	client, err := oidc.New(&oidc.Config{
 		TLSConfig:              o.tlsConfig,
-		OIDCProviderURL:        providerURL,
+		OIDCProviderURL:        issuerID,
 		OIDCClientID:           clientData.ID,
 		OIDCClientSecret:       clientData.Secret,
 		OIDCClientSecretExpiry: clientData.Expiry,
@@ -54,12 +54,12 @@ func (o *Operation) getOIDCClient(providerURL string) (oidcClient, error) {
 // can recreate the client as needed - client data is persisted,
 // and client is only registered if the persistent client data is not present.
 func (o *Operation) getOrCreateOIDCClient(profileData *issuer.ProfileData) (oidcClient, error) {
-	if client, present := o.cachedOIDCClients[profileData.OIDCProviderURL]; present {
+	if client, present := o.cachedOIDCClients[profileData.ID]; present {
+		// TODO: should check whether client secret is expired
 		return client, nil
 	}
 
-	// TODO:
-	//  - when using oidcClient, need to check if secret is expired
+	// TODO: when creating an oidcClient, need to check if secret is expired
 
 	clientData, err := o.getOrCreateClientData(profileData)
 	if err != nil {
@@ -73,12 +73,13 @@ func (o *Operation) getOrCreateOIDCClient(profileData *issuer.ProfileData) (oidc
 		OIDCClientSecret:       clientData.Secret,
 		OIDCClientSecretExpiry: clientData.Expiry,
 		OIDCCallbackURL:        o.oidcCallbackURL,
+		Scopes:                 clientData.Scopes,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("creating oidc client: %w", err)
 	}
 
-	o.cachedOIDCClients[profileData.OIDCProviderURL] = client
+	o.cachedOIDCClients[profileData.ID] = client
 
 	return client, nil
 }
@@ -89,10 +90,11 @@ func (o *Operation) getOrCreateClientData(profileData *issuer.ProfileData) (*oid
 			ID:     profileData.OIDCClientParams.ClientID,
 			Secret: profileData.OIDCClientParams.ClientSecret,
 			Expiry: profileData.OIDCClientParams.SecretExpiry,
+			Scopes: append([]string{"openid", "offline_access"}, profileData.CredentialScopes...),
 		}, nil
 	}
 
-	clientData, err := o.loadOIDCClientData(profileData.OIDCProviderURL)
+	clientData, err := o.loadOIDCClientData(profileData.ID)
 	if err == nil {
 		return clientData, nil
 	}
@@ -106,12 +108,12 @@ func (o *Operation) getOrCreateClientData(profileData *issuer.ProfileData) (*oid
 		return nil, fmt.Errorf("error getting provider openid configuration: %w", e)
 	}
 
-	clientData, e = o.registerOAuthClient(providerConfig.Register)
+	clientData, e = o.registerOAuthClient(providerConfig.Register, profileData)
 	if e != nil {
 		return nil, fmt.Errorf("error registering oidc client: %w", e)
 	}
 
-	e = o.saveOIDCClientData(profileData.OIDCProviderURL, clientData)
+	e = o.saveOIDCClientData(profileData.ID, clientData)
 	if e != nil {
 		return nil, fmt.Errorf("error saving oidc client data: %w", e)
 	}
@@ -153,6 +155,7 @@ func (o *Operation) getOpenIDConfiguration(providerURL string) (*openidConfig, e
 }
 
 type oidcClientRegisterRequest struct {
+	Name                    string   `json:"client_name,omitempty"`
 	RedirectURIs            []string `json:"redirect_uris"`
 	TokenEndpointAuthMethod string   `json:"token_endpoint_auth_method"`
 	Scope                   string   `json:"scope,omitempty"`
@@ -169,11 +172,21 @@ type oidcClientRegisterResponse struct {
 // registerOAuthClient registers the issuer adapter as an OAuth2.0 client
 // for the Oauth2.0 provider whose register endpoint is registerURL.
 // Implements https://tools.ietf.org/html/rfc7591 (partially)
-func (o *Operation) registerOAuthClient(registerURL string) (*oidcClientData, error) {
+func (o *Operation) registerOAuthClient(registerURL string, profileData *issuer.ProfileData) (*oidcClientData, error) {
+	scopes := []string{"openid", "offline_access"}
+	name := ""
+
+	if profileData != nil {
+		name = profileData.Name
+
+		scopes = append(scopes, profileData.CredentialScopes...)
+	}
+
 	reqData := oidcClientRegisterRequest{
+		Name:                    name,
 		RedirectURIs:            []string{o.oidcCallbackURL},
 		TokenEndpointAuthMethod: "client_secret_basic",
-		Scope:                   "openid offline_access",
+		Scope:                   strings.Join(scopes, " "),
 		GrantTypes:              []string{"authorization_code", "refresh_token"},
 		ResponseTypes:           []string{"code"},
 	}
@@ -204,6 +217,7 @@ func (o *Operation) registerOAuthClient(registerURL string) (*oidcClientData, er
 		ID:     response.ID,
 		Secret: response.Secret,
 		Expiry: response.SecretExpiry,
+		Scopes: scopes,
 	}, nil
 }
 
@@ -213,18 +227,19 @@ type oidcClientDataWrapper struct {
 }
 
 type oidcClientData struct {
-	ID     string `json:"id"`
-	Secret string `json:"secret"`
-	Expiry int    `json:"exp"`
+	ID     string   `json:"id"`
+	Secret string   `json:"secret"`
+	Expiry int      `json:"exp"`
+	Scopes []string `json:"credScopes,omitempty"`
 }
 
-func (o *Operation) saveOIDCClientData(providerURL string, data *oidcClientData) error {
-	wrappedBytes, err := encryptClientData(providerURL, o.oidcClientStoreKey, data)
+func (o *Operation) saveOIDCClientData(issuerProfileID string, data *oidcClientData) error {
+	wrappedBytes, err := encryptClientData(issuerProfileID, o.oidcClientStoreKey, data)
 	if err != nil {
 		return fmt.Errorf("error encrypting client data: %w", err)
 	}
 
-	err = o.oidcClientStore.Put(providerURL, wrappedBytes)
+	err = o.oidcClientStore.Put(issuerProfileID, wrappedBytes)
 	if err != nil {
 		return fmt.Errorf("error storing client data: %w", err)
 	}
@@ -232,8 +247,8 @@ func (o *Operation) saveOIDCClientData(providerURL string, data *oidcClientData)
 	return nil
 }
 
-func (o *Operation) loadOIDCClientData(providerURL string) (*oidcClientData, error) {
-	readBytes, err := o.oidcClientStore.Get(providerURL)
+func (o *Operation) loadOIDCClientData(issuerProfileID string) (*oidcClientData, error) {
+	readBytes, err := o.oidcClientStore.Get(issuerProfileID)
 	if err != nil {
 		if errors.Is(err, storage.ErrDataNotFound) {
 			return nil, err
@@ -250,13 +265,13 @@ func (o *Operation) loadOIDCClientData(providerURL string) (*oidcClientData, err
 	return data, nil
 }
 
-func encryptClientData(providerURL string, key []byte, data *oidcClientData) ([]byte, error) {
+func encryptClientData(id string, key []byte, data *oidcClientData) ([]byte, error) {
 	dataBytes, err := json.Marshal(data)
 	if err != nil {
 		return nil, fmt.Errorf("error marshaling data: %w", err)
 	}
 
-	nonce, err := makeNonce([]byte(providerURL))
+	nonce, err := makeNonce([]byte(id))
 	if err != nil {
 		return nil, fmt.Errorf("error generating nonce: %w", err)
 	}

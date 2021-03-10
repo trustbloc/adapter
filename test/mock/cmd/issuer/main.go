@@ -49,6 +49,7 @@ func main() {
 	router.HandleFunc("/{issuer}/token", tokenHandler).Methods(http.MethodPost)
 	router.HandleFunc("/{issuer}/data", createUserDataVCHandler).Methods(http.MethodPost)
 	router.HandleFunc("/{issuer}/assurance", createAssuranceDataVCHandler).Methods(http.MethodPost)
+	router.HandleFunc("/{issuer}/uid", userIDHandler).Methods(http.MethodPost)
 
 	logger.Fatalf("issuer server start error %s", http.ListenAndServe(fmt.Sprintf(addressPattern, port), router))
 }
@@ -76,6 +77,24 @@ func tokenHandler(rw http.ResponseWriter, req *http.Request) {
 	}
 
 	rw.WriteHeader(http.StatusOK)
+}
+
+func userIDHandler(rw http.ResponseWriter, req *http.Request) {
+	resp := &issuerTokenResp{
+		UserID: "bdduser",
+	}
+
+	respBytes, err := json.Marshal(resp)
+	if err != nil {
+		WriteErrorResponseWithLog(rw, http.StatusInternalServerError,
+			fmt.Sprintf("[issuer] failed to send token resp - err:%s", err.Error()), req.RequestURI, logger)
+	}
+
+	_, err = rw.Write(respBytes)
+	if err != nil {
+		WriteErrorResponseWithLog(rw, http.StatusInternalServerError,
+			fmt.Sprintf("[issuer] failed to send token resp - err:%s", err.Error()), req.RequestURI, logger)
+	}
 }
 
 func createUserDataVCHandler(rw http.ResponseWriter, req *http.Request) {

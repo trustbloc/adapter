@@ -42,6 +42,7 @@ type ProfileData struct {
 	CreatedAt                   *time.Time        `json:"createdAt"`
 	OIDCProviderURL             string            `json:"oidcProvider"`
 	OIDCClientParams            *OIDCClientParams `json:"oidcParams,omitempty"`
+	CredentialScopes            []string          `json:"credScopes,omitempty"`
 }
 
 // OIDCClientParams optional set of oidc client parameters that the issuer may set, for static client registration.
