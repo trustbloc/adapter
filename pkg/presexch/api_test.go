@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/hyperledger/aries-framework-go/pkg/doc/jsonld"
 	"github.com/hyperledger/aries-framework-go/pkg/doc/util"
 	"github.com/hyperledger/aries-framework-go/pkg/doc/verifiable"
 	"github.com/piprate/json-gold/ld"
@@ -352,7 +353,7 @@ func randomURI() []string {
 	return []string{fmt.Sprintf("https://my.test.context.jsonld/%s", uuid.New().String())}
 }
 
-func jsonldContextLoader(t *testing.T, contextURLs []string) *ld.CachingDocumentLoader {
+func jsonldContextLoader(t *testing.T, contextURLs []string) *jsonld.CachingDocumentLoader {
 	const jsonLDContext = `{
     "@context":{
       "@version":1.1,

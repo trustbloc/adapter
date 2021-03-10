@@ -20,6 +20,7 @@ import (
 	"github.com/hyperledger/aries-framework-go/pkg/client/presentproof"
 	"github.com/hyperledger/aries-framework-go/pkg/didcomm/protocol/decorator"
 	"github.com/hyperledger/aries-framework-go/pkg/doc/did"
+	"github.com/hyperledger/aries-framework-go/pkg/doc/jsonld"
 	"github.com/hyperledger/aries-framework-go/pkg/doc/util"
 	"github.com/hyperledger/aries-framework-go/pkg/doc/verifiable"
 	ariesctx "github.com/hyperledger/aries-framework-go/pkg/framework/context"
@@ -429,7 +430,7 @@ func newUniversityDegreeVC(_ *testing.T, _ *ariesctx.Provider, signingDID *did.D
 	return vc
 }
 
-func createTestJSONLDDocumentLoader() *ld.CachingDocumentLoader {
+func createTestJSONLDDocumentLoader() *jsonld.CachingDocumentLoader {
 	loader := verifiable.CachingJSONLDLoader()
 
 	contexts := []struct {
@@ -469,7 +470,7 @@ func createTestJSONLDDocumentLoader() *ld.CachingDocumentLoader {
 	return loader
 }
 
-func addJSONLDCachedContextFromFile(loader *ld.CachingDocumentLoader, contextURL, contextFile string) {
+func addJSONLDCachedContextFromFile(loader *jsonld.CachingDocumentLoader, contextURL, contextFile string) {
 	contextContent, err := ioutil.ReadFile(filepath.Clean(filepath.Join(
 		"testdata/context", contextFile))) // nolint: gocritic
 	if err != nil {
@@ -479,7 +480,7 @@ func addJSONLDCachedContextFromFile(loader *ld.CachingDocumentLoader, contextURL
 	addJSONLDCachedContext(loader, contextURL, string(contextContent))
 }
 
-func addJSONLDCachedContext(loader *ld.CachingDocumentLoader, contextURL, contextContent string) {
+func addJSONLDCachedContext(loader *jsonld.CachingDocumentLoader, contextURL, contextContent string) {
 	reader, err := ld.DocumentFromReader(strings.NewReader(contextContent))
 	if err != nil {
 		panic(err)
