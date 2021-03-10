@@ -95,6 +95,7 @@ func TestClient_CreateOIDCRequest(t *testing.T) {
 		OIDCClientID:     "abcd",
 		OIDCClientSecret: "ab cd ef gh ij kl mn op qr st uv wx yz",
 		OIDCCallbackURL:  "http://localhost/abcde",
+		Scopes:           []string{"scopescopescope"},
 	})
 
 	require.NoError(t, err)

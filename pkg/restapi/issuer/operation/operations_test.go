@@ -402,7 +402,7 @@ func TestRegisterOAuthClient(t *testing.T) {
 
 		defer mockOIDCServer.Close()
 
-		_, err = op.registerOAuthClient(mockOIDCServer.URL + "/register")
+		_, err = op.registerOAuthClient(mockOIDCServer.URL+"/register", nil)
 		require.NoError(t, err)
 	})
 
@@ -418,7 +418,7 @@ func TestRegisterOAuthClient(t *testing.T) {
 
 		defer badServer.Close()
 
-		_, err = op.registerOAuthClient(badServer.URL + "/register")
+		_, err = op.registerOAuthClient(badServer.URL+"/register", nil)
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "error response")
 	})
@@ -956,6 +956,124 @@ func TestConnectWallet(t *testing.T) {
 	})
 }
 
+func TestCredScopeHandler(t *testing.T) {
+	profileID := "test-1"
+	credScope := "TestCredScope"
+	endpoint := walletConnectEndpoint
+	urlVars := make(map[string]string)
+
+	tknResp := &IssuerTokenResp{
+		Token:  uuid.New().String(),
+		UserID: "testuser",
+	}
+
+	tknRespBytes, err := json.Marshal(tknResp)
+	require.NoError(t, err)
+
+	mockOIDC := mockOIDCClient{}
+
+	t.Run("success - test connect wallet using cred scope", func(t *testing.T) {
+		c, err := New(config())
+		require.NoError(t, err)
+
+		c.createOIDCClientFunc = func(*issuer.ProfileData) (oidcClient, error) {
+			return &mockOIDC, nil
+		}
+
+		c.getOIDCClientFunc = func(string) (oidcClient, error) {
+			return &mockOIDC, nil
+		}
+
+		c.httpClient = &mockHTTPClient{
+			respValue: &http.Response{
+				StatusCode: http.StatusOK, Body: ioutil.NopCloser(bytes.NewReader(tknRespBytes)),
+			},
+		}
+
+		data := createProfileData(profileID)
+		data.CredentialScopes = []string{credScope}
+
+		err = c.profileStore.SaveProfile(data)
+		require.NoError(t, err)
+
+		walletConnectHandler := getHandler(t, c, endpoint)
+
+		urlVars[idPathParam] = profileID
+
+		rr := serveHTTPMux(t, walletConnectHandler, walletConnectEndpoint+"?"+credScopeQueryParam+"="+credScope, nil, urlVars)
+
+		require.Equal(t, http.StatusFound, rr.Code)
+		require.Contains(t, rr.Header().Get("Location"), oidcAuthRequestEndpoint)
+	})
+
+	t.Run("failure - cred scope not configured in issuer profile", func(t *testing.T) {
+		c, err := New(config())
+		require.NoError(t, err)
+
+		c.createOIDCClientFunc = func(*issuer.ProfileData) (oidcClient, error) {
+			return &mockOIDC, nil
+		}
+
+		c.getOIDCClientFunc = func(string) (oidcClient, error) {
+			return &mockOIDC, nil
+		}
+
+		c.httpClient = &mockHTTPClient{
+			respValue: &http.Response{
+				StatusCode: http.StatusOK, Body: ioutil.NopCloser(bytes.NewReader(tknRespBytes)),
+			},
+		}
+
+		data := createProfileData(profileID)
+
+		err = c.profileStore.SaveProfile(data)
+		require.NoError(t, err)
+
+		walletConnectHandler := getHandler(t, c, endpoint)
+
+		urlVars[idPathParam] = profileID
+
+		rr := serveHTTPMux(t, walletConnectHandler, walletConnectEndpoint+"?"+credScopeQueryParam+"="+credScope, nil, urlVars)
+
+		require.Equal(t, http.StatusBadRequest, rr.Code)
+	})
+
+	t.Run("failure - could not create transaction record", func(t *testing.T) {
+		c, err := New(config())
+		require.NoError(t, err)
+
+		c.txnStore = &mockstorage.Store{ErrPut: fmt.Errorf("store error")}
+
+		c.createOIDCClientFunc = func(*issuer.ProfileData) (oidcClient, error) {
+			return &mockOIDC, nil
+		}
+
+		c.getOIDCClientFunc = func(string) (oidcClient, error) {
+			return &mockOIDC, nil
+		}
+
+		c.httpClient = &mockHTTPClient{
+			respValue: &http.Response{
+				StatusCode: http.StatusOK, Body: ioutil.NopCloser(bytes.NewReader(tknRespBytes)),
+			},
+		}
+
+		data := createProfileData(profileID)
+		data.CredentialScopes = []string{credScope}
+
+		err = c.profileStore.SaveProfile(data)
+		require.NoError(t, err)
+
+		walletConnectHandler := getHandler(t, c, endpoint)
+
+		urlVars[idPathParam] = profileID
+
+		rr := serveHTTPMux(t, walletConnectHandler, walletConnectEndpoint+"?"+credScopeQueryParam+"="+credScope, nil, urlVars)
+
+		require.Equal(t, http.StatusInternalServerError, rr.Code)
+	})
+}
+
 func TestValidateWalletResponse(t *testing.T) {
 	c, err := New(config())
 	require.NoError(t, err)
@@ -1209,7 +1327,7 @@ func TestValidateWalletResponse(t *testing.T) {
 
 func TestRequestOIDCAuthHandler(t *testing.T) {
 	uiEndpoint := "/mock-ui-endpoint"
-	profileID := "test-1"
+	profileID := "test-profile-1"
 	userID := "user_123"
 	oidcProvider := "https://mock-issuer.local"
 
@@ -1237,8 +1355,11 @@ func TestRequestOIDCAuthHandler(t *testing.T) {
 		return &mockOIDC, nil
 	}
 
+	credScope := "TestCredScope"
+
 	data := createProfileData(profileID)
 	data.OIDCProviderURL = oidcProvider
+	data.CredentialScopes = []string{credScope}
 
 	err = c.profileStore.SaveProfile(data)
 	require.NoError(t, err)
@@ -1258,20 +1379,36 @@ func TestRequestOIDCAuthHandler(t *testing.T) {
 		require.Contains(t, rr.Header().Get("Location"), data.OIDCProviderURL)
 	})
 
+	t.Run("success - using credential scope", func(t *testing.T) {
+		txnID2, err := c.createTxnWithCredScope(data, credScope)
+		require.NoError(t, err)
+
+		authHandler := getHandler(t, c, oidcAuthRequestEndpoint)
+
+		reqPath := fmt.Sprintf("%s?%s=%s&%s=%s", oidcAuthRequestEndpoint,
+			txnIDQueryParam, txnID2, userIDQueryParam, userID)
+
+		rr := serveHTTPMux(t, authHandler, reqPath, nil, nil)
+
+		require.Equal(t, http.StatusFound, rr.Code)
+		require.Contains(t, rr.Header().Get("Location"), data.OIDCProviderURL)
+	})
+
+	t.Run("success: missing optional userID query param", func(t *testing.T) {
+		authHandler := getHandler(t, c, oidcAuthRequestEndpoint)
+
+		reqPath := fmt.Sprintf("%s?%s=%s", oidcAuthRequestEndpoint, txnIDQueryParam, txnID)
+
+		rr := serveHTTPMux(t, authHandler, reqPath, nil, nil)
+
+		require.Equal(t, http.StatusFound, rr.Code)
+		require.Contains(t, rr.Header().Get("Location"), data.OIDCProviderURL)
+	})
+
 	t.Run("failure: missing txnID query param", func(t *testing.T) {
 		authHandler := getHandler(t, c, oidcAuthRequestEndpoint)
 
 		reqPath := fmt.Sprintf("%s?%s=%s", oidcAuthRequestEndpoint, userIDQueryParam, userID)
-
-		rr := serveHTTPMux(t, authHandler, reqPath, nil, nil)
-
-		require.Equal(t, http.StatusBadRequest, rr.Code)
-	})
-
-	t.Run("failure: missing userID query param", func(t *testing.T) {
-		authHandler := getHandler(t, c, oidcAuthRequestEndpoint)
-
-		reqPath := fmt.Sprintf("%s?%s=%s", oidcAuthRequestEndpoint, txnIDQueryParam, txnID)
 
 		rr := serveHTTPMux(t, authHandler, reqPath, nil, nil)
 
@@ -1395,7 +1532,6 @@ func TestOIDCCallback(t *testing.T) {
 		req.AddCookie(&http.Cookie{Name: "oidcState", Value: "state-value"})
 		req.AddCookie(&http.Cookie{Name: "txnID", Value: txnID})
 		req.AddCookie(&http.Cookie{Name: "userID", Value: userID})
-		req.AddCookie(&http.Cookie{Name: "oidcProvider", Value: oidcProvider})
 
 		cbHandler.Handle().ServeHTTP(rr, req)
 
@@ -1416,7 +1552,6 @@ func TestOIDCCallback(t *testing.T) {
 		req.AddCookie(&http.Cookie{Name: "oidcState", Value: "state-value"})
 		req.AddCookie(&http.Cookie{Name: "txnID", Value: txnID})
 		req.AddCookie(&http.Cookie{Name: "userID", Value: userID})
-		req.AddCookie(&http.Cookie{Name: "oidcProvider", Value: oidcProvider})
 
 		cbHandler.Handle().ServeHTTP(rr, req)
 
@@ -1433,16 +1568,17 @@ func TestOIDCCallback(t *testing.T) {
 			{Name: "oidcState", Value: "state-value"},
 			{Name: "txnID", Value: txnID},
 			{Name: "userID", Value: userID},
-			{Name: "oidcProvider", Value: oidcProvider},
 		}
 
-		for i := 0; i < 4; i++ {
+		numTests := len(cookies)
+
+		for i := 0; i < numTests; i++ {
 			rr := httptest.NewRecorder()
 
 			req, err := http.NewRequest(http.MethodGet, reqPath, nil)
 			require.NoError(t, err)
 
-			for j := 0; j < 4; j++ {
+			for j := 0; j < numTests; j++ {
 				if i == j {
 					continue
 				}
@@ -1453,6 +1589,32 @@ func TestOIDCCallback(t *testing.T) {
 			cbHandler.Handle().ServeHTTP(rr, req)
 			require.Equal(t, http.StatusInternalServerError, rr.Code)
 		}
+	})
+
+	t.Run("failure - getting transaction", func(t *testing.T) {
+		prevStore := c.txnStore
+
+		c.txnStore = &mockstorage.Store{ErrGet: fmt.Errorf("err get")}
+
+		cbHandler := getHandler(t, c, oidcCallbackEndpoint)
+
+		reqPath := fmt.Sprintf("%s?%s=%s&%s=%s", oidcCallbackEndpoint,
+			"state", "state-value", "code", "auth-code-value")
+
+		rr := httptest.NewRecorder()
+
+		req, err := http.NewRequest(http.MethodGet, reqPath, nil)
+		require.NoError(t, err)
+
+		req.AddCookie(&http.Cookie{Name: "oidcState", Value: "state-value"})
+		req.AddCookie(&http.Cookie{Name: "txnID", Value: txnID})
+		req.AddCookie(&http.Cookie{Name: "userID", Value: userID})
+
+		cbHandler.Handle().ServeHTTP(rr, req)
+
+		require.Equal(t, http.StatusInternalServerError, rr.Code)
+
+		c.txnStore = prevStore
 	})
 
 	t.Run("failure - initializing oidc client", func(t *testing.T) {
@@ -1475,7 +1637,6 @@ func TestOIDCCallback(t *testing.T) {
 		req.AddCookie(&http.Cookie{Name: "oidcState", Value: "state-value"})
 		req.AddCookie(&http.Cookie{Name: "txnID", Value: txnID})
 		req.AddCookie(&http.Cookie{Name: "userID", Value: userID})
-		req.AddCookie(&http.Cookie{Name: "oidcProvider", Value: oidcProvider})
 
 		cbHandler.Handle().ServeHTTP(rr, req)
 
@@ -1504,7 +1665,6 @@ func TestOIDCCallback(t *testing.T) {
 		req.AddCookie(&http.Cookie{Name: "oidcState", Value: "state-value"})
 		req.AddCookie(&http.Cookie{Name: "txnID", Value: txnID})
 		req.AddCookie(&http.Cookie{Name: "userID", Value: userID})
-		req.AddCookie(&http.Cookie{Name: "oidcProvider", Value: oidcProvider})
 
 		cbHandler.Handle().ServeHTTP(rr, req)
 
@@ -1513,7 +1673,7 @@ func TestOIDCCallback(t *testing.T) {
 		c.getOIDCClientFunc = prevClientFunc
 	})
 
-	t.Run("failure - handling oauth callback", func(t *testing.T) {
+	t.Run("failure - storing refresh token", func(t *testing.T) {
 		prevStore := c.refreshTokenStore
 
 		c.refreshTokenStore = &mockstorage.Store{ErrPut: fmt.Errorf("err put")}
@@ -1531,13 +1691,39 @@ func TestOIDCCallback(t *testing.T) {
 		req.AddCookie(&http.Cookie{Name: "oidcState", Value: "state-value"})
 		req.AddCookie(&http.Cookie{Name: "txnID", Value: txnID})
 		req.AddCookie(&http.Cookie{Name: "userID", Value: userID})
-		req.AddCookie(&http.Cookie{Name: "oidcProvider", Value: oidcProvider})
 
 		cbHandler.Handle().ServeHTTP(rr, req)
 
 		require.Equal(t, http.StatusInternalServerError, rr.Code)
 
 		c.refreshTokenStore = prevStore
+	})
+
+	t.Run("failure - getting issuer profile", func(t *testing.T) {
+		cbHandler := getHandler(t, c, oidcCallbackEndpoint)
+
+		txnID2, err := c.createTxn(
+			&issuer.ProfileData{
+				ID:  "test-issuer-profile",
+				URL: "invalid.url",
+			}, "state", "token")
+		require.NoError(t, err)
+
+		reqPath := fmt.Sprintf("%s?%s=%s&%s=%s", oidcCallbackEndpoint,
+			"state", "state-value", "code", "auth-code-value")
+
+		rr := httptest.NewRecorder()
+
+		req, err := http.NewRequest(http.MethodGet, reqPath, nil)
+		require.NoError(t, err)
+
+		req.AddCookie(&http.Cookie{Name: "oidcState", Value: "state-value"})
+		req.AddCookie(&http.Cookie{Name: "txnID", Value: txnID2})
+		req.AddCookie(&http.Cookie{Name: "userID", Value: userID})
+
+		cbHandler.Handle().ServeHTTP(rr, req)
+
+		require.Equal(t, http.StatusInternalServerError, rr.Code)
 	})
 }
 
@@ -1571,7 +1757,7 @@ func TestGetOIDCAccessToken(t *testing.T) {
 		txnID := "txn-id-0"
 		c.userTokens[txnID] = &mockToken
 
-		tok, err := c.getOIDCAccessToken(txnID, oidcProvider)
+		tok, err := c.getOIDCAccessToken(txnID, &issuer.ProfileData{OIDCProviderURL: oidcProvider})
 		require.NoError(t, err)
 		require.Equal(t, mockToken.AccessToken, tok)
 	})
@@ -1582,13 +1768,13 @@ func TestGetOIDCAccessToken(t *testing.T) {
 		err := c.refreshTokenStore.Put(txnID, []byte("refresh-token"))
 		require.NoError(t, err)
 
-		tok, err := c.getOIDCAccessToken(txnID, oidcProvider)
+		tok, err := c.getOIDCAccessToken(txnID, &issuer.ProfileData{OIDCProviderURL: oidcProvider})
 		require.NoError(t, err)
 		require.Equal(t, mockToken.AccessToken, tok)
 	})
 
 	t.Run("failure - refresh token missing from store", func(t *testing.T) {
-		tok, err := c.getOIDCAccessToken("txn-id-2", oidcProvider)
+		tok, err := c.getOIDCAccessToken("txn-id-2", &issuer.ProfileData{OIDCProviderURL: oidcProvider})
 		require.Error(t, err)
 		require.Equal(t, "", tok)
 		require.ErrorIs(t, err, storage.ErrDataNotFound)
@@ -1604,7 +1790,7 @@ func TestGetOIDCAccessToken(t *testing.T) {
 		txnID := "txn-id-3"
 		c.userTokens[txnID] = &mockToken
 
-		tok, err := c.getOIDCAccessToken(txnID, oidcProvider)
+		tok, err := c.getOIDCAccessToken(txnID, &issuer.ProfileData{OIDCProviderURL: oidcProvider})
 		require.Error(t, err)
 		require.Equal(t, "", tok)
 		require.Contains(t, err.Error(), "client create error")
@@ -1622,7 +1808,7 @@ func TestGetOIDCAccessToken(t *testing.T) {
 		txnID := "txn-id-4"
 		c.userTokens[txnID] = &mockToken
 
-		tok, err := c.getOIDCAccessToken(txnID, oidcProvider)
+		tok, err := c.getOIDCAccessToken(txnID, &issuer.ProfileData{OIDCProviderURL: oidcProvider})
 		require.Error(t, err)
 		require.Equal(t, "", tok)
 		require.Contains(t, err.Error(), "refresh error")
@@ -1642,7 +1828,7 @@ func TestGetOIDCAccessToken(t *testing.T) {
 
 		c.refreshTokenStore = &mockstorage.Store{ErrPut: fmt.Errorf("store error")}
 
-		tok, err := c.getOIDCAccessToken(txnID, oidcProvider)
+		tok, err := c.getOIDCAccessToken(txnID, &issuer.ProfileData{OIDCProviderURL: oidcProvider})
 		require.Error(t, err)
 		require.Equal(t, "", tok)
 		require.Contains(t, err.Error(), "store error")

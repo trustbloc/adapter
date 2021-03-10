@@ -55,8 +55,6 @@ func HTTPDo(method, url, contentType, token string, body io.Reader, tlsConfig *t
 		return nil, err
 	}
 
-	CookieData(req.URL)
-
 	if contentType != "" {
 		req.Header.Add("Content-Type", contentType)
 	}

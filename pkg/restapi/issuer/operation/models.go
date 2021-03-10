@@ -24,6 +24,7 @@ type ProfileDataRequest struct {
 	URL                         string            `json:"url"`
 	OIDCProviderURL             string            `json:"oidcProvider"`
 	OIDCClientParams            *OIDCClientParams `json:"oidcParams,omitempty"`
+	CredentialScopes            []string          `json:"scopes,omitempty"`
 }
 
 // OIDCClientParams optional parameters for setting the adapter's oidc client parameters statically.
@@ -44,6 +45,7 @@ type txnData struct {
 	State             string                `json:"state,omitempty"`
 	DIDCommInvitation *outofband.Invitation `json:"didCommInvitation,omitempty"`
 	Token             string                `json:"token,omitempty"`
+	CredScope         string                `json:"cred,omitempty"`
 }
 
 // CHAPIRequest wallet chapi request.

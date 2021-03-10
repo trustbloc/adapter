@@ -430,7 +430,7 @@ func TestOperation_RequestApplicationProfile(t *testing.T) {
 
 		op.RequestApplicationProfile(rw, rq)
 
-		require.Equal(t, rw.Code, http.StatusOK)
+		require.Equal(t, http.StatusOK, rw.Code)
 
 		response := ApplicationProfileResponse{}
 		err = json.Unmarshal(rw.Body.Bytes(), &response)
