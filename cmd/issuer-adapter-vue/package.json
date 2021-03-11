@@ -13,7 +13,7 @@
     "@fortawesome/free-brands-svg-icons": "^5.14.0",
     "@fortawesome/free-solid-svg-icons": "^5.14.0",
     "@fortawesome/vue-fontawesome": "^0.1.10",
-    "@trustbloc/wallet-js-client": "0.1.6",
+    "@trustbloc-cicd/wallet-adapter-web": "0.1.7-snapshot-0bd7297",
     "axios": "^0.21.1",
     "core-js": "^3.6.4",
     "font-awesome": "^4.7.0",
