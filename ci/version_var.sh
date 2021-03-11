@@ -17,7 +17,7 @@ SNAPSHOT_REPO=trustbloc-cicd
 SOURCE_REPO=edge-adapter
 BASE_ISSUER_ADAPTER_PKG_NAME=issuer-adapter
 BASE_RP_ADAPTER_PKG_NAME=rp-adapter
-BASE_WALLET_CLIENT_PKG_NAME=wallet-js-client
+BASE_WALLET_CLIENT_PKG_NAME=wallet-adapter
 
 if [ ${IS_RELEASE} = false ]
 then
