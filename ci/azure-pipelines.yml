@@ -96,7 +96,7 @@ jobs:
 
           cd ./cmd/wallet-js-client
           sed -i 's/"version": "0.1.0"/"version": "'${NPM_WALLET_PKG_TAG}'"/g' package.json
-          sed -i 's#"name": "@trustbloc/wallet-adapter"#"name": "@'${NPM_WALLET_PKG_NAME}'"#g' package.json
+          sed -i 's#"name": "@trustbloc/wallet-adapter-web"#"name": "@'${NPM_WALLET_PKG_NAME}'"#g' package.json
           sed -i 's#"url": "git://github.com/trustbloc/edge-adapter.git"#"url": "git://github.com/'${NPM_WALLET_PKG_REPO}'.git"#g' package.json
           npm install
           npm publish
