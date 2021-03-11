@@ -42,7 +42,7 @@ SPDX-License-Identifier: Apache-2.0
 
 <script>
     import WalletPreference from "./WalletPreference.vue";
-    import {LoadPreferenceError, WalletClient} from "@trustbloc/wallet-js-client";
+    import {LoadPreferenceError, WalletClient} from "@trustbloc/wallet-adapter-web";
 
     export default {
         name: 'WalletConnect',
