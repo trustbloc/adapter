@@ -37,12 +37,14 @@ import (
 	issuecredsvc "github.com/hyperledger/aries-framework-go/pkg/didcomm/protocol/issuecredential"
 	presentproofsvc "github.com/hyperledger/aries-framework-go/pkg/didcomm/protocol/presentproof"
 	"github.com/hyperledger/aries-framework-go/pkg/doc/did"
+	"github.com/hyperledger/aries-framework-go/pkg/doc/presexch"
 	"github.com/hyperledger/aries-framework-go/pkg/doc/signature/suite/ed25519signature2018"
 	"github.com/hyperledger/aries-framework-go/pkg/doc/util"
 	"github.com/hyperledger/aries-framework-go/pkg/doc/verifiable"
 	vdriapi "github.com/hyperledger/aries-framework-go/pkg/framework/aries/api/vdr"
 	"github.com/hyperledger/aries-framework-go/pkg/kms"
 	"github.com/hyperledger/aries-framework-go/pkg/vdr/peer"
+	"github.com/piprate/json-gold/ld"
 	"github.com/trustbloc/edge-core/pkg/log"
 
 	issuerops "github.com/trustbloc/edge-adapter/pkg/restapi/issuer/operation"
@@ -934,7 +936,7 @@ func (a *Steps) SignCredential(agent, signingDID string, cred *verifiable.Creden
 }
 
 // GeneratePresentation generates a new, signed presentation.
-func (a *Steps) GeneratePresentation(agent, signingDID, verificationMethod string,
+func (a *Steps) GeneratePresentation(agent, signingDID, verificationMethod string, // nolint:funlen
 	vp *verifiable.Presentation, vcs ...*verifiable.Credential) (*verifiable.Presentation, error) {
 	destinationURL := a.ControllerURLs[agent]
 
@@ -981,7 +983,19 @@ func (a *Steps) GeneratePresentation(agent, signingDID, verificationMethod strin
 		return nil, fmt.Errorf("'%s' failed to generate their own presentation: %w", agent, err)
 	}
 
-	signedVP, err := verifiable.ParsePresentation(response.VerifiablePresentation, verifiable.WithPresDisabledProofCheck())
+	presexchJSONLDCtx, err := ld.DocumentFromReader(strings.NewReader(presexch.PresentationSubmissionJSONLDContext))
+	if err != nil {
+		return nil, fmt.Errorf("failed to load presentation-exchange jsonld context: %w", err)
+	}
+
+	docLoader := verifiable.CachingJSONLDLoader()
+	docLoader.AddDocument(presexch.PresentationSubmissionJSONLDContextIRI, presexchJSONLDCtx)
+
+	signedVP, err := verifiable.ParsePresentation(
+		response.VerifiablePresentation,
+		verifiable.WithPresDisabledProofCheck(),
+		verifiable.WithPresJSONLDDocumentLoader(docLoader),
+	)
 	if err != nil {
 		return nil, fmt.Errorf("'%s' failed to parse their own presentation: %w", agent, err)
 	}

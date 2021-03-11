@@ -7,12 +7,10 @@ module github.com/trustbloc/edge-adapter
 go 1.15
 
 require (
-	github.com/PaesslerAG/gval v1.1.0
-	github.com/PaesslerAG/jsonpath v0.1.1
 	github.com/coreos/go-oidc v2.2.1+incompatible
 	github.com/google/uuid v1.1.2
 	github.com/gorilla/mux v1.7.4
-	github.com/hyperledger/aries-framework-go v0.1.7-0.20210310014234-cfa8c6d6e2f4
+	github.com/hyperledger/aries-framework-go v0.1.7-0.20210310170539-dab4f1e10a9e
 	github.com/hyperledger/aries-framework-go-ext/component/vdr/sidetree v0.0.0-20210306194409-6e4c5d622fbc
 	github.com/hyperledger/aries-framework-go-ext/component/vdr/trustbloc v0.0.0-20210306194409-6e4c5d622fbc
 	github.com/hyperledger/aries-framework-go/component/storageutil v0.0.0-20210310014234-cfa8c6d6e2f4

@@ -7,11 +7,16 @@ SPDX-License-Identifier: Apache-2.0
 package operation
 
 import (
+	"net/url"
 	"testing"
+	"time"
 
 	"github.com/hyperledger/aries-framework-go/component/storageutil/mem"
 	"github.com/hyperledger/aries-framework-go/pkg/didcomm/messaging/msghandler"
 	"github.com/hyperledger/aries-framework-go/pkg/doc/did"
+	"github.com/hyperledger/aries-framework-go/pkg/doc/signature/jsonld"
+	"github.com/hyperledger/aries-framework-go/pkg/doc/signature/suite"
+	"github.com/hyperledger/aries-framework-go/pkg/doc/signature/suite/ed25519signature2018"
 	"github.com/hyperledger/aries-framework-go/pkg/doc/verifiable"
 	"github.com/hyperledger/aries-framework-go/pkg/framework/aries"
 	vdrapi "github.com/hyperledger/aries-framework-go/pkg/framework/aries/api/vdr"
@@ -64,7 +69,25 @@ func signVP(t *testing.T,
 	verificationMethod, err := crypto2.GetVerificationMethodFromDID(signingDID, did.Authentication)
 	require.NoError(t, err)
 
-	vp, err = crypto2.New(agent.KMS(), agent.Crypto(), agent.VDRegistry()).SignPresentation(vp, verificationMethod)
+	u, err := url.Parse(verificationMethod)
+	require.NoError(t, err)
+
+	kh, err := agent.KMS().Get(u.Fragment)
+	require.NoError(t, err)
+
+	now := time.Now()
+
+	err = vp.AddLinkedDataProof(
+		&verifiable.LinkedDataProofContext{
+			SignatureType:           ed25519signature2018.SignatureType,
+			Suite:                   ed25519signature2018.New(suite.WithSigner(suite.NewCryptoSigner(agent.Crypto(), kh))),
+			SignatureRepresentation: verifiable.SignatureJWS,
+			Created:                 &now,
+			VerificationMethod:      verificationMethod,
+			Purpose:                 "authentication",
+		},
+		jsonld.WithDocumentLoader(testDocumentLoader),
+	)
 	require.NoError(t, err)
 
 	return vp

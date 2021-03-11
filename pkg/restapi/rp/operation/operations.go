@@ -32,6 +32,7 @@ import (
 	mediatorsvc "github.com/hyperledger/aries-framework-go/pkg/didcomm/protocol/mediator"
 	presentproofsvc "github.com/hyperledger/aries-framework-go/pkg/didcomm/protocol/presentproof"
 	"github.com/hyperledger/aries-framework-go/pkg/doc/did"
+	"github.com/hyperledger/aries-framework-go/pkg/doc/presexch"
 	"github.com/hyperledger/aries-framework-go/pkg/doc/verifiable"
 	vdrapi "github.com/hyperledger/aries-framework-go/pkg/framework/aries/api/vdr"
 	"github.com/hyperledger/aries-framework-go/pkg/kms"
@@ -39,6 +40,7 @@ import (
 	"github.com/hyperledger/aries-framework-go/spi/storage"
 	"github.com/ory/hydra-client-go/client/admin"
 	"github.com/ory/hydra-client-go/models"
+	"github.com/piprate/json-gold/ld"
 	"github.com/trustbloc/edge-core/pkg/log"
 
 	"github.com/trustbloc/edge-adapter/pkg/aries"
@@ -46,7 +48,6 @@ import (
 	"github.com/trustbloc/edge-adapter/pkg/crypto"
 	"github.com/trustbloc/edge-adapter/pkg/db/rp"
 	"github.com/trustbloc/edge-adapter/pkg/internal/common/support"
-	"github.com/trustbloc/edge-adapter/pkg/presexch"
 	"github.com/trustbloc/edge-adapter/pkg/restapi"
 	commhttp "github.com/trustbloc/edge-adapter/pkg/restapi/internal/common/http"
 	walletops "github.com/trustbloc/edge-adapter/pkg/restapi/wallet/operation"
@@ -91,7 +92,7 @@ const (
 var logger = log.New("edge-adapter/rp-operations")
 
 type presentationExProvider interface {
-	Create(scopes []string) (*presexch.PresentationDefinitions, error)
+	Create(scopes []string) (*presexch.PresentationDefinition, error)
 }
 
 // Hydra is the client used to interface with the Hydra service.
@@ -168,7 +169,7 @@ type Storage struct {
 // context active in the consent phase all the way up to sending the CHAPI request.
 type consentRequestCtx struct {
 	InvitationID  string
-	PD            *presexch.PresentationDefinitions
+	PD            *presexch.PresentationDefinition
 	CR            *admin.GetConsentRequestOK
 	UserDID       string
 	RPPublicDID   string
@@ -204,6 +205,7 @@ func New(config *Config) (*Operation, error) { // nolint:funlen,gocyclo
 		km:                     config.AriesContextProvider.KMS(),
 		ariesCrypto:            config.AriesContextProvider.Crypto(),
 		messenger:              config.AriesMessenger,
+		docLoader:              config.JSONLDDocumentLoader,
 	}
 
 	err := o.didClient.RegisterActionEvent(o.didActions)
@@ -294,6 +296,7 @@ type Config struct {
 	AriesMessenger         service.Messenger
 	MsgRegistrar           *msghandler.Registrar
 	WalletBridgeAppURL     string
+	JSONLDDocumentLoader   ld.DocumentLoader
 }
 
 // TODO implement an eviction strategy for Operation.oidcStates and OIDC.consentRequests
@@ -326,6 +329,7 @@ type Operation struct {
 	routeSvc               routeService
 	messenger              service.Messenger
 	walletBridge           *walletops.Operation
+	docLoader              ld.DocumentLoader
 }
 
 // GetRESTHandlers get all controller API handler available for this service.
@@ -809,7 +813,7 @@ func (o *Operation) chapiResponseHandler(w http.ResponseWriter, r *http.Request)
 	// TODO save user Consent VC https://github.com/trustbloc/edge-adapter/issues/92
 	// TODO validate the user consent credential (expected rp and user DIDs, etc.)
 
-	local, remote, err := parseWalletResponse(crCtx.PD, o.vdrReg, request.VerifiablePresentation)
+	local, remote, err := parseWalletResponse(crCtx.PD, o.vdrReg, request.VerifiablePresentation, o.docLoader)
 	if err != nil {
 		if errors.Is(err, errInvalidCredential) {
 			handleError(w, http.StatusBadRequest, fmt.Sprintf("malformed credentials: %s", err.Error()))
@@ -1295,7 +1299,7 @@ func (o *Operation) handleIssuerPresentationMsg(msg service.DIDCommMsg) error {
 
 	logger.Debugf("handling present-proof message: %+v", presentation)
 
-	userData, err := parseIssuerResponse(presentation, o.vdrReg)
+	userData, err := parseIssuerResponse(presentation, o.vdrReg, o.docLoader)
 	if err != nil {
 		return fmt.Errorf("failed to parse verifiable presentation for threadID=%s: %w", thid, err)
 	}

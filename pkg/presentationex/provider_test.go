@@ -13,10 +13,8 @@ import (
 	"testing"
 
 	"github.com/google/uuid"
+	"github.com/hyperledger/aries-framework-go/pkg/doc/presexch"
 	"github.com/stretchr/testify/require"
-
-	"github.com/trustbloc/edge-adapter/pkg/internal/common/adapterutil"
-	"github.com/trustbloc/edge-adapter/pkg/presexch"
 )
 
 func TestProvider_New(t *testing.T) {
@@ -46,11 +44,9 @@ func TestProvider_Create(t *testing.T) {
 
 		for _, scope := range scopes {
 			expected[scope] = &presexch.InputDescriptor{
-				Schema: &presexch.Schema{
-					Name:    uuid.New().String(),
-					Purpose: uuid.New().String(),
-					URI:     []string{uuid.New().String()},
-				},
+				Schema: []*presexch.Schema{{
+					URI: uuid.New().String(),
+				}},
 			}
 		}
 
@@ -63,7 +59,7 @@ func TestProvider_Create(t *testing.T) {
 		require.Len(t, actual.InputDescriptors, len(expected))
 
 		for _, e := range expected {
-			d := descriptor(t, e.Schema.URI, actual.InputDescriptors)
+			d := descriptor(t, e.Schema[0].URI, actual.InputDescriptors)
 			require.Equal(t, e.Schema, d.Schema)
 			require.NotEmpty(t, d.ID)
 		}
@@ -72,7 +68,7 @@ func TestProvider_Create(t *testing.T) {
 	t.Run("invalid scope", func(t *testing.T) {
 		p, err := New(reader(t, map[string]*presexch.InputDescriptor{
 			"CreditCardStatement": {
-				Schema: &presexch.Schema{},
+				Schema: []*presexch.Schema{},
 			},
 		}))
 		require.NoError(t, err)
@@ -97,10 +93,12 @@ func (m *mockReader) Read([]byte) (int, error) {
 	return 0, m.err
 }
 
-func descriptor(t *testing.T, uri []string, descriptors []*presexch.InputDescriptor) *presexch.InputDescriptor {
+func descriptor(t *testing.T, uri string, descriptors []*presexch.InputDescriptor) *presexch.InputDescriptor {
 	for i := range descriptors {
-		if adapterutil.StringsIntersect(descriptors[i].Schema.URI, uri) {
-			return descriptors[i]
+		for j := range descriptors[i].Schema {
+			if uri == descriptors[i].Schema[j].URI {
+				return descriptors[i]
+			}
 		}
 	}
 

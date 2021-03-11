@@ -34,6 +34,7 @@ import (
 	"github.com/hyperledger/aries-framework-go/pkg/client/outofband"
 	"github.com/hyperledger/aries-framework-go/pkg/doc/did"
 	"github.com/hyperledger/aries-framework-go/pkg/doc/jose"
+	"github.com/hyperledger/aries-framework-go/pkg/doc/presexch"
 	"github.com/hyperledger/aries-framework-go/pkg/doc/verifiable"
 	vdrapi "github.com/hyperledger/aries-framework-go/pkg/framework/aries/api/vdr"
 	"github.com/hyperledger/aries-framework-go/pkg/kms"
@@ -45,7 +46,6 @@ import (
 
 	"github.com/trustbloc/edge-adapter/pkg/crypto"
 	"github.com/trustbloc/edge-adapter/pkg/presentationex"
-	"github.com/trustbloc/edge-adapter/pkg/presexch"
 	"github.com/trustbloc/edge-adapter/pkg/restapi/rp/operation"
 	"github.com/trustbloc/edge-adapter/test/bdd/pkg/agent"
 	"github.com/trustbloc/edge-adapter/test/bdd/pkg/bddutil"
@@ -83,7 +83,7 @@ type tenantContext struct {
 	oauth2Config     *oauth2.Config
 	callbackReceived *url.URL
 	scope            []string
-	presDefs         *presexch.PresentationDefinitions
+	presDefs         *presexch.PresentationDefinition
 }
 
 // nolint:gochecknoglobals
@@ -489,7 +489,7 @@ func (s *Steps) sendCHAPIRequestToWallet(tenantID, walletID string) error {
 	return nil
 }
 
-func validatePresentationDefinitions(pd *presexch.PresentationDefinitions, scope []string) error {
+func validatePresentationDefinitions(pd *presexch.PresentationDefinition, scope []string) error { // nolint:gocyclo
 	file, err := os.Open("./fixtures/testdata/presentationdefinitions.json")
 	if err != nil {
 		return fmt.Errorf("failed open presentation definitions config file: %w", err)
@@ -516,13 +516,17 @@ func validatePresentationDefinitions(pd *presexch.PresentationDefinitions, scope
 	actual := make([][]string, len(pd.InputDescriptors))
 
 	for i := range pd.InputDescriptors {
-		actual[i] = pd.InputDescriptors[i].Schema.URI
+		for j := range pd.InputDescriptors[i].Schema {
+			actual[i] = append(actual[i], pd.InputDescriptors[i].Schema[j].URI)
+		}
 	}
 
 	expected := make([][]string, len(reference.InputDescriptors))
 
 	for i := range reference.InputDescriptors {
-		expected[i] = reference.InputDescriptors[i].Schema.URI
+		for j := range reference.InputDescriptors[i].Schema {
+			expected[i] = append(expected[i], reference.InputDescriptors[i].Schema[j].URI)
+		}
 	}
 
 	if len(expected) != len(actual) {

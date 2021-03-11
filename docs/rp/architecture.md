@@ -129,7 +129,7 @@ This operation is asynchronous. Query the `/presentations/result` endpoint for t
     "vp": {
         "@context": [
             "https://www.w3.org/2018/credentials/v1",
-            "https://trustbloc.github.io/context/vp/presentation-exchange-submission-v1.jsonld"
+            "https://identity.foundation/presentation-exchange/submission/v1"
         ],
         "type": [
           "VerifiablePresentation",

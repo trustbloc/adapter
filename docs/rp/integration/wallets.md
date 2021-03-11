@@ -402,7 +402,7 @@ The Wallet expects a web credentials response containing a Verifiable Presentati
     "data": {
         "@context": [
             "https://www.w3.org/2018/credentials/v1",
-            "https://trustbloc.github.io/context/vp/presentation-exchange-submission-v1.jsonld"
+            "https://identity.foundation/presentation-exchange/submission/v1"
         ],
         "holder": "did:trustbloc:discovery.trustbloc.example.com:EiCYXf7rzJYfVOGnhi1Q-GUZ0vM6f6Tq4t0nb_wwueZ4Yw",
         "type": [
@@ -431,7 +431,7 @@ The Wallet expects a web credentials response containing a Verifiable Presentati
     "data": {
         "@context": [
             "https://www.w3.org/2018/credentials/v1",
-            "https://trustbloc.github.io/context/vp/presentation-exchange-submission-v1.jsonld"
+            "https://identity.foundation/presentation-exchange/submission/v1"
         ],
         "holder": "did:trustbloc:discovery.trustbloc.example.com:EiCYXf7rzJYfVOGnhi1Q-GUZ0vM6f6Tq4t0nb_wwueZ4Yw",
         "presentation_submission": {

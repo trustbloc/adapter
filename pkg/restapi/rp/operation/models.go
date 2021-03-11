@@ -10,16 +10,15 @@ import (
 	"encoding/json"
 
 	"github.com/hyperledger/aries-framework-go/pkg/client/outofband"
-
-	"github.com/trustbloc/edge-adapter/pkg/presexch"
+	"github.com/hyperledger/aries-framework-go/pkg/doc/presexch"
 )
 
 // GetPresentationRequestResponse API response of getPresentationRequest.
 type GetPresentationRequestResponse struct {
-	PD                   *presexch.PresentationDefinitions `json:"pd"`
-	Inv                  *outofband.Invitation             `json:"invitation"`
-	Credentials          []json.RawMessage                 `json:"credentials,omitempty"`
-	CredentialGovernance json.RawMessage                   `json:"credentialGovernance,omitempty"`
+	PD                   *presexch.PresentationDefinition `json:"pd"`
+	Inv                  *outofband.Invitation            `json:"invitation"`
+	Credentials          []json.RawMessage                `json:"credentials,omitempty"`
+	CredentialGovernance json.RawMessage                  `json:"credentialGovernance,omitempty"`
 }
 
 // CreateRPTenantRequest API request body to register an RP tenant.

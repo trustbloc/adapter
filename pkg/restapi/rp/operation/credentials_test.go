@@ -21,19 +21,19 @@ import (
 	"github.com/hyperledger/aries-framework-go/pkg/didcomm/protocol/decorator"
 	"github.com/hyperledger/aries-framework-go/pkg/doc/did"
 	"github.com/hyperledger/aries-framework-go/pkg/doc/jsonld"
+	"github.com/hyperledger/aries-framework-go/pkg/doc/presexch"
 	"github.com/hyperledger/aries-framework-go/pkg/doc/util"
 	"github.com/hyperledger/aries-framework-go/pkg/doc/verifiable"
 	ariesctx "github.com/hyperledger/aries-framework-go/pkg/framework/context"
 	"github.com/piprate/json-gold/ld"
 	"github.com/stretchr/testify/require"
 
-	"github.com/trustbloc/edge-adapter/pkg/presexch"
 	vc2 "github.com/trustbloc/edge-adapter/pkg/vc"
 )
 
 // TODO - crypto.Crypto should support injection of document loader:
 //  https://github.com/trustbloc/edge-adapter/issues/306
-// nolint:gochecknoglobals,deadcode,varcheck,unused
+// nolint:gochecknoglobals
 var testDocumentLoader = createTestJSONLDDocumentLoader()
 
 func TestParseWalletResponse(t *testing.T) {
@@ -68,24 +68,25 @@ func TestParseWalletResponse(t *testing.T) {
 			}},
 			expectedLocal[localID], expectedRemote[remoteID])
 		actualLocal, actualRemote, err := parseWalletResponse(
-			&presexch.PresentationDefinitions{
+			&presexch.PresentationDefinition{
 				InputDescriptors: []*presexch.InputDescriptor{
 					{
 						ID: localID,
-						Schema: &presexch.Schema{
-							URI: []string{"https://www.w3.org/2018/credentials/examples/v1"},
-						},
+						Schema: []*presexch.Schema{{
+							URI: "https://www.w3.org/2018/credentials/examples/v1",
+						}},
 					},
 					{
 						ID: remoteID,
-						Schema: &presexch.Schema{
-							URI: []string{vc2.AuthorizationCredentialContext},
-						},
+						Schema: []*presexch.Schema{{
+							URI: vc2.AuthorizationCredentialContext,
+						}},
 					},
 				},
 			},
 			relyingParty.VDRegistry(),
-			marshal(t, vp))
+			marshal(t, vp),
+			testDocumentLoader)
 		require.NoError(t, err)
 		require.Contains(t, actualLocal, localID)
 		require.Equal(t, expectedLocal[localID].Subject, actualLocal[localID].Subject)
@@ -101,7 +102,7 @@ func TestParseWalletResponse(t *testing.T) {
 			newPeerDID(t, subject).ID, newPeerDID(t, relyingParty), newPeerDID(t, issuer))
 		vp, err := verifiable.NewPresentation(verifiable.WithCredentials(authorizationVC))
 		require.NoError(t, err)
-		_, _, err = parseWalletResponse(nil, nil, marshal(t, vp))
+		_, _, err = parseWalletResponse(nil, nil, marshal(t, vp), testDocumentLoader)
 		require.True(t, errors.Is(err, errInvalidCredential))
 	})
 
@@ -114,16 +115,17 @@ func TestParseWalletResponse(t *testing.T) {
 
 		vp := newPresentationSubmissionVP(t, subject, subjectDID, nil)
 		_, _, err := parseWalletResponse(
-			&presexch.PresentationDefinitions{
+			&presexch.PresentationDefinition{
 				InputDescriptors: []*presexch.InputDescriptor{{
 					ID: uuid.New().String(),
-					Schema: &presexch.Schema{
-						URI: []string{vc2.AuthorizationCredentialContext},
-					},
+					Schema: []*presexch.Schema{{
+						URI: vc2.AuthorizationCredentialContext,
+					}},
 				}},
 			},
 			relyingParty.VDRegistry(),
-			marshal(t, vp))
+			marshal(t, vp),
+			testDocumentLoader)
 		require.True(t, errors.Is(err, errInvalidCredential))
 	})
 
@@ -134,12 +136,12 @@ func TestParseWalletResponse(t *testing.T) {
 
 		simulateDIDExchange(t, relyingParty, rpDID, subject, subjectDID)
 
-		definitions := &presexch.PresentationDefinitions{
+		definitions := &presexch.PresentationDefinition{
 			InputDescriptors: []*presexch.InputDescriptor{{
 				ID: uuid.New().String(),
-				Schema: &presexch.Schema{
-					URI: []string{vc2.AuthorizationCredentialContext},
-				},
+				Schema: []*presexch.Schema{{
+					URI: vc2.AuthorizationCredentialContext,
+				}},
 			}},
 		}
 		vp := newPresentationSubmissionVP(t,
@@ -153,7 +155,8 @@ func TestParseWalletResponse(t *testing.T) {
 		_, _, err := parseWalletResponse(
 			definitions,
 			relyingParty.VDRegistry(),
-			marshal(t, vp))
+			marshal(t, vp),
+			testDocumentLoader)
 		require.True(t, errors.Is(err, errInvalidCredential))
 	})
 
@@ -164,12 +167,12 @@ func TestParseWalletResponse(t *testing.T) {
 
 		simulateDIDExchange(t, relyingParty, rpDID, subject, subjectDID)
 
-		definitions := &presexch.PresentationDefinitions{
+		definitions := &presexch.PresentationDefinition{
 			InputDescriptors: []*presexch.InputDescriptor{{
 				ID: uuid.New().String(),
-				Schema: &presexch.Schema{
-					URI: []string{vc2.AuthorizationCredentialContext},
-				},
+				Schema: []*presexch.Schema{{
+					URI: vc2.AuthorizationCredentialContext,
+				}},
 			}},
 		}
 		vp := newPresentationSubmissionVP(t,
@@ -180,7 +183,7 @@ func TestParseWalletResponse(t *testing.T) {
 				Path: "$.verifiableCredential[0]",
 			}}},
 			newUserAuthorizationVCMissingIssuerDIDDoc(t, subjectDID.ID, rpDID))
-		_, _, err := parseWalletResponse(definitions, relyingParty.VDRegistry(), marshal(t, vp))
+		_, _, err := parseWalletResponse(definitions, relyingParty.VDRegistry(), marshal(t, vp), testDocumentLoader)
 		require.True(t, errors.Is(err, errInvalidCredential))
 	})
 }
@@ -202,13 +205,13 @@ func TestParseIssuerResponse(t *testing.T) {
 					JSON: expectedVP,
 				},
 			}},
-		}, relyingParty.VDRegistry())
+		}, relyingParty.VDRegistry(), testDocumentLoader)
 		require.NoError(t, err)
 		require.Equal(t, expectedVC.Subject, actualVC.Subject)
 	})
 
 	t.Run("error if no attachments were provided", func(t *testing.T) {
-		_, err := parseIssuerResponse(&presentproof.Presentation{}, nil)
+		_, err := parseIssuerResponse(&presentproof.Presentation{}, nil, testDocumentLoader)
 		require.Error(t, err)
 	})
 
@@ -220,7 +223,7 @@ func TestParseIssuerResponse(t *testing.T) {
 					Base64: "MALFORMED",
 				},
 			}},
-		}, nil)
+		}, nil, testDocumentLoader)
 		require.Error(t, err)
 	})
 
@@ -232,7 +235,7 @@ func TestParseIssuerResponse(t *testing.T) {
 					JSON: map[string]interface{}{},
 				},
 			}},
-		}, nil)
+		}, nil, testDocumentLoader)
 		require.True(t, errors.Is(err, errInvalidCredential))
 	})
 
@@ -250,7 +253,7 @@ func TestParseIssuerResponse(t *testing.T) {
 					JSON: newPresentationSubmissionVP(t, issuer, issuerDID, nil),
 				},
 			}},
-		}, relyingParty.VDRegistry())
+		}, relyingParty.VDRegistry(), testDocumentLoader)
 		require.True(t, errors.Is(err, errInvalidCredential))
 	})
 }
@@ -261,8 +264,8 @@ func newPresentationSubmissionVP(t *testing.T, holder *ariesctx.Provider, signin
 	vp, err := verifiable.NewPresentation(verifiable.WithCredentials(credentials...))
 	require.NoError(t, err)
 
-	vp.Context = append(vp.Context, "https://trustbloc.github.io/context/vp/presentation-exchange-submission-v1.jsonld")
-	vp.Type = append(vp.Type, "PresentationSubmission")
+	vp.Context = append(vp.Context, presexch.PresentationSubmissionJSONLDContextIRI)
+	vp.Type = append(vp.Type, presexch.PresentationSubmissionJSONLDType)
 	vp.CustomFields = map[string]interface{}{
 		"presentation_submission": submission,
 	}
@@ -433,6 +436,16 @@ func newUniversityDegreeVC(_ *testing.T, _ *ariesctx.Provider, signingDID *did.D
 func createTestJSONLDDocumentLoader() *jsonld.CachingDocumentLoader {
 	loader := verifiable.CachingJSONLDLoader()
 
+	presExchCtx, err := ld.DocumentFromReader(strings.NewReader(presexch.PresentationSubmissionJSONLDContext))
+	if err != nil {
+		panic(fmt.Errorf("failed to load presentation exchange context: %w", err))
+	}
+
+	loader.AddDocument(
+		presexch.PresentationSubmissionJSONLDContextIRI,
+		presExchCtx,
+	)
+
 	contexts := []struct {
 		vocab    string
 		filename string
@@ -452,10 +465,6 @@ func createTestJSONLDDocumentLoader() *jsonld.CachingDocumentLoader {
 		{
 			vocab:    "https://trustbloc.github.io/context/vc/examples-ext-v1.jsonld",
 			filename: "examples-ext-v1.jsonld",
-		},
-		{
-			vocab:    "https://trustbloc.github.io/context/vp/presentation-exchange-submission-v1.jsonld",
-			filename: "presentation_exchange.jsonld",
 		},
 		{
 			vocab:    "https://trustbloc.github.io/context/vp/examples/mdl-v1.jsonld",
