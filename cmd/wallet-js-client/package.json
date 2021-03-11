@@ -1,5 +1,5 @@
 {
-  "name": "@trustbloc/wallet-js-client",
+  "name": "@trustbloc/wallet-adapter",
   "description": "client APIs for wallet applications.",
   "version": "0.1.0",
   "main": "dist/wallet-client.min.js",
