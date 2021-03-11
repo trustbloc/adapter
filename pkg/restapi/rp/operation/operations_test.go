@@ -33,6 +33,7 @@ import (
 	outofbandsvc "github.com/hyperledger/aries-framework-go/pkg/didcomm/protocol/outofband"
 	presentproofsvc "github.com/hyperledger/aries-framework-go/pkg/didcomm/protocol/presentproof"
 	"github.com/hyperledger/aries-framework-go/pkg/doc/did"
+	"github.com/hyperledger/aries-framework-go/pkg/doc/presexch"
 	"github.com/hyperledger/aries-framework-go/pkg/doc/verifiable"
 	vdrapi "github.com/hyperledger/aries-framework-go/pkg/framework/aries/api/vdr"
 	mockdidexsvc "github.com/hyperledger/aries-framework-go/pkg/mock/didcomm/protocol/didexchange"
@@ -55,7 +56,6 @@ import (
 	"github.com/trustbloc/edge-adapter/pkg/internal/mock/messenger"
 	mockoutofband "github.com/trustbloc/edge-adapter/pkg/internal/mock/outofband"
 	mockpresentproof "github.com/trustbloc/edge-adapter/pkg/internal/mock/presentproof"
-	"github.com/trustbloc/edge-adapter/pkg/presexch"
 	mockprovider "github.com/trustbloc/edge-adapter/pkg/restapi/internal/mocks/provider"
 	"github.com/trustbloc/edge-adapter/pkg/vc"
 )
@@ -1201,7 +1201,7 @@ func TestHydraConsentHandler(t *testing.T) {
 					}}, nil
 				}},
 				PresentationExProvider: &mockPresentationExProvider{
-					createValue: &presexch.PresentationDefinitions{},
+					createValue: &presexch.PresentationDefinition{},
 				},
 				DIDExchClient:        &mockdidexchange.MockClient{},
 				Storage:              memStorage(),
@@ -1381,7 +1381,7 @@ func TestGetPresentationsRequest(t *testing.T) {
 		rpClientID := uuid.New().String()
 		rpPublicDID := newDID(t)
 		handle := uuid.New().String()
-		presDefs := &presexch.PresentationDefinitions{
+		presDefs := &presexch.PresentationDefinition{
 			InputDescriptors: []*presexch.InputDescriptor{{ID: uuid.New().String()}},
 		}
 		provider := mem.NewProvider()
@@ -1458,7 +1458,7 @@ func TestGetPresentationsRequest(t *testing.T) {
 		rpClientID := uuid.New().String()
 		rpPublicDID := newDID(t)
 		handle := uuid.New().String()
-		presDefs := &presexch.PresentationDefinitions{
+		presDefs := &presexch.PresentationDefinition{
 			InputDescriptors: []*presexch.InputDescriptor{{ID: uuid.New().String()}},
 		}
 		store := mem.NewProvider()
@@ -1546,7 +1546,7 @@ func TestGetPresentationsRequest(t *testing.T) {
 		rpClientID := uuid.New().String()
 		rpPublicDID := newDID(t)
 		handle := uuid.New().String()
-		presDefs := &presexch.PresentationDefinitions{
+		presDefs := &presexch.PresentationDefinition{
 			InputDescriptors: []*presexch.InputDescriptor{{ID: uuid.New().String()}},
 		}
 		store := mem.NewProvider()
@@ -1612,7 +1612,7 @@ func TestGetPresentationsRequest(t *testing.T) {
 		require.NoError(t, err)
 
 		storePut(t, c.transientStore, handle, &consentRequestCtx{
-			PD: &presexch.PresentationDefinitions{
+			PD: &presexch.PresentationDefinition{
 				InputDescriptors: []*presexch.InputDescriptor{{ID: uuid.New().String()}},
 			},
 			CR: &admin.GetConsentRequestOK{
@@ -1650,7 +1650,7 @@ func TestGetPresentationsRequest(t *testing.T) {
 		require.NoError(t, err)
 
 		err = mockStoreReturn.Put(handle, marshal(t, &consentRequestCtx{
-			PD: &presexch.PresentationDefinitions{
+			PD: &presexch.PresentationDefinition{
 				InputDescriptors: []*presexch.InputDescriptor{{ID: uuid.New().String()}},
 			},
 			CR: &admin.GetConsentRequestOK{
@@ -1702,7 +1702,7 @@ func TestGetPresentationsRequest(t *testing.T) {
 		require.NoError(t, err)
 
 		err = mockStoreReturn.Put(handle, marshal(t, &consentRequestCtx{
-			PD: &presexch.PresentationDefinitions{
+			PD: &presexch.PresentationDefinition{
 				InputDescriptors: []*presexch.InputDescriptor{{ID: uuid.New().String()}},
 			},
 			CR: &admin.GetConsentRequestOK{
@@ -1754,19 +1754,19 @@ func TestCHAPIResponseHandler(t *testing.T) {
 		invitationID := uuid.New().String()
 		rpPublicDID := newDID(t).String()
 		thid := uuid.New().String()
-		definitions := &presexch.PresentationDefinitions{
+		definitions := &presexch.PresentationDefinition{
 			InputDescriptors: []*presexch.InputDescriptor{
 				{
 					ID: uuid.New().String(),
-					Schema: &presexch.Schema{
-						URI: []string{vc.AuthorizationCredentialContext},
-					},
+					Schema: []*presexch.Schema{{
+						URI: vc.AuthorizationCredentialContext,
+					}},
 				},
 				{
 					ID: uuid.New().String(),
-					Schema: &presexch.Schema{
-						URI: []string{"https://www.w3.org/2018/credentials/examples/v1"},
-					},
+					Schema: []*presexch.Schema{{
+						URI: "https://www.w3.org/2018/credentials/examples/v1",
+					}},
 				},
 			},
 		}
@@ -1812,8 +1812,9 @@ func TestCHAPIResponseHandler(t *testing.T) {
 					return &admin.AcceptConsentRequestOK{Payload: &models.CompletedRequest{RedirectTo: redirectURL}}, nil
 				},
 			},
-			MsgRegistrar:   msghandler.NewRegistrar(),
-			AriesMessenger: &messenger.MockMessenger{},
+			MsgRegistrar:         msghandler.NewRegistrar(),
+			AriesMessenger:       &messenger.MockMessenger{},
+			JSONLDDocumentLoader: testDocumentLoader,
 		})
 		require.NoError(t, err)
 
@@ -1889,12 +1890,12 @@ func TestCHAPIResponseHandler(t *testing.T) {
 		invalid.Service = nil
 		invalid.VerificationMethod = nil
 
-		definitions := &presexch.PresentationDefinitions{
+		definitions := &presexch.PresentationDefinition{
 			InputDescriptors: []*presexch.InputDescriptor{{
 				ID: uuid.New().String(),
-				Schema: &presexch.Schema{
-					URI: []string{vc.AuthorizationCredentialContext},
-				},
+				Schema: []*presexch.Schema{{
+					URI: vc.AuthorizationCredentialContext,
+				}},
 			}},
 		}
 
@@ -1939,12 +1940,12 @@ func TestCHAPIResponseHandler(t *testing.T) {
 
 		simulateDIDExchange(t, relyingParty, rpPeerDID, subject, subjectDID)
 
-		definitions := &presexch.PresentationDefinitions{
+		definitions := &presexch.PresentationDefinition{
 			InputDescriptors: []*presexch.InputDescriptor{{
 				ID: uuid.New().String(),
-				Schema: &presexch.Schema{
-					URI: []string{vc.AuthorizationCredentialContext},
-				},
+				Schema: []*presexch.Schema{{
+					URI: vc.AuthorizationCredentialContext,
+				}},
 			}},
 		}
 		vp := newPresentationSubmissionVP(t,
@@ -1967,6 +1968,7 @@ func TestCHAPIResponseHandler(t *testing.T) {
 			PresentProofClient:   &mockpresentproof.MockClient{},
 			MsgRegistrar:         msghandler.NewRegistrar(),
 			AriesMessenger:       &messenger.MockMessenger{},
+			JSONLDDocumentLoader: testDocumentLoader,
 		})
 		require.NoError(t, err)
 
@@ -1994,19 +1996,19 @@ func TestCHAPIResponseHandler(t *testing.T) {
 		invitationID := uuid.New().String()
 		rpPublicDID := newDID(t).String()
 		thid := uuid.New().String()
-		definitions := &presexch.PresentationDefinitions{
+		definitions := &presexch.PresentationDefinition{
 			InputDescriptors: []*presexch.InputDescriptor{
 				{
 					ID: uuid.New().String(),
-					Schema: &presexch.Schema{
-						URI: []string{vc.AuthorizationCredentialContext},
-					},
+					Schema: []*presexch.Schema{{
+						URI: vc.AuthorizationCredentialContext,
+					}},
 				},
 				{
 					ID: uuid.New().String(),
-					Schema: &presexch.Schema{
-						URI: []string{"https://www.w3.org/2018/credentials/examples/v1"},
-					},
+					Schema: []*presexch.Schema{{
+						URI: "https://www.w3.org/2018/credentials/examples/v1",
+					}},
 				},
 			},
 		}
@@ -2052,8 +2054,9 @@ func TestCHAPIResponseHandler(t *testing.T) {
 					return &admin.AcceptConsentRequestOK{Payload: &models.CompletedRequest{RedirectTo: redirectURL}}, nil
 				},
 			},
-			MsgRegistrar:   msghandler.NewRegistrar(),
-			AriesMessenger: &messenger.MockMessenger{},
+			MsgRegistrar:         msghandler.NewRegistrar(),
+			AriesMessenger:       &messenger.MockMessenger{},
+			JSONLDDocumentLoader: testDocumentLoader,
 		})
 		require.NoError(t, err)
 
@@ -2092,12 +2095,12 @@ func TestCHAPIResponseHandler(t *testing.T) {
 
 		simulateDIDExchange(t, relyingParty, rpPeerDID, subject, subjectDID)
 
-		definitions := &presexch.PresentationDefinitions{
+		definitions := &presexch.PresentationDefinition{
 			InputDescriptors: []*presexch.InputDescriptor{{
 				ID: uuid.New().String(),
-				Schema: &presexch.Schema{
-					URI: []string{vc.AuthorizationCredentialContext},
-				},
+				Schema: []*presexch.Schema{{
+					URI: vc.AuthorizationCredentialContext,
+				}},
 			}},
 		}
 		vp := newPresentationSubmissionVP(t,
@@ -2118,8 +2121,9 @@ func TestCHAPIResponseHandler(t *testing.T) {
 					return "", errors.New("test")
 				},
 			},
-			MsgRegistrar:   msghandler.NewRegistrar(),
-			AriesMessenger: &messenger.MockMessenger{},
+			MsgRegistrar:         msghandler.NewRegistrar(),
+			AriesMessenger:       &messenger.MockMessenger{},
+			JSONLDDocumentLoader: testDocumentLoader,
 		})
 		require.NoError(t, err)
 
@@ -2146,19 +2150,19 @@ func TestCHAPIResponseHandler(t *testing.T) {
 		simulateDIDExchange(t, relyingParty, rpPeerDID, subject, subjectDID)
 
 		thid := uuid.New().String()
-		definitions := &presexch.PresentationDefinitions{
+		definitions := &presexch.PresentationDefinition{
 			InputDescriptors: []*presexch.InputDescriptor{
 				{
 					ID: uuid.New().String(),
-					Schema: &presexch.Schema{
-						URI: []string{vc.AuthorizationCredentialContext},
-					},
+					Schema: []*presexch.Schema{{
+						URI: vc.AuthorizationCredentialContext,
+					}},
 				},
 				{
 					ID: uuid.New().String(),
-					Schema: &presexch.Schema{
-						URI: []string{"https://www.w3.org/2018/credentials/examples/v1"},
-					},
+					Schema: []*presexch.Schema{{
+						URI: "https://www.w3.org/2018/credentials/examples/v1",
+					}},
 				},
 			},
 		}
@@ -2213,8 +2217,9 @@ func TestCHAPIResponseHandler(t *testing.T) {
 					}, nil
 				},
 			},
-			MsgRegistrar:   msghandler.NewRegistrar(),
-			AriesMessenger: &messenger.MockMessenger{},
+			MsgRegistrar:         msghandler.NewRegistrar(),
+			AriesMessenger:       &messenger.MockMessenger{},
+			JSONLDDocumentLoader: testDocumentLoader,
 		})
 		require.NoError(t, err)
 
@@ -2511,6 +2516,7 @@ func TestHandleIssuerPresentationMsg(t *testing.T) {
 			PresentProofClient:   &mockpresentproof.MockClient{},
 			MsgRegistrar:         msghandler.NewRegistrar(),
 			AriesMessenger:       &messenger.MockMessenger{},
+			JSONLDDocumentLoader: testDocumentLoader,
 		})
 		require.NoError(t, err)
 
@@ -3309,11 +3315,11 @@ func (s *stubWriter) Write(p []byte) (n int, err error) {
 }
 
 type mockPresentationExProvider struct {
-	createValue *presexch.PresentationDefinitions
+	createValue *presexch.PresentationDefinition
 	createErr   error
 }
 
-func (m *mockPresentationExProvider) Create(scopes []string) (*presexch.PresentationDefinitions, error) {
+func (m *mockPresentationExProvider) Create(scopes []string) (*presexch.PresentationDefinition, error) {
 	return m.createValue, m.createErr
 }
 
@@ -3399,7 +3405,7 @@ func (s *stubOAuth2Config) AuthCodeURL(_ string) string {
 
 func mockPresentationDefinitionsProvider() presentationExProvider {
 	return &mockPresentationExProvider{
-		createValue: &presexch.PresentationDefinitions{
+		createValue: &presexch.PresentationDefinition{
 			InputDescriptors: []*presexch.InputDescriptor{{ID: "1"}},
 		},
 	}

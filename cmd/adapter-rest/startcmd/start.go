@@ -31,11 +31,14 @@ import (
 	arieslog "github.com/hyperledger/aries-framework-go/pkg/common/log"
 	"github.com/hyperledger/aries-framework-go/pkg/didcomm/messaging/msghandler"
 	arieshttp "github.com/hyperledger/aries-framework-go/pkg/didcomm/transport/http"
+	"github.com/hyperledger/aries-framework-go/pkg/doc/presexch"
+	"github.com/hyperledger/aries-framework-go/pkg/doc/verifiable"
 	"github.com/hyperledger/aries-framework-go/pkg/framework/aries"
 	"github.com/hyperledger/aries-framework-go/pkg/framework/aries/api"
 	"github.com/hyperledger/aries-framework-go/pkg/framework/aries/defaults"
 	"github.com/hyperledger/aries-framework-go/pkg/vdr/httpbinding"
 	"github.com/hyperledger/aries-framework-go/spi/storage"
+	"github.com/piprate/json-gold/ld"
 	"github.com/rs/cors"
 	"github.com/spf13/cobra"
 	"github.com/trustbloc/edge-core/pkg/log"
@@ -702,6 +705,17 @@ func addRPHandlers(parameters *adapterRestParameters, framework *aries.Aries, ro
 		return err
 	}
 
+	presExchJSONLDCtx, err := ld.DocumentFromReader(strings.NewReader(presexch.PresentationSubmissionJSONLDContext))
+	if err != nil {
+		return fmt.Errorf("failed to preload presentation-exchange jsonld context: %w", err)
+	}
+
+	docLoader := verifiable.CachingJSONLDLoader()
+	docLoader.AddDocument(
+		presexch.PresentationSubmissionJSONLDContextIRI,
+		presExchJSONLDCtx,
+	)
+
 	// add rp endpoints
 	rpService, err := rp.New(&rpops.Config{
 		PresentationExProvider: presentationExProvider,
@@ -717,6 +731,7 @@ func addRPHandlers(parameters *adapterRestParameters, framework *aries.Aries, ro
 		GovernanceProvider:     governanceProv,
 		PresentProofClient:     presentProofClient,
 		WalletBridgeAppURL:     parameters.walletAppURL,
+		JSONLDDocumentLoader:   docLoader,
 	})
 	if err != nil {
 		return err

@@ -9,11 +9,10 @@ import (
 
 	"github.com/hyperledger/aries-framework-go/pkg/doc/did"
 	"github.com/hyperledger/aries-framework-go/pkg/doc/jsonld"
+	"github.com/hyperledger/aries-framework-go/pkg/doc/presexch"
 	"github.com/hyperledger/aries-framework-go/pkg/doc/util"
 	"github.com/hyperledger/aries-framework-go/pkg/doc/verifiable"
 	"github.com/piprate/json-gold/ld"
-
-	"github.com/trustbloc/edge-adapter/pkg/presexch"
 )
 
 //nolint:gochecknoglobals
@@ -26,8 +25,8 @@ func newPresentationSubmissionVP(submission *presexch.PresentationSubmission,
 		return nil, err
 	}
 
-	vp.Context = append(vp.Context, "https://trustbloc.github.io/context/vp/presentation-exchange-submission-v1.jsonld")
-	vp.Type = append(vp.Type, "PresentationSubmission")
+	vp.Context = append(vp.Context, presexch.PresentationSubmissionJSONLDContextIRI)
+	vp.Type = append(vp.Type, presexch.PresentationSubmissionJSONLDType)
 	vp.CustomFields = map[string]interface{}{
 		"presentation_submission": submission,
 	}
@@ -166,6 +165,16 @@ func newDriversLicenseVC() *verifiable.Credential {
 func createTestJSONLDDocumentLoader() *jsonld.CachingDocumentLoader {
 	loader := verifiable.CachingJSONLDLoader()
 
+	presExchCtx, err := ld.DocumentFromReader(strings.NewReader(presexch.PresentationSubmissionJSONLDContext))
+	if err != nil {
+		panic(fmt.Errorf("failed to preload presentation-exchange jsonld context: %w", err))
+	}
+
+	loader.AddDocument(
+		presexch.PresentationSubmissionJSONLDContextIRI,
+		presExchCtx,
+	)
+
 	contexts := []struct {
 		vocab    string
 		filename string
@@ -185,10 +194,6 @@ func createTestJSONLDDocumentLoader() *jsonld.CachingDocumentLoader {
 		{
 			vocab:    "https://trustbloc.github.io/context/vc/examples-ext-v1.jsonld",
 			filename: "examples-ext-v1.jsonld",
-		},
-		{
-			vocab:    "https://trustbloc.github.io/context/vp/presentation-exchange-submission-v1.jsonld",
-			filename: "presentation_exchange.jsonld",
 		},
 		{
 			vocab:    "https://trustbloc.github.io/context/vp/examples/mdl-v1.jsonld",

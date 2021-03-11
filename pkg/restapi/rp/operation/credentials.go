@@ -10,22 +10,25 @@ import (
 	"fmt"
 
 	"github.com/hyperledger/aries-framework-go/pkg/client/presentproof"
+	"github.com/hyperledger/aries-framework-go/pkg/doc/presexch"
 	"github.com/hyperledger/aries-framework-go/pkg/doc/verifiable"
 	vdrapi "github.com/hyperledger/aries-framework-go/pkg/framework/aries/api/vdr"
+	"github.com/piprate/json-gold/ld"
 	"github.com/pkg/errors"
 
 	"github.com/trustbloc/edge-adapter/pkg/internal/common/adapterutil"
-	"github.com/trustbloc/edge-adapter/pkg/presexch"
 	"github.com/trustbloc/edge-adapter/pkg/vc"
 )
 
 var errInvalidCredential = errors.New("malformed credential")
 
-func parseWalletResponse(definitions *presexch.PresentationDefinitions, vdriReg vdrapi.Registry,
-	vpBytes []byte) (local, remote map[string]*verifiable.Credential, err error) {
+func parseWalletResponse(definitions *presexch.PresentationDefinition, vdriReg vdrapi.Registry,
+	vpBytes []byte, docLoader ld.DocumentLoader) (local, remote map[string]*verifiable.Credential, err error) {
 	vp, err := verifiable.ParsePresentation(
 		vpBytes,
-		verifiable.WithPresPublicKeyFetcher(verifiable.NewDIDKeyResolver(vdriReg).PublicKeyFetcher()))
+		verifiable.WithPresPublicKeyFetcher(verifiable.NewDIDKeyResolver(vdriReg).PublicKeyFetcher()),
+		verifiable.WithPresJSONLDDocumentLoader(docLoader),
+	)
 	if err != nil {
 		return nil, nil, fmt.Errorf(
 			"%w: parseWalletResponse: failed to parse verifiable presentation: %s", errInvalidCredential, err.Error())
@@ -35,8 +38,11 @@ func parseWalletResponse(definitions *presexch.PresentationDefinitions, vdriReg 
 	//  'WithDisabledCredProofCheck()' once we can: https://github.com/trustbloc/edge-adapter/issues/300
 	matched, err := definitions.Match(
 		vp,
-		presexch.WithPublicKeyFetcher(verifiable.NewDIDKeyResolver(vdriReg).PublicKeyFetcher()),
-		presexch.WithDisabledCredProofCheck())
+		presexch.WithCredentialOptions(
+			verifiable.WithPublicKeyFetcher(verifiable.NewDIDKeyResolver(vdriReg).PublicKeyFetcher()),
+			verifiable.WithDisabledProofCheck(),
+		),
+	)
 	if err != nil {
 		return nil, nil, fmt.Errorf(
 			"%w: parseWalletResponse: invalid presentation submission: %s", errInvalidCredential, err.Error())
@@ -66,7 +72,8 @@ func parseWalletResponse(definitions *presexch.PresentationDefinitions, vdriReg 
 
 // TODO validate issuer's response against presentation_definitions
 //  https://github.com/trustbloc/edge-adapter/issues/108
-func parseIssuerResponse(pres *presentproof.Presentation, vdriReg vdrapi.Registry) (*verifiable.Credential, error) {
+func parseIssuerResponse(pres *presentproof.Presentation,
+	vdriReg vdrapi.Registry, docLoader ld.DocumentLoader) (*verifiable.Credential, error) {
 	if len(pres.PresentationsAttach) == 0 {
 		return nil, fmt.Errorf("%w: expected at least 1 attachment but got 0", errInvalidCredential)
 	}
@@ -80,7 +87,9 @@ func parseIssuerResponse(pres *presentproof.Presentation, vdriReg vdrapi.Registr
 
 	vp, err := verifiable.ParsePresentation(
 		vpBytes,
-		verifiable.WithPresPublicKeyFetcher(verifiable.NewDIDKeyResolver(vdriReg).PublicKeyFetcher()))
+		verifiable.WithPresPublicKeyFetcher(verifiable.NewDIDKeyResolver(vdriReg).PublicKeyFetcher()),
+		verifiable.WithPresJSONLDDocumentLoader(docLoader),
+	)
 	if err != nil {
 		return nil,
 			fmt.Errorf("%w: failed to parse verifiable presentation %s: %s", errInvalidCredential, vpBytes, err.Error())

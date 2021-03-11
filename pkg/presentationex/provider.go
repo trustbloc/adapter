@@ -11,7 +11,7 @@ import (
 	"io"
 	"io/ioutil"
 
-	"github.com/trustbloc/edge-adapter/pkg/presexch"
+	"github.com/hyperledger/aries-framework-go/pkg/doc/presexch"
 )
 
 // Provider provide presentation exchange ops.
@@ -38,8 +38,8 @@ func New(inputDescriptorsFile io.Reader) (*Provider, error) {
 }
 
 // Create presentation exchange request.
-func (p *Provider) Create(scopes []string) (*presexch.PresentationDefinitions, error) {
-	defs := &presexch.PresentationDefinitions{
+func (p *Provider) Create(scopes []string) (*presexch.PresentationDefinition, error) {
+	defs := &presexch.PresentationDefinition{
 		InputDescriptors: make([]*presexch.InputDescriptor, 0),
 	}
 

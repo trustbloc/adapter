@@ -9,7 +9,7 @@ package vc
 import (
 	"encoding/json"
 
-	"github.com/trustbloc/edge-adapter/pkg/presexch"
+	"github.com/hyperledger/aries-framework-go/pkg/doc/presexch"
 )
 
 const (
