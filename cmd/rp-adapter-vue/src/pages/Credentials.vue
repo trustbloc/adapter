@@ -67,7 +67,7 @@ SPDX-License-Identifier: Apache-2.0
     import NavbarComponent from "./components/Navbar.vue";
     import FooterComponent from "./components/Footer.vue";
     import WalletPreference from "./WalletPreference.vue";
-    import {LoadPreferenceError, WalletClient} from "@trustbloc/wallet-js-client";
+    import {LoadPreferenceError, WalletClient} from "@trustbloc/wallet-adapter-web";
 
     export default {
         name: 'credentials',
