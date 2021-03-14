@@ -321,13 +321,6 @@ type Operation struct {
 	getOIDCClientFunc    func(string) (oidcClient, error)
 }
 
-/**
-TODO: Include the scope for the credential type in the oauth request made by the issuer adapter for a given credential
- - when creating the issuer profile, adapter should be given a list of scopes
- - when invoking an OIDC login (in the issuer adapter), the issuer-adapter should be told
-   what credential scope to request and should include that scope in the authorization request.
-*/
-
 // GetRESTHandlers get all controller API handler available for this service.
 func (o *Operation) GetRESTHandlers() []restapi.Handler {
 	return append([]restapi.Handler{
