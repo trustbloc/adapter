@@ -11,6 +11,7 @@ import (
 	"io"
 	"io/ioutil"
 
+	"github.com/google/uuid"
 	"github.com/hyperledger/aries-framework-go/pkg/doc/presexch"
 )
 
@@ -40,6 +41,7 @@ func New(inputDescriptorsFile io.Reader) (*Provider, error) {
 // Create presentation exchange request.
 func (p *Provider) Create(scopes []string) (*presexch.PresentationDefinition, error) {
 	defs := &presexch.PresentationDefinition{
+		ID:               uuid.New().String(),
 		InputDescriptors: make([]*presexch.InputDescriptor, 0),
 	}
 
@@ -51,6 +53,11 @@ func (p *Provider) Create(scopes []string) (*presexch.PresentationDefinition, er
 
 		def.ID = scope
 		defs.InputDescriptors = append(defs.InputDescriptors, def)
+	}
+
+	err := defs.ValidateSchema()
+	if err != nil {
+		return nil, fmt.Errorf("presentation_definition jsonschema validation failure: %w", err)
 	}
 
 	return defs, nil
