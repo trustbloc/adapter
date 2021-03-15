@@ -8,6 +8,7 @@
         {
           "path": ["$.credentialSubject.scope[*].schema.uri"],
           "filter": {
+            "type": "string",
             "const": "https://trustbloc.github.io/context/vc/examples-ext-v1.jsonld"
           }
         }
@@ -28,6 +29,7 @@
         {
           "path": ["$.credentialSubject.scope[*].schema.uri"],
           "filter": {
+            "type": "string",
             "const": "https://trustbloc.github.io/context/vc/examples/driver-license-evidence-v1.jsonld"
           }
         }
@@ -43,6 +45,7 @@
         {
           "path": ["$.credentialSubject.scope[*].schema.uri"],
           "filter": {
+            "type": "string",
             "const": "https://trustbloc.github.io/context/vc/examples/credit-score-v1.jsonld"
           }
         }
