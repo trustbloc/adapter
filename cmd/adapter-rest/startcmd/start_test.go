@@ -36,17 +36,13 @@ var inputDescriptors = `{
 
 type mockServer struct{}
 
-func (s *mockServer) ListenAndServe(host string, handler http.Handler) error {
-	return nil
-}
-
-func (s *mockServer) ListenAndServeTLS(host, certPath, keyPath string, handler http.Handler) error {
+func (s *mockServer) ListenAndServe(host, certPath, keyPath string, handler http.Handler) error {
 	return nil
 }
 
 func TestListenAndServe(t *testing.T) {
 	var w HTTPServer
-	err := w.ListenAndServe("wronghost", nil)
+	err := w.ListenAndServe("wronghost", "", "", nil)
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "address wronghost: missing port in address")
 }
