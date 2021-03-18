@@ -253,20 +253,18 @@ type governanceProvider interface {
 }
 
 type server interface {
-	ListenAndServe(host string, router http.Handler) error
-	ListenAndServeTLS(host, certFile, keyFile string, router http.Handler) error
+	ListenAndServe(host, certFile, keyFile string, router http.Handler) error
 }
 
 // HTTPServer represents an actual HTTP server implementation.
 type HTTPServer struct{}
 
 // ListenAndServe starts the server using the standard Go HTTP server implementation.
-func (s *HTTPServer) ListenAndServe(host string, router http.Handler) error {
-	return http.ListenAndServe(host, router)
-}
+func (s *HTTPServer) ListenAndServe(host, certFile, keyFile string, router http.Handler) error {
+	if certFile == "" || keyFile == "" {
+		return http.ListenAndServe(host, router)
+	}
 
-// ListenAndServeTLS starts the server using the standard Go HTTPS implementation.
-func (s *HTTPServer) ListenAndServeTLS(host, certFile, keyFile string, router http.Handler) error {
 	return http.ListenAndServeTLS(host, certFile, keyFile, router)
 }
 
@@ -636,7 +634,7 @@ func startAdapterService(parameters *adapterRestParameters, srv server) error {
 
 	logger.Infof("starting %s adapter rest server on host %s", parameters.mode, parameters.hostURL)
 
-	return srv.ListenAndServeTLS(
+	return srv.ListenAndServe(
 		parameters.hostURL,
 		parameters.tlsParams.serveCertPath,
 		parameters.tlsParams.serveKeyPath,
