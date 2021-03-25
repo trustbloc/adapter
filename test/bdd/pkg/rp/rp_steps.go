@@ -286,7 +286,7 @@ func (s *Steps) newTrustBlocDID(agentID string) (*did.Doc, error) {
 	didDoc.Authentication = append(didDoc.Authentication, *did.NewReferencedVerification(vm, did.Authentication))
 	didDoc.AssertionMethod = append(didDoc.AssertionMethod, *did.NewReferencedVerification(vm, did.AssertionMethod))
 
-	docResolution, err := trustblocClient.Create(nil, &didDoc,
+	docResolution, err := trustblocClient.Create(&didDoc,
 		vdrapi.WithOption(trustbloc.RecoveryPublicKeyOpt, ed25519.PublicKey(keys[1].bits)),
 		vdrapi.WithOption(trustbloc.UpdatePublicKeyOpt, ed25519.PublicKey(keys[2].bits)),
 	)

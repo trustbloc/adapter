@@ -35,7 +35,9 @@ import (
 	"github.com/hyperledger/aries-framework-go/pkg/doc/did"
 	"github.com/hyperledger/aries-framework-go/pkg/doc/presexch"
 	"github.com/hyperledger/aries-framework-go/pkg/doc/verifiable"
+	"github.com/hyperledger/aries-framework-go/pkg/framework/aries"
 	vdrapi "github.com/hyperledger/aries-framework-go/pkg/framework/aries/api/vdr"
+	"github.com/hyperledger/aries-framework-go/pkg/kms"
 	mockdidexsvc "github.com/hyperledger/aries-framework-go/pkg/mock/didcomm/protocol/didexchange"
 	mockroute "github.com/hyperledger/aries-framework-go/pkg/mock/didcomm/protocol/mediator"
 	ariesmockprovider "github.com/hyperledger/aries-framework-go/pkg/mock/provider"
@@ -3134,6 +3136,7 @@ func TestDIDDocReq(t *testing.T) { // nolint:gocyclo
 					didexchangesvc.DIDExchange: &mockdidexsvc.MockDIDExchangeSvc{},
 					outofbandsvc.Name:          &mockoutofband.MockService{},
 				},
+				KMSValue: newKMS(t),
 			},
 		}
 
@@ -3629,4 +3632,19 @@ func storePut(t *testing.T, s storage.Store, k string, v interface{}) {
 
 	err = s.Put(k, bits)
 	require.NoError(t, err)
+}
+
+func newKMS(t *testing.T) kms.KeyManager {
+	t.Helper()
+
+	a, err := aries.New(
+		aries.WithStoreProvider(mem.NewProvider()),
+		aries.WithProtocolStateStoreProvider(mem.NewProvider()),
+	)
+	require.NoError(t, err)
+
+	ctx, err := a.Context()
+	require.NoError(t, err)
+
+	return ctx.KMS()
 }

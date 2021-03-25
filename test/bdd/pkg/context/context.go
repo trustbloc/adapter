@@ -12,7 +12,6 @@ import (
 
 	"github.com/hyperledger/aries-framework-go-ext/component/vdr/trustbloc"
 	vdriapi "github.com/hyperledger/aries-framework-go/pkg/framework/aries/api/vdr"
-	"github.com/hyperledger/aries-framework-go/pkg/framework/context"
 	mockstore "github.com/hyperledger/aries-framework-go/pkg/mock/storage"
 	vdripkg "github.com/hyperledger/aries-framework-go/pkg/vdr"
 	"github.com/hyperledger/aries-framework-go/pkg/vdr/httpbinding"
@@ -81,11 +80,6 @@ func createVDRI(didResolverURL string) (vdriapi.Registry, error) {
 		return nil, fmt.Errorf("failed to create new universal resolver vdri: %w", err)
 	}
 
-	vdriProvider, err := context.New()
-	if err != nil {
-		return nil, fmt.Errorf("failed to create new vdri provider: %w", err)
-	}
-
 	p, err := peer.New(mockstore.NewMockStoreProvider())
 	if err != nil {
 		return nil, fmt.Errorf("create new vdri peer failed: %w", err)
@@ -98,7 +92,6 @@ func createVDRI(didResolverURL string) (vdriapi.Registry, error) {
 	}
 
 	return vdripkg.New(
-		vdriProvider,
 		vdripkg.WithVDR(p),
 		vdripkg.WithVDR(blocVDR),
 		vdripkg.WithVDR(didResolverVDRI),

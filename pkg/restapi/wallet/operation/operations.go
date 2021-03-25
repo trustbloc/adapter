@@ -183,8 +183,11 @@ func (o *Operation) CreateInvitation(rw http.ResponseWriter, req *http.Request) 
 	}
 
 	// TODO : public DIDs in request parameters - [Issue#edge-agent:645]
-	invitation, err := o.outOfBand.CreateInvitation([]string{didexchangesvc.PIURI},
-		outofband.WithLabel(o.agentLabel))
+	invitation, err := o.outOfBand.CreateInvitation(
+		nil,
+		outofband.WithHandshakeProtocols(didexchangesvc.PIURI),
+		outofband.WithLabel(o.agentLabel),
+	)
 	if err != nil {
 		commhttp.WriteErrorResponseWithLog(rw, http.StatusInternalServerError, err.Error(), CreateInvitationPath, logger)
 
@@ -434,7 +437,9 @@ func (o *Operation) stateMsgListener(ch <-chan service.StateMsg) {
 		// everytime during adapter didexchange completion.
 		err := o.store.SaveProfile(event.InvitationID(), event.ConnectionID())
 		if err != nil {
-			logger.Warnf("Failed to update wallet application profile: %s", err)
+			logger.Warnf(
+				"Failed to update wallet application profile with invitationID=%s and connectionID=%s: %s",
+				event.InvitationID(), event.ConnectionID(), err)
 		}
 	}
 }

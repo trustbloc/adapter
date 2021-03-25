@@ -22,7 +22,7 @@ import (
 )
 
 type trustblocDIDClient interface {
-	Create(keyManager kms.KeyManager, did *did.Doc, opts ...vdrapi.DIDMethodOption) (*did.DocResolution, error)
+	Create(did *did.Doc, opts ...vdrapi.DIDMethodOption) (*did.DocResolution, error)
 }
 
 // KeyManager creates keys.
@@ -89,7 +89,7 @@ func (p *TrustblocDIDCreator) Create() (*did.Doc, error) {
 		ServiceEndpoint: p.didcommInboundURL,
 	}}
 
-	docResolution, err := p.tblocDIDs.Create(nil, didDoc,
+	docResolution, err := p.tblocDIDs.Create(didDoc,
 		vdrapi.WithOption(trustbloc.RecoveryPublicKeyOpt, recoverKey),
 		vdrapi.WithOption(trustbloc.UpdatePublicKeyOpt, updateKey),
 	)

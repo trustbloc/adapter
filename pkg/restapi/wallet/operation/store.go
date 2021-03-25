@@ -42,6 +42,8 @@ func newWalletAppProfileStore(p storage.Provider) (*walletAppProfileStore, error
 
 // SaveInvitation saves mapping between invitation and userID
 func (w *walletAppProfileStore) SaveInvitation(invitationID, userID string) error {
+	logger.Debugf("invitationID=%s userID=%s", invitationID, userID)
+
 	err := w.store.Put(getInvitationKeyPrefix(invitationID), []byte(userID))
 	if err != nil {
 		return fmt.Errorf("failed to save invitation: %w", err)
@@ -54,7 +56,9 @@ func (w *walletAppProfileStore) SaveInvitation(invitationID, userID string) erro
 func (w *walletAppProfileStore) SaveProfile(invitationID, connectionID string) error {
 	userIDBytes, err := w.store.Get(getInvitationKeyPrefix(invitationID))
 	if err != nil {
-		return fmt.Errorf("failed to get user info for given invitation ID: %w", err)
+		return fmt.Errorf(
+			"failed to get user info for given invitation ID [%s]: %w",
+			invitationID, err)
 	}
 
 	err = w.putProfileInStore(getUserIDKeyPrefix, string(userIDBytes), &walletAppProfile{

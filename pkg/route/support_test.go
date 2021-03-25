@@ -12,6 +12,7 @@ import (
 	"github.com/hyperledger/aries-framework-go/pkg/didcomm/messaging/msghandler"
 	"github.com/hyperledger/aries-framework-go/pkg/doc/did"
 	mockroute "github.com/hyperledger/aries-framework-go/pkg/mock/didcomm/protocol/mediator"
+	mockkms "github.com/hyperledger/aries-framework-go/pkg/mock/kms"
 	mockvdr "github.com/hyperledger/aries-framework-go/pkg/mock/vdr"
 
 	mockconn "github.com/trustbloc/edge-adapter/pkg/internal/mock/connection"
@@ -31,6 +32,7 @@ func config() *Config {
 		Store:             mem.NewProvider(),
 		ConnectionLookup:  &mockconn.MockConnectionsLookup{ConnIDByDIDs: uuid.New().String()},
 		MediatorSvc:       &mockroute.MockMediatorSvc{},
+		KeyManager:        &mockkms.KeyManager{},
 	}
 }
 

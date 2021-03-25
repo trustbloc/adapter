@@ -2192,6 +2192,7 @@ func TestIssueCredentialHandler(t *testing.T) {
 					VDRegistryValue: &mockvdr.MockVDRegistry{
 						CreateErr: errors.New("did create error"),
 					},
+					KMSValue: &mockkms.KeyManager{},
 				},
 			}
 

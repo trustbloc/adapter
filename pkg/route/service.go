@@ -17,11 +17,13 @@ import (
 	mediatorsvc "github.com/hyperledger/aries-framework-go/pkg/didcomm/protocol/mediator"
 	"github.com/hyperledger/aries-framework-go/pkg/doc/did"
 	"github.com/hyperledger/aries-framework-go/pkg/framework/aries/api/vdr"
+	"github.com/hyperledger/aries-framework-go/pkg/kms"
 	"github.com/hyperledger/aries-framework-go/pkg/vdr/peer"
 	"github.com/hyperledger/aries-framework-go/spi/storage"
 	"github.com/trustbloc/edge-core/pkg/log"
 
 	"github.com/trustbloc/edge-adapter/pkg/aries/message"
+	"github.com/trustbloc/edge-adapter/pkg/crypto"
 )
 
 // Msg svc constants.
@@ -66,6 +68,7 @@ type Config struct {
 	Store             storage.Provider
 	ConnectionLookup  connectionRecorder
 	MediatorSvc       mediatorsvc.ProtocolService
+	KeyManager        kms.KeyManager
 }
 
 // Service svc.
@@ -78,6 +81,7 @@ type Service struct {
 	store            storage.Store
 	connectionLookup connectionRecorder
 	mediatorSvc      mediatorsvc.ProtocolService
+	keyManager       kms.KeyManager
 }
 
 // New returns a new Service.
@@ -97,6 +101,7 @@ func New(config *Config) (*Service, error) {
 		connectionLookup: config.ConnectionLookup,
 		// TODO https://github.com/trustbloc/edge-adapter/issues/361 use function from client
 		mediatorSvc: config.MediatorSvc,
+		keyManager:  config.KeyManager,
 	}
 
 	msgCh := make(chan message.Msg, 1)
@@ -116,7 +121,12 @@ func New(config *Config) (*Service, error) {
 
 // GetDIDDoc returns the did doc with router endpoint/keys if its registered, else returns the doc
 // with default endpoint.
-func (o *Service) GetDIDDoc(connID string, requiresBlindedRoute bool) (*did.Doc, error) { //nolint:gocyclo
+func (o *Service) GetDIDDoc(connID string, requiresBlindedRoute bool) (*did.Doc, error) { //nolint:gocyclo,funlen
+	verMethod, err := o.newVerificationMethod()
+	if err != nil {
+		return nil, fmt.Errorf("failed to create new verification method: %w", err)
+	}
+
 	// get routers connection ID
 	routerConnID, err := o.store.Get(connID)
 	if err != nil && !errors.Is(err, storage.ErrDataNotFound) {
@@ -130,9 +140,13 @@ func (o *Service) GetDIDDoc(connID string, requiresBlindedRoute bool) (*did.Doc,
 
 		docResolution, errCreate := o.vdriRegistry.Create(
 			peer.DIDMethod,
-			&did.Doc{Service: []did.Service{{
-				ServiceEndpoint: o.endpoint,
-			}}})
+			&did.Doc{
+				Service: []did.Service{{
+					ServiceEndpoint: o.endpoint,
+				}},
+				VerificationMethod: []did.VerificationMethod{*verMethod},
+			},
+		)
 		if errCreate != nil {
 			return nil, errCreate
 		}
@@ -142,15 +156,19 @@ func (o *Service) GetDIDDoc(connID string, requiresBlindedRoute bool) (*did.Doc,
 
 	config, err := o.mediator.GetConfig(string(routerConnID))
 	if err != nil {
-		return nil, fmt.Errorf("get mediator config: %w", err)
+		return nil, fmt.Errorf("get mediator config [routerConnID=%s]: %w", routerConnID, err)
 	}
 
 	docResolution, err := o.vdriRegistry.Create(
 		peer.DIDMethod,
-		&did.Doc{Service: []did.Service{{
-			ServiceEndpoint: config.Endpoint(),
-			RoutingKeys:     config.Keys(),
-		}}})
+		&did.Doc{
+			Service: []did.Service{{
+				ServiceEndpoint: config.Endpoint(),
+				RoutingKeys:     config.Keys(),
+			}},
+			VerificationMethod: []did.VerificationMethod{*verMethod},
+		},
+	)
 	if err != nil {
 		return nil, err
 	}
@@ -219,11 +237,19 @@ func (o *Service) didCommMsgListener(ch <-chan message.Msg) {
 }
 
 func (o *Service) handleDIDDocReq(msg service.DIDCommMsg) (service.DIDCommMsgMap, error) {
+	verMethod, err := o.newVerificationMethod()
+	if err != nil {
+		return nil, fmt.Errorf("failed to create new verification method: %w", err)
+	}
+
 	docResolution, err := o.vdriRegistry.Create(
 		peer.DIDMethod,
-		&did.Doc{Service: []did.Service{{
-			ServiceEndpoint: o.endpoint,
-		}}})
+		&did.Doc{
+			Service: []did.Service{{
+				ServiceEndpoint: o.endpoint,
+			}},
+			VerificationMethod: []did.VerificationMethod{*verMethod},
+		})
 	if err != nil {
 		return nil, err
 	}
@@ -248,6 +274,23 @@ func (o *Service) handleDIDDocReq(msg service.DIDCommMsg) (service.DIDCommMsgMap
 			DIDDoc: docBytes,
 		},
 	}), nil
+}
+
+func (o *Service) newVerificationMethod() (*did.VerificationMethod, error) {
+	// TODO - keytype should be configurable
+	keyID, pubKeyBytes, err := o.keyManager.CreateAndExportPubKeyBytes(kms.ED25519Type)
+	if err != nil {
+		return nil, fmt.Errorf("kms failed to create public key: %w", err)
+	}
+
+	verMethod := did.NewVerificationMethodFromBytes(
+		"#"+keyID,
+		crypto.Ed25519VerificationKey2018,
+		"",
+		pubKeyBytes,
+	)
+
+	return verMethod, nil
 }
 
 func (o *Service) handleRouteRegistration(msg message.Msg) (service.DIDCommMsgMap, error) { // nolint: gocyclo
