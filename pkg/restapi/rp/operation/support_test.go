@@ -21,6 +21,7 @@ import (
 	"github.com/hyperledger/aries-framework-go/pkg/framework/aries"
 	vdrapi "github.com/hyperledger/aries-framework-go/pkg/framework/aries/api/vdr"
 	ariesctx "github.com/hyperledger/aries-framework-go/pkg/framework/context"
+	"github.com/hyperledger/aries-framework-go/pkg/kms"
 	"github.com/hyperledger/aries-framework-go/pkg/vdr/peer"
 	"github.com/stretchr/testify/require"
 
@@ -31,6 +32,8 @@ import (
 )
 
 func config(t *testing.T) *Config {
+	t.Helper()
+
 	return &Config{
 		DIDExchClient:        &mockdidexchange.MockClient{},
 		Storage:              memStorage(),
@@ -121,9 +124,18 @@ func simulateDIDExchange(t *testing.T,
 func newPeerDID(t *testing.T, agent *ariesctx.Provider) *did.Doc {
 	t.Helper()
 
+	keyID, keyBytes, err := agent.KMS().CreateAndExportPubKeyBytes(kms.ED25519Type)
+	require.NoError(t, err)
+
 	d, err := agent.VDRegistry().Create(
 		peer.DIDMethod, &did.Doc{
 			Service: []did.Service{{ServiceEndpoint: "http://agent.example.com/didcomm", Type: "did-communication"}},
+			VerificationMethod: []did.VerificationMethod{*did.NewVerificationMethodFromBytes(
+				"#"+keyID,
+				crypto2.Ed25519VerificationKey2018,
+				"",
+				keyBytes,
+			)},
 		},
 	)
 	require.NoError(t, err)

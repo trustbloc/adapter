@@ -225,6 +225,7 @@ func New(config *Config) (*Operation, error) { // nolint:funlen,gocyclo
 		Store:             config.StoreProvider,
 		ConnectionLookup:  connectionLookup,
 		MediatorSvc:       mediatorSvc,
+		KeyManager:        config.AriesCtx.KMS(),
 	})
 	if err != nil {
 		return nil, fmt.Errorf("create message service : %w", err)
@@ -1131,7 +1132,9 @@ func (o *Operation) handleRequestCredential(msg service.DIDCommAction) (interfac
 
 	newDidDoc, err := o.routeSvc.GetDIDDoc(connID, profile.RequiresBlindedRoute)
 	if err != nil {
-		return nil, fmt.Errorf("create new issuer did : %w", err)
+		return nil, fmt.Errorf(
+			"create new issuer did [connID=%s requiresBlindedRoute=%t]: %w",
+			connID, profile.RequiresBlindedRoute, err)
 	}
 
 	docJSON, err := newDidDoc.JSONBytes()

@@ -36,7 +36,7 @@ func TestTrustblocDIDCreator_Create(t *testing.T) {
 		c, err := NewTrustblocDIDCreator(domain, didcommURL, &mockKeyManager{v: pubKey}, nil)
 		require.NoError(t, err)
 		c.tblocDIDs = &stubTrustblocClient{
-			createFunc: func(keyManager kms.KeyManager, didDoc *did.Doc,
+			createFunc: func(didDoc *did.Doc,
 				opts ...vdrapi.DIDMethodOption) (*did.DocResolution, error) {
 				return &did.DocResolution{DIDDocument: expected}, nil
 			},
@@ -81,7 +81,7 @@ func TestTrustblocDIDCreator_Create(t *testing.T) {
 		c, err := NewTrustblocDIDCreator("", "", &mockKeyManager{v: pubKey}, nil)
 		require.NoError(t, err)
 		c.tblocDIDs = &stubTrustblocClient{
-			createFunc: func(keyManager kms.KeyManager, did *did.Doc,
+			createFunc: func(did *did.Doc,
 				opts ...vdrapi.DIDMethodOption) (*did.DocResolution, error) {
 				return nil, expected
 			},
@@ -93,12 +93,12 @@ func TestTrustblocDIDCreator_Create(t *testing.T) {
 }
 
 type stubTrustblocClient struct {
-	createFunc func(keyManager kms.KeyManager, did *did.Doc, opts ...vdrapi.DIDMethodOption) (*did.DocResolution, error)
+	createFunc func(did *did.Doc, opts ...vdrapi.DIDMethodOption) (*did.DocResolution, error)
 }
 
-func (s *stubTrustblocClient) Create(keyManager kms.KeyManager, didDoc *did.Doc,
+func (s *stubTrustblocClient) Create(didDoc *did.Doc,
 	opts ...vdrapi.DIDMethodOption) (*did.DocResolution, error) {
-	return s.createFunc(keyManager, didDoc, opts...)
+	return s.createFunc(didDoc, opts...)
 }
 
 type mockKeyManager struct {

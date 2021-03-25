@@ -47,6 +47,7 @@ services:
       - ARIESD_WEBHOOK_URL=http://webhook.mock-wallet.com:${WALLET_WEBHOOK_PORT}
       - ARIESD_OUTBOUND_TRANSPORT=http,ws
       - ARIESD_TRANSPORT_RETURN_ROUTE=all
+      - ARIESD_LOG_LEVEL=debug
     ports:
       - ${WALLET_AGENT_INBOUND_PORT}:${WALLET_AGENT_INBOUND_PORT}
       - ${WALLET_AGENT_API_PORT}:${WALLET_AGENT_API_PORT}

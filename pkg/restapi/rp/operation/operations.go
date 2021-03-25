@@ -112,7 +112,7 @@ type OAuth2Config interface {
 
 // OOBClient is the aries framework OutOfBand client.
 type OOBClient interface {
-	CreateInvitation([]string, ...outofband.MessageOption) (*outofband.Invitation, error)
+	CreateInvitation([]interface{}, ...outofband.MessageOption) (*outofband.Invitation, error)
 }
 
 // DIDClient is the didexchange Client.
@@ -716,9 +716,9 @@ func (o *Operation) getPresentationsRequest(w http.ResponseWriter, r *http.Reque
 	}
 
 	invitation, err := o.oobClient.CreateInvitation(
-		[]string{didexchangesvc.PIURI},
+		[]interface{}{cr.RPPublicDID},
 		outofband.WithLabel(cr.RPLabel),
-		outofband.WithServices(cr.RPPublicDID),
+		outofband.WithHandshakeProtocols(didexchangesvc.PIURI),
 	)
 	if err != nil {
 		handleError(w, http.StatusInternalServerError,
@@ -1517,6 +1517,7 @@ func createRouteSvc(config *Config, connectionLookup connectionRecorder) (routeS
 		Store:             config.Storage.Transient,
 		ConnectionLookup:  connectionLookup,
 		MediatorSvc:       mediatorSvc,
+		KeyManager:        config.AriesContextProvider.KMS(),
 	})
 	if err != nil {
 		return nil, fmt.Errorf("create service : %w", err)

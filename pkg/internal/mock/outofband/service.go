@@ -36,19 +36,9 @@ func (m *MockService) UnregisterMsgEvent(ch chan<- service.StateMsg) error {
 	panic("implement me")
 }
 
-// AcceptRequest mock.
-func (m *MockService) AcceptRequest(request *outofband.Request, s string, routerConnections []string) (string, error) {
-	panic("implement me")
-}
-
 // AcceptInvitation mock.
 func (m *MockService) AcceptInvitation(invitation *outofband.Invitation, s string,
 	routerConnections []string) (string, error) {
-	panic("implement me")
-}
-
-// SaveRequest mock.
-func (m *MockService) SaveRequest(request *outofband.Request) error {
 	panic("implement me")
 }
 

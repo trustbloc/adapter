@@ -13,6 +13,8 @@ import (
 	"github.com/hyperledger/aries-framework-go/component/storageutil/mem"
 	"github.com/hyperledger/aries-framework-go/pkg/doc/did"
 	"github.com/hyperledger/aries-framework-go/pkg/framework/aries"
+	"github.com/hyperledger/aries-framework-go/pkg/kms"
+	"github.com/hyperledger/aries-framework-go/pkg/vdr/peer"
 	"github.com/stretchr/testify/require"
 
 	"github.com/trustbloc/edge-adapter/pkg/crypto"
@@ -56,8 +58,27 @@ func newPeerDID(t *testing.T) *did.Doc {
 
 	didDoc.Service = []did.Service{{ServiceEndpoint: "http://agent.example.com/didcomm", Type: "did-communication"}}
 
-	d, err := ctx.VDRegistry().Create("peer", didDoc)
+	didDoc.VerificationMethod = []did.VerificationMethod{verMethod(t, ctx.KMS())}
+
+	d, err := ctx.VDRegistry().Create(
+		peer.DIDMethod,
+		didDoc,
+	)
 	require.NoError(t, err)
 
 	return d.DIDDocument
+}
+
+func verMethod(t *testing.T, k kms.KeyManager) did.VerificationMethod {
+	t.Helper()
+
+	keyID, keyBytes, err := k.CreateAndExportPubKeyBytes(kms.ED25519Type)
+	require.NoError(t, err)
+
+	return *did.NewVerificationMethodFromBytes(
+		"#"+keyID,
+		crypto.Ed25519VerificationKey2018,
+		"",
+		keyBytes,
+	)
 }
