@@ -1577,7 +1577,7 @@ func fetchAuthorizationCred(msg service.DIDCommAction, vdriRegistry vdr.Registry
 
 	vp, err := verifiable.ParsePresentation(
 		reqJSON,
-		verifiable.WithPresPublicKeyFetcher(verifiable.NewDIDKeyResolver(vdriRegistry).PublicKeyFetcher()),
+		verifiable.WithPresPublicKeyFetcher(verifiable.NewVDRKeyResolver(vdriRegistry).PublicKeyFetcher()),
 	)
 	if err != nil {
 		return nil, fmt.Errorf("parse presentation : %w", err)
@@ -1595,7 +1595,7 @@ func fetchAuthorizationCred(msg service.DIDCommAction, vdriRegistry vdr.Registry
 
 	vc, err := verifiable.ParseCredential(
 		vcBytes,
-		verifiable.WithPublicKeyFetcher(verifiable.NewDIDKeyResolver(vdriRegistry).PublicKeyFetcher()),
+		verifiable.WithPublicKeyFetcher(verifiable.NewVDRKeyResolver(vdriRegistry).PublicKeyFetcher()),
 	)
 	if err != nil {
 		return nil, fmt.Errorf("parse credential : %w", err)

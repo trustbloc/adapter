@@ -1116,7 +1116,7 @@ func getCredential(credentialName, controllerURL string, vdriReg vdriapi.Registr
 
 		vc, err = verifiable.ParseCredential(
 			[]byte(getVCResp.VC),
-			verifiable.WithPublicKeyFetcher(verifiable.NewDIDKeyResolver(vdriReg).PublicKeyFetcher()),
+			verifiable.WithPublicKeyFetcher(verifiable.NewVDRKeyResolver(vdriReg).PublicKeyFetcher()),
 		)
 		if err != nil {
 			return nil, err
@@ -1224,7 +1224,7 @@ func (a *Steps) validateIssuerVC(id, agentID, controllerURL, expectedScope strin
 
 	vp, err := verifiable.ParsePresentation(
 		vpResult.VerifiablePresentation,
-		verifiable.WithPresPublicKeyFetcher(verifiable.NewDIDKeyResolver(vdriReg).PublicKeyFetcher()),
+		verifiable.WithPresPublicKeyFetcher(verifiable.NewVDRKeyResolver(vdriReg).PublicKeyFetcher()),
 	)
 	if err != nil {
 		return err
@@ -1241,7 +1241,7 @@ func (a *Steps) validateIssuerVC(id, agentID, controllerURL, expectedScope strin
 
 	vc, err := verifiable.ParseCredential(
 		creds[0],
-		verifiable.WithPublicKeyFetcher(verifiable.NewDIDKeyResolver(vdriReg).PublicKeyFetcher()),
+		verifiable.WithPublicKeyFetcher(verifiable.NewVDRKeyResolver(vdriReg).PublicKeyFetcher()),
 	)
 	if err != nil {
 		return err
@@ -1363,7 +1363,7 @@ func validateAndGetReferenceCred(vcBytes []byte, vcType string,
 	vdriReg vdriapi.Registry) (*verifiable.Credential, error) {
 	cred, err := verifiable.ParseCredential(
 		vcBytes,
-		verifiable.WithPublicKeyFetcher(verifiable.NewDIDKeyResolver(vdriReg).PublicKeyFetcher()),
+		verifiable.WithPublicKeyFetcher(verifiable.NewVDRKeyResolver(vdriReg).PublicKeyFetcher()),
 	)
 	if err != nil {
 		return nil, err
