@@ -26,7 +26,7 @@ func parseWalletResponse(definitions *presexch.PresentationDefinition, vdriReg v
 	vpBytes []byte, docLoader ld.DocumentLoader) (local, remote map[string]*verifiable.Credential, err error) {
 	vp, err := verifiable.ParsePresentation(
 		vpBytes,
-		verifiable.WithPresPublicKeyFetcher(verifiable.NewDIDKeyResolver(vdriReg).PublicKeyFetcher()),
+		verifiable.WithPresPublicKeyFetcher(verifiable.NewVDRKeyResolver(vdriReg).PublicKeyFetcher()),
 		verifiable.WithPresJSONLDDocumentLoader(docLoader),
 	)
 	if err != nil {
@@ -39,7 +39,7 @@ func parseWalletResponse(definitions *presexch.PresentationDefinition, vdriReg v
 	matched, err := definitions.Match(
 		vp,
 		presexch.WithCredentialOptions(
-			verifiable.WithPublicKeyFetcher(verifiable.NewDIDKeyResolver(vdriReg).PublicKeyFetcher()),
+			verifiable.WithPublicKeyFetcher(verifiable.NewVDRKeyResolver(vdriReg).PublicKeyFetcher()),
 			verifiable.WithDisabledProofCheck(),
 		),
 	)
@@ -87,7 +87,7 @@ func parseIssuerResponse(pres *presentproof.Presentation,
 
 	vp, err := verifiable.ParsePresentation(
 		vpBytes,
-		verifiable.WithPresPublicKeyFetcher(verifiable.NewDIDKeyResolver(vdriReg).PublicKeyFetcher()),
+		verifiable.WithPresPublicKeyFetcher(verifiable.NewVDRKeyResolver(vdriReg).PublicKeyFetcher()),
 		verifiable.WithPresJSONLDDocumentLoader(docLoader),
 	)
 	if err != nil {
@@ -107,7 +107,7 @@ func parseIssuerResponse(pres *presentproof.Presentation,
 
 	data, err := verifiable.ParseCredential(
 		rawCred[0],
-		verifiable.WithPublicKeyFetcher(verifiable.NewDIDKeyResolver(vdriReg).PublicKeyFetcher()))
+		verifiable.WithPublicKeyFetcher(verifiable.NewVDRKeyResolver(vdriReg).PublicKeyFetcher()))
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse issuer's credential: %w", err)
 	}

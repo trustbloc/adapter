@@ -10,7 +10,7 @@ require (
 	github.com/cenkalti/backoff v2.2.1+incompatible
 	github.com/google/uuid v1.1.2
 	github.com/gorilla/mux v1.7.4
-	github.com/hyperledger/aries-framework-go v0.1.7-0.20210324213044-074644c18933
+	github.com/hyperledger/aries-framework-go v0.1.7-0.20210330153939-7ec3a2c4697c
 	github.com/hyperledger/aries-framework-go-ext/component/storage/mysql v0.0.0-20210306194409-6e4c5d622fbc
 	github.com/hyperledger/aries-framework-go/component/storageutil v0.0.0-20210320144851-40976de98ccf
 	github.com/hyperledger/aries-framework-go/spi v0.0.0-20210320144851-40976de98ccf
@@ -19,7 +19,7 @@ require (
 	github.com/spf13/cobra v1.0.0
 	github.com/stretchr/testify v1.7.0
 	github.com/trustbloc/edge-adapter v0.0.0-00010101000000-000000000000
-	github.com/trustbloc/edge-core v0.1.7-0.20210310142750-7eb11997c4a9
+	github.com/trustbloc/edge-core v0.1.7-0.20210331113925-b13dedfe75eb
 )
 
 replace github.com/trustbloc/edge-adapter => ../..
