@@ -43,7 +43,7 @@ services:
       - ARIESD_DATABASE_TYPE=leveldb
       - ARIESD_DATABASE_PREFIX=aries_wallet
       - ARIESD_DEFAULT_LABEL=aries-wallet
-      - ARIESD_HTTP_RESOLVER=trustbloc@http://did.rest.example.com:8072/1.0/identifiers
+      - ARIESD_HTTP_RESOLVER=orb@http://did.rest.example.com:8072/1.0/identifiers
       - ARIESD_WEBHOOK_URL=http://webhook.mock-wallet.com:${WALLET_WEBHOOK_PORT}
       - ARIESD_OUTBOUND_TRANSPORT=http,ws
       - ARIESD_TRANSPORT_RETURN_ROUTE=all
@@ -116,6 +116,7 @@ services:
       - VC_REST_TLS_CACERTS=/etc/tls/ec-cacert.pem
       - VC_REST_TLS_SYSTEMCERTPOOL=true
       - VC_REST_GOVERNANCE_CLAIMS_FILE=/etc/governance_claims.json
+      - VC_REST_DID_ANCHOR_ORIGIN=origin
     ports:
       - 8066:8066
     entrypoint: ""

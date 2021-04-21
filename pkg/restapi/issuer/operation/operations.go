@@ -23,6 +23,7 @@ import (
 	oidclib "github.com/coreos/go-oidc"
 	"github.com/google/uuid"
 	"github.com/gorilla/mux"
+	"github.com/hyperledger/aries-framework-go-ext/component/vdr/orb"
 	"github.com/hyperledger/aries-framework-go/pkg/client/didexchange"
 	"github.com/hyperledger/aries-framework-go/pkg/client/issuecredential"
 	"github.com/hyperledger/aries-framework-go/pkg/client/mediator"
@@ -142,6 +143,7 @@ type Config struct {
 	WalletBridgeAppURL string
 	OIDCClientStoreKey []byte
 	ExternalURL        string
+	DidDomain          string
 }
 
 // New returns issuer rest instance.
@@ -269,6 +271,7 @@ func New(config *Config) (*Operation, error) { // nolint:funlen,gocyclo
 		oidcCallbackURL:    config.ExternalURL + oidcCallbackEndpoint,
 		userTokens:         map[string]*oauth2.Token{},
 		refreshTokenStore:  refreshStore,
+		didDomain:          config.DidDomain,
 	}
 
 	op.createOIDCClientFunc = op.getOrCreateOIDCClient
@@ -320,6 +323,7 @@ type Operation struct {
 	refreshTokenStore    storage.Store
 	createOIDCClientFunc func(profileData *issuer.ProfileData) (oidcClient, error)
 	getOIDCClientFunc    func(string) (oidcClient, error)
+	didDomain            string
 }
 
 // GetRESTHandlers get all controller API handler available for this service.
@@ -356,7 +360,7 @@ func (o *Operation) createIssuerProfileHandler(rw http.ResponseWriter, req *http
 		return
 	}
 
-	profileData, err := mapProfileReqToData(data, newDidDoc)
+	profileData, err := mapProfileReqToData(data, newDidDoc, o.didDomain)
 	if err != nil {
 		commhttp.WriteErrorResponseWithLog(rw, http.StatusInternalServerError,
 			fmt.Sprintf("failed to map request to issuer profile: %s", err.Error()),
@@ -383,7 +387,10 @@ func (o *Operation) createIssuerProfileHandler(rw http.ResponseWriter, req *http
 	}
 
 	if o.governanceProvider != nil {
-		_, err = o.governanceProvider.IssueCredential(newDidDoc.ID, data.ID)
+		didID := strings.ReplaceAll(newDidDoc.ID, fmt.Sprintf("did:%s", orb.DIDMethod),
+			fmt.Sprintf("did:%s:%s", orb.DIDMethod, o.didDomain))
+
+		_, err = o.governanceProvider.IssueCredential(didID, data.ID)
 		if err != nil {
 			commhttp.WriteErrorResponseWithLog(rw, http.StatusInternalServerError,
 				fmt.Sprintf("failed to issue governance vc: %s", err.Error()), profileEndpoint, logger)
@@ -1218,7 +1225,8 @@ func (o *Operation) handleRequestPresentation(msg service.DIDCommAction) (interf
 		return nil, err
 	}
 
-	verificationMethod, err := adaptercrypto.GetVerificationMethodFromDID(docResolution.DIDDocument, did.Authentication)
+	verificationMethod, err := adaptercrypto.GetVerificationMethodFromDID(docResolution.DIDDocument,
+		did.Authentication)
 	if err != nil {
 		return nil, fmt.Errorf("failed to obtain a authentication verification method from issuer did %s: %w",
 			authorizationCredHandle.IssuerDID, err)
@@ -1682,16 +1690,22 @@ func unmarshalSubject(data []byte) (map[string]interface{}, error) {
 	return subject, nil
 }
 
-func mapProfileReqToData(data *ProfileDataRequest, didDoc *did.Doc) (*issuer.ProfileData, error) {
+func mapProfileReqToData(data *ProfileDataRequest, didDoc *did.Doc, didDomain string) (*issuer.ProfileData, error) {
 	authMethod, err := adaptercrypto.GetVerificationMethodFromDID(didDoc, did.Authentication)
 	if err != nil {
 		return nil, fmt.Errorf("failed to fetch authentication method: %w", err)
 	}
 
+	authMethod = strings.ReplaceAll(authMethod, fmt.Sprintf("did:%s", orb.DIDMethod),
+		fmt.Sprintf("did:%s:%s", orb.DIDMethod, didDomain))
+
 	assertionMethod, err := adaptercrypto.GetVerificationMethodFromDID(didDoc, did.AssertionMethod)
 	if err != nil {
 		return nil, fmt.Errorf("failed to fetch assertion method: %w", err)
 	}
+
+	assertionMethod = strings.ReplaceAll(assertionMethod, fmt.Sprintf("did:%s", orb.DIDMethod),
+		fmt.Sprintf("did:%s:%s", orb.DIDMethod, didDomain))
 
 	created := time.Now().UTC()
 

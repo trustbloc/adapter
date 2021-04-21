@@ -29,8 +29,8 @@ import (
 	"github.com/coreos/go-oidc"
 	"github.com/cucumber/godog"
 	"github.com/google/uuid"
+	"github.com/hyperledger/aries-framework-go-ext/component/vdr/orb"
 	"github.com/hyperledger/aries-framework-go-ext/component/vdr/sidetree/doc"
-	"github.com/hyperledger/aries-framework-go-ext/component/vdr/trustbloc"
 	"github.com/hyperledger/aries-framework-go/pkg/client/outofband"
 	"github.com/hyperledger/aries-framework-go/pkg/doc/did"
 	"github.com/hyperledger/aries-framework-go/pkg/doc/jose"
@@ -56,13 +56,12 @@ const (
 	// AdapterURL is RP adapter endpoint.
 	AdapterURL = "https://localhost:8070"
 
-	resolverURL         = "http://localhost:8072/1.0/identifiers"
 	hydraAdminURL       = "https://localhost:4445/"
 	hydraPublicURL      = "https://localhost:4444/"
 	governanceCtx       = "https://trustbloc.github.io/context/governance/context.jsonld"
 	governanceVCCTXSize = 3
 
-	trustblocDIDMethodDomain = "testnet.trustbloc.local"
+	trustblocDIDMethodDomain = "testnet.orb.local"
 )
 
 const relyingPartyResultsPageSimulation = "Your credentials have been received!"
@@ -216,10 +215,9 @@ func (s *Steps) createTenant(label, scopesStr, blindedRouteStr string) error {
 }
 
 func (s *Steps) resolveDID(label string) error {
-	vdri, err := trustbloc.New(nil,
-		trustbloc.WithTLSConfig(s.context.TLSConfig()),
-		trustbloc.WithResolverURL(resolverURL),
-		trustbloc.WithDomain("testnet.trustbloc.local"),
+	vdri, err := orb.New(nil,
+		orb.WithTLSConfig(s.context.TLSConfig()),
+		orb.WithDomain("testnet.orb.local"),
 	)
 	if err != nil {
 		return err
@@ -265,8 +263,8 @@ func (s *Steps) newTrustBlocDID(agentID string) (*did.Doc, error) {
 		}
 	}
 
-	trustblocClient, err := trustbloc.New(nil, trustbloc.WithDomain(trustblocDIDMethodDomain),
-		trustbloc.WithTLSConfig(&tls.Config{RootCAs: s.context.TLSConfig().RootCAs, MinVersion: tls.VersionTLS12}))
+	orbClient, err := orb.New(nil, orb.WithDomain(trustblocDIDMethodDomain),
+		orb.WithTLSConfig(&tls.Config{RootCAs: s.context.TLSConfig().RootCAs, MinVersion: tls.VersionTLS12}))
 	if err != nil {
 		return nil, err
 	}
@@ -286,9 +284,10 @@ func (s *Steps) newTrustBlocDID(agentID string) (*did.Doc, error) {
 	didDoc.Authentication = append(didDoc.Authentication, *did.NewReferencedVerification(vm, did.Authentication))
 	didDoc.AssertionMethod = append(didDoc.AssertionMethod, *did.NewReferencedVerification(vm, did.AssertionMethod))
 
-	docResolution, err := trustblocClient.Create(&didDoc,
-		vdrapi.WithOption(trustbloc.RecoveryPublicKeyOpt, ed25519.PublicKey(keys[1].bits)),
-		vdrapi.WithOption(trustbloc.UpdatePublicKeyOpt, ed25519.PublicKey(keys[2].bits)),
+	docResolution, err := orbClient.Create(&didDoc,
+		vdrapi.WithOption(orb.RecoveryPublicKeyOpt, ed25519.PublicKey(keys[1].bits)),
+		vdrapi.WithOption(orb.UpdatePublicKeyOpt, ed25519.PublicKey(keys[2].bits)),
+		vdrapi.WithOption(orb.AnchorOriginOpt, "origin"),
 	)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create new trustbloc did: %w", err)
@@ -296,17 +295,18 @@ func (s *Steps) newTrustBlocDID(agentID string) (*did.Doc, error) {
 
 	friendlyName := uuid.New().String()
 
-	_, err = bddutil.ResolveDID(s.context.VDRI, docResolution.DIDDocument.ID, 10)
+	resolvedDoc, err := bddutil.ResolveDID(s.context.VDRI, strings.ReplaceAll(docResolution.DIDDocument.ID, "did:orb",
+		"did:orb:testnet.orb.local"), 10)
 	if err != nil {
 		return nil, fmt.Errorf("failed to resolve did=%s err: %w", docResolution.DIDDocument.ID, err)
 	}
 
-	err = s.controller.SaveDID(agentID, friendlyName, docResolution.DIDDocument)
+	err = s.controller.SaveDID(agentID, friendlyName, resolvedDoc)
 	if err != nil {
 		return nil, fmt.Errorf("failed to save new trustbloc did: %w", err)
 	}
 
-	return docResolution.DIDDocument, nil
+	return resolvedDoc, nil
 }
 
 func (s *Steps) lookupClientID(label, scope string) error {

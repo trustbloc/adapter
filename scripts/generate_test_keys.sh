@@ -21,8 +21,7 @@ subjectAltName = @alt_names
 [alt_names]
 DNS.1 = localhost
 DNS.2 = *.trustbloc.local
-DNS.3 = stakeholder.one
-DNS.4 = sidetree-mock" >> "$tmp"
+DNS.3 = testnet.orb.local" >> "$tmp"
 
 #create CA
 openssl ecparam -name prime256v1 -genkey -noout -out test/bdd/fixtures/keys/tls/ec-cakey.pem
