@@ -20,6 +20,7 @@ import (
 
 	"github.com/coreos/go-oidc"
 	"github.com/google/uuid"
+	"github.com/hyperledger/aries-framework-go-ext/component/vdr/orb"
 	"github.com/hyperledger/aries-framework-go/pkg/client/didexchange"
 	"github.com/hyperledger/aries-framework-go/pkg/client/mediator"
 	"github.com/hyperledger/aries-framework-go/pkg/client/outofband"
@@ -206,6 +207,7 @@ func New(config *Config) (*Operation, error) { // nolint:funlen,gocyclo
 		ariesCrypto:            config.AriesContextProvider.Crypto(),
 		messenger:              config.AriesMessenger,
 		docLoader:              config.JSONLDDocumentLoader,
+		didDomain:              config.DidDomain,
 	}
 
 	err := o.didClient.RegisterActionEvent(o.didActions)
@@ -297,6 +299,7 @@ type Config struct {
 	MsgRegistrar           *msghandler.Registrar
 	WalletBridgeAppURL     string
 	JSONLDDocumentLoader   ld.DocumentLoader
+	DidDomain              string
 }
 
 // TODO implement an eviction strategy for Operation.oidcStates and OIDC.consentRequests
@@ -330,6 +333,7 @@ type Operation struct {
 	messenger              service.Messenger
 	walletBridge           *walletops.Operation
 	docLoader              ld.DocumentLoader
+	didDomain              string
 }
 
 // GetRESTHandlers get all controller API handler available for this service.
@@ -1377,8 +1381,11 @@ func (o *Operation) createRPTenant(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	didID := strings.ReplaceAll(publicDID.ID, fmt.Sprintf("did:%s", orb.DIDMethod),
+		fmt.Sprintf("did:%s:%s", orb.DIDMethod, o.didDomain))
+
 	if o.governanceProvider != nil {
-		_, err = o.governanceProvider.IssueCredential(publicDID.ID, created.Payload.ClientID)
+		_, err = o.governanceProvider.IssueCredential(didID, created.Payload.ClientID)
 		if err != nil {
 			msg := fmt.Sprintf("failed to issue governance vc : %s", err)
 			logger.Errorf(msg)
@@ -1391,7 +1398,7 @@ func (o *Operation) createRPTenant(w http.ResponseWriter, r *http.Request) {
 	// RP not found - we're good to go
 	err = o.rpStore.SaveRP(&rp.Tenant{
 		ClientID:             created.Payload.ClientID,
-		PublicDID:            publicDID.ID,
+		PublicDID:            didID,
 		Label:                request.Label,
 		Scopes:               request.Scopes,
 		RequiresBlindedRoute: request.RequiresBlindedRoute,
@@ -1408,7 +1415,7 @@ func (o *Operation) createRPTenant(w http.ResponseWriter, r *http.Request) {
 	commhttp.WriteResponse(w, &CreateRPTenantResponse{
 		ClientID:             created.Payload.ClientID,
 		ClientSecret:         created.Payload.ClientSecret,
-		PublicDID:            publicDID.ID,
+		PublicDID:            didID,
 		Scopes:               request.Scopes,
 		RequiresBlindedRoute: request.RequiresBlindedRoute,
 	})

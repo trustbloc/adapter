@@ -11,7 +11,7 @@ Feature: Issuer Adapter e2e with OIDC
 #  Background: Setup External Agent
 #    Given "WalletApp" agent is running on "localhost" port "9081" with webhook "http://localhost:9083" and controller "http://localhost:9082"
 
-  @issuer_adapter_core
+  @oidc_issuer_adapter_core
   Scenario Outline: Issuer adapter features
     Given Issuer Profile with id "<profileID>", name "<profileName>", issuerURL "<issuerURL>", supportedVCContexts "<supportedVCContexts>", requiresBlindedRoute "false", supportsAssuranceCred "<supportsAssuranceCred>" and oidc provider "https://issuer-hydra.trustbloc.local:9044/"
     And   Retrieved profile with id "<profileID>" contains name "<profileName>", issuerURL "<issuerURL>", supportedVCContexts "<supportedVCContexts>", requiresBlindedRoute "false", supportsAssuranceCred "<supportsAssuranceCred>" and oidc provider "https://issuer-hydra.trustbloc.local:9044/"
@@ -30,7 +30,7 @@ Feature: Issuer Adapter e2e with OIDC
       | creditCardOIDC      | CreditCard Issuer                     | http://mock-issuer.com:9080/creditCard         | https://trustbloc.github.io/context/vc/examples/credit-card-v1.jsonld                | false                   | CreditCardStatement     |                   |
       | driversLicenseOIDC  | Drivers License wth Evidence Issuer   | http://mock-issuer.com:9080/driversLicense     | https://trustbloc.github.io/context/vc/examples/driver-license-evidence-v1.jsonld    | true                    | DrivingLicenseEvidence  | mDL               |
 
-  @issuer_adapter_routing
+  @oidc_issuer_adapter_routing
   Scenario Outline: Blinded Routing
     Given Issuer Profile with id "<profileID>", name "Blinded Routing", issuerURL "<issuerURL>", supportedVCContexts "https://w3id.org/citizenship/v3", requiresBlindedRoute "true", supportsAssuranceCred "<supportsAssuranceCred>" and oidc provider "https://issuer-hydra.trustbloc.local:9044/"
     And   Retrieved profile with id "<profileID>" contains name "Blinded Routing", issuerURL "<issuerURL>", supportedVCContexts "https://w3id.org/citizenship/v3", requiresBlindedRoute "true", supportsAssuranceCred "<supportsAssuranceCred>" and oidc provider "https://issuer-hydra.trustbloc.local:9044/"
@@ -46,7 +46,7 @@ Feature: Issuer Adapter e2e with OIDC
       | profileBlindedRoutingOIDC  | http://mock-issuer.com:9080/prCard    | false                  |
 
 
-  @issuer_adapter_wallet_bridge
+  @oidc_issuer_adapter_wallet_bridge
   Scenario: Issuer connects to a remote wallet and sends store credential request
     # player: Issuer
     Given Issuer has a profile with name "PRCard Issuer 01", issuerURL "http://mock-issuer.com:9080/prCard", oidc provider "https://issuer-hydra.trustbloc.local:9044/" and supportedVCContexts "https://trustbloc.github.io/context/vc/examples/citizenship-v1.jsonld"

@@ -10,17 +10,12 @@ import (
 	"crypto/tls"
 	"fmt"
 
-	"github.com/hyperledger/aries-framework-go-ext/component/vdr/trustbloc"
+	"github.com/hyperledger/aries-framework-go-ext/component/vdr/orb"
 	vdriapi "github.com/hyperledger/aries-framework-go/pkg/framework/aries/api/vdr"
 	mockstore "github.com/hyperledger/aries-framework-go/pkg/mock/storage"
 	vdripkg "github.com/hyperledger/aries-framework-go/pkg/vdr"
-	"github.com/hyperledger/aries-framework-go/pkg/vdr/httpbinding"
 	"github.com/hyperledger/aries-framework-go/pkg/vdr/peer"
 	tlsutils "github.com/trustbloc/edge-core/pkg/utils/tls"
-)
-
-const (
-	didResolverURL = "http://localhost:8072/1.0/identifiers"
 )
 
 // BDDContext is a global context shared between different test suites in bddtests.
@@ -37,14 +32,16 @@ func NewBDDContext(caCertPath string) (*BDDContext, error) {
 		return nil, err
 	}
 
-	vdri, err := createVDRI(didResolverURL)
+	tlsConfig := &tls.Config{RootCAs: rootCAs, MinVersion: tls.VersionTLS12}
+
+	vdri, err := createVDRI(tlsConfig)
 	if err != nil {
 		return nil, err
 	}
 
 	return &BDDContext{
 		Store:     make(map[string]interface{}),
-		tlsConfig: &tls.Config{RootCAs: rootCAs, MinVersion: tls.VersionTLS12},
+		tlsConfig: tlsConfig,
 		VDRI:      vdri,
 	}, nil
 }
@@ -71,22 +68,14 @@ func (b *BDDContext) Get(key string) (interface{}, bool) {
 	return val, found
 }
 
-func createVDRI(didResolverURL string) (vdriapi.Registry, error) {
-	didResolverVDRI, err := httpbinding.New(didResolverURL,
-		httpbinding.WithAccept(func(method string) bool {
-			return method == "trustbloc"
-		}))
-	if err != nil {
-		return nil, fmt.Errorf("failed to create new universal resolver vdri: %w", err)
-	}
-
+func createVDRI(tlsConfig *tls.Config) (vdriapi.Registry, error) {
 	p, err := peer.New(mockstore.NewMockStoreProvider())
 	if err != nil {
 		return nil, fmt.Errorf("create new vdri peer failed: %w", err)
 	}
 
-	blocVDR, err := trustbloc.New(nil, trustbloc.WithResolverURL(didResolverURL),
-		trustbloc.WithDomain("testnet.trustbloc.local"))
+	blocVDR, err := orb.New(nil, orb.WithDomain("testnet.orb.local"),
+		orb.WithTLSConfig(tlsConfig))
 	if err != nil {
 		return nil, err
 	}
@@ -94,6 +83,5 @@ func createVDRI(didResolverURL string) (vdriapi.Registry, error) {
 	return vdripkg.New(
 		vdripkg.WithVDR(p),
 		vdripkg.WithVDR(blocVDR),
-		vdripkg.WithVDR(didResolverVDRI),
 	), nil
 }

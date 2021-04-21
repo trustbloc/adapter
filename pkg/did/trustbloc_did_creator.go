@@ -12,8 +12,8 @@ import (
 	"crypto/x509"
 	"fmt"
 
+	"github.com/hyperledger/aries-framework-go-ext/component/vdr/orb"
 	"github.com/hyperledger/aries-framework-go-ext/component/vdr/sidetree/doc"
-	"github.com/hyperledger/aries-framework-go-ext/component/vdr/trustbloc"
 	"github.com/hyperledger/aries-framework-go/pkg/doc/did"
 	"github.com/hyperledger/aries-framework-go/pkg/doc/jose"
 	vdrapi "github.com/hyperledger/aries-framework-go/pkg/framework/aries/api/vdr"
@@ -30,18 +30,19 @@ type KeyManager interface {
 	CreateAndExportPubKeyBytes(kt kms.KeyType) (string, []byte, error)
 }
 
-// TrustblocDIDCreator creates did:trustbloc DIDs.
+// TrustblocDIDCreator creates DIDs.
 type TrustblocDIDCreator struct {
 	blocDomain        string
+	didAnchorOrigin   string
 	didcommInboundURL string
 	km                KeyManager
 	tblocDIDs         trustblocDIDClient
 }
 
 // NewTrustblocDIDCreator returns a new TrustblocDIDCreator.
-func NewTrustblocDIDCreator(blocDomain, didcommInboundURL string,
+func NewTrustblocDIDCreator(blocDomain, didAnchorOrigin, didcommInboundURL string,
 	km KeyManager, rootCAs *x509.CertPool) (*TrustblocDIDCreator, error) {
-	blocVDR, err := trustbloc.New(nil, trustbloc.WithDomain(blocDomain), trustbloc.WithTLSConfig(&tls.Config{
+	blocVDR, err := orb.New(nil, orb.WithDomain(blocDomain), orb.WithTLSConfig(&tls.Config{
 		RootCAs:    rootCAs,
 		MinVersion: tls.VersionTLS12,
 	}))
@@ -54,6 +55,7 @@ func NewTrustblocDIDCreator(blocDomain, didcommInboundURL string,
 		didcommInboundURL: didcommInboundURL,
 		km:                km,
 		tblocDIDs:         blocVDR,
+		didAnchorOrigin:   didAnchorOrigin,
 	}, nil
 }
 
@@ -90,8 +92,9 @@ func (p *TrustblocDIDCreator) Create() (*did.Doc, error) {
 	}}
 
 	docResolution, err := p.tblocDIDs.Create(didDoc,
-		vdrapi.WithOption(trustbloc.RecoveryPublicKeyOpt, recoverKey),
-		vdrapi.WithOption(trustbloc.UpdatePublicKeyOpt, updateKey),
+		vdrapi.WithOption(orb.RecoveryPublicKeyOpt, recoverKey),
+		vdrapi.WithOption(orb.UpdatePublicKeyOpt, updateKey),
+		vdrapi.WithOption(orb.AnchorOriginOpt, p.didAnchorOrigin),
 	)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create trustbloc DID : %w", err)

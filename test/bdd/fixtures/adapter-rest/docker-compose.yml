@@ -26,6 +26,7 @@ services:
       - ADAPTER_REST_WALLET_APP_URL=http://demoapp/load
       - OIDC_STORE_KEY=/etc/store-keys/oidc-enc.key
       - ADAPTER_REST_EXTERNAL_URL=https://issuer-adapter-rest.trustbloc.local:9070
+      - ADAPTER_REST_DID_ANCHOR_ORIGIN=origin
     ports:
       - 9070:9070
       - 9071:9071
@@ -57,6 +58,7 @@ services:
       - ADAPTER_REST_UNIVERSAL_RESOLVER_URL=http://did.rest.example.com:8072/1.0/identifiers
       - ADAPTER_REST_DSN_TIMEOUT=45
       - ADAPTER_REST_WALLET_APP_URL=http://demoapp/load
+      - ADAPTER_REST_DID_ANCHOR_ORIGIN=origin
     ports:
       - 8070:8070
     entrypoint: ""

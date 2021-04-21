@@ -180,6 +180,11 @@ const (
 		"used by this adapter to send credential request to remote wallets ." +
 		" Alternatively, this can be set with the following environment variable: " + walletAppURLEnvKey
 	walletAppURLEnvKey = "ADAPTER_REST_WALLET_APP_URL"
+
+	didAnchorOriginFlagName  = "did-anchor-origin"
+	didAnchorOriginEnvKey    = "ADAPTER_REST_DID_ANCHOR_ORIGIN"
+	didAnchorOriginFlagUsage = "DID anchor origin." +
+		" Alternatively, this can be set with the following environment variable: " + didAnchorOriginEnvKey
 )
 
 // API endpoints.
@@ -244,6 +249,7 @@ type adapterRestParameters struct {
 	walletAppURL         string
 	oidcClientDBKeyPath  string
 	externalURL          string
+	didAnchorOrigin      string
 }
 
 // governanceProvider governance provider.
@@ -390,6 +396,8 @@ func getAdapterRestParameters(cmd *cobra.Command) (*adapterRestParameters, error
 		return nil, err
 	}
 
+	didAnchorOrigin := cmdutils.GetUserSetOptionalVarFromString(cmd, didAnchorOriginFlagName, didAnchorOriginEnvKey)
+
 	logger.Infof("logger level set to %s", logLevel)
 
 	return &adapterRestParameters{
@@ -409,6 +417,7 @@ func getAdapterRestParameters(cmd *cobra.Command) (*adapterRestParameters, error
 		walletAppURL:                walletAppURL,
 		oidcClientDBKeyPath:         issuerOIDCKeyPath,
 		externalURL:                 externalURL,
+		didAnchorOrigin:             didAnchorOrigin,
 	}, nil
 }
 
@@ -583,6 +592,7 @@ func createFlags(startCmd *cobra.Command) {
 	startCmd.Flags().StringP(walletAppURLFlagName, "", "", walletAppURLFlagUsage)
 	startCmd.Flags().StringP(issuerOIDCClientStoreKeyFlagName, "", "", issuerOIDCClientStoreKeyFlagUsage)
 	startCmd.Flags().StringP(externalURLFlagName, "", "", externalURLFlagUsage)
+	startCmd.Flags().StringP(didAnchorOriginFlagName, "", "", didAnchorOriginFlagUsage)
 }
 
 func startAdapterService(parameters *adapterRestParameters, srv server) error {
@@ -696,6 +706,7 @@ func addRPHandlers(parameters *adapterRestParameters, framework *aries.Aries, ro
 
 	didCreator, err := did.NewTrustblocDIDCreator(
 		parameters.trustblocDomain,
+		parameters.didAnchorOrigin,
 		parameters.didCommParameters.inboundHostExternal,
 		ctx.KMS(),
 		rootCAs)
@@ -730,6 +741,7 @@ func addRPHandlers(parameters *adapterRestParameters, framework *aries.Aries, ro
 		PresentProofClient:     presentProofClient,
 		WalletBridgeAppURL:     parameters.walletAppURL,
 		JSONLDDocumentLoader:   docLoader,
+		DidDomain:              parameters.trustblocDomain,
 	})
 	if err != nil {
 		return err
@@ -781,6 +793,7 @@ func addIssuerHandlers(parameters *adapterRestParameters, framework *aries.Aries
 
 	didCreator, err := did.NewTrustblocDIDCreator(
 		parameters.trustblocDomain,
+		parameters.didAnchorOrigin,
 		parameters.didCommParameters.inboundHostExternal,
 		ariesCtx.KMS(),
 		rootCAs,
@@ -801,6 +814,7 @@ func addIssuerHandlers(parameters *adapterRestParameters, framework *aries.Aries
 		GovernanceProvider: governanceProv,
 		OIDCClientStoreKey: clientStoreKey,
 		ExternalURL:        parameters.externalURL,
+		DidDomain:          parameters.trustblocDomain,
 	})
 	if err != nil {
 		return err
@@ -934,7 +948,7 @@ func initStores(dbURL string, timeout uint64, dbPrefix, persistentUsagePrefix, t
 
 func acceptsDID(method string) bool {
 	// TODO list of allowed DIDs should be configurable
-	return method == "trustbloc"
+	return method == "orb"
 }
 
 func createAriesAgent(parameters *adapterRestParameters, tlsConfig *tls.Config, dbPrefix string,

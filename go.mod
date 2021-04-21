@@ -8,13 +8,13 @@ go 1.15
 
 require (
 	github.com/coreos/go-oidc v2.2.1+incompatible
-	github.com/google/uuid v1.1.2
-	github.com/gorilla/mux v1.7.4
+	github.com/google/uuid v1.2.0
+	github.com/gorilla/mux v1.8.0
 	github.com/hyperledger/aries-framework-go v0.1.7-0.20210330153939-7ec3a2c4697c
-	github.com/hyperledger/aries-framework-go-ext/component/vdr/sidetree v0.0.0-20210330163233-9482b4291d8e
-	github.com/hyperledger/aries-framework-go-ext/component/vdr/trustbloc v0.0.0-20210331105523-60637a465684
+	github.com/hyperledger/aries-framework-go-ext/component/vdr/orb v0.0.0-20210415184514-aa162c522bc1
+	github.com/hyperledger/aries-framework-go-ext/component/vdr/sidetree v0.0.0-20210413155718-eeb5b3c708be
 	github.com/hyperledger/aries-framework-go/component/storageutil v0.0.0-20210320144851-40976de98ccf
-	github.com/hyperledger/aries-framework-go/spi v0.0.0-20210320144851-40976de98ccf
+	github.com/hyperledger/aries-framework-go/spi v0.0.0-20210325221830-6ab3160b7588
 	github.com/ory/hydra-client-go v1.4.10
 	github.com/piprate/json-gold v0.4.0
 	github.com/pkg/errors v0.9.1

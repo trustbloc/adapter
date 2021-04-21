@@ -1,8 +1,7 @@
 {
   "rules": [
     {
-      "pattern": "^(did:trustbloc:.+)$",
-      "url": "http://trustbloc.did.method.example.com:8090/resolveDID?did=$1"
+      "pattern": "^(did:orb:.+)$"
     },
     {
       "pattern": "^(did:key:.+)$"
