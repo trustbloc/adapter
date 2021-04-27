@@ -92,6 +92,8 @@ func TestProvider_Create(t *testing.T) {
 }
 
 func reader(t *testing.T, jsn interface{}) io.Reader {
+	t.Helper()
+
 	bits, err := json.Marshal(jsn)
 	require.NoError(t, err)
 
@@ -107,6 +109,8 @@ func (m *mockReader) Read([]byte) (int, error) {
 }
 
 func descriptor(t *testing.T, uri string, descriptors []*presexch.InputDescriptor) *presexch.InputDescriptor {
+	t.Helper()
+
 	for i := range descriptors {
 		for j := range descriptors[i].Schema {
 			if uri == descriptors[i].Schema[j].URI {

@@ -4,7 +4,7 @@
 
 module github.com/trustbloc/edge-adapter/test/bdd
 
-go 1.15
+go 1.16
 
 require (
 	github.com/cenkalti/backoff v2.2.1+incompatible
@@ -12,7 +12,7 @@ require (
 	github.com/cucumber/godog v0.9.0
 	github.com/fsouza/go-dockerclient v1.6.5
 	github.com/google/uuid v1.2.0
-	github.com/hyperledger/aries-framework-go v0.1.7-0.20210330153939-7ec3a2c4697c
+	github.com/hyperledger/aries-framework-go v0.1.7-0.20210421205521-3974f6708723
 	github.com/hyperledger/aries-framework-go-ext/component/vdr/orb v0.0.0-20210415184514-aa162c522bc1
 	github.com/hyperledger/aries-framework-go-ext/component/vdr/sidetree v0.0.0-20210413155718-eeb5b3c708be
 	github.com/ory/hydra-client-go v1.4.10
@@ -21,8 +21,8 @@ require (
 	github.com/sirupsen/logrus v1.7.0
 	github.com/tidwall/gjson v1.6.7
 	github.com/trustbloc/edge-adapter v0.0.0
-	github.com/trustbloc/edge-core v0.1.7-0.20210331113925-b13dedfe75eb
-	github.com/trustbloc/hub-router v0.1.7-0.20210325133924-82111d2ae31b
+	github.com/trustbloc/edge-core v0.1.7-0.20210426154540-f9c761ec6943
+	github.com/trustbloc/hub-router v0.1.7-0.20210427180149-0f56c763a969
 	golang.org/x/oauth2 v0.0.0-20200902213428-5d25da1a8d43
 	gotest.tools/v3 v3.0.3 // indirect
 )

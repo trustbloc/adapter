@@ -82,7 +82,7 @@ func (c *Profile) SaveProfile(data *ProfileData) error {
 	// save the profile
 	bytes, err := json.Marshal(data)
 	if err != nil {
-		return fmt.Errorf("issuer profile save - marshalling error: %s", err.Error())
+		return fmt.Errorf("issuer profile save - marshalling error: %w", err)
 	}
 
 	return c.store.Put(getDBKey(data.ID), bytes)

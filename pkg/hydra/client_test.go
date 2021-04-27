@@ -114,6 +114,8 @@ func (s *stubHydra) CreateOAuth2Client(
 }
 
 func testURL(t *testing.T) *url.URL {
+	t.Helper()
+
 	u, err := url.Parse("http://test.com/some/path")
 	require.NoError(t, err)
 

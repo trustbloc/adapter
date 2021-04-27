@@ -119,7 +119,7 @@ func (c *Client) CreateOIDCRequest(state, scopeString string) string {
 func (c *Client) GetIDTokenClaims(reqContext context.Context, code string) ([]byte, error) {
 	_, oidcToken, err := c.HandleOIDCCallback(reqContext, code)
 	if err != nil {
-		return nil, fmt.Errorf("failed to retrieve tokens : %s", err)
+		return nil, fmt.Errorf("failed to retrieve tokens : %w", err)
 	}
 
 	if oidcToken == nil {
@@ -130,12 +130,12 @@ func (c *Client) GetIDTokenClaims(reqContext context.Context, code string) ([]by
 
 	err = oidcToken.Claims(&userData)
 	if err != nil {
-		return nil, fmt.Errorf("failed to extract user data from id_token : %s", err)
+		return nil, fmt.Errorf("failed to extract user data from id_token : %w", err)
 	}
 
 	bits, err := json.Marshal(userData)
 	if err != nil {
-		return nil, fmt.Errorf("failed to marshal user data : %s", err)
+		return nil, fmt.Errorf("failed to marshal user data : %w", err)
 	}
 
 	return bits, nil
@@ -163,7 +163,7 @@ func (c *Client) HandleOIDCCallback(reqContext context.Context, code string) (*o
 		),
 		code)
 	if err != nil {
-		return nil, nil, fmt.Errorf("failed to exchange oauth2 code for token : %s", err)
+		return nil, nil, fmt.Errorf("failed to exchange oauth2 code for token : %w", err)
 	}
 
 	rawIDToken, ok := oauthToken.Extra("id_token").(string)
@@ -175,7 +175,7 @@ func (c *Client) HandleOIDCCallback(reqContext context.Context, code string) (*o
 		ClientID: c.oidcClientID,
 	}).Verify(reqContext, rawIDToken)
 	if err != nil {
-		return nil, nil, fmt.Errorf("failed to verify id_token : %s", err)
+		return nil, nil, fmt.Errorf("failed to verify id_token : %w", err)
 	}
 
 	return oauthToken, oidcToken, nil

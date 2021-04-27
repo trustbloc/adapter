@@ -197,6 +197,8 @@ func TestCreatePresentation(t *testing.T) {
 }
 
 func getTestVP(t *testing.T) []byte {
+	t.Helper()
+
 	vc, err := verifiable.ParseCredential([]byte(vc))
 	require.NoError(t, err)
 

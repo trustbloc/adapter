@@ -45,6 +45,8 @@ func TestGetVerificationMethodFromDID(t *testing.T) {
 }
 
 func newPeerDID(t *testing.T) *did.Doc {
+	t.Helper()
+
 	a, err := aries.New(
 		aries.WithStoreProvider(mem.NewProvider()),
 		aries.WithProtocolStateStoreProvider(mem.NewProvider()),

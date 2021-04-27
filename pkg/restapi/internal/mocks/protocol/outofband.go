@@ -12,14 +12,14 @@ import (
 
 // MockOobService is a mock of OobService interface.
 type MockOobService struct {
-	AcceptInvitationHandle func(*outofband.Invitation, string, []string) (string, error)
+	AcceptInvitationHandle func(*outofband.Invitation, outofband.Options) (string, error)
 	SaveInvitationErr      error
 }
 
 // AcceptInvitation mock implementation.
-func (m *MockOobService) AcceptInvitation(arg0 *outofband.Invitation, arg1 string, arg2 []string) (string, error) {
+func (m *MockOobService) AcceptInvitation(arg0 *outofband.Invitation, arg1 outofband.Options) (string, error) {
 	if m.AcceptInvitationHandle != nil {
-		return m.AcceptInvitationHandle(arg0, arg1, arg2)
+		return m.AcceptInvitationHandle(arg0, arg1)
 	}
 
 	return "", nil

@@ -122,7 +122,7 @@ func (c *Crypto) validateDIDDoc(signingKeyID, proofPurpose string) error {
 
 // validateProofPurpose validates the proof purpose.
 func validateProofPurpose(proofPurpose, method string, didDoc *did.Doc) error {
-	vmMatched := false
+	var vmMatched bool
 
 	switch proofPurpose {
 	case AssertionMethod:

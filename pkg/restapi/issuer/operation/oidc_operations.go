@@ -335,7 +335,7 @@ func decryptClientData(key, readBytes []byte) (*oidcClientData, error) {
 }
 
 // nolint:gochecknoglobals
-var nonceCounter uint32 = 0
+var nonceCounter uint32
 
 // generate a 12-byte AES GCM nonce by from a counter, timestamp, and additional mixin data
 func makeNonce(data []byte) ([]byte, error) {

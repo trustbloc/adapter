@@ -93,11 +93,13 @@ func config() *Config {
 	}
 }
 
-func getHandler(t *testing.T, op *Operation, lookup string) restapi.Handler {
+func getHandler(t *testing.T, op *Operation, lookup string) restapi.Handler { // nolint:thelper
 	return handlerLookup(t, op, lookup)
 }
 
 func handlerLookup(t *testing.T, op *Operation, lookup string) restapi.Handler {
+	t.Helper()
+
 	handlers := op.GetRESTHandlers()
 	require.NotEmpty(t, handlers)
 
@@ -113,6 +115,8 @@ func handlerLookup(t *testing.T, op *Operation, lookup string) restapi.Handler {
 }
 
 func serveHTTP(t *testing.T, handler http.HandlerFunc, method, path string, req []byte) *httptest.ResponseRecorder {
+	t.Helper()
+
 	httpReq, err := http.NewRequest(
 		method,
 		path,
@@ -129,6 +133,8 @@ func serveHTTP(t *testing.T, handler http.HandlerFunc, method, path string, req 
 
 func serveHTTPMux(t *testing.T, handler restapi.Handler, endpoint string, reqBytes []byte, // nolint: unparam
 	urlVars map[string]string) *httptest.ResponseRecorder {
+	t.Helper()
+
 	r, err := http.NewRequest(handler.Method(), endpoint, bytes.NewBuffer(reqBytes))
 	require.NoError(t, err)
 
@@ -141,11 +147,13 @@ func serveHTTPMux(t *testing.T, handler restapi.Handler, endpoint string, reqByt
 	return rr
 }
 
-func getDefaultTestVP(t *testing.T) []byte {
+func getDefaultTestVP(t *testing.T) []byte { // nolint: thelper
 	return getTestVP(t, inviteeDID, inviterDID, uuid.New().String())
 }
 
 func getTestVP(t *testing.T, inviteeDID, inviterDID, threadID string) []byte { //nolint: unparam
+	t.Helper()
+
 	vc, err := verifiable.ParseCredential([]byte(fmt.Sprintf(vcFmt, inviteeDID, inviterDID, threadID)))
 	require.NoError(t, err)
 
@@ -170,6 +178,8 @@ func createProfileData(profileID string) *issuer.ProfileData {
 }
 
 func createAuthorizationCredReq(t *testing.T, subjectDIDDoc, rpDIDDoc *did.Doc) json.RawMessage {
+	t.Helper()
+
 	subjectDIDDocBytes, err := subjectDIDDoc.JSONBytes()
 	require.NoError(t, err)
 
@@ -197,6 +207,8 @@ func createAuthorizationCredReq(t *testing.T, subjectDIDDoc, rpDIDDoc *did.Doc) 
 }
 
 func createAuthorizationCredential(t *testing.T) *verifiable.Credential {
+	t.Helper()
+
 	didDocument := mockdiddoc.GetMockDIDDoc("did:example:def567")
 
 	didDocJSON, err := didDocument.JSONBytes()
@@ -219,6 +231,8 @@ func createAuthorizationCredential(t *testing.T) *verifiable.Credential {
 
 func createCredentialReqMsg(t *testing.T, msg interface{}, continueFn func(args interface{}), // nolint: unparam
 	stopFn func(err error)) service.DIDCommAction {
+	t.Helper()
+
 	if msg == nil {
 		msg = issuecredsvc.RequestCredential{
 			Type: issuecredsvc.RequestCredentialMsgType,
@@ -241,6 +255,8 @@ func createCredentialReqMsg(t *testing.T, msg interface{}, continueFn func(args 
 
 func createProofReqMsg(t *testing.T, msg interface{}, continueFn func(args interface{}),
 	stopFn func(err error)) service.DIDCommAction {
+	t.Helper()
+
 	vc := createAuthorizationCredential(t)
 	vp, err := verifiable.NewPresentation(verifiable.WithCredentials(vc))
 	require.NoError(t, err)

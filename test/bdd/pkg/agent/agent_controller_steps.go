@@ -254,13 +254,13 @@ func (a *Steps) handleDIDCommConnectRequest(agentID, supportedVCContexts, issuer
 
 	err = validateManifestCred(request.Credentials[0], supportedVCContexts)
 	if err != nil {
-		return fmt.Errorf("failed to parse credential : %s", err.Error())
+		return fmt.Errorf("failed to parse credential : %w", err)
 	}
 
 	if supportsAssuranceCred {
 		vc, vcErr := validateAndGetReferenceCred(request.Credentials[1], primaryVCType, a.bddContext.VDRI)
 		if vcErr != nil {
-			return fmt.Errorf("failed to parse credential : %s", vcErr.Error())
+			return fmt.Errorf("failed to parse credential : %w", vcErr)
 		}
 
 		a.refCredentials[agentID] = vc
@@ -273,7 +273,7 @@ func (a *Steps) handleDIDCommConnectRequest(agentID, supportedVCContexts, issuer
 	}
 
 	if err != nil {
-		return fmt.Errorf("failed to parse governance credential : %s", err.Error())
+		return fmt.Errorf("failed to parse governance credential : %w", err)
 	}
 
 	err = UnregisterAllMsgServices(a.ControllerURLs[agentID])
@@ -520,7 +520,7 @@ func (a *Steps) createInvitation(agent string) (*outofband.Invitation, error) {
 
 	err = bddutil.SendHTTP(http.MethodPost, destination+createOOBInvPath, request, &resp)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create invitation, cause : %s", err)
+		return nil, fmt.Errorf("failed to create invitation, cause : %w", err)
 	}
 
 	return resp.Invitation, nil
@@ -1140,7 +1140,7 @@ func validateAndGetAuthorizationCredential(vc *verifiable.Credential,
 
 	err := bddutil.DecodeJSONMarshaller(vc, &authorizationVC)
 	if err != nil {
-		return nil, fmt.Errorf("failed to parse credential : %s", err.Error())
+		return nil, fmt.Errorf("failed to parse credential : %w", err)
 	}
 
 	if authorizationVC.Subject.SubjectDIDDoc.ID != ccReq.SubjectDIDDoc.ID {
@@ -1323,7 +1323,7 @@ func validateManifestCred(manifestVCBytes []byte, supportedVCContexts string) er
 
 	err = bddutil.DecodeJSONMarshaller(manifestCred, manifestCredSub)
 	if err != nil {
-		return fmt.Errorf("failed to parse credential : %s", err.Error())
+		return fmt.Errorf("failed to parse credential : %w", err)
 	}
 
 	if len(manifestCredSub.Subject.Contexts) != len(strings.Split(supportedVCContexts, ",")) {

@@ -1501,7 +1501,7 @@ func marshalCreds(in map[string]*verifiable.Credential) (map[string][]byte, erro
 func createRouteSvc(config *Config, connectionLookup connectionRecorder) (routeService, error) {
 	s, err := config.AriesContextProvider.Service(mediatorsvc.Coordination)
 	if err != nil {
-		return nil, fmt.Errorf("mediator service lookup: %s", err)
+		return nil, fmt.Errorf("mediator service lookup: %w", err)
 	}
 
 	mediatorSvc, ok := s.(mediatorsvc.ProtocolService)

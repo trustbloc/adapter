@@ -195,7 +195,7 @@ func (s *Steps) createTenant(label, scopesStr, blindedRouteStr string) error {
 
 	err = json.NewDecoder(bytes.NewBuffer(respBytes)).Decode(response)
 	if err != nil {
-		return fmt.Errorf("failed to decode create rp tenant response : %s", err)
+		return fmt.Errorf("failed to decode create rp tenant response : %w", err)
 	}
 
 	if response.RequiresBlindedRoute != blindedRoute {
@@ -271,7 +271,7 @@ func (s *Steps) newTrustBlocDID(agentID string) (*did.Doc, error) {
 
 	didDoc := did.Doc{}
 
-	jwk, err := jose.JWKFromPublicKey(ed25519.PublicKey(keys[0].bits))
+	jwk, err := jose.JWKFromKey(ed25519.PublicKey(keys[0].bits))
 	if err != nil {
 		return nil, err
 	}
@@ -479,7 +479,7 @@ func (s *Steps) sendCHAPIRequestToWallet(tenantID, walletID string) error {
 
 	err = validateGovernance(result.Credentials[0])
 	if err != nil {
-		return fmt.Errorf("failed to parse governance credential : %s", err.Error())
+		return fmt.Errorf("failed to parse governance credential : %w", err)
 	}
 
 	tenant.invitationID = result.Inv.ID

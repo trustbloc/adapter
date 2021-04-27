@@ -162,19 +162,19 @@ func New(config *Config) (*Operation, error) { // nolint:funlen,gocyclo
 
 	didExClient, err := didExchangeClient(config.AriesCtx, stateMsgCh)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create aries did exchange client : %s", err)
+		return nil, fmt.Errorf("failed to create aries did exchange client : %w", err)
 	}
 
 	actionCh := make(chan service.DIDCommAction, 1)
 
 	issueCredClient, err := issueCredentialClient(config.AriesCtx, actionCh)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create aries issue credential client : %s", err)
+		return nil, fmt.Errorf("failed to create aries issue credential client : %w", err)
 	}
 
 	presentProofClient, err := presentProofClient(config.AriesCtx, actionCh)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create aries present proof client : %s", err)
+		return nil, fmt.Errorf("failed to create aries present proof client : %w", err)
 	}
 
 	p, err := issuer.New(config.StoreProvider)
@@ -683,7 +683,7 @@ func (o *Operation) oidcAuthCallback(rw http.ResponseWriter, req *http.Request) 
 
 	o.userTokens[txnCookie.Value] = token
 
-	userID := ""
+	var userID string
 
 	userCookie, err := req.Cookie("userID")
 	if err == nil {
@@ -1709,7 +1709,7 @@ func mapProfileReqToData(data *ProfileDataRequest, didDoc *did.Doc, didDomain st
 
 	created := time.Now().UTC()
 
-	var clientParams *issuer.OIDCClientParams = nil
+	var clientParams *issuer.OIDCClientParams
 	if data.OIDCClientParams != nil {
 		clientParams = &issuer.OIDCClientParams{
 			ClientID:     data.OIDCClientParams.ClientID,

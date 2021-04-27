@@ -311,7 +311,7 @@ func (e *Steps) validateConnectResp(issuerID, agentID, issuerURL string) error {
 
 	requestBytes, err := json.Marshal(profileReq)
 	if err != nil {
-		return nil
+		return err
 	}
 
 	resp, err := bddutil.HTTPDo(http.MethodPost, //nolint: bodyclose

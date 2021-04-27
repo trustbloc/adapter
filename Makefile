@@ -15,7 +15,7 @@ MOCK_WEBHOOK_IMAGE_NAME ?= trustbloc/edge-adapter/mock-webhook
 
 # Tool commands (overridable)
 ALPINE_VER ?= 3.12
-GO_VER ?= 1.15
+GO_VER ?= 1.16
 GOBIN_PATH=$(abspath .)/.build/bin
 
 .PHONY: all
