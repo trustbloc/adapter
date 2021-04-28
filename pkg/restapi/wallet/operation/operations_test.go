@@ -693,7 +693,11 @@ func TestOperation_SendCHAPIRequest(t *testing.T) {
 					))
 					require.NoError(t, e)
 
-					_, e = registrar.Services()[0].HandleInbound(replyMsg, "sampleDID", "sampleTheirDID")
+					_, e = registrar.Services()[0].HandleInbound(replyMsg,
+						&mockDIDCommContext{
+							myDIDValue:    "sampleDID",
+							theirDIDValue: "sampleTheirDID",
+						})
 					require.NoError(t, e)
 
 					break
@@ -1097,4 +1101,22 @@ func (m *mockDIDExchangeSvc) pushEvent(msg service.StateMsg, index int) {
 	if index < len(m.events) {
 		m.events[index] <- msg
 	}
+}
+
+type mockDIDCommContext struct {
+	myDIDValue    string
+	theirDIDValue string
+	props         map[string]interface{}
+}
+
+func (m *mockDIDCommContext) All() map[string]interface{} {
+	return m.props
+}
+
+func (m *mockDIDCommContext) MyDID() string {
+	return m.myDIDValue
+}
+
+func (m *mockDIDCommContext) TheirDID() string {
+	return m.theirDIDValue
 }

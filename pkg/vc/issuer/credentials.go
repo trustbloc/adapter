@@ -73,12 +73,12 @@ func ParseWalletResponse(vpBytes []byte) (*DIDConnectCredentialSubject, error) {
 	// TODO https://github.com/trustbloc/edge-adapter/issues/87 validate the signature
 	pres, err := verifiable.ParsePresentation(vpBytes, verifiable.WithPresDisabledProofCheck())
 	if err != nil {
-		return nil, fmt.Errorf("invalid presentation: %s", err.Error())
+		return nil, fmt.Errorf("invalid presentation: %w", err)
 	}
 
 	rawCredentials, err := pres.MarshalledCredentials()
 	if err != nil {
-		return nil, fmt.Errorf("failed to parse the credential: %s", err.Error())
+		return nil, fmt.Errorf("failed to parse the credential: %w", err)
 	}
 
 	if len(rawCredentials) != 1 {
@@ -88,7 +88,7 @@ func ParseWalletResponse(vpBytes []byte) (*DIDConnectCredentialSubject, error) {
 	// TODO https://github.com/trustbloc/edge-adapter/issues/87 validate the signature
 	cred, err := verifiable.ParseCredential(rawCredentials[0], verifiable.WithDisabledProofCheck())
 	if err != nil {
-		return nil, fmt.Errorf("failed to parse credential : %s", err.Error())
+		return nil, fmt.Errorf("failed to parse credential : %w", err)
 	}
 
 	if !adapterutil.StringsContains(DIDConnectCredentialType, cred.Types) {
@@ -99,7 +99,7 @@ func ParseWalletResponse(vpBytes []byte) (*DIDConnectCredentialSubject, error) {
 
 	err = adapterutil.DecodeJSONMarshaller(cred, didConnectVC)
 	if err != nil {
-		return nil, fmt.Errorf("failed to parse credential : %s", err.Error())
+		return nil, fmt.Errorf("failed to parse credential : %w", err)
 	}
 
 	return didConnectVC.Subject, nil

@@ -111,7 +111,7 @@ func (p *TrustblocDIDCreator) newPublicKeys() (*did.Doc, error) {
 		return nil, fmt.Errorf("failed to create key : %w", err)
 	}
 
-	jwk, err := jose.JWKFromPublicKey(ed25519.PublicKey(bits))
+	jwk, err := jose.JWKFromKey(ed25519.PublicKey(bits))
 	if err != nil {
 		return nil, err
 	}

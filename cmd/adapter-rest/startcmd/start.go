@@ -845,7 +845,7 @@ func getIssuerOIDCClientStoreKey(keyPath string) ([]byte, error) {
 
 func newGovernanceProvider(governanceVCSURL string, rootCAs *x509.CertPool,
 	store storage.Provider, requestTokens map[string]string, domain string) (*governance.Provider, error) {
-	return governance.New(governanceVCSURL, &tls.Config{RootCAs: rootCAs}, store,
+	return governance.New(governanceVCSURL, &tls.Config{RootCAs: rootCAs, MinVersion: tls.VersionTLS12}, store,
 		requestTokens, domain)
 }
 

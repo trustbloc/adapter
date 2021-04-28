@@ -1400,7 +1400,7 @@ func TestGetPresentationsRequest(t *testing.T) {
 					ID:        uuid.New().String(),
 					Type:      outofband.InvitationMsgType,
 					Label:     "test-label",
-					Service:   []interface{}{rpPublicDID.String()},
+					Services:  []interface{}{rpPublicDID.String()},
 					Protocols: []string{didexchangesvc.PIURI},
 				},
 			},
@@ -1449,8 +1449,8 @@ func TestGetPresentationsRequest(t *testing.T) {
 
 		require.Equal(t, presDefs, resp.PD)
 		require.NotNil(t, resp.Inv)
-		require.Len(t, resp.Inv.Service, 1)
-		require.Equal(t, rpPublicDID.String(), resp.Inv.Service[0])
+		require.Len(t, resp.Inv.Services, 1)
+		require.Equal(t, rpPublicDID.String(), resp.Inv.Services[0])
 		require.Len(t, resp.Credentials, 1)
 		require.Equal(t, `{"key":"value"}`, string(resp.Credentials[0]))
 	})
@@ -1477,7 +1477,7 @@ func TestGetPresentationsRequest(t *testing.T) {
 					ID:        uuid.New().String(),
 					Type:      outofband.InvitationMsgType,
 					Label:     "test-label",
-					Service:   []interface{}{rpPublicDID.String()},
+					Services:  []interface{}{rpPublicDID.String()},
 					Protocols: []string{didexchangesvc.PIURI},
 				},
 			},
@@ -3327,6 +3327,8 @@ func (m *mockPresentationExProvider) Create(scopes []string) (*presexch.Presenta
 }
 
 func newHydraLoginRequest(t *testing.T) *http.Request {
+	t.Helper()
+
 	u, err := url.Parse("http://example.com?login_challenge=" + uuid.New().String())
 	require.NoError(t, err)
 
@@ -3334,6 +3336,8 @@ func newHydraLoginRequest(t *testing.T) *http.Request {
 }
 
 func newHydraConsentRequest(t *testing.T, challenge string) *http.Request {
+	t.Helper()
+
 	u, err := url.Parse("http://example.com?consent_challenge=" + challenge)
 	require.NoError(t, err)
 
@@ -3341,6 +3345,8 @@ func newHydraConsentRequest(t *testing.T, challenge string) *http.Request {
 }
 
 func newOidcCallbackRequest(t *testing.T, state, code string) *http.Request {
+	t.Helper()
+
 	u, err := url.Parse(fmt.Sprintf("http://example.com?state=%s&code=%s", state, code))
 	require.NoError(t, err)
 
@@ -3348,6 +3354,8 @@ func newOidcCallbackRequest(t *testing.T, state, code string) *http.Request {
 }
 
 func newHydraRequestNoChallenge(t *testing.T) *http.Request {
+	t.Helper()
+
 	u, err := url.Parse("http://example.com")
 	require.NoError(t, err)
 
@@ -3357,6 +3365,8 @@ func newHydraRequestNoChallenge(t *testing.T) *http.Request {
 }
 
 func newCreatePresentationDefinitionRequest(t *testing.T, handle string) *http.Request {
+	t.Helper()
+
 	u, err := url.Parse(fmt.Sprintf("http://adapter.example.com?h=%s", handle))
 	require.NoError(t, err)
 
@@ -3415,6 +3425,8 @@ func mockPresentationDefinitionsProvider() presentationExProvider {
 }
 
 func newDID(t *testing.T) *did.DID {
+	t.Helper()
+
 	d, err := did.Parse("did:example:" + uuid.New().String())
 	require.NoError(t, err)
 
@@ -3422,6 +3434,8 @@ func newDID(t *testing.T) *did.DID {
 }
 
 func saveRP(t *testing.T, p storage.Provider, r *rp.Tenant) {
+	t.Helper()
+
 	s, err := rp.New(p)
 	require.NoError(t, err)
 
@@ -3430,6 +3444,8 @@ func saveRP(t *testing.T, p storage.Provider, r *rp.Tenant) {
 }
 
 func saveUserConn(t *testing.T, p storage.Provider, u *rp.UserConnection) {
+	t.Helper()
+
 	s, err := rp.New(p)
 	require.NoError(t, err)
 
@@ -3438,6 +3454,8 @@ func saveUserConn(t *testing.T, p storage.Provider, u *rp.UserConnection) {
 }
 
 func newCreateRPRequest(t *testing.T, request *CreateRPTenantRequest) *http.Request {
+	t.Helper()
+
 	bits, err := json.Marshal(request)
 	require.NoError(t, err)
 
@@ -3449,6 +3467,8 @@ func newCreateRPRequestMalformed() *http.Request {
 }
 
 func newCHAPIResponse(t *testing.T, invID string, vp *verifiable.Presentation) *http.Request {
+	t.Helper()
+
 	vpBytes, err := json.Marshal(vp)
 	require.NoError(t, err)
 
@@ -3550,6 +3570,8 @@ func (s *stubPublicDIDCreator) Create() (*did.Doc, error) {
 }
 
 func marshal(t *testing.T, v interface{}) []byte {
+	t.Helper()
+
 	bits, err := json.Marshal(v)
 	require.NoError(t, err)
 
@@ -3580,6 +3602,8 @@ func (d *didexchangeEvent) All() map[string]interface{} {
 
 func checkPresentationDefinitionAttachment(
 	t *testing.T, authz *verifiable.Credential, request *presentproof.RequestPresentation) {
+	t.Helper()
+
 	require.Len(t, request.RequestPresentationsAttach, 1)
 
 	bits, err := request.RequestPresentationsAttach[0].Data.Fetch()
@@ -3603,6 +3627,8 @@ func checkPresentationDefinitionAttachment(
 }
 
 func newIssuerResponse(t *testing.T, thid string, payload interface{}) service.DIDCommMsg {
+	t.Helper()
+
 	response := service.NewDIDCommMsgMap(&presentproof.Presentation{
 		Type: presentproofsvc.PresentationMsgType,
 		PresentationsAttach: []decorator.Attachment{{
@@ -3627,6 +3653,8 @@ func memStorage() *Storage {
 }
 
 func storePut(t *testing.T, s storage.Store, k string, v interface{}) {
+	t.Helper()
+
 	bits, err := json.Marshal(v)
 	require.NoError(t, err)
 

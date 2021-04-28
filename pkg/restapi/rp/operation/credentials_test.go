@@ -261,6 +261,8 @@ func TestParseIssuerResponse(t *testing.T) {
 func newPresentationSubmissionVP(t *testing.T, holder *ariesctx.Provider, signingDID *did.Doc,
 	submission *presexch.PresentationSubmission,
 	credentials ...*verifiable.Credential) *verifiable.Presentation {
+	t.Helper()
+
 	vp, err := verifiable.NewPresentation(verifiable.WithCredentials(credentials...))
 	require.NoError(t, err)
 
@@ -275,6 +277,8 @@ func newPresentationSubmissionVP(t *testing.T, holder *ariesctx.Provider, signin
 
 // TODO need to sign VCs in tests: https://github.com/trustbloc/edge-adapter/issues/304
 func newAuthorizationVC(t *testing.T, subjectDID string, rpDID, issuerDID *did.Doc) *verifiable.Credential {
+	t.Helper()
+
 	rpDocBits, err := rpDID.JSONBytes()
 	require.NoError(t, err)
 
@@ -323,6 +327,8 @@ func newAuthorizationVC(t *testing.T, subjectDID string, rpDID, issuerDID *did.D
 }
 
 func newUserAuthorizationVCMissingIssuerDIDDoc(t *testing.T, subjectDID string, rpDID *did.Doc) *verifiable.Credential {
+	t.Helper()
+
 	bits, err := rpDID.JSONBytes()
 	require.NoError(t, err)
 
