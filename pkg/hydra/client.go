@@ -52,29 +52,29 @@ func NewClient(hydraURL *url.URL, rootCAs *x509.CertPool) *Client {
 // GetLoginRequest fetches the login request at hydra.
 func (c *Client) GetLoginRequest(params *admin.GetLoginRequestParams) (*admin.GetLoginRequestOK, error) {
 	params.SetHTTPClient(c.httpClient)
-	return c.hydraClient.GetLoginRequest(params)
+	return c.hydraClient.GetLoginRequest(params) // nolint:wrapcheck // reduce cyclo
 }
 
 // AcceptLoginRequest accepts the login request at hydra.
 func (c *Client) AcceptLoginRequest(params *admin.AcceptLoginRequestParams) (*admin.AcceptLoginRequestOK, error) {
 	params.SetHTTPClient(c.httpClient)
-	return c.hydraClient.AcceptLoginRequest(params)
+	return c.hydraClient.AcceptLoginRequest(params) // nolint:wrapcheck // reduce cyclo
 }
 
 // GetConsentRequest fetches the consent request at hydra.
 func (c *Client) GetConsentRequest(params *admin.GetConsentRequestParams) (*admin.GetConsentRequestOK, error) {
 	params.SetHTTPClient(c.httpClient)
-	return c.hydraClient.GetConsentRequest(params)
+	return c.hydraClient.GetConsentRequest(params) // nolint:wrapcheck // reduce cyclo
 }
 
 // AcceptConsentRequest accepts the consent request at hydra.
 func (c *Client) AcceptConsentRequest(params *admin.AcceptConsentRequestParams) (*admin.AcceptConsentRequestOK, error) {
 	params.SetHTTPClient(c.httpClient)
-	return c.hydraClient.AcceptConsentRequest(params)
+	return c.hydraClient.AcceptConsentRequest(params) // nolint:wrapcheck // reduce cyclo
 }
 
 // CreateOAuth2Client creates an oauth2 client at hydra.
 func (c *Client) CreateOAuth2Client(params *admin.CreateOAuth2ClientParams) (*admin.CreateOAuth2ClientCreated, error) {
 	params.SetHTTPClient(c.httpClient)
-	return c.hydraClient.CreateOAuth2Client(params)
+	return c.hydraClient.CreateOAuth2Client(params) // nolint:wrapcheck // reduce cyclo
 }

@@ -82,17 +82,8 @@ linters:
     - godot
     - gofumpt
     - noctx
-    - paralleltest
-    - exhaustivestruct
-    - tparallel
-    - interfacer # deprecated by the author https://github.com/mvdan/interfacer#interfacer
-    - scopelint # deprecated by the author https://github.com/kyoh86/scopelint#obsoleted
-    - maligned # deprecated by the author https://github.com/mdempsky/maligned
-    - cyclop # TODO consider replacing gocyclo with cyclop
-    - ifshort # TODO enable
-    - wrapcheck # TODO enable
-    - forbidigo # TODO enable
-    - gomoddirectives
+    - exhaustivestruct # wants to needlessly include attributes in struct initializations even when their zero value suffices
+    - gomoddirectives  # we need go.mod `replace`
 
 issues:
   exclude-use-default: false
@@ -108,7 +99,6 @@ issues:
 
   exclude:
     # Allow package logger variables (for now)
-    - \`logger\` is a global variable
     - logger is a global variable
     -  Line contains TODO/BUG/FIXME
     # Add comments for package

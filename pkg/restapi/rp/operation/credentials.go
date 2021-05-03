@@ -41,6 +41,7 @@ func parseWalletResponse(definitions *presexch.PresentationDefinition, vdriReg v
 		presexch.WithCredentialOptions(
 			verifiable.WithPublicKeyFetcher(verifiable.NewVDRKeyResolver(vdriReg).PublicKeyFetcher()),
 			verifiable.WithDisabledProofCheck(),
+			verifiable.WithJSONLDDocumentLoader(docLoader),
 		),
 	)
 	if err != nil {
@@ -107,7 +108,9 @@ func parseIssuerResponse(pres *presentproof.Presentation,
 
 	data, err := verifiable.ParseCredential(
 		rawCred[0],
-		verifiable.WithPublicKeyFetcher(verifiable.NewVDRKeyResolver(vdriReg).PublicKeyFetcher()))
+		verifiable.WithPublicKeyFetcher(verifiable.NewVDRKeyResolver(vdriReg).PublicKeyFetcher()),
+		verifiable.WithJSONLDDocumentLoader(docLoader),
+	)
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse issuer's credential: %w", err)
 	}
@@ -122,7 +125,7 @@ func evaluateAuthorizationCredential(c *verifiable.Credential) error {
 	}
 
 	if authZ.IssuerDIDDoc == nil || authZ.IssuerDIDDoc.Doc == nil {
-		return errors.New("authorization credential missing issuer did doc")
+		return errors.New("authorization credential missing issuer did doc") // nolint:wrapcheck // false positive
 	}
 
 	return nil

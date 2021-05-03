@@ -47,7 +47,7 @@ func NewTrustblocDIDCreator(blocDomain, didAnchorOrigin, didcommInboundURL strin
 		MinVersion: tls.VersionTLS12,
 	}))
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to init orb VDR: %w", err)
 	}
 
 	return &TrustblocDIDCreator{
@@ -100,7 +100,7 @@ func (p *TrustblocDIDCreator) Create() (*did.Doc, error) {
 		return nil, fmt.Errorf("failed to create trustbloc DID : %w", err)
 	}
 
-	return docResolution.DIDDocument, err
+	return docResolution.DIDDocument, nil
 }
 
 func (p *TrustblocDIDCreator) newPublicKeys() (*did.Doc, error) {
@@ -113,12 +113,12 @@ func (p *TrustblocDIDCreator) newPublicKeys() (*did.Doc, error) {
 
 	jwk, err := jose.JWKFromKey(ed25519.PublicKey(bits))
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to convert key to JWK: %w", err)
 	}
 
 	vm, err := did.NewVerificationMethodFromJWK(keyID, doc.JWSVerificationKey2020, "", jwk)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to create new verification method from JWK: %w", err)
 	}
 
 	didDoc.Authentication = append(didDoc.Authentication, *did.NewReferencedVerification(vm, did.Authentication))

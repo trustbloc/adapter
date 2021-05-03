@@ -9,11 +9,14 @@ package issuer
 import (
 	"testing"
 
+	"github.com/hyperledger/aries-framework-go/component/storageutil/mem"
 	"github.com/hyperledger/aries-framework-go/pkg/doc/verifiable"
 	mockdiddoc "github.com/hyperledger/aries-framework-go/pkg/mock/diddoc"
+	"github.com/piprate/json-gold/ld"
 	"github.com/stretchr/testify/require"
 
 	"github.com/trustbloc/edge-adapter/pkg/internal/common/adapterutil"
+	"github.com/trustbloc/edge-adapter/pkg/jsonld"
 	adaptervc "github.com/trustbloc/edge-adapter/pkg/vc"
 )
 
@@ -49,14 +52,18 @@ const (
 )
 
 func TestCreateManifestCredential(t *testing.T) {
+	t.Parallel()
+
 	t.Run("test create manifest credential", func(t *testing.T) {
+		t.Parallel()
+
 		issuerName := "TestIssuer"
 		contexts := []string{"abc", "xyz"}
 
 		vcBytes, err := CreateManifestCredential(issuerName, contexts)
 		require.NoError(t, err)
 
-		vc, err := verifiable.ParseCredential(vcBytes)
+		vc, err := verifiable.ParseCredential(vcBytes, verifiable.WithJSONLDDocumentLoader(docLoader(t)))
 		require.NoError(t, err)
 		require.True(t, adapterutil.StringsContains(ManifestCredentialType, vc.Types))
 
@@ -72,8 +79,12 @@ func TestCreateManifestCredential(t *testing.T) {
 }
 
 func TestParseWalletResponse(t *testing.T) {
+	t.Parallel()
+
 	t.Run("test parse wallet - success", func(t *testing.T) {
-		conn, err := ParseWalletResponse(getTestVP(t))
+		t.Parallel()
+
+		conn, err := ParseWalletResponse(getTestVP(t), docLoader(t))
 		require.NoError(t, err)
 		require.NotNil(t, conn)
 
@@ -86,13 +97,17 @@ func TestParseWalletResponse(t *testing.T) {
 	})
 
 	t.Run("test parse wallet - invalid vp", func(t *testing.T) {
-		conn, err := ParseWalletResponse([]byte("invalid json"))
+		t.Parallel()
+
+		conn, err := ParseWalletResponse([]byte("invalid json"), docLoader(t))
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "invalid presentation")
 		require.Nil(t, conn)
 	})
 
 	t.Run("test parse wallet - no credentials inside vp", func(t *testing.T) {
+		t.Parallel()
+
 		vp := verifiable.Presentation{
 			Context: []string{"https://www.w3.org/2018/credentials/v1"},
 			Type:    []string{"VerifiablePresentation"},
@@ -100,13 +115,15 @@ func TestParseWalletResponse(t *testing.T) {
 		vpJSON, err := vp.MarshalJSON()
 		require.NoError(t, err)
 
-		conn, err := ParseWalletResponse(vpJSON)
+		conn, err := ParseWalletResponse(vpJSON, docLoader(t))
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "there should be only one credential")
 		require.Nil(t, conn)
 	})
 
 	t.Run("test parse wallet - invalid credential inside vp", func(t *testing.T) {
+		t.Parallel()
+
 		vc := verifiable.Credential{
 			Context: []string{"https://www.w3.org/2018/credentials/v1"},
 			Types:   []string{"VerifiablePresentation"},
@@ -118,14 +135,16 @@ func TestParseWalletResponse(t *testing.T) {
 		vpJSON, err := vp.MarshalJSON()
 		require.NoError(t, err)
 
-		conn, err := ParseWalletResponse(vpJSON)
+		conn, err := ParseWalletResponse(vpJSON, docLoader(t))
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "failed to parse credential")
 		require.Nil(t, conn)
 	})
 
 	t.Run("test parse wallet - no credential of DIDConnectCredential type inside vp", func(t *testing.T) {
-		vc, err := verifiable.ParseCredential([]byte(vc))
+		t.Parallel()
+
+		vc, err := verifiable.ParseCredential([]byte(vc), verifiable.WithJSONLDDocumentLoader(docLoader(t)))
 		require.NoError(t, err)
 
 		vc.Types = []string{"VerifiableCredential"}
@@ -136,7 +155,7 @@ func TestParseWalletResponse(t *testing.T) {
 		vpJSON, err := vp.MarshalJSON()
 		require.NoError(t, err)
 
-		conn, err := ParseWalletResponse(vpJSON)
+		conn, err := ParseWalletResponse(vpJSON, docLoader(t))
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "vc doesn't contain DIDConnection type")
 		require.Nil(t, conn)
@@ -144,7 +163,11 @@ func TestParseWalletResponse(t *testing.T) {
 }
 
 func TestCreateAuthorizationCredential(t *testing.T) {
+	t.Parallel()
+
 	t.Run("test create didcomm init credential", func(t *testing.T) {
+		t.Parallel()
+
 		didDocument := mockdiddoc.GetMockDIDDoc(t)
 
 		didDocJSON, err := didDocument.JSONBytes()
@@ -189,7 +212,11 @@ func TestCreateAuthorizationCredential(t *testing.T) {
 }
 
 func TestCreatePresentation(t *testing.T) {
+	t.Parallel()
+
 	t.Run("test create presentation", func(t *testing.T) {
+		t.Parallel()
+
 		vp, err := CreatePresentation(&verifiable.Credential{})
 		require.NoError(t, err)
 		require.NotNil(t, vp)
@@ -199,7 +226,7 @@ func TestCreatePresentation(t *testing.T) {
 func getTestVP(t *testing.T) []byte {
 	t.Helper()
 
-	vc, err := verifiable.ParseCredential([]byte(vc))
+	vc, err := verifiable.ParseCredential([]byte(vc), verifiable.WithJSONLDDocumentLoader(docLoader(t)))
 	require.NoError(t, err)
 
 	vp, err := verifiable.NewPresentation(verifiable.WithCredentials(vc))
@@ -209,4 +236,13 @@ func getTestVP(t *testing.T) []byte {
 	require.NoError(t, err)
 
 	return vpJSON
+}
+
+func docLoader(t *testing.T) ld.DocumentLoader {
+	t.Helper()
+
+	l, err := jsonld.DocumentLoader(mem.NewProvider())
+	require.NoError(t, err)
+
+	return l
 }

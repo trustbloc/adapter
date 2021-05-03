@@ -121,7 +121,7 @@ func New(config *Config) (*Service, error) {
 
 // GetDIDDoc returns the did doc with router endpoint/keys if its registered, else returns the doc
 // with default endpoint.
-func (o *Service) GetDIDDoc(connID string, requiresBlindedRoute bool) (*did.Doc, error) { //nolint:gocyclo,funlen
+func (o *Service) GetDIDDoc(connID string, requiresBlindedRoute bool) (*did.Doc, error) { //nolint:gocyclo,funlen,cyclop
 	verMethod, err := o.newVerificationMethod()
 	if err != nil {
 		return nil, fmt.Errorf("failed to create new verification method: %w", err)
@@ -148,7 +148,7 @@ func (o *Service) GetDIDDoc(connID string, requiresBlindedRoute bool) (*did.Doc,
 			},
 		)
 		if errCreate != nil {
-			return nil, errCreate
+			return nil, fmt.Errorf("failed to create peer did: %w", errCreate)
 		}
 
 		return docResolution.DIDDocument, nil
@@ -170,7 +170,7 @@ func (o *Service) GetDIDDoc(connID string, requiresBlindedRoute bool) (*did.Doc,
 		},
 	)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to create peer did: %w", err)
 	}
 
 	newDidDoc := docResolution.DIDDocument
@@ -251,7 +251,7 @@ func (o *Service) handleDIDDocReq(msg service.DIDCommMsg) (service.DIDCommMsgMap
 			VerificationMethod: []did.VerificationMethod{*verMethod},
 		})
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to create peer did: %w", err)
 	}
 
 	newDidDoc := docResolution.DIDDocument
@@ -293,7 +293,7 @@ func (o *Service) newVerificationMethod() (*did.VerificationMethod, error) {
 	return verMethod, nil
 }
 
-func (o *Service) handleRouteRegistration(msg message.Msg) (service.DIDCommMsgMap, error) { // nolint: gocyclo
+func (o *Service) handleRouteRegistration(msg message.Msg) (service.DIDCommMsgMap, error) { // nolint: gocyclo,cyclop
 	pMsg := ConnReq{}
 
 	err := msg.DIDCommMsg.Decode(&pMsg)
@@ -348,7 +348,7 @@ func (o *Service) handleRouteRegistration(msg message.Msg) (service.DIDCommMsgMa
 func getTxnStore(prov storage.Provider) (storage.Store, error) {
 	txnStore, err := prov.OpenStore(txnStoreName)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to open txn store: %w", err)
 	}
 
 	return txnStore, nil

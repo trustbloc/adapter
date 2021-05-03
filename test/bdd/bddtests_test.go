@@ -68,6 +68,7 @@ func runBDDTests(tags, format string) int { //nolint: gocognit
 					}
 					composition = append(composition, newComposition)
 				}
+				// nolint:forbidigo // ignored
 				fmt.Println("docker-compose up ... waiting for containers to start ...")
 				testSleep := 40
 				if os.Getenv("TEST_SLEEP") != "" {
@@ -79,7 +80,7 @@ func runBDDTests(tags, format string) int { //nolint: gocognit
 					}
 				}
 
-				fmt.Printf("*** testSleep=%d", testSleep)
+				fmt.Printf("*** testSleep=%d", testSleep) // nolint:forbidigo // ignore
 				println()
 				time.Sleep(time.Second * time.Duration(testSleep))
 			}
@@ -87,7 +88,7 @@ func runBDDTests(tags, format string) int { //nolint: gocognit
 		s.AfterSuite(func() {
 			err := dockerutil.GenerateSplitLogs("docker-compose.log")
 			if err != nil {
-				fmt.Println("failed to generate Docker logs to a file: ", err.Error())
+				fmt.Println("failed to generate Docker logs to a file: ", err.Error()) // nolint:forbidigo // ignore
 			}
 
 			for _, c := range composition {

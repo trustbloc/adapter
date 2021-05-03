@@ -2,27 +2,22 @@ package rp
 
 import (
 	"fmt"
-	"io/ioutil"
-	"path/filepath"
-	"strings"
 	"time"
 
+	"github.com/hyperledger/aries-framework-go/component/storageutil/mem"
 	"github.com/hyperledger/aries-framework-go/pkg/doc/did"
-	"github.com/hyperledger/aries-framework-go/pkg/doc/jsonld"
 	"github.com/hyperledger/aries-framework-go/pkg/doc/presexch"
 	"github.com/hyperledger/aries-framework-go/pkg/doc/util"
 	"github.com/hyperledger/aries-framework-go/pkg/doc/verifiable"
-	"github.com/piprate/json-gold/ld"
-)
 
-//nolint:gochecknoglobals
-var testDocumentLoader = createTestJSONLDDocumentLoader()
+	"github.com/trustbloc/edge-adapter/pkg/jsonld"
+)
 
 func newPresentationSubmissionVP(submission *presexch.PresentationSubmission,
 	credentials ...*verifiable.Credential) (*verifiable.Presentation, error) {
 	vp, err := verifiable.NewPresentation(verifiable.WithCredentials(credentials...))
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to create vp: %w", err)
 	}
 
 	vp.Context = append(vp.Context, presexch.PresentationSubmissionJSONLDContextIRI)
@@ -65,21 +60,21 @@ func newUserAuthorizationVC(subjectDID, rpDID, issuerDID *did.Doc) (*verifiable.
 
 	bits, err := rpDID.JSONBytes()
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to marshal rp did: %w", err)
 	}
 
 	rpDIDClaim := fmt.Sprintf(didDocTemplate, rpDID.ID, bits)
 
 	bits, err = issuerDID.JSONBytes()
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to marshal issuer did: %w", err)
 	}
 
 	issuerDIDClaim := fmt.Sprintf(didDocTemplate, issuerDID.ID, bits)
 
 	bits, err = subjectDID.JSONBytes()
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to marshal subject did: %w", err)
 	}
 
 	subjectDIDClaim := fmt.Sprintf(didDocTemplate, subjectDID.ID, bits)
@@ -88,7 +83,13 @@ func newUserAuthorizationVC(subjectDID, rpDID, issuerDID *did.Doc) (*verifiable.
 		userAuthorizationVCTemplate,
 		subjectDID.ID, subjectDID.ID, rpDIDClaim, issuerDIDClaim, subjectDIDClaim)
 
-	return verifiable.ParseCredential([]byte(contents), verifiable.WithJSONLDDocumentLoader(testDocumentLoader))
+	docLoader, err := jsonld.DocumentLoader(mem.NewProvider())
+	if err != nil {
+		return nil, fmt.Errorf("failed to init document loader: %w", err)
+	}
+
+	// nolint:wrapcheck // ignore
+	return verifiable.ParseCredential([]byte(contents), verifiable.WithJSONLDDocumentLoader(docLoader))
 }
 
 func newCreditCardStatementVC() *verifiable.Credential {
@@ -160,69 +161,4 @@ func newDriversLicenseVC() *verifiable.Credential {
 			},
 		},
 	}
-}
-
-func createTestJSONLDDocumentLoader() *jsonld.CachingDocumentLoader {
-	loader := verifiable.CachingJSONLDLoader()
-
-	presExchCtx, err := ld.DocumentFromReader(strings.NewReader(presexch.PresentationSubmissionJSONLDContext))
-	if err != nil {
-		panic(fmt.Errorf("failed to preload presentation-exchange jsonld context: %w", err))
-	}
-
-	loader.AddDocument(
-		presexch.PresentationSubmissionJSONLDContextIRI,
-		presExchCtx,
-	)
-
-	contexts := []struct {
-		vocab    string
-		filename string
-	}{
-		{
-			vocab:    "https://www.w3.org/2018/credentials/v1",
-			filename: "verifiable_credentials_v1.0.jsonld",
-		},
-		{
-			vocab:    "http://schema.org/",
-			filename: "schema.org.jsonld",
-		},
-		{
-			vocab:    "https://trustbloc.github.io/context/vc/authorization-credential-v1.jsonld",
-			filename: "authorization-credential-v1.jsonld",
-		},
-		{
-			vocab:    "https://trustbloc.github.io/context/vc/examples-ext-v1.jsonld",
-			filename: "examples-ext-v1.jsonld",
-		},
-		{
-			vocab:    "https://trustbloc.github.io/context/vp/examples/mdl-v1.jsonld",
-			filename: "mdl-v1.jsonld",
-		},
-	}
-
-	for i := range contexts {
-		addJSONLDCachedContextFromFile(loader, contexts[i].vocab, contexts[i].filename)
-	}
-
-	return loader
-}
-
-func addJSONLDCachedContextFromFile(loader *jsonld.CachingDocumentLoader, contextURL, contextFile string) {
-	contextContent, err := ioutil.ReadFile(filepath.Clean(filepath.Join(
-		"pkg/rp/testdata/context", contextFile))) // nolint: gocritic
-	if err != nil {
-		panic(err)
-	}
-
-	addJSONLDCachedContext(loader, contextURL, string(contextContent))
-}
-
-func addJSONLDCachedContext(loader *jsonld.CachingDocumentLoader, contextURL, contextContent string) {
-	reader, err := ld.DocumentFromReader(strings.NewReader(contextContent))
-	if err != nil {
-		panic(err)
-	}
-
-	loader.AddDocument(contextURL, reader)
 }

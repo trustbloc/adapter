@@ -22,8 +22,12 @@ import (
 )
 
 func Test_GetOIDCClient(t *testing.T) {
+	t.Parallel()
+
 	t.Run("success", func(t *testing.T) {
-		conf := config()
+		t.Parallel()
+
+		conf := config(t)
 
 		op, err := New(conf)
 		require.NoError(t, err)
@@ -46,7 +50,9 @@ func Test_GetOIDCClient(t *testing.T) {
 	})
 
 	t.Run("success - cached client", func(t *testing.T) {
-		conf := config()
+		t.Parallel()
+
+		conf := config(t)
 
 		op, err := New(conf)
 		require.NoError(t, err)
@@ -58,7 +64,9 @@ func Test_GetOIDCClient(t *testing.T) {
 	})
 
 	t.Run("failure - client data missing", func(t *testing.T) {
-		conf := config()
+		t.Parallel()
+
+		conf := config(t)
 
 		op, err := New(conf)
 		require.NoError(t, err)
@@ -75,7 +83,9 @@ func Test_GetOIDCClient(t *testing.T) {
 	})
 
 	t.Run("failure - invalid provider url", func(t *testing.T) {
-		conf := config()
+		t.Parallel()
+
+		conf := config(t)
 
 		op, err := New(conf)
 		require.NoError(t, err)
@@ -94,8 +104,12 @@ func Test_GetOIDCClient(t *testing.T) {
 }
 
 func Test_CreateOIDCClient(t *testing.T) {
+	t.Parallel()
+
 	t.Run("success: with multiple create calls", func(t *testing.T) {
-		conf := config()
+		t.Parallel()
+
+		conf := config(t)
 
 		op, err := New(conf)
 		require.NoError(t, err)
@@ -131,7 +145,9 @@ func Test_CreateOIDCClient(t *testing.T) {
 	})
 
 	t.Run("success: bypassing client registration", func(t *testing.T) {
-		conf := config()
+		t.Parallel()
+
+		conf := config(t)
 
 		op, err := New(conf)
 		require.NoError(t, err)
@@ -156,7 +172,9 @@ func Test_CreateOIDCClient(t *testing.T) {
 	})
 
 	t.Run("success: with client data already stored", func(t *testing.T) {
-		conf := config()
+		t.Parallel()
+
+		conf := config(t)
 
 		op, err := New(conf)
 		require.NoError(t, err)
@@ -185,7 +203,9 @@ func Test_CreateOIDCClient(t *testing.T) {
 	})
 
 	t.Run("failure: error checking store for client data", func(t *testing.T) {
-		conf := config()
+		t.Parallel()
+
+		conf := config(t)
 
 		op, err := New(conf)
 		require.NoError(t, err)
@@ -210,7 +230,9 @@ func Test_CreateOIDCClient(t *testing.T) {
 	})
 
 	t.Run("failure: error getting oidc provider configuration", func(t *testing.T) {
-		conf := config()
+		t.Parallel()
+
+		conf := config(t)
 
 		op, err := New(conf)
 		require.NoError(t, err)
@@ -233,7 +255,9 @@ func Test_CreateOIDCClient(t *testing.T) {
 	})
 
 	t.Run("failure: error unmarshaling oidc provider configuration", func(t *testing.T) {
-		conf := config()
+		t.Parallel()
+
+		conf := config(t)
 
 		op, err := New(conf)
 		require.NoError(t, err)
@@ -256,7 +280,9 @@ func Test_CreateOIDCClient(t *testing.T) {
 	})
 
 	t.Run("failure: error registering with oidc provider", func(t *testing.T) {
-		conf := config()
+		t.Parallel()
+
+		conf := config(t)
 
 		op, err := New(conf)
 		require.NoError(t, err)
@@ -277,7 +303,9 @@ func Test_CreateOIDCClient(t *testing.T) {
 	})
 
 	t.Run("failure: error saving registered client parameters", func(t *testing.T) {
-		conf := config()
+		t.Parallel()
+
+		conf := config(t)
 
 		op, err := New(conf)
 		require.NoError(t, err)
@@ -305,7 +333,9 @@ func Test_CreateOIDCClient(t *testing.T) {
 	})
 
 	t.Run("failure: error initializing oidc client", func(t *testing.T) {
-		conf := config()
+		t.Parallel()
+
+		conf := config(t)
 
 		op, err := New(conf)
 		require.NoError(t, err)

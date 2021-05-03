@@ -32,13 +32,19 @@ import (
 )
 
 func TestNew(t *testing.T) {
+	t.Parallel()
+
 	t.Run("success", func(t *testing.T) {
+		t.Parallel()
+
 		c, err := New(config())
 		require.NoError(t, err)
 		require.NotEmpty(t, c)
 	})
 
 	t.Run("store error", func(t *testing.T) {
+		t.Parallel()
+
 		config := config()
 
 		config.Store = &mockstorage.Provider{ErrOpenStore: errors.New("open db error")}
@@ -50,7 +56,11 @@ func TestNew(t *testing.T) {
 }
 
 func TestDIDCommMsgListener(t *testing.T) {
+	t.Parallel()
+
 	t.Run("unsupported message type", func(t *testing.T) {
+		t.Parallel()
+
 		c, err := New(config())
 		require.NoError(t, err)
 
@@ -86,6 +96,8 @@ func TestDIDCommMsgListener(t *testing.T) {
 	})
 
 	t.Run("messenger reply error", func(t *testing.T) {
+		t.Parallel()
+
 		c, err := New(config())
 		require.NoError(t, err)
 
@@ -104,6 +116,8 @@ func TestDIDCommMsgListener(t *testing.T) {
 	})
 
 	t.Run("did doc request", func(t *testing.T) {
+		t.Parallel()
+
 		c, err := New(config())
 		require.NoError(t, err)
 
@@ -143,6 +157,8 @@ func TestDIDCommMsgListener(t *testing.T) {
 	})
 
 	t.Run("register route request", func(t *testing.T) {
+		t.Parallel()
+
 		config := config()
 
 		done := make(chan struct{})
@@ -196,7 +212,11 @@ func TestDIDCommMsgListener(t *testing.T) {
 }
 
 func TestDIDDocReq(t *testing.T) {
+	t.Parallel()
+
 	t.Run("create did doc error", func(t *testing.T) {
+		t.Parallel()
+
 		config := config()
 
 		done := make(chan struct{})
@@ -234,6 +254,8 @@ func TestDIDDocReq(t *testing.T) {
 	})
 
 	t.Run("store error", func(t *testing.T) {
+		t.Parallel()
+
 		config := config()
 
 		done := make(chan struct{})
@@ -272,8 +294,12 @@ func TestDIDDocReq(t *testing.T) {
 	})
 }
 
-func TestRegisterRouteReq(t *testing.T) { // nolint:gocyclo
+func TestRegisterRouteReq(t *testing.T) { // nolint:gocyclo,cyclop
+	t.Parallel()
+
 	t.Run("missing parent thread id", func(t *testing.T) {
+		t.Parallel()
+
 		c, err := New(config())
 		require.NoError(t, err)
 
@@ -308,6 +334,8 @@ func TestRegisterRouteReq(t *testing.T) { // nolint:gocyclo
 	})
 
 	t.Run("empty did doc in the request", func(t *testing.T) {
+		t.Parallel()
+
 		config := config()
 
 		c, err := New(config)
@@ -347,6 +375,8 @@ func TestRegisterRouteReq(t *testing.T) { // nolint:gocyclo
 	})
 
 	t.Run("invalid did doc in the request", func(t *testing.T) {
+		t.Parallel()
+
 		config := config()
 
 		done := make(chan struct{})
@@ -391,6 +421,8 @@ func TestRegisterRouteReq(t *testing.T) { // nolint:gocyclo
 	})
 
 	t.Run("store error", func(t *testing.T) {
+		t.Parallel()
+
 		config := config()
 
 		done := make(chan struct{})
@@ -437,6 +469,8 @@ func TestRegisterRouteReq(t *testing.T) { // nolint:gocyclo
 	})
 
 	t.Run("create connection error", func(t *testing.T) {
+		t.Parallel()
+
 		config := config()
 		config.DIDExchangeClient = &mockdidex.MockClient{
 			CreateConnectionFunc: func(s string, doc *did.Doc, option ...didexchange.ConnectionOption) (string, error) {
@@ -493,6 +527,8 @@ func TestRegisterRouteReq(t *testing.T) { // nolint:gocyclo
 	})
 
 	t.Run("register route error", func(t *testing.T) {
+		t.Parallel()
+
 		config := config()
 		config.MediatorClient = &mockmediator.MockClient{
 			RegisterErr: errors.New("register route error"),
@@ -547,6 +583,8 @@ func TestRegisterRouteReq(t *testing.T) { // nolint:gocyclo
 	})
 
 	t.Run("connection id look up error", func(t *testing.T) {
+		t.Parallel()
+
 		config := config()
 		config.ConnectionLookup = &mockconn.MockConnectionsLookup{ConnIDByDIDsErr: errors.New("lookup error")}
 
@@ -600,7 +638,11 @@ func TestRegisterRouteReq(t *testing.T) { // nolint:gocyclo
 }
 
 func TestGetDIDService(t *testing.T) {
+	t.Parallel()
+
 	t.Run("success (registered route)", func(t *testing.T) {
+		t.Parallel()
+
 		config := config()
 
 		routerEndpoint := "http://router.com"
@@ -638,6 +680,8 @@ func TestGetDIDService(t *testing.T) {
 	})
 
 	t.Run("success (default)", func(t *testing.T) {
+		t.Parallel()
+
 		config := config()
 		config.VDRIRegistry = &mockvdr.MockVDRegistry{CreateValue: &did.Doc{
 			Service: []did.Service{
@@ -667,6 +711,8 @@ func TestGetDIDService(t *testing.T) {
 	})
 
 	t.Run("error when not registered and blinded routing is required", func(t *testing.T) {
+		t.Parallel()
+
 		config := config()
 
 		mediatorConfig := &mediatorsvc.Config{}
@@ -687,6 +733,8 @@ func TestGetDIDService(t *testing.T) {
 	})
 
 	t.Run("get config error (registered route)", func(t *testing.T) {
+		t.Parallel()
+
 		config := config()
 		config.MediatorClient = &mockmediator.MockClient{
 			GetConfigFunc: func(connID string) (*mediatorsvc.Config, error) {
@@ -707,6 +755,8 @@ func TestGetDIDService(t *testing.T) {
 	})
 
 	t.Run("store error", func(t *testing.T) {
+		t.Parallel()
+
 		config := config()
 
 		c, err := New(config)
@@ -724,6 +774,8 @@ func TestGetDIDService(t *testing.T) {
 	})
 
 	t.Run("missing did-comm service type", func(t *testing.T) {
+		t.Parallel()
+
 		config := config()
 
 		config.VDRIRegistry = &mockvdr.MockVDRegistry{CreateValue: &did.Doc{
@@ -754,6 +806,8 @@ func TestGetDIDService(t *testing.T) {
 	})
 
 	t.Run("did create error", func(t *testing.T) {
+		t.Parallel()
+
 		config := config()
 
 		config.VDRIRegistry = &mockvdr.MockVDRegistry{CreateErr: errors.New("create error")}
@@ -777,6 +831,8 @@ func TestGetDIDService(t *testing.T) {
 	})
 
 	t.Run("add key to router error", func(t *testing.T) {
+		t.Parallel()
+
 		config := config()
 
 		config.VDRIRegistry = &mockvdr.MockVDRegistry{CreateValue: getDIDDoc()}

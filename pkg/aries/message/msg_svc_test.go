@@ -15,6 +15,8 @@ import (
 )
 
 func TestNewMsgSvc(t *testing.T) {
+	t.Parallel()
+
 	name := "msg-123"
 	msgType := "http://example.com/message/test"
 	purpose := "msg-123"
@@ -38,7 +40,7 @@ func TestNewMsgSvc(t *testing.T) {
 		Type string `json:"@type,omitempty"`
 	}{Type: msgType})
 
-	_, err := msgSvc.HandleInbound(msg, &mockDIDCommContext{})
+	_, err := msgSvc.HandleInbound(msg, service.EmptyDIDCommContext())
 	require.NoError(t, err)
 
 	select {
@@ -46,21 +48,4 @@ func TestNewMsgSvc(t *testing.T) {
 	case <-time.After(5 * time.Second):
 		require.Fail(t, "tests are not validated due to timeout")
 	}
-}
-
-type mockDIDCommContext struct{}
-
-// All mock didcomm context.
-func (c *mockDIDCommContext) All() map[string]interface{} {
-	return map[string]interface{}{}
-}
-
-// MyDID mock didcomm context.
-func (c *mockDIDCommContext) MyDID() string {
-	return ""
-}
-
-// TheirDID mock didcomm context.
-func (c *mockDIDCommContext) TheirDID() string {
-	return ""
 }

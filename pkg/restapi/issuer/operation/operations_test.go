@@ -62,14 +62,20 @@ const (
 )
 
 func TestNew(t *testing.T) {
+	t.Parallel()
+
 	t.Run("test new - success", func(t *testing.T) {
-		c, err := New(config())
+		t.Parallel()
+
+		c, err := New(config(t))
 		require.NoError(t, err)
 
 		require.Equal(t, 12, len(c.GetRESTHandlers()))
 	})
 
 	t.Run("test new - aries provider fail", func(t *testing.T) {
+		t.Parallel()
+
 		c, err := New(&Config{AriesCtx: mockprovider.NewMockProvider()})
 		require.Nil(t, c)
 		require.Error(t, err)
@@ -77,10 +83,12 @@ func TestNew(t *testing.T) {
 	})
 
 	t.Run("test new - store fails", func(t *testing.T) {
+		t.Parallel()
+
 		const numStores = 6
 
 		for i := 0; i < numStores; i++ {
-			conf := config()
+			conf := config(t)
 
 			conf.StoreProvider = &failingStoreProvider{
 				openN:           i,
@@ -96,7 +104,9 @@ func TestNew(t *testing.T) {
 	})
 
 	t.Run("mediator client error", func(t *testing.T) {
-		config := config()
+		t.Parallel()
+
+		config := config(t)
 		config.AriesCtx = &mockprovider.MockProvider{
 			Provider: &ariesmockprovider.Provider{
 				ServiceMap: map[string]interface{}{
@@ -112,7 +122,9 @@ func TestNew(t *testing.T) {
 	})
 
 	t.Run("wallet bridge error", func(t *testing.T) {
-		config := config()
+		t.Parallel()
+
+		config := config(t)
 		config.AriesCtx = &mockprovider.MockProvider{
 			Provider: &ariesmockprovider.Provider{
 				StorageProviderValue: &mockstore.MockStoreProvider{
@@ -137,7 +149,11 @@ func TestNew(t *testing.T) {
 }
 
 func Test_OIDCClientData(t *testing.T) {
+	t.Parallel()
+
 	t.Run("success: encrypt then decrypt", func(t *testing.T) {
+		t.Parallel()
+
 		data := oidcClientData{
 			ID:     "abcd",
 			Secret: "this is a secret value",
@@ -165,6 +181,8 @@ func Test_OIDCClientData(t *testing.T) {
 	})
 
 	t.Run("encrypt error: bad key", func(t *testing.T) {
+		t.Parallel()
+
 		data := oidcClientData{
 			ID:     "abcd",
 			Secret: "this is a secret value",
@@ -179,6 +197,8 @@ func Test_OIDCClientData(t *testing.T) {
 	})
 
 	t.Run("decrypt error: bad key", func(t *testing.T) {
+		t.Parallel()
+
 		data := oidcClientData{
 			ID:     "abcd",
 			Secret: "this is a secret value",
@@ -200,6 +220,8 @@ func Test_OIDCClientData(t *testing.T) {
 	})
 
 	t.Run("decrypt error: garbled wrapper", func(t *testing.T) {
+		t.Parallel()
+
 		data := oidcClientData{
 			ID:     "abcd",
 			Secret: "this is a secret value",
@@ -223,6 +245,8 @@ func Test_OIDCClientData(t *testing.T) {
 	})
 
 	t.Run("decrypt error: incorrect encrypted payload", func(t *testing.T) {
+		t.Parallel()
+
 		data := oidcClientData{
 			ID:     "abcd",
 			Secret: "this is a secret value",
@@ -252,6 +276,8 @@ func Test_OIDCClientData(t *testing.T) {
 	})
 
 	t.Run("decrypt error: garbled wrapped data", func(t *testing.T) {
+		t.Parallel()
+
 		data := oidcClientData{
 			ID:     "abcd",
 			Secret: "this is a secret value",
@@ -297,8 +323,12 @@ func Test_OIDCClientData(t *testing.T) {
 }
 
 func Test_OIDCClientStore(t *testing.T) {
+	t.Parallel()
+
 	t.Run("success - save then load oidc client data", func(t *testing.T) {
-		conf := config()
+		t.Parallel()
+
+		conf := config(t)
 
 		op, err := New(conf)
 		require.NoError(t, err)
@@ -320,7 +350,9 @@ func Test_OIDCClientStore(t *testing.T) {
 	})
 
 	t.Run("save error - error encrypting client data", func(t *testing.T) {
-		conf := config()
+		t.Parallel()
+
+		conf := config(t)
 
 		op, err := New(conf)
 		require.NoError(t, err)
@@ -339,7 +371,9 @@ func Test_OIDCClientStore(t *testing.T) {
 	})
 
 	t.Run("save error - error storing to oidc client data store", func(t *testing.T) {
-		conf := config()
+		t.Parallel()
+
+		conf := config(t)
 
 		op, err := New(conf)
 		require.NoError(t, err)
@@ -360,7 +394,9 @@ func Test_OIDCClientStore(t *testing.T) {
 	})
 
 	t.Run("load error - error loading from oidc client data store", func(t *testing.T) {
-		conf := config()
+		t.Parallel()
+
+		conf := config(t)
 
 		op, err := New(conf)
 		require.NoError(t, err)
@@ -375,7 +411,9 @@ func Test_OIDCClientStore(t *testing.T) {
 	})
 
 	t.Run("load error - error decrypting client data", func(t *testing.T) {
-		conf := config()
+		t.Parallel()
+
+		conf := config(t)
 
 		op, err := New(conf)
 		require.NoError(t, err)
@@ -390,8 +428,12 @@ func Test_OIDCClientStore(t *testing.T) {
 }
 
 func TestRegisterOAuthClient(t *testing.T) {
+	t.Parallel()
+
 	t.Run("success", func(t *testing.T) {
-		conf := config()
+		t.Parallel()
+
+		conf := config(t)
 
 		op, err := New(conf)
 		require.NoError(t, err)
@@ -407,7 +449,9 @@ func TestRegisterOAuthClient(t *testing.T) {
 	})
 
 	t.Run("failure - server error", func(t *testing.T) {
-		conf := config()
+		t.Parallel()
+
+		conf := config(t)
 
 		op, err := New(conf)
 		require.NoError(t, err)
@@ -425,7 +469,9 @@ func TestRegisterOAuthClient(t *testing.T) {
 }
 
 func TestCreateProfile(t *testing.T) {
-	op, err := New(config())
+	t.Parallel()
+
+	op, err := New(config(t))
 	require.NoError(t, err)
 
 	mockOIDC := mockOIDCClient{}
@@ -442,6 +488,8 @@ func TestCreateProfile(t *testing.T) {
 	handler := getHandler(t, op, endpoint)
 
 	t.Run("create profile - success", func(t *testing.T) {
+		t.Parallel()
+
 		vReq := createProfileData(uuid.New().String())
 		vReq.OIDCClientParams = &issuer.OIDCClientParams{
 			ClientID:     "client id",
@@ -466,7 +514,9 @@ func TestCreateProfile(t *testing.T) {
 	})
 
 	t.Run("create profile - success with default oidc", func(t *testing.T) {
-		op2, err := New(config())
+		t.Parallel()
+
+		op2, err := New(config(t))
 		require.NoError(t, err)
 
 		mockOIDCServer := createMockOIDCServer("", "", "", "", fmt.Sprintf(
@@ -497,7 +547,9 @@ func TestCreateProfile(t *testing.T) {
 	})
 
 	t.Run("create profile - failed to issue governance vc", func(t *testing.T) {
-		op2, err := New(config())
+		t.Parallel()
+
+		op2, err := New(config(t))
 		require.NoError(t, err)
 
 		op2.createOIDCClientFunc = func(*issuer.ProfileData) (oidcClient, error) {
@@ -528,6 +580,8 @@ func TestCreateProfile(t *testing.T) {
 	})
 
 	t.Run("create profile - invalid request", func(t *testing.T) {
+		t.Parallel()
+
 		rr := serveHTTP(t, handler.Handle(), http.MethodPost, endpoint, []byte("invalid-json"))
 
 		require.Equal(t, http.StatusBadRequest, rr.Code)
@@ -535,7 +589,9 @@ func TestCreateProfile(t *testing.T) {
 	})
 
 	t.Run("create profile - did creation failure", func(t *testing.T) {
-		ops, err := New(config())
+		t.Parallel()
+
+		ops, err := New(config(t))
 		require.NoError(t, err)
 
 		ops.createOIDCClientFunc = func(*issuer.ProfileData) (oidcClient, error) {
@@ -581,6 +637,8 @@ func TestCreateProfile(t *testing.T) {
 	})
 
 	t.Run("create profile - error", func(t *testing.T) {
+		t.Parallel()
+
 		vReq := &ProfileDataRequest{}
 
 		vReqBytes, err := json.Marshal(vReq)
@@ -589,11 +647,13 @@ func TestCreateProfile(t *testing.T) {
 		rr := serveHTTP(t, handler.Handle(), http.MethodPost, endpoint, vReqBytes)
 
 		require.Equal(t, http.StatusBadRequest, rr.Code)
-		require.Contains(t, rr.Body.String(), "failed to create profile: profile id mandatory")
+		require.Contains(t, rr.Body.String(), "profile id mandatory")
 	})
 
 	t.Run("create profile - oidc error", func(t *testing.T) {
-		ops, err := New(config())
+		t.Parallel()
+
+		ops, err := New(config(t))
 		require.NoError(t, err)
 
 		vReq := createProfileData(uuid.New().String())
@@ -618,7 +678,9 @@ func TestCreateProfile(t *testing.T) {
 }
 
 func TestGetProfile(t *testing.T) {
-	op, err := New(config())
+	t.Parallel()
+
+	op, err := New(config(t))
 	require.NoError(t, err)
 
 	mockOIDC := mockOIDCClient{}
@@ -637,6 +699,8 @@ func TestGetProfile(t *testing.T) {
 	urlVars := make(map[string]string)
 
 	t.Run("get profile - success", func(t *testing.T) {
+		t.Parallel()
+
 		vReq := createProfileData(uuid.New().String())
 		err := op.profileStore.SaveProfile(vReq)
 		require.NoError(t, err)
@@ -654,6 +718,8 @@ func TestGetProfile(t *testing.T) {
 	})
 
 	t.Run("get profile - no data found", func(t *testing.T) {
+		t.Parallel()
+
 		urlVars[idPathParam] = "invalid-name"
 
 		rr := serveHTTPMux(t, handler, endpoint, nil, urlVars)
@@ -663,7 +729,9 @@ func TestGetProfile(t *testing.T) {
 	})
 }
 
-func TestConnectWallet(t *testing.T) {
+func TestConnectWallet(t *testing.T) { // nolint:tparallel // data race
+	t.Parallel()
+
 	uiEndpoint := "/ui"
 	profileID := "test-1"
 	state := uuid.New().String()
@@ -680,8 +748,8 @@ func TestConnectWallet(t *testing.T) {
 
 	mockOIDC := mockOIDCClient{}
 
-	t.Run("test connect wallet - success", func(t *testing.T) {
-		c, err := New(config())
+	t.Run("test connect wallet - success", func(t *testing.T) { // nolint:paralleltest // data race
+		c, err := New(config(t))
 		require.NoError(t, err)
 
 		c.createOIDCClientFunc = func(*issuer.ProfileData) (oidcClient, error) {
@@ -713,8 +781,8 @@ func TestConnectWallet(t *testing.T) {
 		require.Contains(t, rr.Header().Get("Location"), uiEndpoint)
 	})
 
-	t.Run("test connect wallet - success and redirect to oidc auth", func(t *testing.T) {
-		c, err := New(config())
+	t.Run("test connect wallet - success and redirect to oidc auth", func(t *testing.T) { // nolint:paralleltest,lll // data race
+		c, err := New(config(t))
 		require.NoError(t, err)
 
 		c.createOIDCClientFunc = func(*issuer.ProfileData) (oidcClient, error) {
@@ -748,8 +816,8 @@ func TestConnectWallet(t *testing.T) {
 		require.Contains(t, rr.Header().Get("Location"), "/oidc/request")
 	})
 
-	t.Run("test connect wallet - profile doesn't exists", func(t *testing.T) {
-		c, err := New(config())
+	t.Run("test connect wallet - profile doesn't exists", func(t *testing.T) { // nolint:paralleltest // data race
+		c, err := New(config(t))
 		require.NoError(t, err)
 
 		c.createOIDCClientFunc = func(*issuer.ProfileData) (oidcClient, error) {
@@ -776,8 +844,8 @@ func TestConnectWallet(t *testing.T) {
 		require.Contains(t, rr.Body.String(), storage.ErrDataNotFound.Error())
 	})
 
-	t.Run("test connect wallet - no state in the url", func(t *testing.T) {
-		c, err := New(config())
+	t.Run("test connect wallet - no state in the url", func(t *testing.T) { // nolint:paralleltest // data race
+		c, err := New(config(t))
 		require.NoError(t, err)
 
 		c.createOIDCClientFunc = func(*issuer.ProfileData) (oidcClient, error) {
@@ -808,8 +876,8 @@ func TestConnectWallet(t *testing.T) {
 		require.Contains(t, rr.Body.String(), "failed to get state from the url")
 	})
 
-	t.Run("test connect wallet - failed to create invitation", func(t *testing.T) {
-		config := config()
+	t.Run("test connect wallet - failed to create invitation", func(t *testing.T) { // nolint:paralleltest // data race
+		config := config(t)
 		config.AriesCtx = &mockprovider.MockProvider{
 			Provider: &ariesmockprovider.Provider{
 				ProtocolStateStorageProviderValue: mockstore.NewMockStoreProvider(),
@@ -857,8 +925,8 @@ func TestConnectWallet(t *testing.T) {
 		require.Contains(t, rr.Body.String(), "failed to create invitation")
 	})
 
-	t.Run("test connect wallet - txn data store error", func(t *testing.T) {
-		c, err := New(config())
+	t.Run("test connect wallet - txn data store error", func(t *testing.T) { // nolint:paralleltest // data race
+		c, err := New(config(t))
 		require.NoError(t, err)
 
 		c.createOIDCClientFunc = func(profileData *issuer.ProfileData) (oidcClient, error) {
@@ -893,8 +961,8 @@ func TestConnectWallet(t *testing.T) {
 		require.Contains(t, rr.Body.String(), "failed to create txn")
 	})
 
-	t.Run("test connect wallet - retrieve token errors", func(t *testing.T) {
-		c, err := New(config())
+	t.Run("test connect wallet - retrieve token errors", func(t *testing.T) { // nolint:paralleltest // data race
+		c, err := New(config(t))
 		require.NoError(t, err)
 
 		c.createOIDCClientFunc = func(profileData *issuer.ProfileData) (oidcClient, error) {
@@ -956,7 +1024,9 @@ func TestConnectWallet(t *testing.T) {
 	})
 }
 
-func TestCredScopeHandler(t *testing.T) {
+func TestCredScopeHandler(t *testing.T) { // nolint:tparallel // data race
+	t.Parallel()
+
 	profileID := "test-1"
 	credScope := "TestCredScope"
 	endpoint := walletConnectEndpoint
@@ -972,8 +1042,8 @@ func TestCredScopeHandler(t *testing.T) {
 
 	mockOIDC := mockOIDCClient{}
 
-	t.Run("success - test connect wallet using cred scope", func(t *testing.T) {
-		c, err := New(config())
+	t.Run("success - test connect wallet using cred scope", func(t *testing.T) { // nolint:paralleltest // data race
+		c, err := New(config(t))
 		require.NoError(t, err)
 
 		c.createOIDCClientFunc = func(*issuer.ProfileData) (oidcClient, error) {
@@ -1006,8 +1076,8 @@ func TestCredScopeHandler(t *testing.T) {
 		require.Contains(t, rr.Header().Get("Location"), oidcAuthRequestEndpoint)
 	})
 
-	t.Run("failure - cred scope not configured in issuer profile", func(t *testing.T) {
-		c, err := New(config())
+	t.Run("failure - cred scope not configured in issuer profile", func(t *testing.T) { // nolint:paralleltest,lll // data race
+		c, err := New(config(t))
 		require.NoError(t, err)
 
 		c.createOIDCClientFunc = func(*issuer.ProfileData) (oidcClient, error) {
@@ -1038,8 +1108,8 @@ func TestCredScopeHandler(t *testing.T) {
 		require.Equal(t, http.StatusBadRequest, rr.Code)
 	})
 
-	t.Run("failure - could not create transaction record", func(t *testing.T) {
-		c, err := New(config())
+	t.Run("failure - could not create transaction record", func(t *testing.T) { // nolint:paralleltest // data race
+		c, err := New(config(t))
 		require.NoError(t, err)
 
 		c.txnStore = &mockstorage.Store{ErrPut: fmt.Errorf("store error")}
@@ -1075,7 +1145,9 @@ func TestCredScopeHandler(t *testing.T) {
 }
 
 func TestValidateWalletResponse(t *testing.T) {
-	c, err := New(config())
+	t.Parallel()
+
+	c, err := New(config(t))
 	require.NoError(t, err)
 
 	profileID := "profile1"
@@ -1119,7 +1191,7 @@ func TestValidateWalletResponse(t *testing.T) {
 		},
 	}
 
-	t.Run("test validate response - success", func(t *testing.T) {
+	t.Run("test validate response - success", func(t *testing.T) { // nolint:paralleltest // data race
 		req := &WalletConnect{
 			Resp: getTestVP(t, inviteeDID, inviterDID, threadID),
 		}
@@ -1143,6 +1215,8 @@ func TestValidateWalletResponse(t *testing.T) {
 	})
 
 	t.Run("test validate response - missing cookie", func(t *testing.T) {
+		t.Parallel()
+
 		rr := serveHTTP(t, handler.Handle(), http.MethodPost, validateConnectResponseEndpoint, vReqBytes)
 
 		require.Equal(t, http.StatusBadRequest, rr.Code)
@@ -1150,6 +1224,8 @@ func TestValidateWalletResponse(t *testing.T) {
 	})
 
 	t.Run("test validate response - invalid req", func(t *testing.T) {
+		t.Parallel()
+
 		txnID = "invalid-txn-id"
 
 		rr := serveHTTP(t, handler.Handle(), http.MethodPost,
@@ -1160,6 +1236,8 @@ func TestValidateWalletResponse(t *testing.T) {
 	})
 
 	t.Run("test validate response - invalid txn id", func(t *testing.T) {
+		t.Parallel()
+
 		txnID = "invalid-txn-id"
 
 		rr := serveHTTP(t, handler.Handle(), http.MethodPost,
@@ -1170,6 +1248,8 @@ func TestValidateWalletResponse(t *testing.T) {
 	})
 
 	t.Run("test validate response - invalid txn data", func(t *testing.T) {
+		t.Parallel()
+
 		txnID = uuid.New().String()
 
 		putErr := c.txnStore.Put(txnID, []byte("invalid json"))
@@ -1183,6 +1263,8 @@ func TestValidateWalletResponse(t *testing.T) {
 	})
 
 	t.Run("test validate response - invalid vp", func(t *testing.T) {
+		t.Parallel()
+
 		txnID, err = c.createTxn(createProfileData("profile1"), uuid.New().String(), token)
 		require.NoError(t, err)
 
@@ -1193,7 +1275,7 @@ func TestValidateWalletResponse(t *testing.T) {
 		require.Contains(t, rr.Body.String(), "failed to validate presentation")
 	})
 
-	t.Run("test validate response - profile not found", func(t *testing.T) {
+	t.Run("test validate response - profile not found", func(t *testing.T) { // nolint:paralleltest // data race
 		txnID, err = c.createTxn(createProfileData("invalid-profile"), uuid.New().String(), token)
 		require.NoError(t, err)
 
@@ -1223,7 +1305,7 @@ func TestValidateWalletResponse(t *testing.T) {
 		require.Contains(t, rr.Body.String(), "profile not found")
 	})
 
-	t.Run("test validate response - validate connection errors", func(t *testing.T) {
+	t.Run("test validate response - validate connection errors", func(t *testing.T) { // nolint:paralleltest // data race
 		// inviterDID and inviteeDID combo not found
 		c.connectionLookup = &mockconn.MockConnectionsLookup{
 			ConnIDByDIDsErr: errors.New("connID not found"),
@@ -1285,7 +1367,9 @@ func TestValidateWalletResponse(t *testing.T) {
 	})
 
 	t.Run("test validate response - success", func(t *testing.T) {
-		ops, err := New(config())
+		t.Parallel()
+
+		ops, err := New(config(t))
 		require.NoError(t, err)
 
 		ops.connectionLookup = &mockconn.MockConnectionsLookup{
@@ -1326,6 +1410,8 @@ func TestValidateWalletResponse(t *testing.T) {
 }
 
 func TestRequestOIDCAuthHandler(t *testing.T) {
+	t.Parallel()
+
 	uiEndpoint := "/mock-ui-endpoint"
 	profileID := "test-profile-1"
 	userID := "user_123"
@@ -1341,7 +1427,7 @@ func TestRequestOIDCAuthHandler(t *testing.T) {
 		CheckRefreshTok:        &mockToken,
 	}
 
-	defaultConf := config()
+	defaultConf := config(t)
 	c, err := New(defaultConf)
 	require.NoError(t, err)
 
@@ -1368,6 +1454,8 @@ func TestRequestOIDCAuthHandler(t *testing.T) {
 	require.NoError(t, err)
 
 	t.Run("success", func(t *testing.T) {
+		t.Parallel()
+
 		authHandler := getHandler(t, c, oidcAuthRequestEndpoint)
 
 		reqPath := fmt.Sprintf("%s?%s=%s&%s=%s", oidcAuthRequestEndpoint,
@@ -1380,6 +1468,8 @@ func TestRequestOIDCAuthHandler(t *testing.T) {
 	})
 
 	t.Run("success - using credential scope", func(t *testing.T) {
+		t.Parallel()
+
 		txnID2, err := c.createTxnWithCredScope(data, credScope)
 		require.NoError(t, err)
 
@@ -1395,6 +1485,8 @@ func TestRequestOIDCAuthHandler(t *testing.T) {
 	})
 
 	t.Run("success: missing optional userID query param", func(t *testing.T) {
+		t.Parallel()
+
 		authHandler := getHandler(t, c, oidcAuthRequestEndpoint)
 
 		reqPath := fmt.Sprintf("%s?%s=%s", oidcAuthRequestEndpoint, txnIDQueryParam, txnID)
@@ -1406,6 +1498,8 @@ func TestRequestOIDCAuthHandler(t *testing.T) {
 	})
 
 	t.Run("failure: missing txnID query param", func(t *testing.T) {
+		t.Parallel()
+
 		authHandler := getHandler(t, c, oidcAuthRequestEndpoint)
 
 		reqPath := fmt.Sprintf("%s?%s=%s", oidcAuthRequestEndpoint, userIDQueryParam, userID)
@@ -1416,6 +1510,8 @@ func TestRequestOIDCAuthHandler(t *testing.T) {
 	})
 
 	t.Run("failure: missing txn record", func(t *testing.T) {
+		t.Parallel()
+
 		authHandler := getHandler(t, c, oidcAuthRequestEndpoint)
 
 		reqPath := fmt.Sprintf("%s?%s=%s&%s=%s", oidcAuthRequestEndpoint,
@@ -1427,6 +1523,8 @@ func TestRequestOIDCAuthHandler(t *testing.T) {
 	})
 
 	t.Run("failure: missing profile record", func(t *testing.T) {
+		t.Parallel()
+
 		authHandler := getHandler(t, c, oidcAuthRequestEndpoint)
 
 		data2 := createProfileData(profileID + "_version_2")
@@ -1443,6 +1541,8 @@ func TestRequestOIDCAuthHandler(t *testing.T) {
 	})
 
 	t.Run("success - valid token available", func(t *testing.T) {
+		t.Parallel()
+
 		authHandler := getHandler(t, c, oidcAuthRequestEndpoint)
 
 		reqPath := fmt.Sprintf("%s?%s=%s&%s=%s", oidcAuthRequestEndpoint,
@@ -1459,6 +1559,8 @@ func TestRequestOIDCAuthHandler(t *testing.T) {
 	})
 
 	t.Run("failure - error getting oidc client", func(t *testing.T) {
+		t.Parallel()
+
 		prevClientFunc := c.getOIDCClientFunc
 
 		c.getOIDCClientFunc = func(string) (oidcClient, error) {
@@ -1478,13 +1580,15 @@ func TestRequestOIDCAuthHandler(t *testing.T) {
 	})
 }
 
-func TestOIDCCallback(t *testing.T) {
+func TestOIDCCallback(t *testing.T) { // nolint:tparallel // data race
+	t.Parallel()
+
 	uiEndpoint := "/mock-ui-endpoint"
 	profileID := "test-profile"
 	userID := "user_123"
 	oidcProvider := "https://oidc-provider.xyz"
 
-	defaultConf := config()
+	defaultConf := config(t)
 	c, err := New(defaultConf)
 	require.NoError(t, err)
 
@@ -1518,7 +1622,7 @@ func TestOIDCCallback(t *testing.T) {
 	txnID, err := c.createTxn(data, "state", "token")
 	require.NoError(t, err)
 
-	t.Run("success", func(t *testing.T) {
+	t.Run("success", func(t *testing.T) { // nolint:paralleltest // data race
 		cbHandler := getHandler(t, c, oidcCallbackEndpoint)
 
 		reqPath := fmt.Sprintf("%s?%s=%s&%s=%s", oidcCallbackEndpoint,
@@ -1539,7 +1643,7 @@ func TestOIDCCallback(t *testing.T) {
 		require.Contains(t, rr.Header().Get("Location"), uiEndpoint)
 	})
 
-	t.Run("failure - missing state url param", func(t *testing.T) {
+	t.Run("failure - missing state url param", func(t *testing.T) { // nolint:paralleltest // data race
 		cbHandler := getHandler(t, c, oidcCallbackEndpoint)
 
 		reqPath := fmt.Sprintf("%s?%s=%s", oidcCallbackEndpoint, "code", "auth-code-value")
@@ -1558,7 +1662,7 @@ func TestOIDCCallback(t *testing.T) {
 		require.Equal(t, http.StatusUnauthorized, rr.Code)
 	})
 
-	t.Run("failure - missing cookies", func(t *testing.T) {
+	t.Run("failure - missing cookies", func(t *testing.T) { // nolint:paralleltest // data race
 		cbHandler := getHandler(t, c, oidcCallbackEndpoint)
 
 		reqPath := fmt.Sprintf("%s?%s=%s&%s=%s", oidcCallbackEndpoint,
@@ -1591,7 +1695,7 @@ func TestOIDCCallback(t *testing.T) {
 		}
 	})
 
-	t.Run("failure - getting transaction", func(t *testing.T) {
+	t.Run("failure - getting transaction", func(t *testing.T) { // nolint:paralleltest // data race
 		prevStore := c.txnStore
 
 		c.txnStore = &mockstorage.Store{ErrGet: fmt.Errorf("err get")}
@@ -1617,7 +1721,7 @@ func TestOIDCCallback(t *testing.T) {
 		c.txnStore = prevStore
 	})
 
-	t.Run("failure - initializing oidc client", func(t *testing.T) {
+	t.Run("failure - initializing oidc client", func(t *testing.T) { // nolint:paralleltest // data race
 		prevClientFunc := c.getOIDCClientFunc
 
 		c.getOIDCClientFunc = func(string) (oidcClient, error) {
@@ -1645,7 +1749,7 @@ func TestOIDCCallback(t *testing.T) {
 		c.getOIDCClientFunc = prevClientFunc
 	})
 
-	t.Run("failure - handling oauth callback", func(t *testing.T) {
+	t.Run("failure - handling oauth callback", func(t *testing.T) { // nolint:paralleltest // data race
 		prevClientFunc := c.getOIDCClientFunc
 
 		c.getOIDCClientFunc = func(string) (oidcClient, error) {
@@ -1673,7 +1777,7 @@ func TestOIDCCallback(t *testing.T) {
 		c.getOIDCClientFunc = prevClientFunc
 	})
 
-	t.Run("failure - storing refresh token", func(t *testing.T) {
+	t.Run("failure - storing refresh token", func(t *testing.T) { // nolint:paralleltest // data race
 		prevStore := c.refreshTokenStore
 
 		c.refreshTokenStore = &mockstorage.Store{ErrPut: fmt.Errorf("err put")}
@@ -1699,7 +1803,7 @@ func TestOIDCCallback(t *testing.T) {
 		c.refreshTokenStore = prevStore
 	})
 
-	t.Run("failure - getting issuer profile", func(t *testing.T) {
+	t.Run("failure - getting issuer profile", func(t *testing.T) { // nolint:paralleltest // data race
 		cbHandler := getHandler(t, c, oidcCallbackEndpoint)
 
 		txnID2, err := c.createTxn(
@@ -1728,7 +1832,9 @@ func TestOIDCCallback(t *testing.T) {
 }
 
 func TestGetOIDCAccessToken(t *testing.T) {
-	conf := config()
+	t.Parallel()
+
+	conf := config(t)
 	c, err := New(conf)
 	require.NoError(t, err)
 
@@ -1754,6 +1860,8 @@ func TestGetOIDCAccessToken(t *testing.T) {
 	}
 
 	t.Run("success - token present in cache", func(t *testing.T) {
+		t.Parallel()
+
 		txnID := "txn-id-0"
 		c.userTokens[txnID] = &mockToken
 
@@ -1763,6 +1871,8 @@ func TestGetOIDCAccessToken(t *testing.T) {
 	})
 
 	t.Run("success - loading refresh token from store", func(t *testing.T) {
+		t.Parallel()
+
 		txnID := "txn-id-1"
 
 		err := c.refreshTokenStore.Put(txnID, []byte("refresh-token"))
@@ -1774,6 +1884,8 @@ func TestGetOIDCAccessToken(t *testing.T) {
 	})
 
 	t.Run("failure - refresh token missing from store", func(t *testing.T) {
+		t.Parallel()
+
 		tok, err := c.getOIDCAccessToken("txn-id-2", &issuer.ProfileData{OIDCProviderURL: oidcProvider})
 		require.Error(t, err)
 		require.Equal(t, "", tok)
@@ -1781,6 +1893,8 @@ func TestGetOIDCAccessToken(t *testing.T) {
 	})
 
 	t.Run("failure - error getting oidc client", func(t *testing.T) {
+		t.Parallel()
+
 		prevClientFunc := c.getOIDCClientFunc
 
 		c.getOIDCClientFunc = func(string) (oidcClient, error) {
@@ -1799,6 +1913,8 @@ func TestGetOIDCAccessToken(t *testing.T) {
 	})
 
 	t.Run("failure - error refreshing token", func(t *testing.T) {
+		t.Parallel()
+
 		prevClientFunc := c.getOIDCClientFunc
 
 		c.getOIDCClientFunc = func(string) (oidcClient, error) {
@@ -1817,6 +1933,8 @@ func TestGetOIDCAccessToken(t *testing.T) {
 	})
 
 	t.Run("failure - error storing refresh token", func(t *testing.T) {
+		t.Parallel()
+
 		prevStore := c.refreshTokenStore
 
 		txnID := "txn-id-5"
@@ -1838,8 +1956,12 @@ func TestGetOIDCAccessToken(t *testing.T) {
 }
 
 func TestCHAPIRequest(t *testing.T) {
+	t.Parallel()
+
 	t.Run("test fetch chapi request - success", func(t *testing.T) {
-		c, e := New(config())
+		t.Parallel()
+
+		c, e := New(config(t))
 		require.NoError(t, e)
 
 		c.governanceProvider = &mockgovernance.MockProvider{GetCredentialFunc: func(profileID string) ([]byte, error) {
@@ -1847,6 +1969,8 @@ func TestCHAPIRequest(t *testing.T) {
 		}}
 
 		t.Run("without assurance support", func(t *testing.T) {
+			t.Parallel()
+
 			profile := createProfileData("profile1")
 
 			err := c.profileStore.SaveProfile(profile)
@@ -1905,6 +2029,8 @@ func TestCHAPIRequest(t *testing.T) {
 		})
 
 		t.Run("with assurance credential using oidc", func(t *testing.T) {
+			t.Parallel()
+
 			c.httpClient = &mockHTTPClient{
 				respValue: &http.Response{
 					StatusCode: http.StatusOK, Body: ioutil.NopCloser(bytes.NewReader([]byte(prCardData))),
@@ -1951,7 +2077,9 @@ func TestCHAPIRequest(t *testing.T) {
 	})
 
 	t.Run("test get governance - failed", func(t *testing.T) {
-		c, err := New(config())
+		t.Parallel()
+
+		c, err := New(config(t))
 		require.NoError(t, err)
 
 		c.governanceProvider = &mockgovernance.MockProvider{GetCredentialFunc: func(profileID string) ([]byte, error) {
@@ -1976,7 +2104,9 @@ func TestCHAPIRequest(t *testing.T) {
 	})
 
 	t.Run("test fetch invitation - no txnID in the url query", func(t *testing.T) {
-		c, err := New(config())
+		t.Parallel()
+
+		c, err := New(config(t))
 		require.NoError(t, err)
 
 		getCHAPIRequestHandler := getHandler(t, c, getCHAPIRequestEndpoint)
@@ -1988,7 +2118,9 @@ func TestCHAPIRequest(t *testing.T) {
 	})
 
 	t.Run("test fetch invitation - invalid txnID", func(t *testing.T) {
-		c, err := New(config())
+		t.Parallel()
+
+		c, err := New(config(t))
 		require.NoError(t, err)
 
 		getCHAPIRequestHandler := getHandler(t, c, getCHAPIRequestEndpoint)
@@ -2001,7 +2133,9 @@ func TestCHAPIRequest(t *testing.T) {
 	})
 
 	t.Run("test fetch invitation - profile not found", func(t *testing.T) {
-		c, err := New(config())
+		t.Parallel()
+
+		c, err := New(config(t))
 		require.NoError(t, err)
 
 		profile := createProfileData("profile1")
@@ -2018,7 +2152,9 @@ func TestCHAPIRequest(t *testing.T) {
 	})
 
 	t.Run("test fetch chapi request with assurance - error", func(t *testing.T) {
-		c, err := New(config())
+		t.Parallel()
+
+		c, err := New(config(t))
 		require.NoError(t, err)
 
 		profile := createProfileData("profile2")
@@ -2041,10 +2177,14 @@ func TestCHAPIRequest(t *testing.T) {
 
 // nolint
 func TestIssueCredentialHandler(t *testing.T) {
+	t.Parallel()
+
 	t.Run("test issue credential", func(t *testing.T) {
+		t.Parallel()
+
 		actionCh := make(chan service.DIDCommAction, 1)
 
-		c, err := issueCredentialClient(getAriesCtx(), actionCh)
+		c, err := issueCredentialClient(getAriesCtx(t), actionCh)
 		require.NoError(t, err)
 		require.NotNil(t, c)
 
@@ -2067,9 +2207,11 @@ func TestIssueCredentialHandler(t *testing.T) {
 	})
 
 	t.Run("test present proof", func(t *testing.T) {
+		t.Parallel()
+
 		actionCh := make(chan service.DIDCommAction, 1)
 
-		c, err := presentProofClient(getAriesCtx(), actionCh)
+		c, err := presentProofClient(getAriesCtx(t), actionCh)
 		require.NoError(t, err)
 		require.NotNil(t, c)
 
@@ -2092,9 +2234,11 @@ func TestIssueCredentialHandler(t *testing.T) {
 	})
 
 	t.Run("test didcomm actions - unsupported message", func(t *testing.T) {
+		t.Parallel()
+
 		actionCh := make(chan service.DIDCommAction, 1)
 
-		c, err := New(config())
+		c, err := New(config(t))
 		require.NoError(t, err)
 
 		go c.didCommActionListener(actionCh)
@@ -2120,10 +2264,14 @@ func TestIssueCredentialHandler(t *testing.T) {
 	})
 
 	t.Run("test didcomm actions - issue credential request", func(t *testing.T) {
+		t.Parallel()
+
 		t.Run("test request issue cred - success", func(t *testing.T) {
+			t.Parallel()
+
 			actionCh := make(chan service.DIDCommAction, 1)
 
-			c, err := New(config())
+			c, err := New(config(t))
 			require.NoError(t, err)
 
 			connID := uuid.New().String()
@@ -2174,9 +2322,11 @@ func TestIssueCredentialHandler(t *testing.T) {
 		})
 
 		t.Run("test request issue cred - did creation failure", func(t *testing.T) {
+			t.Parallel()
+
 			actionCh := make(chan service.DIDCommAction, 1)
 
-			config := config()
+			config := config(t)
 			config.AriesCtx = &mockprovider.MockProvider{
 				Provider: &ariesmockprovider.Provider{
 					ProtocolStateStorageProviderValue: mockstore.NewMockStoreProvider(),
@@ -2237,9 +2387,11 @@ func TestIssueCredentialHandler(t *testing.T) {
 		})
 
 		t.Run("test request issue cred - validation failures", func(t *testing.T) {
+			t.Parallel()
+
 			actionCh := make(chan service.DIDCommAction, 1)
 
-			c, err := New(config())
+			c, err := New(config(t))
 			require.NoError(t, err)
 
 			go c.didCommActionListener(actionCh)
@@ -2357,6 +2509,8 @@ func TestIssueCredentialHandler(t *testing.T) {
 		})
 
 		t.Run("test request issue cred - request validation", func(t *testing.T) {
+			t.Parallel()
+
 			cc, err := fetchAuthorizationCreReq(service.DIDCommAction{
 				Message: service.NewDIDCommMsgMap(issuecredsvc.RequestCredential{
 					Type: issuecredsvc.RequestCredentialMsgType,
@@ -2425,9 +2579,11 @@ func TestIssueCredentialHandler(t *testing.T) {
 		})
 
 		t.Run("create did doc error", func(t *testing.T) {
+			t.Parallel()
+
 			actionCh := make(chan service.DIDCommAction, 1)
 
-			c, err := New(config())
+			c, err := New(config(t))
 			require.NoError(t, err)
 
 			c.routeSvc = &mockRouteSvc{
@@ -2486,11 +2642,17 @@ func TestIssueCredentialHandler(t *testing.T) {
 
 // nolint
 func TestPresentProofHandler(t *testing.T) {
+	t.Parallel()
+
 	t.Run("test didcomm actions - present proof request", func(t *testing.T) {
+		t.Parallel()
+
 		t.Run("test request presentation - success", func(t *testing.T) {
+			t.Parallel()
+
 			actionCh := make(chan service.DIDCommAction, 1)
 
-			c, err := New(config())
+			c, err := New(config(t))
 			require.NoError(t, err)
 
 			c.httpClient = &mockHTTPClient{
@@ -2575,9 +2737,11 @@ func TestPresentProofHandler(t *testing.T) {
 		})
 
 		t.Run("test request presentation - success (assurance flow)", func(t *testing.T) {
+			t.Parallel()
+
 			actionCh := make(chan service.DIDCommAction, 1)
 
-			c, err := New(config())
+			c, err := New(config(t))
 			require.NoError(t, err)
 
 			c.httpClient = &mockHTTPClient{
@@ -2658,9 +2822,11 @@ func TestPresentProofHandler(t *testing.T) {
 		})
 
 		t.Run("test request presentation - failures", func(t *testing.T) {
+			t.Parallel()
+
 			actionCh := make(chan service.DIDCommAction, 1)
 
-			c, err := New(config())
+			c, err := New(config(t))
 			require.NoError(t, err)
 
 			go c.didCommActionListener(actionCh)
@@ -2961,9 +3127,11 @@ func TestPresentProofHandler(t *testing.T) {
 		})
 
 		t.Run("test request presentation - issuer user data fetch failures", func(t *testing.T) {
+			t.Parallel()
+
 			actionCh := make(chan service.DIDCommAction, 1)
 
-			c, err := New(config())
+			c, err := New(config(t))
 			require.NoError(t, err)
 
 			go c.didCommActionListener(actionCh)
@@ -3089,9 +3257,11 @@ func TestPresentProofHandler(t *testing.T) {
 		})
 
 		t.Run("test request presentation - failures (assurance flow)", func(t *testing.T) {
+			t.Parallel()
+
 			actionCh := make(chan service.DIDCommAction, 1)
 
-			c, err := New(config())
+			c, err := New(config(t))
 			require.NoError(t, err)
 
 			c.httpClient = &mockHTTPClient{
@@ -3166,7 +3336,9 @@ func TestPresentProofHandler(t *testing.T) {
 }
 
 func TestGetConnectionIDFromEvent(t *testing.T) {
-	c, err := New(config())
+	t.Parallel()
+
+	c, err := New(config(t))
 	require.NoError(t, err)
 
 	connID := uuid.New().String()
@@ -3175,6 +3347,8 @@ func TestGetConnectionIDFromEvent(t *testing.T) {
 	}
 
 	t.Run("test get connID from event - success", func(t *testing.T) {
+		t.Parallel()
+
 		id, err := c.getConnectionIDFromEvent(
 			service.DIDCommAction{
 				Properties: &actionEventEvent{},
@@ -3186,6 +3360,8 @@ func TestGetConnectionIDFromEvent(t *testing.T) {
 	})
 
 	t.Run("test get connID from event - error", func(t *testing.T) {
+		t.Parallel()
+
 		// no props found
 		id, err := c.getConnectionIDFromEvent(
 			service.DIDCommAction{
@@ -3235,6 +3411,8 @@ func TestGetConnectionIDFromEvent(t *testing.T) {
 	})
 
 	t.Run("test get connection mapping - error", func(t *testing.T) {
+		t.Parallel()
+
 		connID := uuid.New().String()
 
 		err := c.tokenStore.Put(connID, []byte("invalid json data"))
@@ -3247,6 +3425,8 @@ func TestGetConnectionIDFromEvent(t *testing.T) {
 	})
 
 	t.Run("test send http request - error", func(t *testing.T) {
+		t.Parallel()
+
 		c.httpClient = &mockHTTPClient{
 			respValue: &http.Response{
 				StatusCode: http.StatusBadRequest, Body: ioutil.NopCloser(bytes.NewReader([]byte("invalid vc"))),
@@ -3264,8 +3444,12 @@ func TestGetConnectionIDFromEvent(t *testing.T) {
 }
 
 func TestDIDCommStateMsgListener(t *testing.T) {
+	t.Parallel()
+
 	t.Run("success", func(t *testing.T) {
-		c, err := New(config())
+		t.Parallel()
+
+		c, err := New(config(t))
 		require.NoError(t, err)
 
 		done := make(chan struct{})
@@ -3303,7 +3487,9 @@ func TestDIDCommStateMsgListener(t *testing.T) {
 	})
 
 	t.Run("ignore pre state", func(t *testing.T) {
-		c, err := New(config())
+		t.Parallel()
+
+		c, err := New(config(t))
 		require.NoError(t, err)
 
 		msg := service.StateMsg{
@@ -3320,7 +3506,9 @@ func TestDIDCommStateMsgListener(t *testing.T) {
 	})
 
 	t.Run("send message error", func(t *testing.T) {
-		c, err := New(config())
+		t.Parallel()
+
+		c, err := New(config(t))
 		require.NoError(t, err)
 
 		c.messenger = &messenger.MockMessenger{
@@ -3345,7 +3533,9 @@ func TestDIDCommStateMsgListener(t *testing.T) {
 	})
 
 	t.Run("cast to didex event error", func(t *testing.T) {
-		c, err := New(config())
+		t.Parallel()
+
+		c, err := New(config(t))
 		require.NoError(t, err)
 
 		c.messenger = &messenger.MockMessenger{
@@ -3367,7 +3557,9 @@ func TestDIDCommStateMsgListener(t *testing.T) {
 	})
 
 	t.Run("get connection error", func(t *testing.T) {
-		c, err := New(config())
+		t.Parallel()
+
+		c, err := New(config(t))
 		require.NoError(t, err)
 
 		c.messenger = &messenger.MockMessenger{

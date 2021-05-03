@@ -29,14 +29,14 @@ type BDDContext struct {
 func NewBDDContext(caCertPath string) (*BDDContext, error) {
 	rootCAs, err := tlsutils.GetCertPool(false, []string{caCertPath})
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to get tls cert pool: %w", err)
 	}
 
 	tlsConfig := &tls.Config{RootCAs: rootCAs, MinVersion: tls.VersionTLS12}
 
 	vdri, err := createVDRI(tlsConfig)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to create VDR: %w", err)
 	}
 
 	return &BDDContext{
@@ -77,7 +77,7 @@ func createVDRI(tlsConfig *tls.Config) (vdriapi.Registry, error) {
 	blocVDR, err := orb.New(nil, orb.WithDomain("testnet.orb.local"),
 		orb.WithTLSConfig(tlsConfig))
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to init orb vdr: %w", err)
 	}
 
 	return vdripkg.New(

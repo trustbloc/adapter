@@ -154,17 +154,17 @@ func (c *Composition) GenerateLogs(dir, logName string) error {
 
 	f, err := os.OpenFile(logName, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0600) // nolint: gosec
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to open file: %w", err)
 	}
 
 	defer func() {
 		if errClose := f.Close(); errClose != nil {
-			fmt.Println(errClose.Error())
+			fmt.Println(errClose.Error()) // nolint:forbidigo // ignored because it's a test
 		}
 	}()
 
 	if _, err = f.WriteString(string(outputBytes)); err != nil {
-		return err
+		return fmt.Errorf("failed to write to file: %w", err)
 	}
 
 	return nil

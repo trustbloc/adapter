@@ -81,12 +81,12 @@ func (e *Steps) createProfileWithOIDC(id, name, issuerURL, supportedVCContexts,
 	requiresBlindedRouteStr, supportsAssuranceCredStr, oidcProvider string) error {
 	supportsAssuranceCred, err := strconv.ParseBool(supportsAssuranceCredStr)
 	if err != nil {
-		return err
+		return fmt.Errorf("parse failure: %w", err)
 	}
 
 	requiresBlindedRoute, err := strconv.ParseBool(requiresBlindedRouteStr)
 	if err != nil {
-		return err
+		return fmt.Errorf("parse failure: %w", err)
 	}
 
 	profileReq := operation.ProfileDataRequest{
@@ -101,24 +101,25 @@ func (e *Steps) createProfileWithOIDC(id, name, issuerURL, supportedVCContexts,
 
 	requestBytes, err := json.Marshal(profileReq)
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to marshal profile request: %w", err)
 	}
 
 	resp, err := bddutil.HTTPDo(http.MethodPost, AdapterURL+"/profile", "", "", //nolint: bodyclose
 		bytes.NewBuffer(requestBytes), e.bddContext.TLSConfig())
 
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to execute request: %w", err)
 	}
 
 	defer bddutil.CloseResponseBody(resp.Body)
 
 	respBytes, err := ioutil.ReadAll(resp.Body)
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to read response body: %w", err)
 	}
 
 	if resp.StatusCode != http.StatusCreated {
+		// nolint:wrapcheck // ignore
 		return bddutil.ExpectedStatusCodeError(http.StatusCreated, resp.StatusCode, respBytes)
 	}
 
@@ -131,23 +132,24 @@ func (e *Steps) retrieveProfile(id, name, issuerURL, supportedVCContexts,
 		requiresBlindedRouteStr, supportsAssuranceCredStr, "")
 }
 
-// nolint:funlen,gomnd,gocyclo
+// nolint:funlen,gomnd,gocyclo,cyclop
 func (e *Steps) retrieveProfileWithOIDC(id, name, issuerURL, supportedVCContexts,
 	requiresBlindedRouteStr, supportsAssuranceCredStr, oidcProvider string) error {
 	resp, err := bddutil.HTTPDo(http.MethodGet, //nolint: bodyclose
 		fmt.Sprintf(AdapterURL+"/profile/%s", id), "", "", nil, e.bddContext.TLSConfig())
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to execute profile request: %w", err)
 	}
 
 	defer bddutil.CloseResponseBody(resp.Body)
 
 	respBytes, err := ioutil.ReadAll(resp.Body)
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to read response body: %w", err)
 	}
 
 	if resp.StatusCode != http.StatusOK {
+		// nolint:wrapcheck // ignore
 		return bddutil.ExpectedStatusCodeError(http.StatusCreated, resp.StatusCode, respBytes)
 	}
 
@@ -155,7 +157,7 @@ func (e *Steps) retrieveProfileWithOIDC(id, name, issuerURL, supportedVCContexts
 
 	err = json.Unmarshal(respBytes, profileResponse)
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to unmarshal response: %w", err)
 	}
 
 	if profileResponse.Name != name {
@@ -179,7 +181,7 @@ func (e *Steps) retrieveProfileWithOIDC(id, name, issuerURL, supportedVCContexts
 
 	supportsAssuranceCred, err := strconv.ParseBool(supportsAssuranceCredStr)
 	if err != nil {
-		return err
+		return fmt.Errorf("parse failure: %w", err)
 	}
 
 	if profileResponse.SupportsAssuranceCredential != supportsAssuranceCred {
@@ -189,7 +191,7 @@ func (e *Steps) retrieveProfileWithOIDC(id, name, issuerURL, supportedVCContexts
 
 	requiresBlindedRoute, err := strconv.ParseBool(requiresBlindedRouteStr)
 	if err != nil {
-		return err
+		return fmt.Errorf("parse failure: %w", err)
 	}
 
 	if profileResponse.RequiresBlindedRoute != requiresBlindedRoute {
@@ -227,13 +229,14 @@ func (e *Steps) walletConnect(issuerID string) error {
 		fmt.Sprintf(AdapterURL+"/%s/connect/wallet?state=%s", issuerID, state), "", "", nil,
 		e.bddContext.TLSConfig())
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to execute wallet request: %w", err)
 	}
 
 	defer bddutil.CloseResponseBody(resp.Body)
 
 	// validating only status code as the vue page needs javascript support
 	if resp.StatusCode != http.StatusOK {
+		// nolint:wrapcheck // ignore
 		return bddutil.ExpectedStatusCodeError(http.StatusOK, resp.StatusCode, nil)
 	}
 
@@ -252,18 +255,19 @@ func (e *Steps) oidcLogin(issuerID string) error {
 	resp, err := bddutil.HTTPDo(http.MethodGet, //nolint: bodyclose
 		AdapterURL+"/oidc/request"+reqData, "", "", nil, e.bddContext.TLSConfig())
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to execute request: %w", err)
 	}
 
 	body, err := ioutil.ReadAll(resp.Body)
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to read response body: %w", err)
 	}
 
 	defer bddutil.CloseResponseBody(resp.Body)
 
 	// validating only status code as the vue page needs javascript support
 	if resp.StatusCode != http.StatusOK {
+		// nolint:wrapcheck // ignore
 		return bddutil.ExpectedStatusCodeError(http.StatusOK, resp.StatusCode, body)
 	}
 
@@ -277,17 +281,18 @@ func (e *Steps) didcommConnectionInvitation(issuerID, agentID string) error {
 		AdapterURL+"/issuer/didcomm/chapi/request?txnID="+e.txnIDs[issuerID], "", "", nil,
 		e.bddContext.TLSConfig())
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to execute chapi request: %w", err)
 	}
 
 	defer bddutil.CloseResponseBody(resp.Body)
 
 	respBytes, err := ioutil.ReadAll(resp.Body)
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to read response body: %w", err)
 	}
 
 	if resp.StatusCode != http.StatusOK {
+		// nolint:wrapcheck // ignore
 		return bddutil.ExpectedStatusCodeError(http.StatusOK, resp.StatusCode, respBytes)
 	}
 
@@ -311,23 +316,24 @@ func (e *Steps) validateConnectResp(issuerID, agentID, issuerURL string) error {
 
 	requestBytes, err := json.Marshal(profileReq)
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to marshal profileReq: %w", err)
 	}
 
 	resp, err := bddutil.HTTPDo(http.MethodPost, //nolint: bodyclose
 		validateURL, "", "", bytes.NewBuffer(requestBytes), e.bddContext.TLSConfig())
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to execute request: %w", err)
 	}
 
 	defer bddutil.CloseResponseBody(resp.Body)
 
 	respBytes, err := ioutil.ReadAll(resp.Body)
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to read response body: %w", err)
 	}
 
 	if resp.StatusCode != http.StatusOK {
+		// nolint:wrapcheck // ignore
 		return bddutil.ExpectedStatusCodeError(http.StatusOK, resp.StatusCode, respBytes)
 	}
 
@@ -335,7 +341,7 @@ func (e *Steps) validateConnectResp(issuerID, agentID, issuerURL string) error {
 
 	err = json.Unmarshal(respBytes, validateResp)
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to unmarhal response: %w", err)
 	}
 
 	if !strings.Contains(validateResp.RedirectURL, getCallBackURL(issuerURL)) {
@@ -345,7 +351,7 @@ func (e *Steps) validateConnectResp(issuerID, agentID, issuerURL string) error {
 
 	u, err := url.Parse(validateResp.RedirectURL)
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to parse redirect url: %w", err)
 	}
 
 	if u.Query().Get("state") != e.states[issuerID] {

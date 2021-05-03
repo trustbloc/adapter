@@ -18,13 +18,19 @@ import (
 )
 
 func TestNew(t *testing.T) {
+	t.Parallel()
+
 	t.Run("returns instance", func(t *testing.T) {
+		t.Parallel()
+
 		c, err := New(mem.NewProvider())
 		require.NoError(t, err)
 		require.NotNil(t, c)
 	})
 
 	t.Run("wraps error opening store", func(t *testing.T) {
+		t.Parallel()
+
 		expected := errors.New("test")
 		_, err := New(&mockstorage.Provider{ErrOpenStore: expected})
 		require.Error(t, err)
@@ -33,7 +39,11 @@ func TestNew(t *testing.T) {
 }
 
 func TestStore_SaveRP(t *testing.T) {
+	t.Parallel()
+
 	t.Run("saves RP", func(t *testing.T) {
+		t.Parallel()
+
 		expected := &Tenant{
 			ClientID:  uuid.New().String(),
 			PublicDID: uuid.New().String(),
@@ -60,7 +70,11 @@ func TestStore_SaveRP(t *testing.T) {
 }
 
 func TestStore_GetRP(t *testing.T) {
+	t.Parallel()
+
 	t.Run("fetches tenant", func(t *testing.T) {
+		t.Parallel()
+
 		expected := &Tenant{
 			ClientID:  uuid.New().String(),
 			PublicDID: uuid.New().String(),
@@ -76,6 +90,8 @@ func TestStore_GetRP(t *testing.T) {
 	})
 
 	t.Run("error not found", func(t *testing.T) {
+		t.Parallel()
+
 		s, err := New(mem.NewProvider())
 		require.NoError(t, err)
 		_, err = s.GetRP("")
@@ -84,7 +100,11 @@ func TestStore_GetRP(t *testing.T) {
 }
 
 func TestStore_SaveUserConnection(t *testing.T) {
+	t.Parallel()
+
 	t.Run("saves connection", func(t *testing.T) {
+		t.Parallel()
+
 		expected := newConn()
 		provider := mem.NewProvider()
 		s, err := New(provider)
@@ -106,7 +126,11 @@ func TestStore_SaveUserConnection(t *testing.T) {
 }
 
 func TestStore_GetUserConnection(t *testing.T) {
+	t.Parallel()
+
 	t.Run("fetches connection", func(t *testing.T) {
+		t.Parallel()
+
 		expected := newConn()
 		s, err := New(mem.NewProvider())
 		require.NoError(t, err)
@@ -118,6 +142,8 @@ func TestStore_GetUserConnection(t *testing.T) {
 	})
 
 	t.Run("error not found", func(t *testing.T) {
+		t.Parallel()
+
 		s, err := New(mem.NewProvider())
 		require.NoError(t, err)
 		_, err = s.GetUserConnection("", "")

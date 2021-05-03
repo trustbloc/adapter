@@ -22,7 +22,7 @@ type MockIssueCredentialSvc struct {
 }
 
 // HandleInbound msg.
-func (m *MockIssueCredentialSvc) HandleInbound(msg service.DIDCommMsg, ctx service.DIDCommContext) (string, error) {
+func (m *MockIssueCredentialSvc) HandleInbound(msg service.DIDCommMsg, _ service.DIDCommContext) (string, error) {
 	if m.HandleFunc != nil {
 		return m.HandleFunc(msg)
 	}

@@ -24,7 +24,11 @@ const (
 )
 
 func TestNewWalletAppProfileStore(t *testing.T) {
+	t.Parallel()
+
 	t.Run("create new wallet app profile store - success", func(t *testing.T) {
+		t.Parallel()
+
 		store, err := newWalletAppProfileStore(&mockstorage.MockStoreProvider{})
 
 		require.NoError(t, err)
@@ -32,6 +36,8 @@ func TestNewWalletAppProfileStore(t *testing.T) {
 	})
 
 	t.Run("create new wallet app profile store - failure", func(t *testing.T) {
+		t.Parallel()
+
 		store, err := newWalletAppProfileStore(&mockstorage.MockStoreProvider{
 			ErrOpenStoreHandle: fmt.Errorf(sampleStoreErr),
 		})
@@ -43,7 +49,11 @@ func TestNewWalletAppProfileStore(t *testing.T) {
 }
 
 func TestWalletAppProfileStore_SaveInvitation(t *testing.T) {
+	t.Parallel()
+
 	t.Run("save invitation - success", func(t *testing.T) {
+		t.Parallel()
+
 		appProfileStore, err := newWalletAppProfileStore(mockstorage.NewMockStoreProvider())
 		require.NoError(t, err)
 		require.NotEmpty(t, appProfileStore)
@@ -57,6 +67,8 @@ func TestWalletAppProfileStore_SaveInvitation(t *testing.T) {
 	})
 
 	t.Run("save invitation - failure", func(t *testing.T) {
+		t.Parallel()
+
 		provider := mockstorage.NewMockStoreProvider()
 		provider.Store = &mockstorage.MockStore{
 			ErrPut: fmt.Errorf(sampleStoreErr),
@@ -73,7 +85,11 @@ func TestWalletAppProfileStore_SaveInvitation(t *testing.T) {
 }
 
 func TestWalletAppProfileStore_SaveProfile(t *testing.T) {
+	t.Parallel()
+
 	t.Run("save wallet app profile - success", func(t *testing.T) {
+		t.Parallel()
+
 		appProfileStore, err := newWalletAppProfileStore(mockstorage.NewMockStoreProvider())
 		require.NoError(t, err)
 		require.NotEmpty(t, appProfileStore)
@@ -99,6 +115,8 @@ func TestWalletAppProfileStore_SaveProfile(t *testing.T) {
 	})
 
 	t.Run("save wallet app profile - store failure", func(t *testing.T) {
+		t.Parallel()
+
 		provider := mockstorage.NewMockStoreProvider()
 		provider.Store = &mockstorage.MockStore{
 			ErrPut: fmt.Errorf(sampleStoreErr),
@@ -117,6 +135,8 @@ func TestWalletAppProfileStore_SaveProfile(t *testing.T) {
 	})
 
 	t.Run("save wallet app profile - user info not found error", func(t *testing.T) {
+		t.Parallel()
+
 		provider := mockstorage.NewMockStoreProvider()
 
 		appProfileStore, err := newWalletAppProfileStore(provider)
@@ -130,7 +150,11 @@ func TestWalletAppProfileStore_SaveProfile(t *testing.T) {
 }
 
 func TestWalletAppProfileStore_Get(t *testing.T) {
+	t.Parallel()
+
 	t.Run("get wallet app profile - success", func(t *testing.T) {
+		t.Parallel()
+
 		appProfileStore, err := newWalletAppProfileStore(mockstorage.NewMockStoreProvider())
 
 		require.NoError(t, err)
@@ -163,6 +187,8 @@ func TestWalletAppProfileStore_Get(t *testing.T) {
 	})
 
 	t.Run("get wallet app profile  - failure - store error", func(t *testing.T) {
+		t.Parallel()
+
 		provider := mockstorage.NewMockStoreProvider()
 		provider.Store = &mockstorage.MockStore{
 			ErrGet: fmt.Errorf(sampleStoreErr),
@@ -178,6 +204,8 @@ func TestWalletAppProfileStore_Get(t *testing.T) {
 	})
 
 	t.Run("get wallet app profile  - failure - invalid data", func(t *testing.T) {
+		t.Parallel()
+
 		provider := mockstorage.NewMockStoreProvider()
 		provider.Store = &mockstorage.MockStore{
 			Store: map[string]mockstorage.DBEntry{
@@ -196,7 +224,11 @@ func TestWalletAppProfileStore_Get(t *testing.T) {
 }
 
 func TestWalletAppProfileStore_putProfileInStore(t *testing.T) {
+	t.Parallel()
+
 	t.Run("get wallet app profile  - failure - invalid data", func(t *testing.T) {
+		t.Parallel()
+
 		appProfileStore, err := newWalletAppProfileStore(mockstorage.NewMockStoreProvider())
 		require.NoError(t, err)
 
@@ -207,7 +239,11 @@ func TestWalletAppProfileStore_putProfileInStore(t *testing.T) {
 }
 
 func TestWalletAppProfileStore_Preferences(t *testing.T) {
+	t.Parallel()
+
 	t.Run("wallet preferences success  - save & get ", func(t *testing.T) {
+		t.Parallel()
+
 		appProfileStore, err := newWalletAppProfileStore(mockstorage.NewMockStoreProvider())
 		require.NoError(t, err)
 
@@ -220,6 +256,8 @@ func TestWalletAppProfileStore_Preferences(t *testing.T) {
 	})
 
 	t.Run("wallet preferences failure  - save & get", func(t *testing.T) {
+		t.Parallel()
+
 		appProfileStore, err := newWalletAppProfileStore(&mockstorage.MockStoreProvider{
 			Store: &mockstorage.MockStore{
 				ErrPut: fmt.Errorf(sampleErr),

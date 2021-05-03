@@ -12,7 +12,11 @@ import (
 )
 
 func TestController_New(t *testing.T) {
+	t.Parallel()
+
 	t.Run("test success", func(t *testing.T) {
+		t.Parallel()
+
 		controller := New()
 		require.NotNil(t, controller)
 		ops := controller.GetOperations()

@@ -6,6 +6,8 @@ SPDX-License-Identifier: Apache-2.0
 package issuer
 
 import (
+	"fmt"
+
 	"github.com/trustbloc/edge-adapter/pkg/restapi"
 	"github.com/trustbloc/edge-adapter/pkg/restapi/issuer/operation"
 )
@@ -14,7 +16,7 @@ import (
 func New(config *operation.Config) (*Controller, error) {
 	issuerService, err := operation.New(config)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to init operations: %w", err)
 	}
 
 	handlers := issuerService.GetRESTHandlers()

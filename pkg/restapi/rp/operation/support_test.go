@@ -23,12 +23,14 @@ import (
 	ariesctx "github.com/hyperledger/aries-framework-go/pkg/framework/context"
 	"github.com/hyperledger/aries-framework-go/pkg/kms"
 	"github.com/hyperledger/aries-framework-go/pkg/vdr/peer"
+	"github.com/piprate/json-gold/ld"
 	"github.com/stretchr/testify/require"
 
 	crypto2 "github.com/trustbloc/edge-adapter/pkg/crypto"
 	mockdidexchange "github.com/trustbloc/edge-adapter/pkg/internal/mock/didexchange"
 	"github.com/trustbloc/edge-adapter/pkg/internal/mock/messenger"
 	mockpresentproof "github.com/trustbloc/edge-adapter/pkg/internal/mock/presentproof"
+	jsonld2 "github.com/trustbloc/edge-adapter/pkg/jsonld"
 )
 
 func config(t *testing.T) *Config {
@@ -41,6 +43,7 @@ func config(t *testing.T) *Config {
 		MsgRegistrar:         msghandler.NewRegistrar(),
 		AriesMessenger:       &messenger.MockMessenger{},
 		PresentProofClient:   &mockpresentproof.MockClient{},
+		JSONLDDocumentLoader: docLoader(t),
 	}
 }
 
@@ -89,7 +92,7 @@ func signVP(t *testing.T,
 			VerificationMethod:      verificationMethod,
 			Purpose:                 "authentication",
 		},
-		jsonld.WithDocumentLoader(testDocumentLoader),
+		jsonld.WithDocumentLoader(docLoader(t)),
 	)
 	require.NoError(t, err)
 
@@ -104,7 +107,12 @@ func signVC(t *testing.T,
 	verificationMethod, err := crypto2.GetVerificationMethodFromDID(signingDID, did.AssertionMethod)
 	require.NoError(t, err)
 
-	vc, err = crypto2.New(agent.KMS(), agent.Crypto(), agent.VDRegistry()).SignCredential(vc, verificationMethod)
+	vc, err = crypto2.New(
+		agent.KMS(),
+		agent.Crypto(),
+		agent.VDRegistry(),
+		agent.JSONLDDocumentLoader(),
+	).SignCredential(vc, verificationMethod)
 	require.NoError(t, err)
 
 	return vc
@@ -141,4 +149,13 @@ func newPeerDID(t *testing.T, agent *ariesctx.Provider) *did.Doc {
 	require.NoError(t, err)
 
 	return d.DIDDocument
+}
+
+func docLoader(t *testing.T) ld.DocumentLoader {
+	t.Helper()
+
+	l, err := jsonld2.DocumentLoader(mem.NewProvider())
+	require.NoError(t, err)
+
+	return l
 }

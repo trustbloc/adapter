@@ -56,7 +56,7 @@ func UnregisterAllMsgServices(controllerURL string) error {
 
 		reqBytes, err := json.Marshal(params)
 		if err != nil {
-			return err
+			return fmt.Errorf("failed to marshal params: %w", err)
 		}
 
 		err = bddutil.SendHTTP(http.MethodPost, controllerURL+unregisterMsgService, reqBytes, nil)
@@ -100,12 +100,12 @@ func routerConnReq(controllerURL, webhookURL, connectionID string, adapterDIDDoc
 	err := RegisterMsgService(controllerURL, msgSvcName,
 		"https://trustbloc.dev/blinded-routing/1.0/create-conn-resp")
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to register msg service: %w", err)
 	}
 
 	docBytes, err := adapterDIDDoc.JSONBytes()
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to marshal adapter did doc: %w", err)
 	}
 
 	// send message
@@ -132,12 +132,12 @@ func adapterCreateConnReq(controllerURL, webhookURL, msgID string, adapterDIDDoc
 	err := RegisterMsgService(controllerURL, msgSvcName,
 		"https://trustbloc.dev/blinded-routing/1.0/register-route-resp")
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to register msg svc: %w", err)
 	}
 
 	docBytes, err := adapterDIDDoc.JSONBytes()
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to marshal adapter did doc: %w", err)
 	}
 
 	// send message
@@ -186,18 +186,18 @@ func RegisterMsgService(controllerURL, msgSvcName, msgType string) error {
 
 	reqBytes, err := json.Marshal(params)
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to marshal params: %w", err)
 	}
 
 	err = bddutil.SendHTTP(http.MethodPost, controllerURL+registerMsgService, reqBytes, nil)
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to execute request: %w", err)
 	}
 
 	// verify if the msg service created successfully
 	result, err := getServicesList(controllerURL)
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to get service list: %w", err)
 	}
 
 	var found bool
@@ -230,7 +230,7 @@ func sendMessage(controllerURL, connID string, msg interface{}) error {
 
 	reqBytes, err := json.Marshal(request)
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to marshal request: %w", err)
 	}
 
 	// call controller to send message
@@ -256,7 +256,7 @@ func sendReply(controllerURL, msgID string, msg interface{}) error {
 
 	reqBytes, err := json.Marshal(request)
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to marshal request: %w", err)
 	}
 
 	// call controller to send message

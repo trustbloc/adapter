@@ -18,13 +18,19 @@ import (
 )
 
 func TestNew(t *testing.T) {
+	t.Parallel()
+
 	t.Run("test new - success", func(t *testing.T) {
+		t.Parallel()
+
 		record, err := New(mem.NewProvider())
 		require.NoError(t, err)
 		require.NotNil(t, record)
 	})
 
 	t.Run("test new - fail to open store", func(t *testing.T) {
+		t.Parallel()
+
 		record, err := New(&mockstorage.Provider{ErrOpenStore: errors.New("error opening the handler")})
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "error opening the handler")
@@ -33,7 +39,11 @@ func TestNew(t *testing.T) {
 }
 
 func TestCredentialRecord_SaveProfile(t *testing.T) {
+	t.Parallel()
+
 	t.Run("test save profile - success", func(t *testing.T) {
+		t.Parallel()
+
 		record, err := New(mem.NewProvider())
 		require.NoError(t, err)
 		require.NotNil(t, record)
@@ -55,6 +65,8 @@ func TestCredentialRecord_SaveProfile(t *testing.T) {
 	})
 
 	t.Run("test save profile - validation failure", func(t *testing.T) {
+		t.Parallel()
+
 		record, err := New(mem.NewProvider())
 		require.NoError(t, err)
 		require.NotNil(t, record)
@@ -82,6 +94,8 @@ func TestCredentialRecord_SaveProfile(t *testing.T) {
 	})
 
 	t.Run("test save profile - profile already exists", func(t *testing.T) {
+		t.Parallel()
+
 		record, err := New(mem.NewProvider())
 		require.NoError(t, err)
 		require.NotNil(t, record)
@@ -104,7 +118,11 @@ func TestCredentialRecord_SaveProfile(t *testing.T) {
 }
 
 func TestGetProfile(t *testing.T) {
+	t.Parallel()
+
 	t.Run("test get profile - success", func(t *testing.T) {
+		t.Parallel()
+
 		memProvider := mem.NewProvider()
 
 		profileStore, err := New(memProvider)
@@ -131,6 +149,8 @@ func TestGetProfile(t *testing.T) {
 	})
 
 	t.Run("test get profile - no data", func(t *testing.T) {
+		t.Parallel()
+
 		profileStore, err := New(mem.NewProvider())
 		require.NoError(t, err)
 		require.NotNil(t, profileStore)
@@ -143,6 +163,8 @@ func TestGetProfile(t *testing.T) {
 	})
 
 	t.Run("test get profile - invalid json", func(t *testing.T) {
+		t.Parallel()
+
 		memProvider := mem.NewProvider()
 
 		profileStore, err := New(memProvider)

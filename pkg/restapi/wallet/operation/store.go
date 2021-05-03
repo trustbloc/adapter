@@ -49,7 +49,7 @@ func (w *walletAppProfileStore) SaveInvitation(invitationID, userID string) erro
 		return fmt.Errorf("failed to save invitation: %w", err)
 	}
 
-	return err
+	return nil
 }
 
 // SaveUserProfile saves wallet app profile by user ID.
@@ -74,7 +74,7 @@ func (w *walletAppProfileStore) SaveProfile(invitationID, connectionID string) e
 
 // GetUserByInvitationID returns wallet profile user mapped for given invitation ID.
 func (w *walletAppProfileStore) GetUserByInvitationID(invitationID string) ([]byte, error) {
-	return w.store.Get(getInvitationKeyPrefix(invitationID))
+	return w.store.Get(getInvitationKeyPrefix(invitationID)) // nolint:wrapcheck // reduce cyclo
 }
 
 // GetProfileByUserID returns wallet application profile by given user profile ID.
@@ -97,12 +97,12 @@ func (w *walletAppProfileStore) GetProfileByUserID(userID string) (*walletAppPro
 
 // SavePreferences saves user preferences bytes by user ID.
 func (w *walletAppProfileStore) SavePreferences(userID string, preferences []byte) error {
-	return w.store.Put(getPreferencesKeyPrefix(userID), preferences)
+	return w.store.Put(getPreferencesKeyPrefix(userID), preferences) // nolint:wrapcheck // reduce cyclo
 }
 
 // GetPreferences gets user preferences bytes by user ID.
 func (w *walletAppProfileStore) GetPreferences(userID string) ([]byte, error) {
-	return w.store.Get(getPreferencesKeyPrefix(userID))
+	return w.store.Get(getPreferencesKeyPrefix(userID)) // nolint:wrapcheck // reduce cyclo
 }
 
 func (w *walletAppProfileStore) putProfileInStore(prefix func(string) string, key string, profile interface{}) error {
@@ -111,7 +111,7 @@ func (w *walletAppProfileStore) putProfileInStore(prefix func(string) string, ke
 		return fmt.Errorf("failed to get wallet application profile bytes: %w", err)
 	}
 
-	return w.store.Put(prefix(key), profileBytes)
+	return w.store.Put(prefix(key), profileBytes) // nolint:wrapcheck // reduce cyclo
 }
 
 // getInvitationKeyPrefix is key prefix for wallet application profile invitation key.

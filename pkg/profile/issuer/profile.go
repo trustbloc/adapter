@@ -56,7 +56,7 @@ type OIDCClientParams struct {
 func New(provider storage.Provider) (*Profile, error) {
 	store, err := provider.OpenStore(storeName)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to open store %s: %w", storeName, err)
 	}
 
 	return &Profile{store: store}, nil
@@ -66,13 +66,13 @@ func New(provider storage.Provider) (*Profile, error) {
 func (c *Profile) SaveProfile(data *ProfileData) error {
 	// validate the profile
 	if err := validateProfileRequest(data); err != nil {
-		return err
+		return fmt.Errorf("profile request is invalid: %w", err)
 	}
 
 	// verify profile exists
 	profile, err := c.GetProfile(data.ID)
 	if err != nil && !errors.Is(err, storage.ErrDataNotFound) {
-		return err
+		return fmt.Errorf("failed to fetch profile: %w", err)
 	}
 
 	if profile != nil {
@@ -85,7 +85,7 @@ func (c *Profile) SaveProfile(data *ProfileData) error {
 		return fmt.Errorf("issuer profile save - marshalling error: %w", err)
 	}
 
-	return c.store.Put(getDBKey(data.ID), bytes)
+	return c.store.Put(getDBKey(data.ID), bytes) // nolint:wrapcheck // reduce cyclo
 }
 
 // GetProfile retrieves the profile data based on id.
@@ -99,7 +99,7 @@ func (c *Profile) GetProfile(id string) (*ProfileData, error) {
 
 	err = json.Unmarshal(bytes, response)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to unmarshal profile data: %w", err)
 	}
 
 	return response, nil

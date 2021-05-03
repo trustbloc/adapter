@@ -10,9 +10,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io/ioutil"
-	"path/filepath"
-	"strings"
 	"testing"
 	"time"
 
@@ -20,24 +17,21 @@ import (
 	"github.com/hyperledger/aries-framework-go/pkg/client/presentproof"
 	"github.com/hyperledger/aries-framework-go/pkg/didcomm/protocol/decorator"
 	"github.com/hyperledger/aries-framework-go/pkg/doc/did"
-	"github.com/hyperledger/aries-framework-go/pkg/doc/jsonld"
 	"github.com/hyperledger/aries-framework-go/pkg/doc/presexch"
 	"github.com/hyperledger/aries-framework-go/pkg/doc/util"
 	"github.com/hyperledger/aries-framework-go/pkg/doc/verifiable"
 	ariesctx "github.com/hyperledger/aries-framework-go/pkg/framework/context"
-	"github.com/piprate/json-gold/ld"
 	"github.com/stretchr/testify/require"
 
 	vc2 "github.com/trustbloc/edge-adapter/pkg/vc"
 )
 
-// TODO - crypto.Crypto should support injection of document loader:
-//  https://github.com/trustbloc/edge-adapter/issues/306
-// nolint:gochecknoglobals
-var testDocumentLoader = createTestJSONLDDocumentLoader()
-
 func TestParseWalletResponse(t *testing.T) {
+	t.Parallel()
+
 	t.Run("valid response", func(t *testing.T) {
+		t.Parallel()
+
 		relyingParty, issuer, subject := trio(t)
 		subjectDID := newPeerDID(t, subject)
 		rpDID := newPeerDID(t, relyingParty)
@@ -73,20 +67,20 @@ func TestParseWalletResponse(t *testing.T) {
 					{
 						ID: localID,
 						Schema: []*presexch.Schema{{
-							URI: "https://www.w3.org/2018/credentials/examples/v1",
+							URI: "https://www.w3.org/2018/credentials/examples/v1#UniversityDegreeCredential",
 						}},
 					},
 					{
 						ID: remoteID,
 						Schema: []*presexch.Schema{{
-							URI: vc2.AuthorizationCredentialContext,
+							URI: vc2.AuthorizationCredentialContext + "#AuthorizationCredential",
 						}},
 					},
 				},
 			},
 			relyingParty.VDRegistry(),
 			marshal(t, vp),
-			testDocumentLoader)
+			docLoader(t))
 		require.NoError(t, err)
 		require.Contains(t, actualLocal, localID)
 		require.Equal(t, expectedLocal[localID].Subject, actualLocal[localID].Subject)
@@ -97,16 +91,20 @@ func TestParseWalletResponse(t *testing.T) {
 	})
 
 	t.Run("errInvalidCredential if vp cannot be parsed", func(t *testing.T) {
+		t.Parallel()
+
 		relyingParty, issuer, subject := trio(t)
 		authorizationVC := newAuthorizationVC(t,
 			newPeerDID(t, subject).ID, newPeerDID(t, relyingParty), newPeerDID(t, issuer))
 		vp, err := verifiable.NewPresentation(verifiable.WithCredentials(authorizationVC))
 		require.NoError(t, err)
-		_, _, err = parseWalletResponse(nil, nil, marshal(t, vp), testDocumentLoader)
+		_, _, err = parseWalletResponse(nil, nil, marshal(t, vp), docLoader(t))
 		require.True(t, errors.Is(err, errInvalidCredential))
 	})
 
 	t.Run("errInvalidCredential on no credentials", func(t *testing.T) {
+		t.Parallel()
+
 		relyingParty, subject, _ := trio(t)
 		rpDID := newPeerDID(t, relyingParty)
 		subjectDID := newPeerDID(t, subject)
@@ -125,11 +123,13 @@ func TestParseWalletResponse(t *testing.T) {
 			},
 			relyingParty.VDRegistry(),
 			marshal(t, vp),
-			testDocumentLoader)
+			docLoader(t))
 		require.True(t, errors.Is(err, errInvalidCredential))
 	})
 
 	t.Run("errInvalidCredential if issuer's did doc is missing", func(t *testing.T) {
+		t.Parallel()
+
 		relyingParty, subject, _ := trio(t)
 		rpDID := newPeerDID(t, relyingParty)
 		subjectDID := newPeerDID(t, subject)
@@ -156,11 +156,13 @@ func TestParseWalletResponse(t *testing.T) {
 			definitions,
 			relyingParty.VDRegistry(),
 			marshal(t, vp),
-			testDocumentLoader)
+			docLoader(t))
 		require.True(t, errors.Is(err, errInvalidCredential))
 	})
 
 	t.Run("errInvalidCredential if vc cannot be parsed", func(t *testing.T) {
+		t.Parallel()
+
 		relyingParty, subject, _ := trio(t)
 		rpDID := newPeerDID(t, relyingParty)
 		subjectDID := newPeerDID(t, subject)
@@ -183,13 +185,17 @@ func TestParseWalletResponse(t *testing.T) {
 				Path: "$.verifiableCredential[0]",
 			}}},
 			newUserAuthorizationVCMissingIssuerDIDDoc(t, subjectDID.ID, rpDID))
-		_, _, err := parseWalletResponse(definitions, relyingParty.VDRegistry(), marshal(t, vp), testDocumentLoader)
+		_, _, err := parseWalletResponse(definitions, relyingParty.VDRegistry(), marshal(t, vp), docLoader(t))
 		require.True(t, errors.Is(err, errInvalidCredential))
 	})
 }
 
 func TestParseIssuerResponse(t *testing.T) {
+	t.Parallel()
+
 	t.Run("valid response", func(t *testing.T) {
+		t.Parallel()
+
 		relyingParty, issuer, _ := trio(t)
 		rpDID := newPeerDID(t, relyingParty)
 		issuerDID := newPeerDID(t, issuer)
@@ -205,17 +211,21 @@ func TestParseIssuerResponse(t *testing.T) {
 					JSON: expectedVP,
 				},
 			}},
-		}, relyingParty.VDRegistry(), testDocumentLoader)
+		}, relyingParty.VDRegistry(), docLoader(t))
 		require.NoError(t, err)
 		require.Equal(t, expectedVC.Subject, actualVC.Subject)
 	})
 
 	t.Run("error if no attachments were provided", func(t *testing.T) {
-		_, err := parseIssuerResponse(&presentproof.Presentation{}, nil, testDocumentLoader)
+		t.Parallel()
+
+		_, err := parseIssuerResponse(&presentproof.Presentation{}, nil, docLoader(t))
 		require.Error(t, err)
 	})
 
 	t.Run("error if attachment's contents are malformed", func(t *testing.T) {
+		t.Parallel()
+
 		_, err := parseIssuerResponse(&presentproof.Presentation{
 			PresentationsAttach: []decorator.Attachment{{
 				ID: uuid.New().String(),
@@ -223,11 +233,13 @@ func TestParseIssuerResponse(t *testing.T) {
 					Base64: "MALFORMED",
 				},
 			}},
-		}, nil, testDocumentLoader)
+		}, nil, docLoader(t))
 		require.Error(t, err)
 	})
 
 	t.Run("errInvalidCredential if VP cannot be parsed", func(t *testing.T) {
+		t.Parallel()
+
 		_, err := parseIssuerResponse(&presentproof.Presentation{
 			PresentationsAttach: []decorator.Attachment{{
 				ID: uuid.New().String(),
@@ -235,11 +247,13 @@ func TestParseIssuerResponse(t *testing.T) {
 					JSON: map[string]interface{}{},
 				},
 			}},
-		}, nil, testDocumentLoader)
+		}, nil, docLoader(t))
 		require.True(t, errors.Is(err, errInvalidCredential))
 	})
 
 	t.Run("errInvalidCredential if VP has no credentials", func(t *testing.T) {
+		t.Parallel()
+
 		relyingParty, issuer, _ := trio(t)
 		rpDID := newPeerDID(t, relyingParty)
 		issuerDID := newPeerDID(t, issuer)
@@ -253,7 +267,7 @@ func TestParseIssuerResponse(t *testing.T) {
 					JSON: newPresentationSubmissionVP(t, issuer, issuerDID, nil),
 				},
 			}},
-		}, relyingParty.VDRegistry(), testDocumentLoader)
+		}, relyingParty.VDRegistry(), docLoader(t))
 		require.True(t, errors.Is(err, errInvalidCredential))
 	})
 }
@@ -359,7 +373,9 @@ func newUserAuthorizationVCMissingIssuerDIDDoc(t *testing.T, subjectDID string, 
 	}
 }
 
-func newCreditCardStatementVC(_ *testing.T, _ *ariesctx.Provider, signingDID *did.Doc) *verifiable.Credential {
+func newCreditCardStatementVC(t *testing.T, _ *ariesctx.Provider, signingDID *did.Doc) *verifiable.Credential {
+	t.Helper()
+
 	vc := &verifiable.Credential{
 		Context: []string{
 			"https://www.w3.org/2018/credentials/v1",
@@ -406,7 +422,9 @@ func newCreditCardStatementVC(_ *testing.T, _ *ariesctx.Provider, signingDID *di
 	return vc
 }
 
-func newUniversityDegreeVC(_ *testing.T, _ *ariesctx.Provider, signingDID *did.Doc) *verifiable.Credential {
+func newUniversityDegreeVC(t *testing.T, _ *ariesctx.Provider, signingDID *did.Doc) *verifiable.Credential {
+	t.Helper()
+
 	vc := &verifiable.Credential{
 		Context: []string{
 			"https://www.w3.org/2018/credentials/v1",
@@ -437,69 +455,4 @@ func newUniversityDegreeVC(_ *testing.T, _ *ariesctx.Provider, signingDID *did.D
 	}
 
 	return vc
-}
-
-func createTestJSONLDDocumentLoader() *jsonld.CachingDocumentLoader {
-	loader := verifiable.CachingJSONLDLoader()
-
-	presExchCtx, err := ld.DocumentFromReader(strings.NewReader(presexch.PresentationSubmissionJSONLDContext))
-	if err != nil {
-		panic(fmt.Errorf("failed to load presentation exchange context: %w", err))
-	}
-
-	loader.AddDocument(
-		presexch.PresentationSubmissionJSONLDContextIRI,
-		presExchCtx,
-	)
-
-	contexts := []struct {
-		vocab    string
-		filename string
-	}{
-		{
-			vocab:    "https://www.w3.org/2018/credentials/v1",
-			filename: "verifiable_credentials_v1.0.jsonld",
-		},
-		{
-			vocab:    "http://schema.org/",
-			filename: "schema.org.jsonld",
-		},
-		{
-			vocab:    "https://trustbloc.github.io/context/vc/authorization-credential-v1.jsonld",
-			filename: "authorization-credential-v1.jsonld",
-		},
-		{
-			vocab:    "https://trustbloc.github.io/context/vc/examples-ext-v1.jsonld",
-			filename: "examples-ext-v1.jsonld",
-		},
-		{
-			vocab:    "https://trustbloc.github.io/context/vp/examples/mdl-v1.jsonld",
-			filename: "mdl-v1.jsonld",
-		},
-	}
-
-	for i := range contexts {
-		addJSONLDCachedContextFromFile(loader, contexts[i].vocab, contexts[i].filename)
-	}
-
-	return loader
-}
-
-func addJSONLDCachedContextFromFile(loader *jsonld.CachingDocumentLoader, contextURL, contextFile string) {
-	contextContent, err := ioutil.ReadFile(filepath.Clean(filepath.Join(
-		"testdata/context", contextFile))) // nolint: gocritic
-	if err != nil {
-		panic(err)
-	}
-
-	addJSONLDCachedContext(loader, contextURL, string(contextContent))
-}
-
-func addJSONLDCachedContext(loader *jsonld.CachingDocumentLoader, contextURL, contextContent string) {
-	reader, err := ld.DocumentFromReader(strings.NewReader(contextContent))
-	if err != nil {
-		panic(err)
-	}
-
-	loader.AddDocument(contextURL, reader)
 }

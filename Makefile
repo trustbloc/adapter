@@ -53,7 +53,7 @@ adapter-rest:
 	@echo "Building adapter-rest"
 	@mkdir -p ./.build/bin
 	@GO111MODULE=off GOBIN=$(GOBIN_PATH) go get github.com/myitcv/gobin
-	@cd ${ADAPTER_REST_PATH} && $(GOBIN_PATH)/gobin -run github.com/gobuffalo/packr/v2/packr2@v2.8.0 build -o ../../.build/bin/adapter-rest main.go
+	@cd ${ADAPTER_REST_PATH} && go build -o ../../.build/bin/adapter-rest main.go
 
 .PHONY: adapter-rest-docker-base
 adapter-rest-docker-base:

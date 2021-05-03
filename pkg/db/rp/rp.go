@@ -39,7 +39,7 @@ func (s *Store) SaveRP(rp *Tenant) error {
 		return fmt.Errorf("failed to marshal relying parth : %w", err)
 	}
 
-	return s.Store.Put(clientIDKey(rp.ClientID), bits)
+	return s.Store.Put(clientIDKey(rp.ClientID), bits) // nolint:wrapcheck // reduce cyclo
 }
 
 // GetRP fetches the RP tenant with the given clientID.
@@ -66,7 +66,7 @@ func (s *Store) SaveUserConnection(uc *UserConnection) error {
 		return fmt.Errorf("failed to marshal user connection : %w", err)
 	}
 
-	return s.Store.Put(userConnectionKey(uc.RP.ClientID, uc.User.Subject), bits)
+	return s.Store.Put(userConnectionKey(uc.RP.ClientID, uc.User.Subject), bits) // nolint:wrapcheck // reduce cyclo
 }
 
 // GetUserConnection fetches the connection between the given RP and user.

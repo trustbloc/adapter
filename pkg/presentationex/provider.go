@@ -55,8 +55,7 @@ func (p *Provider) Create(scopes []string) (*presexch.PresentationDefinition, er
 		defs.InputDescriptors = append(defs.InputDescriptors, def)
 	}
 
-	err := defs.ValidateSchema()
-	if err != nil {
+	if err := defs.ValidateSchema(); err != nil {
 		return nil, fmt.Errorf("presentation_definition jsonschema validation failure: %w", err)
 	}
 

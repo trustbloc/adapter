@@ -43,18 +43,11 @@ func (m *MsgService) Accept(msgType string, _ []string) bool {
 
 // HandleInbound handles inbound didcomm msg.
 func (m *MsgService) HandleInbound(msg service.DIDCommMsg, ctx service.DIDCommContext) (string, error) {
-	var myDID, theirDID string
-
-	if ctx != nil {
-		myDID = ctx.MyDID()
-		theirDID = ctx.TheirDID()
-	}
-
 	go func() {
 		m.msgCh <- Msg{
 			DIDCommMsg: msg,
-			MyDID:      myDID,
-			TheirDID:   theirDID,
+			MyDID:      ctx.MyDID(),
+			TheirDID:   ctx.TheirDID(),
 		}
 	}()
 
