@@ -67,7 +67,11 @@ const (
 )
 
 func TestNew(t *testing.T) {
+	t.Parallel()
+
 	t.Run("registers for didcomm events", func(t *testing.T) {
+		t.Parallel()
+
 		registeredDIDExchActions := false
 		registeredPresentProofActions := false
 		registeredMsgs := false
@@ -98,6 +102,8 @@ func TestNew(t *testing.T) {
 	})
 
 	t.Run("wraps error when didexchange actions registration fails", func(t *testing.T) {
+		t.Parallel()
+
 		expected := errors.New("test")
 
 		config := config(t)
@@ -113,6 +119,8 @@ func TestNew(t *testing.T) {
 	})
 
 	t.Run("wraps error when presentproof actions registration fails", func(t *testing.T) {
+		t.Parallel()
+
 		expected := errors.New("test")
 
 		config := config(t)
@@ -128,6 +136,8 @@ func TestNew(t *testing.T) {
 	})
 
 	t.Run("wraps error when state msg registration fails", func(t *testing.T) {
+		t.Parallel()
+
 		expected := errors.New("test")
 
 		config := config(t)
@@ -143,6 +153,8 @@ func TestNew(t *testing.T) {
 	})
 
 	t.Run("wraps error if cannot open store", func(t *testing.T) {
+		t.Parallel()
+
 		expected := errors.New("test")
 
 		config := config(t)
@@ -157,6 +169,8 @@ func TestNew(t *testing.T) {
 	})
 
 	t.Run("wraps error if cannot open transient store", func(t *testing.T) {
+		t.Parallel()
+
 		expected := errors.New("test")
 
 		config := config(t)
@@ -171,6 +185,8 @@ func TestNew(t *testing.T) {
 	})
 
 	t.Run("wraps error if cannot open aries transient store", func(t *testing.T) {
+		t.Parallel()
+
 		expected := errors.New("test")
 
 		config := config(t)
@@ -187,6 +203,8 @@ func TestNew(t *testing.T) {
 	})
 
 	t.Run("create route service", func(t *testing.T) {
+		t.Parallel()
+
 		conf := config(t)
 		conf.AriesContextProvider = &mockprovider.MockProvider{
 			Provider: &ariesmockprovider.Provider{
@@ -221,6 +239,8 @@ func TestNew(t *testing.T) {
 	})
 
 	t.Run("wraps error if cannot initialize wallet bridge", func(t *testing.T) {
+		t.Parallel()
+
 		config := config(t)
 		config.AriesContextProvider = &mockprovider.MockProvider{
 			Provider: &ariesmockprovider.Provider{
@@ -240,7 +260,11 @@ func TestNew(t *testing.T) {
 }
 
 func Test_HandleDIDExchangeRequests(t *testing.T) {
+	t.Parallel()
+
 	t.Run("continues didcomm action for valid didexchange request", func(t *testing.T) {
+		t.Parallel()
+
 		var incoming chan<- service.DIDCommAction
 
 		config := config(t)
@@ -279,6 +303,8 @@ func Test_HandleDIDExchangeRequests(t *testing.T) {
 	})
 
 	t.Run("stops didcomm action for invalid parentThreadID", func(t *testing.T) {
+		t.Parallel()
+
 		var incoming chan<- service.DIDCommAction
 
 		config := config(t)
@@ -315,6 +341,8 @@ func Test_HandleDIDExchangeRequests(t *testing.T) {
 	})
 
 	t.Run("stops didcomm action for invalid didcomm message type", func(t *testing.T) {
+		t.Parallel()
+
 		var incoming chan<- service.DIDCommAction
 
 		config := config(t)
@@ -352,6 +380,8 @@ func Test_HandleDIDExchangeRequests(t *testing.T) {
 }
 
 func TestListenForConnectionCompleteEvents(t *testing.T) {
+	t.Parallel()
+
 	t.Run("captures RP's peer DID when connection is complete", func(t *testing.T) {
 		t.Parallel()
 		record := &connection.Record{
@@ -541,6 +571,7 @@ func TestListenForConnectionCompleteEvents(t *testing.T) {
 }
 
 func TestGetRESTHandlers(t *testing.T) {
+	t.Parallel()
 	c, err := New(config(t))
 	require.NoError(t, err)
 
@@ -548,8 +579,11 @@ func TestGetRESTHandlers(t *testing.T) {
 }
 
 func TestHydraLoginHandlerIterOne(t *testing.T) {
+	t.Parallel()
 	t.Run("redirects back to hydra", func(t *testing.T) {
+		t.Parallel()
 		t.Run("with new user connection", func(t *testing.T) {
+			t.Parallel()
 			tenant := &rp.Tenant{
 				ClientID:  uuid.New().String(),
 				PublicDID: newDID(t).String(),
@@ -598,6 +632,7 @@ func TestHydraLoginHandlerIterOne(t *testing.T) {
 			require.Equal(t, w.Header().Get("Location"), redirectURL)
 		})
 		t.Run("with existing user connection", func(t *testing.T) {
+			t.Parallel()
 			tenant := &rp.Tenant{
 				ClientID:  uuid.New().String(),
 				PublicDID: newDID(t).String(),
@@ -657,6 +692,7 @@ func TestHydraLoginHandlerIterOne(t *testing.T) {
 		})
 	})
 	t.Run("fails on missing login_challenge", func(t *testing.T) {
+		t.Parallel()
 		o, err := New(config(t))
 		require.NoError(t, err)
 		r := newHydraRequestNoChallenge(t)
@@ -666,6 +702,7 @@ func TestHydraLoginHandlerIterOne(t *testing.T) {
 		require.Equal(t, http.StatusBadRequest, w.Code)
 	})
 	t.Run("error while fetching hydra login request", func(t *testing.T) {
+		t.Parallel()
 		o, err := New(&Config{
 			Hydra: &stubHydra{
 				loginRequestFunc: func(*admin.GetLoginRequestParams) (*admin.GetLoginRequestOK, error) {
@@ -685,6 +722,7 @@ func TestHydraLoginHandlerIterOne(t *testing.T) {
 		require.Equal(t, http.StatusInternalServerError, w.Code)
 	})
 	t.Run("error while accepting login request at hydra", func(t *testing.T) {
+		t.Parallel()
 		o, err := New(&Config{
 			Hydra: &stubHydra{
 				loginRequestFunc: func(*admin.GetLoginRequestParams) (*admin.GetLoginRequestOK, error) {
@@ -712,6 +750,7 @@ func TestHydraLoginHandlerIterOne(t *testing.T) {
 		require.Equal(t, http.StatusInternalServerError, w.Code)
 	})
 	t.Run("internal server error on error saving user connection", func(t *testing.T) {
+		t.Parallel()
 		tenant := &rp.Tenant{
 			ClientID:  uuid.New().String(),
 			PublicDID: newDID(t).String(),
@@ -760,6 +799,7 @@ func TestHydraLoginHandlerIterOne(t *testing.T) {
 		require.Equal(t, http.StatusInternalServerError, w.Code)
 	})
 	t.Run("internal server error if hydra fails to accept login", func(t *testing.T) {
+		t.Parallel()
 		tenant := &rp.Tenant{
 			ClientID:  uuid.New().String(),
 			PublicDID: newDID(t).String(),
@@ -802,7 +842,9 @@ func TestHydraLoginHandlerIterOne(t *testing.T) {
 }
 
 func TestHydraLoginHandler(t *testing.T) {
+	t.Parallel()
 	t.Run("TODO - implement redirect to OIDC provider", func(t *testing.T) {
+		t.Parallel()
 		o, err := New(&Config{
 			OAuth2Config: &stubOAuth2Config{},
 			Hydra: &stubHydra{
@@ -836,6 +878,7 @@ func TestHydraLoginHandler(t *testing.T) {
 		require.Equal(t, http.StatusFound, r.Code)
 	})
 	t.Run("redirects back to hydra when skipping", func(t *testing.T) {
+		t.Parallel()
 		const redirectURL = "http://redirect.com"
 		o, err := New(&Config{
 			Hydra: &stubHydra{
@@ -868,6 +911,7 @@ func TestHydraLoginHandler(t *testing.T) {
 		require.Equal(t, w.Header().Get("Location"), redirectURL)
 	})
 	t.Run("fails on missing login_challenge", func(t *testing.T) {
+		t.Parallel()
 		o, err := New(config(t))
 		require.NoError(t, err)
 		r := newHydraRequestNoChallenge(t)
@@ -877,6 +921,7 @@ func TestHydraLoginHandler(t *testing.T) {
 		require.Equal(t, http.StatusBadRequest, w.Code)
 	})
 	t.Run("error while fetching hydra login request", func(t *testing.T) {
+		t.Parallel()
 		o, err := New(&Config{
 			Hydra: &stubHydra{
 				loginRequestFunc: func(*admin.GetLoginRequestParams) (*admin.GetLoginRequestOK, error) {
@@ -896,6 +941,7 @@ func TestHydraLoginHandler(t *testing.T) {
 		require.Equal(t, http.StatusInternalServerError, w.Code)
 	})
 	t.Run("error while accepting login request at hydra", func(t *testing.T) {
+		t.Parallel()
 		o, err := New(&Config{
 			Hydra: &stubHydra{
 				loginRequestFunc: func(*admin.GetLoginRequestParams) (*admin.GetLoginRequestOK, error) {
@@ -924,7 +970,9 @@ func TestHydraLoginHandler(t *testing.T) {
 }
 
 func TestOidcCallbackHandler(t *testing.T) {
+	t.Parallel()
 	t.Run("redirects to hydra", func(t *testing.T) {
+		t.Parallel()
 		const redirectURL = "http://hydra.example.com"
 		const state = "123"
 		const code = "test_code"
@@ -968,6 +1016,7 @@ func TestOidcCallbackHandler(t *testing.T) {
 	})
 
 	t.Run("bad request on invalid state", func(t *testing.T) {
+		t.Parallel()
 		c, err := New(config(t))
 		require.NoError(t, err)
 
@@ -978,6 +1027,7 @@ func TestOidcCallbackHandler(t *testing.T) {
 	})
 
 	t.Run("internal error if exchanging code for id_token fails", func(t *testing.T) {
+		t.Parallel()
 		c, err := New(&Config{
 			OAuth2Config: &stubOAuth2Config{},
 			OIDC: func(string, context.Context) (*oidc.IDToken, error) {
@@ -1003,6 +1053,7 @@ func TestOidcCallbackHandler(t *testing.T) {
 	})
 
 	t.Run("internal server error if hydra fails to accept login", func(t *testing.T) {
+		t.Parallel()
 		c, err := New(&Config{
 			OAuth2Config: &stubOAuth2Config{},
 			OIDC: func(c string, _ context.Context) (*oidc.IDToken, error) {
@@ -1034,7 +1085,9 @@ func TestOidcCallbackHandler(t *testing.T) {
 }
 
 func TestSaveUserAndRequest(t *testing.T) {
+	t.Parallel()
 	t.Run("error when fetching rp", func(t *testing.T) {
+		t.Parallel()
 		clientID := uuid.New().String()
 		mockStore := &mockstorage.Store{}
 		store := &mockstorage.Provider{OpenStoreReturn: mockStore}
@@ -1065,6 +1118,7 @@ func TestSaveUserAndRequest(t *testing.T) {
 	})
 
 	t.Run("error when saving user connection", func(t *testing.T) {
+		t.Parallel()
 		clientID := uuid.New().String()
 		mockStore := &mockstorage.Store{}
 		store := &mockstorage.Provider{OpenStoreReturn: mockStore}
@@ -1096,8 +1150,11 @@ func TestSaveUserAndRequest(t *testing.T) {
 }
 
 func TestHydraConsentHandler(t *testing.T) {
+	t.Parallel()
 	t.Run("requiring user consent", func(t *testing.T) {
+		t.Parallel()
 		t.Run("redirects to consent ui with handle", func(t *testing.T) {
+			t.Parallel()
 			uiEndpoint := "http://ui.example.com"
 			challenge := uuid.New().String()
 			rpClientID := uuid.New().String()
@@ -1150,6 +1207,7 @@ func TestHydraConsentHandler(t *testing.T) {
 		})
 
 		t.Run("bad request if consent challenge is missing", func(t *testing.T) {
+			t.Parallel()
 			c, err := New(config(t))
 			require.NoError(t, err)
 			w := &httptest.ResponseRecorder{}
@@ -1158,6 +1216,7 @@ func TestHydraConsentHandler(t *testing.T) {
 		})
 
 		t.Run("internal server error if hydra fails to deliver consent request details", func(t *testing.T) {
+			t.Parallel()
 			c, err := New(&Config{
 				Hydra: &stubHydra{getConsentRequestFunc: func(*admin.GetConsentRequestParams) (*admin.GetConsentRequestOK, error) {
 					return nil, errors.New("test")
@@ -1176,6 +1235,7 @@ func TestHydraConsentHandler(t *testing.T) {
 		})
 
 		t.Run("internal server error if presentation-exchange provider fails", func(t *testing.T) {
+			t.Parallel()
 			c, err := New(&Config{
 				Hydra: &stubHydra{getConsentRequestFunc: func(*admin.GetConsentRequestParams) (*admin.GetConsentRequestOK, error) {
 					return &admin.GetConsentRequestOK{Payload: &models.ConsentRequest{Skip: false}}, nil
@@ -1195,6 +1255,7 @@ func TestHydraConsentHandler(t *testing.T) {
 		})
 
 		t.Run("internal server error if cannot find user connection", func(t *testing.T) {
+			t.Parallel()
 			c, err := New(&Config{
 				Hydra: &stubHydra{getConsentRequestFunc: func(*admin.GetConsentRequestParams) (*admin.GetConsentRequestOK, error) {
 					return &admin.GetConsentRequestOK{Payload: &models.ConsentRequest{
@@ -1220,6 +1281,7 @@ func TestHydraConsentHandler(t *testing.T) {
 	})
 
 	t.Run("internal server error on transient store PUT error", func(t *testing.T) {
+		t.Parallel()
 		uiEndpoint := "http://ui.example.com"
 		challenge := uuid.New().String()
 		rpClientID := uuid.New().String()
@@ -1265,7 +1327,9 @@ func TestHydraConsentHandler(t *testing.T) {
 	})
 
 	t.Run("skipping user consent", func(t *testing.T) {
+		t.Parallel()
 		t.Run("redirects to hydra", func(t *testing.T) {
+			t.Parallel()
 			const redirectTo = "http://hydra.example.com"
 			challenge := uuid.New().String()
 
@@ -1303,6 +1367,7 @@ func TestHydraConsentHandler(t *testing.T) {
 		})
 
 		t.Run("internal server error if hydra fails to accept consent request", func(t *testing.T) {
+			t.Parallel()
 			c, err := New(&Config{
 				Hydra: &stubHydra{
 					getConsentRequestFunc: func(r *admin.GetConsentRequestParams) (*admin.GetConsentRequestOK, error) {
@@ -1331,7 +1396,9 @@ func TestHydraConsentHandler(t *testing.T) {
 }
 
 func TestSaveConsentRequest(t *testing.T) {
+	t.Parallel()
 	t.Run("error if user connection does not exist", func(t *testing.T) {
+		t.Parallel()
 		c, err := New(config(t))
 		require.NoError(t, err)
 
@@ -1344,6 +1411,7 @@ func TestSaveConsentRequest(t *testing.T) {
 	})
 
 	t.Run("error when saving user connection", func(t *testing.T) {
+		t.Parallel()
 		clientID := uuid.New().String()
 		userSub := uuid.New().String()
 		mockStore := &mockstorage.Store{}
@@ -1378,7 +1446,9 @@ func TestSaveConsentRequest(t *testing.T) {
 }
 
 func TestGetPresentationsRequest(t *testing.T) {
+	t.Parallel()
 	t.Run("test success", func(t *testing.T) {
+		t.Parallel()
 		userSubject := uuid.New().String()
 		rpClientID := uuid.New().String()
 		rpPublicDID := newDID(t)
@@ -1456,6 +1526,7 @@ func TestGetPresentationsRequest(t *testing.T) {
 	})
 
 	t.Run("test get governance - failed", func(t *testing.T) {
+		t.Parallel()
 		userSubject := uuid.New().String()
 		rpClientID := uuid.New().String()
 		rpPublicDID := newDID(t)
@@ -1524,6 +1595,7 @@ func TestGetPresentationsRequest(t *testing.T) {
 	})
 
 	t.Run("bad request if handle is invalid", func(t *testing.T) {
+		t.Parallel()
 		c, err := New(config(t))
 		require.NoError(t, err)
 
@@ -1534,6 +1606,7 @@ func TestGetPresentationsRequest(t *testing.T) {
 	})
 
 	t.Run("bad request if handle is missing", func(t *testing.T) {
+		t.Parallel()
 		c, err := New(config(t))
 		require.NoError(t, err)
 
@@ -1544,6 +1617,7 @@ func TestGetPresentationsRequest(t *testing.T) {
 	})
 
 	t.Run("internal server error if failed to create didexchange invitation", func(t *testing.T) {
+		t.Parallel()
 		userSubject := uuid.New().String()
 		rpClientID := uuid.New().String()
 		rpPublicDID := newDID(t)
@@ -1593,6 +1667,7 @@ func TestGetPresentationsRequest(t *testing.T) {
 	})
 
 	t.Run("internal server error on persistent store GET error", func(t *testing.T) {
+		t.Parallel()
 		handle := uuid.New().String()
 
 		c, err := New(&Config{
@@ -1633,6 +1708,7 @@ func TestGetPresentationsRequest(t *testing.T) {
 	})
 
 	t.Run("internal server error on persistent store PUT error", func(t *testing.T) {
+		t.Parallel()
 		handle := uuid.New().String()
 		userSubject := uuid.New().String()
 		rpClientID := uuid.New().String()
@@ -1688,6 +1764,7 @@ func TestGetPresentationsRequest(t *testing.T) {
 	})
 
 	t.Run("internal server error on transient store PUT error", func(t *testing.T) {
+		t.Parallel()
 		handle := uuid.New().String()
 		userSubject := uuid.New().String()
 		rpClientID := uuid.New().String()
@@ -1742,9 +1819,13 @@ func TestGetPresentationsRequest(t *testing.T) {
 }
 
 func TestCHAPIResponseHandler(t *testing.T) {
+	t.Parallel()
+
 	redirectURL := "http://hydra.example.com/accept"
 
 	t.Run("valid chapi response", func(t *testing.T) {
+		t.Parallel()
+
 		relyingParty, subject, issuer := trio(t)
 		rpDID := newPeerDID(t, relyingParty)
 		subjectDID := newPeerDID(t, subject)
@@ -1761,13 +1842,13 @@ func TestCHAPIResponseHandler(t *testing.T) {
 				{
 					ID: uuid.New().String(),
 					Schema: []*presexch.Schema{{
-						URI: vc.AuthorizationCredentialContext,
+						URI: vc.AuthorizationCredentialContext + "#AuthorizationCredential",
 					}},
 				},
 				{
 					ID: uuid.New().String(),
 					Schema: []*presexch.Schema{{
-						URI: "https://www.w3.org/2018/credentials/examples/v1",
+						URI: "https://www.w3.org/2018/credentials/examples/v1#UniversityDegreeCredential",
 					}},
 				},
 			},
@@ -1816,7 +1897,7 @@ func TestCHAPIResponseHandler(t *testing.T) {
 			},
 			MsgRegistrar:         msghandler.NewRegistrar(),
 			AriesMessenger:       &messenger.MockMessenger{},
-			JSONLDDocumentLoader: testDocumentLoader,
+			JSONLDDocumentLoader: docLoader(t),
 		})
 		require.NoError(t, err)
 
@@ -1847,6 +1928,8 @@ func TestCHAPIResponseHandler(t *testing.T) {
 	})
 
 	t.Run("bad request if body is malformed", func(t *testing.T) {
+		t.Parallel()
+
 		c, err := New(config(t))
 		require.NoError(t, err)
 
@@ -1857,6 +1940,8 @@ func TestCHAPIResponseHandler(t *testing.T) {
 	})
 
 	t.Run("bad request if invitationID is invalid", func(t *testing.T) {
+		t.Parallel()
+
 		c, err := New(config(t))
 		require.NoError(t, err)
 
@@ -1866,6 +1951,8 @@ func TestCHAPIResponseHandler(t *testing.T) {
 	})
 
 	t.Run("bad request if verifiable presentation is invalid", func(t *testing.T) {
+		t.Parallel()
+
 		invitationID := uuid.New().String()
 		c, err := New(config(t))
 		require.NoError(t, err)
@@ -1878,6 +1965,8 @@ func TestCHAPIResponseHandler(t *testing.T) {
 	})
 
 	t.Run("bad request if issuer did doc is malformed", func(t *testing.T) {
+		t.Parallel()
+
 		relyingParty, subject, _ := trio(t)
 		rpPublicDID := newDID(t).String()
 		rpDID := newPeerDID(t, relyingParty)
@@ -1917,6 +2006,7 @@ func TestCHAPIResponseHandler(t *testing.T) {
 			PresentProofClient:   &mockpresentproof.MockClient{},
 			MsgRegistrar:         msghandler.NewRegistrar(),
 			AriesMessenger:       &messenger.MockMessenger{},
+			JSONLDDocumentLoader: docLoader(t),
 		})
 		require.NoError(t, err)
 
@@ -1933,6 +2023,8 @@ func TestCHAPIResponseHandler(t *testing.T) {
 	})
 
 	t.Run("internal server error if error creating didcomm connection", func(t *testing.T) {
+		t.Parallel()
+
 		relyingParty, subject, _ := trio(t)
 		invitationID := uuid.New().String()
 		rpPublicDID := newDID(t).String()
@@ -1946,7 +2038,7 @@ func TestCHAPIResponseHandler(t *testing.T) {
 			InputDescriptors: []*presexch.InputDescriptor{{
 				ID: uuid.New().String(),
 				Schema: []*presexch.Schema{{
-					URI: vc.AuthorizationCredentialContext,
+					URI: vc.AuthorizationCredentialContext + "#" + vc.AuthorizationCredentialType,
 				}},
 			}},
 		}
@@ -1970,7 +2062,7 @@ func TestCHAPIResponseHandler(t *testing.T) {
 			PresentProofClient:   &mockpresentproof.MockClient{},
 			MsgRegistrar:         msghandler.NewRegistrar(),
 			AriesMessenger:       &messenger.MockMessenger{},
-			JSONLDDocumentLoader: testDocumentLoader,
+			JSONLDDocumentLoader: docLoader(t),
 		})
 		require.NoError(t, err)
 
@@ -1987,6 +2079,8 @@ func TestCHAPIResponseHandler(t *testing.T) {
 	})
 
 	t.Run("rp authz did validation error", func(t *testing.T) {
+		t.Parallel()
+
 		relyingParty, subject, issuer := trio(t)
 		rpDID := newPeerDID(t, relyingParty)
 		subjectDID := newPeerDID(t, subject)
@@ -2003,13 +2097,13 @@ func TestCHAPIResponseHandler(t *testing.T) {
 				{
 					ID: uuid.New().String(),
 					Schema: []*presexch.Schema{{
-						URI: vc.AuthorizationCredentialContext,
+						URI: vc.AuthorizationCredentialContext + "#" + vc.AuthorizationCredentialType,
 					}},
 				},
 				{
 					ID: uuid.New().String(),
 					Schema: []*presexch.Schema{{
-						URI: "https://www.w3.org/2018/credentials/examples/v1",
+						URI: "https://www.w3.org/2018/credentials/examples/v1#UniversityDegreeCredential",
 					}},
 				},
 			},
@@ -2058,7 +2152,7 @@ func TestCHAPIResponseHandler(t *testing.T) {
 			},
 			MsgRegistrar:         msghandler.NewRegistrar(),
 			AriesMessenger:       &messenger.MockMessenger{},
-			JSONLDDocumentLoader: testDocumentLoader,
+			JSONLDDocumentLoader: docLoader(t),
 		})
 		require.NoError(t, err)
 
@@ -2088,6 +2182,8 @@ func TestCHAPIResponseHandler(t *testing.T) {
 	})
 
 	t.Run("internal server error if cannot send request-presentation", func(t *testing.T) {
+		t.Parallel()
+
 		relyingParty, subject, _ := trio(t)
 		invitationID := uuid.New().String()
 		rpPublicDID := newDID(t).String()
@@ -2101,7 +2197,7 @@ func TestCHAPIResponseHandler(t *testing.T) {
 			InputDescriptors: []*presexch.InputDescriptor{{
 				ID: uuid.New().String(),
 				Schema: []*presexch.Schema{{
-					URI: vc.AuthorizationCredentialContext,
+					URI: vc.AuthorizationCredentialContext + "#" + vc.AuthorizationCredentialType,
 				}},
 			}},
 		}
@@ -2125,7 +2221,7 @@ func TestCHAPIResponseHandler(t *testing.T) {
 			},
 			MsgRegistrar:         msghandler.NewRegistrar(),
 			AriesMessenger:       &messenger.MockMessenger{},
-			JSONLDDocumentLoader: testDocumentLoader,
+			JSONLDDocumentLoader: docLoader(t),
 		})
 		require.NoError(t, err)
 
@@ -2142,6 +2238,8 @@ func TestCHAPIResponseHandler(t *testing.T) {
 	})
 
 	t.Run("internal server error if cannot update consent request context in transient storage", func(t *testing.T) {
+		t.Parallel()
+
 		relyingParty, subject, issuer := trio(t)
 		invitationID := uuid.New().String()
 		rpPublicDID := newDID(t).String()
@@ -2157,13 +2255,13 @@ func TestCHAPIResponseHandler(t *testing.T) {
 				{
 					ID: uuid.New().String(),
 					Schema: []*presexch.Schema{{
-						URI: vc.AuthorizationCredentialContext,
+						URI: vc.AuthorizationCredentialContext + "#" + vc.AuthorizationCredentialType,
 					}},
 				},
 				{
 					ID: uuid.New().String(),
 					Schema: []*presexch.Schema{{
-						URI: "https://www.w3.org/2018/credentials/examples/v1",
+						URI: "https://www.w3.org/2018/credentials/examples/v1#UniversityDegreeCredential",
 					}},
 				},
 			},
@@ -2221,7 +2319,7 @@ func TestCHAPIResponseHandler(t *testing.T) {
 			},
 			MsgRegistrar:         msghandler.NewRegistrar(),
 			AriesMessenger:       &messenger.MockMessenger{},
-			JSONLDDocumentLoader: testDocumentLoader,
+			JSONLDDocumentLoader: docLoader(t),
 		})
 		require.NoError(t, err)
 
@@ -2232,7 +2330,11 @@ func TestCHAPIResponseHandler(t *testing.T) {
 }
 
 func TestToMarshalledVP(t *testing.T) {
+	t.Parallel()
+
 	t.Run("error if cannot resolve rp tenant's DID", func(t *testing.T) {
+		t.Parallel()
+
 		relyingParty, issuer, subject := trio(t)
 		rpDID := newPeerDID(t, relyingParty)
 		issuerDID := newPeerDID(t, issuer)
@@ -2248,6 +2350,8 @@ func TestToMarshalledVP(t *testing.T) {
 	})
 
 	t.Run("error if rp tenant's DID does not declare an authentication method", func(t *testing.T) {
+		t.Parallel()
+
 		relyingParty, issuer, subject := trio(t)
 		issuerDID := newPeerDID(t, issuer)
 		subjectDID := newPeerDID(t, subject)
@@ -2267,7 +2371,11 @@ func TestToMarshalledVP(t *testing.T) {
 }
 
 func TestGetPresentationResponseResultHandler(t *testing.T) {
+	t.Parallel()
+
 	t.Run("returns redirectURL if user data has been collected", func(t *testing.T) {
+		t.Parallel()
+
 		relyingParty, issuer, _ := trio(t)
 		issuerDID := newPeerDID(t, issuer)
 		redirectURL := "http://hydra.example.com/accept"
@@ -2292,8 +2400,9 @@ func TestGetPresentationResponseResultHandler(t *testing.T) {
 					return &admin.AcceptConsentRequestOK{Payload: &models.CompletedRequest{RedirectTo: redirectURL}}, nil
 				},
 			},
-			MsgRegistrar:   msghandler.NewRegistrar(),
-			AriesMessenger: &messenger.MockMessenger{},
+			MsgRegistrar:         msghandler.NewRegistrar(),
+			AriesMessenger:       &messenger.MockMessenger{},
+			JSONLDDocumentLoader: docLoader(t),
 		})
 		require.NoError(t, err)
 
@@ -2327,6 +2436,8 @@ func TestGetPresentationResponseResultHandler(t *testing.T) {
 	})
 
 	t.Run("bad request error if handle query param is missing", func(t *testing.T) {
+		t.Parallel()
+
 		o, err := New(config(t))
 		require.NoError(t, err)
 
@@ -2337,6 +2448,8 @@ func TestGetPresentationResponseResultHandler(t *testing.T) {
 	})
 
 	t.Run("bad request error if handle is invalid", func(t *testing.T) {
+		t.Parallel()
+
 		o, err := New(config(t))
 		require.NoError(t, err)
 
@@ -2347,6 +2460,8 @@ func TestGetPresentationResponseResultHandler(t *testing.T) {
 	})
 
 	t.Run("internal server error if remote threadID not found", func(t *testing.T) {
+		t.Parallel()
+
 		issuer := agent(t)
 		issuerDID := newPeerDID(t, issuer)
 		invitationID := uuid.New().String()
@@ -2381,6 +2496,8 @@ func TestGetPresentationResponseResultHandler(t *testing.T) {
 	})
 
 	t.Run("internal server error if cannot parse local credential", func(t *testing.T) {
+		t.Parallel()
+
 		invitationID := uuid.New().String()
 		thid := uuid.New().String()
 
@@ -2415,6 +2532,8 @@ func TestGetPresentationResponseResultHandler(t *testing.T) {
 	})
 
 	t.Run("internal server error if cannot parse remote credential", func(t *testing.T) {
+		t.Parallel()
+
 		issuer := agent(t)
 		issuerDID := newPeerDID(t, issuer)
 		invitationID := uuid.New().String()
@@ -2452,6 +2571,8 @@ func TestGetPresentationResponseResultHandler(t *testing.T) {
 	})
 
 	t.Run("bad gateway error if hydra fails to accept consent", func(t *testing.T) {
+		t.Parallel()
+
 		relyingParty, issuer, _ := trio(t)
 		issuerDID := newPeerDID(t, issuer)
 		invitationID := uuid.New().String()
@@ -2475,8 +2596,9 @@ func TestGetPresentationResponseResultHandler(t *testing.T) {
 					return nil, errors.New("test")
 				},
 			},
-			MsgRegistrar:   msghandler.NewRegistrar(),
-			AriesMessenger: &messenger.MockMessenger{},
+			MsgRegistrar:         msghandler.NewRegistrar(),
+			AriesMessenger:       &messenger.MockMessenger{},
+			JSONLDDocumentLoader: docLoader(t),
 		})
 		require.NoError(t, err)
 
@@ -2504,7 +2626,11 @@ func TestGetPresentationResponseResultHandler(t *testing.T) {
 }
 
 func TestHandleIssuerPresentationMsg(t *testing.T) {
+	t.Parallel()
+
 	t.Run("valid response", func(t *testing.T) {
+		t.Parallel()
+
 		relyingParty, issuer, _ := trio(t)
 		rpDID := newPeerDID(t, relyingParty)
 		issuerDID := newPeerDID(t, issuer)
@@ -2518,7 +2644,7 @@ func TestHandleIssuerPresentationMsg(t *testing.T) {
 			PresentProofClient:   &mockpresentproof.MockClient{},
 			MsgRegistrar:         msghandler.NewRegistrar(),
 			AriesMessenger:       &messenger.MockMessenger{},
-			JSONLDDocumentLoader: testDocumentLoader,
+			JSONLDDocumentLoader: docLoader(t),
 		})
 		require.NoError(t, err)
 
@@ -2532,13 +2658,19 @@ func TestHandleIssuerPresentationMsg(t *testing.T) {
 		bits, err := o.transientStore.Get(thid)
 		require.NoError(t, err)
 
-		actual, err := verifiable.ParseCredential(bits, verifiable.WithDisabledProofCheck())
+		actual, err := verifiable.ParseCredential(
+			bits,
+			verifiable.WithDisabledProofCheck(),
+			verifiable.WithJSONLDDocumentLoader(docLoader(t)),
+		)
 		require.NoError(t, err)
 
 		require.Equal(t, expected.ID, actual.ID)
 	})
 
 	t.Run("error if invalid threadID", func(t *testing.T) {
+		t.Parallel()
+
 		o, err := New(config(t))
 		require.NoError(t, err)
 
@@ -2547,6 +2679,8 @@ func TestHandleIssuerPresentationMsg(t *testing.T) {
 	})
 
 	t.Run("error on invalid presentation response", func(t *testing.T) {
+		t.Parallel()
+
 		o, err := New(config(t))
 		require.NoError(t, err)
 		thid := uuid.New().String()
@@ -2561,6 +2695,8 @@ func TestHandleIssuerPresentationMsg(t *testing.T) {
 	})
 
 	t.Run("error fetching attachment contents", func(t *testing.T) {
+		t.Parallel()
+
 		o, err := New(config(t))
 		require.NoError(t, err)
 		attachID := uuid.New().String()
@@ -2582,6 +2718,8 @@ func TestHandleIssuerPresentationMsg(t *testing.T) {
 	})
 
 	t.Run("error if response attachment contains an unparseable VP", func(t *testing.T) {
+		t.Parallel()
+
 		o, err := New(config(t))
 		require.NoError(t, err)
 
@@ -2593,6 +2731,8 @@ func TestHandleIssuerPresentationMsg(t *testing.T) {
 	})
 
 	t.Run("error on transient store PUT error", func(t *testing.T) {
+		t.Parallel()
+
 		issuer := agent(t)
 		issuerDID := newPeerDID(t, issuer)
 
@@ -2623,6 +2763,8 @@ func TestHandleIssuerPresentationMsg(t *testing.T) {
 }
 
 func TestUserInfoHandler(t *testing.T) {
+	t.Parallel()
+
 	c, err := New(config(t))
 	require.NoError(t, err)
 
@@ -2633,13 +2775,21 @@ func TestUserInfoHandler(t *testing.T) {
 }
 
 func TestTestResponse(t *testing.T) {
+	t.Parallel()
+
 	t.Run("error", func(t *testing.T) {
+		t.Parallel()
+
 		testResponse(&stubWriter{})
 	})
 }
 
 func TestCreateRPTenant(t *testing.T) {
+	t.Parallel()
+
 	t.Run("creates valid tenant", func(t *testing.T) {
+		t.Parallel()
+
 		callback := "http://test.example.com"
 		expected := &rp.Tenant{
 			ClientID:             uuid.New().String(),
@@ -2706,6 +2856,8 @@ func TestCreateRPTenant(t *testing.T) {
 	})
 
 	t.Run("bad request", func(t *testing.T) {
+		t.Parallel()
+
 		tests := []struct {
 			desc    string
 			request *http.Request
@@ -2748,6 +2900,8 @@ func TestCreateRPTenant(t *testing.T) {
 	})
 
 	t.Run("internal server error rp already exists", func(t *testing.T) {
+		t.Parallel()
+
 		existing := &rp.Tenant{
 			ClientID:  uuid.New().String(),
 			PublicDID: newDID(t).String(),
@@ -2787,6 +2941,8 @@ func TestCreateRPTenant(t *testing.T) {
 	})
 
 	t.Run("internal server error on generic store GET error", func(t *testing.T) {
+		t.Parallel()
+
 		o, err := New(&Config{
 			DIDExchClient: &mockdidexchange.MockClient{},
 			Storage: &Storage{
@@ -2818,6 +2974,8 @@ func TestCreateRPTenant(t *testing.T) {
 	})
 
 	t.Run("internal server error on generic store PUT error", func(t *testing.T) {
+		t.Parallel()
+
 		o, err := New(&Config{
 			DIDExchClient: &mockdidexchange.MockClient{},
 			Storage: &Storage{
@@ -2851,6 +3009,8 @@ func TestCreateRPTenant(t *testing.T) {
 	})
 
 	t.Run("internal server error if hydra fails to create oauth2 client", func(t *testing.T) {
+		t.Parallel()
+
 		o, err := New(&Config{
 			DIDExchClient: &mockdidexchange.MockClient{},
 			Storage: &Storage{
@@ -2880,6 +3040,8 @@ func TestCreateRPTenant(t *testing.T) {
 	})
 
 	t.Run("internal server error if public did creation fails", func(t *testing.T) {
+		t.Parallel()
+
 		o, err := New(&Config{
 			DIDExchClient: &mockdidexchange.MockClient{},
 			Storage: &Storage{
@@ -2913,6 +3075,8 @@ func TestCreateRPTenant(t *testing.T) {
 	})
 
 	t.Run("failed to issue governance vc", func(t *testing.T) {
+		t.Parallel()
+
 		callback := "http://test.example.com"
 		expected := &rp.Tenant{
 			ClientID:  uuid.New().String(),
@@ -2969,7 +3133,11 @@ func TestCreateRPTenant(t *testing.T) {
 }
 
 func TestRemoveOIDCScope(t *testing.T) {
+	t.Parallel()
+
 	t.Run("removes oidc scope", func(t *testing.T) {
+		t.Parallel()
+
 		scopes := []string{oidc.ScopeOpenID, uuid.New().String(), uuid.New().String(), uuid.New().String()}
 		result := removeOIDCScope(scopes)
 		require.NotContains(t, result, oidc.ScopeOpenID)
@@ -2983,8 +3151,12 @@ func TestRemoveOIDCScope(t *testing.T) {
 	})
 }
 
-func TestDIDDocReq(t *testing.T) { // nolint:gocyclo
+func TestDIDDocReq(t *testing.T) { // nolint:gocyclo,cyclop
+	t.Parallel()
+
 	t.Run("unsupported message type", func(t *testing.T) {
+		t.Parallel()
+
 		c, err := New(config(t))
 		require.NoError(t, err)
 
@@ -3020,6 +3192,8 @@ func TestDIDDocReq(t *testing.T) { // nolint:gocyclo
 	})
 
 	t.Run("messenger reply error", func(t *testing.T) {
+		t.Parallel()
+
 		c, err := New(config(t))
 		require.NoError(t, err)
 
@@ -3038,6 +3212,8 @@ func TestDIDDocReq(t *testing.T) { // nolint:gocyclo
 	})
 
 	t.Run("did doc request", func(t *testing.T) {
+		t.Parallel()
+
 		c, err := New(config(t))
 		require.NoError(t, err)
 
@@ -3087,6 +3263,8 @@ func TestDIDDocReq(t *testing.T) { // nolint:gocyclo
 	})
 
 	t.Run("invalid connection", func(t *testing.T) {
+		t.Parallel()
+
 		c, err := New(config(t))
 		require.NoError(t, err)
 
@@ -3123,6 +3301,8 @@ func TestDIDDocReq(t *testing.T) { // nolint:gocyclo
 	})
 
 	t.Run("create did doc error", func(t *testing.T) {
+		t.Parallel()
+
 		conf := config(t)
 
 		done := make(chan struct{})
@@ -3183,6 +3363,8 @@ func TestDIDDocReq(t *testing.T) { // nolint:gocyclo
 	})
 
 	t.Run("mapping save error", func(t *testing.T) {
+		t.Parallel()
+
 		c, err := New(config(t))
 		require.NoError(t, err)
 
@@ -3231,6 +3413,8 @@ func TestDIDDocReq(t *testing.T) { // nolint:gocyclo
 	})
 
 	t.Run("connection to rp tenant mapping not found", func(t *testing.T) {
+		t.Parallel()
+
 		c, err := New(config(t))
 		require.NoError(t, err)
 
@@ -3269,6 +3453,8 @@ func TestDIDDocReq(t *testing.T) { // nolint:gocyclo
 	})
 
 	t.Run("rp tenant not found", func(t *testing.T) {
+		t.Parallel()
+
 		c, err := New(config(t))
 		require.NoError(t, err)
 
@@ -3609,7 +3795,11 @@ func checkPresentationDefinitionAttachment(
 	bits, err := request.RequestPresentationsAttach[0].Data.Fetch()
 	require.NoError(t, err)
 
-	vp, err := verifiable.ParsePresentation(bits, verifiable.WithPresDisabledProofCheck())
+	vp, err := verifiable.ParsePresentation(
+		bits,
+		verifiable.WithPresDisabledProofCheck(),
+		verifiable.WithPresJSONLDDocumentLoader(docLoader(t)),
+	)
 	require.NoError(t, err)
 
 	require.Len(t, vp.Credentials(), 1)
@@ -3617,7 +3807,10 @@ func checkPresentationDefinitionAttachment(
 	authzBits, err := vp.MarshalledCredentials()
 	require.NoError(t, err)
 
-	result, err := verifiable.ParseCredential(authzBits[0])
+	result, err := verifiable.ParseCredential(
+		authzBits[0],
+		verifiable.WithJSONLDDocumentLoader(docLoader(t)),
+	)
 	require.NoError(t, err)
 
 	actual, ok := result.Subject.([]verifiable.Subject)

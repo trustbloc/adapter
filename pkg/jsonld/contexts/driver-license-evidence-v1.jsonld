@@ -1,0 +1,35 @@
+{
+  "@context": {
+    "@version": 1.1,
+    "id": "@id",
+    "type": "@type",
+    "xsd": "http://www.w3.org/2001/XMLSchema#",
+    "ex": "https://example.org/examples#",
+
+    "DrivingLicenseEvidence": {
+      "@id": "ex:DrivingLicenseEvidence",
+      "@context": {
+        "@version": 1.1,
+        "@protected": true,
+        "id": "@id",
+        "type": "@type",
+
+        "name": "http://schema.org/name",
+        "description": "http://schema.org/description",
+
+        "document_number": {
+          "@id": "ex:document_number",
+          "@type": "xsd:string"
+        },
+        "evidence_id": {
+          "@id": "ex:evidence_id",
+          "@type": "xsd:string"
+        },
+        "comments": {
+          "@id": "ex:comments",
+          "@type": "xsd:string"
+        }
+      }
+    }
+  }
+}

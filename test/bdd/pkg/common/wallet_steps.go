@@ -159,13 +159,14 @@ func (e *WalletSteps) createWalletBridgeInvitation(adapterURL, userID string) er
 	resp, err := bddutil.HTTPDo(http.MethodPost, adapterURL+createWalletBridgeInvitation, //nolint: bodyclose
 		"", "", bytes.NewBuffer(rqBytes), e.bddContext.TLSConfig())
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to execeute request: %w", err)
 	}
 
 	defer bddutil.CloseResponseBody(resp.Body)
 
 	// validating only status code as the vue page needs javascript support
 	if resp.StatusCode != http.StatusOK {
+		// nolint:wrapcheck // ignore
 		return bddutil.ExpectedStatusCodeError(http.StatusOK, resp.StatusCode, nil)
 	}
 
@@ -196,12 +197,13 @@ func (e *WalletSteps) checkWalletProfileStatus(adapterURL, userID, status string
 	resp, err := bddutil.HTTPDo(http.MethodPost, adapterURL+requestAppProfileStatus, //nolint: bodyclose
 		"", "", bytes.NewBuffer(rqBytes), e.bddContext.TLSConfig())
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to execute request: %w", err)
 	}
 
 	defer bddutil.CloseResponseBody(resp.Body)
 
 	if resp.StatusCode != http.StatusOK {
+		// nolint:wrapcheck // ignore
 		return bddutil.ExpectedStatusCodeError(http.StatusOK, resp.StatusCode, nil)
 	}
 
@@ -219,6 +221,7 @@ func (e *WalletSteps) checkWalletProfileStatus(adapterURL, userID, status string
 	return nil
 }
 
+// nolint:funlen
 func (e *WalletSteps) sendCHAPIRequestToRemoteWalletUser(adapterURL, userID, walletID string,
 	chapiRqst json.RawMessage, expectedResponse string) error {
 	walletInfoVal, found := e.bddContext.Get(bddutil.GetRemoteWalletAppInfo(walletID))
@@ -253,12 +256,13 @@ func (e *WalletSteps) sendCHAPIRequestToRemoteWalletUser(adapterURL, userID, wal
 	resp, err := bddutil.HTTPDo(http.MethodPost, adapterURL+sendCHAPIRequest, //nolint: bodyclose
 		"", "", bytes.NewBuffer(rqBytes), e.bddContext.TLSConfig())
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to failed to execute request: %w", err)
 	}
 
 	defer bddutil.CloseResponseBody(resp.Body)
 
 	if resp.StatusCode != http.StatusOK {
+		// nolint:wrapcheck // ignore
 		return bddutil.ExpectedStatusCodeError(http.StatusOK, resp.StatusCode, nil)
 	}
 
@@ -286,7 +290,7 @@ func (e *WalletSteps) handleCHAPIStoreRequest(controllerURL, webhookURL, msgHand
 	expectedResponse string) error {
 	msg, err := agent.PullMsgFromWebhookURL(webhookURL, msgHandle)
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to pull msg from webhook: %w", err)
 	}
 
 	incoming := struct {
@@ -304,7 +308,7 @@ func (e *WalletSteps) handleCHAPIStoreRequest(controllerURL, webhookURL, msgHand
 		"data":  json.RawMessage(expectedResponse),
 	})
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to marshal msg: %w", err)
 	}
 
 	request := &messaging.SendReplyMessageArgs{
@@ -314,16 +318,17 @@ func (e *WalletSteps) handleCHAPIStoreRequest(controllerURL, webhookURL, msgHand
 
 	msgBytes, err := json.Marshal(request)
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to marshal request: %w", err)
 	}
 
 	resp, err := bddutil.HTTPDo(http.MethodPost, controllerURL+msgReplyEndpoint, //nolint: bodyclose
 		"", "", bytes.NewBuffer(msgBytes), e.bddContext.TLSConfig())
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to execute request: %w", err)
 	}
 
 	if resp.StatusCode != http.StatusOK {
+		// nolint:wrapcheck // ignore
 		return bddutil.ExpectedStatusCodeError(http.StatusOK, resp.StatusCode, nil)
 	}
 

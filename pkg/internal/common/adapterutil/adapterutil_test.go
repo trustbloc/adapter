@@ -14,6 +14,8 @@ import (
 )
 
 func TestStringsContains(t *testing.T) {
+	t.Parallel()
+
 	words := []string{"Hello", "World"}
 
 	require.True(t, StringsContains("World", words))
@@ -21,7 +23,11 @@ func TestStringsContains(t *testing.T) {
 }
 
 func TestDecodeUnmarshaller(t *testing.T) {
+	t.Parallel()
+
 	t.Run("test decode - failure", func(t *testing.T) {
+		t.Parallel()
+
 		v := &struct {
 			field1 string
 		}{}
@@ -31,6 +37,8 @@ func TestDecodeUnmarshaller(t *testing.T) {
 	})
 
 	t.Run("test decode - failure", func(t *testing.T) {
+		t.Parallel()
+
 		v := 32
 
 		err := DecodeJSONMarshaller(&verifiable.Credential{}, v)
@@ -40,6 +48,8 @@ func TestDecodeUnmarshaller(t *testing.T) {
 }
 
 func TestValidHTTPURL(t *testing.T) {
+	t.Parallel()
+
 	require.True(t, ValidHTTPURL("http://example.com"))
 	require.True(t, ValidHTTPURL("https://example.com"))
 	require.True(t, ValidHTTPURL("https://example.com/test"))

@@ -68,8 +68,6 @@ func (d *dockerCmdlineHelper) RemoveContainersWithNamePrefix(namePrefix string) 
 	}
 
 	for _, id := range containers {
-		fmt.Printf("container: %s", id)
-
 		_, err = d.issueDockerCommand([]string{"rm", "-f", id})
 		if err != nil {
 			return fmt.Errorf("failed to issue docker command:  %w", err)
@@ -121,12 +119,12 @@ func GenerateSplitLogs(logName string) error { // nolint:funlen
 
 	f, err := os.OpenFile(logName, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0600) // nolint: gosec
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to open file: %w", err)
 	}
 
 	defer func() {
 		if errClose := f.Close(); errClose != nil {
-			fmt.Println(errClose.Error())
+			fmt.Println(errClose.Error()) // nolint:forbidigo // ignored because this is test code
 		}
 	}()
 

@@ -95,24 +95,24 @@ func (p *Provider) issueCredential(didID, profileID string) ([]byte, error) {
 
 	reqBytes, err := json.Marshal(req)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to marshal request: %w", err)
 	}
 
 	endpointURL := fmt.Sprintf(issueCredentialURLFormat, p.governanceVCSUrl, governanceProfileName)
 
 	httpReq, err := http.NewRequest(http.MethodPost, endpointURL, bytes.NewBuffer(reqBytes))
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to create new http request: %w", err)
 	}
 
 	data, err := sendHTTPRequest(httpReq, p.httpClient, http.StatusCreated,
 		p.requestTokens[vcsGovernanceRequestTokenName])
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to execute http request: %w", err)
 	}
 
 	if err := p.store.Put(fmt.Sprintf(governanceVCKey, profileID), data); err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to store profile data: %w", err)
 	}
 
 	return data, nil
@@ -120,7 +120,7 @@ func (p *Provider) issueCredential(didID, profileID string) ([]byte, error) {
 
 // GetCredential get governance credential.
 func (p *Provider) GetCredential(profileID string) ([]byte, error) {
-	return p.store.Get(fmt.Sprintf(governanceVCKey, profileID))
+	return p.store.Get(fmt.Sprintf(governanceVCKey, profileID)) // nolint:wrapcheck // reduce cyclo
 }
 
 func sendHTTPRequest(req *http.Request, client httpClient, status int, bearerToken string) ([]byte, error) {
@@ -149,5 +149,5 @@ func sendHTTPRequest(req *http.Request, client httpClient, status int, bearerTok
 		return nil, fmt.Errorf("http request: %d %s", resp.StatusCode, string(body))
 	}
 
-	return ioutil.ReadAll(resp.Body)
+	return ioutil.ReadAll(resp.Body) // nolint:wrapcheck // reduce cyclo
 }

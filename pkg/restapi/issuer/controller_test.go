@@ -29,7 +29,11 @@ import (
 )
 
 func TestNew(t *testing.T) {
+	t.Parallel()
+
 	t.Run("test new - success", func(t *testing.T) {
+		t.Parallel()
+
 		ariesCtx := &mockprovider.MockProvider{
 			Provider: &ariesmockprovider.Provider{
 				ProtocolStateStorageProviderValue: mem.NewProvider(),
@@ -59,6 +63,8 @@ func TestNew(t *testing.T) {
 	})
 
 	t.Run("test new - fail", func(t *testing.T) {
+		t.Parallel()
+
 		ariesCtx := mockprovider.NewMockProvider()
 
 		controller, err := New(&operation.Config{AriesCtx: ariesCtx})

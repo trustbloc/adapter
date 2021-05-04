@@ -42,7 +42,11 @@ const (
 )
 
 func TestNew(t *testing.T) {
+	t.Parallel()
+
 	t.Run("create new instance - success", func(t *testing.T) {
+		t.Parallel()
+
 		op, err := New(newMockConfig())
 
 		require.NoError(t, err)
@@ -51,6 +55,8 @@ func TestNew(t *testing.T) {
 	})
 
 	t.Run("create new instance - oob client failure", func(t *testing.T) {
+		t.Parallel()
+
 		op, err := New(&Config{
 			AriesCtx: &mockprovider.MockProvider{
 				Provider: &ariesmockprovider.Provider{
@@ -71,6 +77,8 @@ func TestNew(t *testing.T) {
 	})
 
 	t.Run("create new instance - did exchange client failure", func(t *testing.T) {
+		t.Parallel()
+
 		op, err := New(&Config{
 			AriesCtx: &mockprovider.MockProvider{
 				Provider: &ariesmockprovider.Provider{
@@ -91,6 +99,8 @@ func TestNew(t *testing.T) {
 	})
 
 	t.Run("create new instance - open store failure", func(t *testing.T) {
+		t.Parallel()
+
 		op, err := New(&Config{
 			AriesCtx: &mockprovider.MockProvider{
 				Provider: &ariesmockprovider.Provider{
@@ -115,6 +125,8 @@ func TestNew(t *testing.T) {
 	})
 
 	t.Run("create new instance - register state event failure", func(t *testing.T) {
+		t.Parallel()
+
 		op, err := New(&Config{
 			AriesCtx: &mockprovider.MockProvider{
 				Provider: &ariesmockprovider.Provider{
@@ -138,6 +150,8 @@ func TestNew(t *testing.T) {
 	})
 
 	t.Run("create new instance - init messenger failure", func(t *testing.T) {
+		t.Parallel()
+
 		op, err := New(&Config{
 			AriesCtx: &mockprovider.MockProvider{
 				Provider: &ariesmockprovider.Provider{
@@ -162,11 +176,15 @@ func TestNew(t *testing.T) {
 }
 
 func TestOperation_CreateInvitation(t *testing.T) {
+	t.Parallel()
+
 	const sampleRequest = `{"userID": "1234"}`
 
 	const sampleInvalidRequest = `{"userID": ""}`
 
 	t.Run("create new invitation - success", func(t *testing.T) {
+		t.Parallel()
+
 		op, err := New(newMockConfig())
 
 		require.NoError(t, err)
@@ -183,6 +201,8 @@ func TestOperation_CreateInvitation(t *testing.T) {
 	})
 
 	t.Run("create new invitation - failure - oob error", func(t *testing.T) {
+		t.Parallel()
+
 		op, err := New(&Config{
 			AriesCtx: &mockprovider.MockProvider{
 				Provider: &ariesmockprovider.Provider{
@@ -215,6 +235,8 @@ func TestOperation_CreateInvitation(t *testing.T) {
 	})
 
 	t.Run("create new invitation - failure - validation error", func(t *testing.T) {
+		t.Parallel()
+
 		op, err := New(newMockConfig())
 
 		require.NoError(t, err)
@@ -231,6 +253,8 @@ func TestOperation_CreateInvitation(t *testing.T) {
 	})
 
 	t.Run("create new invitation - failure - invalid request", func(t *testing.T) {
+		t.Parallel()
+
 		op, err := New(newMockConfig())
 
 		require.NoError(t, err)
@@ -247,6 +271,8 @@ func TestOperation_CreateInvitation(t *testing.T) {
 	})
 
 	t.Run("create new invitation - failure - save profile error", func(t *testing.T) {
+		t.Parallel()
+
 		op, err := New(&Config{
 			AriesCtx: &mockprovider.MockProvider{
 				Provider: &ariesmockprovider.Provider{
@@ -282,6 +308,8 @@ func TestOperation_CreateInvitation(t *testing.T) {
 	})
 
 	t.Run("create new invitation - failure - save transient store error", func(t *testing.T) {
+		t.Parallel()
+
 		op, err := New(&Config{
 			AriesCtx: &mockprovider.MockProvider{
 				Provider: &ariesmockprovider.Provider{
@@ -320,11 +348,15 @@ func TestOperation_CreateInvitation(t *testing.T) {
 }
 
 func TestOperation_RequestApplicationProfile(t *testing.T) {
+	t.Parallel()
+
 	sampleReq := fmt.Sprintf(`{"userID":"%s"}`, sampleUserID)
 	sampleReq2 := fmt.Sprintf(`{"userID":"%s", "waitForConnection":true, "timeout":1}`, sampleUserID)
 	sampleReq3 := `{"userID":"invalid-001", "waitForConnection":false}`
 
 	t.Run("create application profile - success", func(t *testing.T) {
+		t.Parallel()
+
 		op, err := New(newMockConfig())
 
 		require.NoError(t, err)
@@ -351,6 +383,8 @@ func TestOperation_RequestApplicationProfile(t *testing.T) {
 	})
 
 	t.Run("create application profile - success but status not completed", func(t *testing.T) {
+		t.Parallel()
+
 		op, err := New(newMockConfig())
 
 		require.NoError(t, err)
@@ -369,6 +403,8 @@ func TestOperation_RequestApplicationProfile(t *testing.T) {
 	})
 
 	t.Run("create application profile - invalid request", func(t *testing.T) {
+		t.Parallel()
+
 		op, err := New(newMockConfig())
 		require.NoError(t, err)
 		require.NotEmpty(t, op)
@@ -391,6 +427,8 @@ func TestOperation_RequestApplicationProfile(t *testing.T) {
 	})
 
 	t.Run("create application profile - profile not found", func(t *testing.T) {
+		t.Parallel()
+
 		op, err := New(newMockConfig())
 		require.NoError(t, err)
 		require.NotEmpty(t, op)
@@ -405,6 +443,8 @@ func TestOperation_RequestApplicationProfile(t *testing.T) {
 	})
 
 	t.Run("test didexchange completed", func(t *testing.T) {
+		t.Parallel()
+
 		op, err := New(newMockConfig())
 		require.NoError(t, err)
 		require.NotEmpty(t, op)
@@ -440,6 +480,8 @@ func TestOperation_RequestApplicationProfile(t *testing.T) {
 	})
 
 	t.Run("test didexchange completed - but update profile failed", func(t *testing.T) {
+		t.Parallel()
+
 		op, err := New(&Config{
 			AriesCtx: &mockprovider.MockProvider{
 				Provider: &ariesmockprovider.Provider{
@@ -482,6 +524,8 @@ func TestOperation_RequestApplicationProfile(t *testing.T) {
 	})
 
 	t.Run("test didexchange not completed", func(t *testing.T) {
+		t.Parallel()
+
 		op, err := New(newMockConfig())
 		require.NoError(t, err)
 		require.NotEmpty(t, op)
@@ -520,6 +564,8 @@ func TestOperation_RequestApplicationProfile(t *testing.T) {
 	})
 
 	t.Run("create application profile - failure wait for completion", func(t *testing.T) {
+		t.Parallel()
+
 		op, err := New(newMockConfig())
 		require.NoError(t, err)
 		require.NotEmpty(t, op)
@@ -536,6 +582,8 @@ func TestOperation_RequestApplicationProfile(t *testing.T) {
 	})
 
 	t.Run("create application profile - test prepare request", func(t *testing.T) {
+		t.Parallel()
+
 		request, err := prepareAppProfileRequest(bytes.NewBufferString(`{"userID":"test", "waitForConnection":true}`))
 
 		require.NoError(t, err)
@@ -546,6 +594,8 @@ func TestOperation_RequestApplicationProfile(t *testing.T) {
 }
 
 func TestOperation_SendCHAPIRequest(t *testing.T) {
+	t.Parallel()
+
 	const chapiRequestSample = `{
 			"userID": "userID-001",
 			"request" : {
@@ -586,6 +636,8 @@ func TestOperation_SendCHAPIRequest(t *testing.T) {
 					`
 
 	t.Run("test send CHAPI request - validation errors", func(t *testing.T) {
+		t.Parallel()
+
 		op, err := New(newMockConfig())
 
 		require.NoError(t, err)
@@ -619,6 +671,8 @@ func TestOperation_SendCHAPIRequest(t *testing.T) {
 	})
 
 	t.Run("test send CHAPI request - missing profile", func(t *testing.T) {
+		t.Parallel()
+
 		op, err := New(newMockConfig())
 
 		require.NoError(t, err)
@@ -634,6 +688,8 @@ func TestOperation_SendCHAPIRequest(t *testing.T) {
 	})
 
 	t.Run("test send CHAPI request - connection not found", func(t *testing.T) {
+		t.Parallel()
+
 		op, err := New(newMockConfig())
 
 		require.NoError(t, err)
@@ -652,6 +708,8 @@ func TestOperation_SendCHAPIRequest(t *testing.T) {
 	})
 
 	t.Run("test send CHAPI request - message send error", func(t *testing.T) {
+		t.Parallel()
+
 		op, err := New(newMockConfig())
 
 		require.NoError(t, err)
@@ -673,6 +731,8 @@ func TestOperation_SendCHAPIRequest(t *testing.T) {
 	})
 
 	t.Run("test send CHAPI request - success", func(t *testing.T) {
+		t.Parallel()
+
 		connBytes, err := json.Marshal(&connection.Record{
 			ConnectionID: sampleConnID,
 			State:        "completed", MyDID: "mydid", TheirDID: "theirDID-001",
@@ -693,11 +753,10 @@ func TestOperation_SendCHAPIRequest(t *testing.T) {
 					))
 					require.NoError(t, e)
 
-					_, e = registrar.Services()[0].HandleInbound(replyMsg,
-						&mockDIDCommContext{
-							myDIDValue:    "sampleDID",
-							theirDIDValue: "sampleTheirDID",
-						})
+					_, e = registrar.Services()[0].HandleInbound(
+						replyMsg,
+						service.NewDIDCommContext("sampleDID", "sampleTheirDID", nil),
+					)
 					require.NoError(t, e)
 
 					break
@@ -755,13 +814,19 @@ func TestOperation_SendCHAPIRequest(t *testing.T) {
 	})
 
 	t.Run("test send CHAPI request - extract CHAPI response", func(t *testing.T) {
+		t.Parallel()
+
 		_, err := extractCHAPIResponse([]byte("{"))
 		require.Error(t, err)
 	})
 }
 
 func TestOperation_WaitForStateCompletion(t *testing.T) {
+	t.Parallel()
+
 	t.Run("test wait for state completion - success", func(t *testing.T) {
+		t.Parallel()
+
 		mockDIDExSvc := &mockDIDExchangeSvc{MockDIDExchangeSvc: &mockdidexsvc.MockDIDExchangeSvc{}}
 
 		op, err := New(&Config{
@@ -819,6 +884,8 @@ func TestOperation_WaitForStateCompletion(t *testing.T) {
 	})
 
 	t.Run("test wait for state completion - timeout error & unregister error", func(t *testing.T) {
+		t.Parallel()
+
 		op, err := New(&Config{
 			AriesCtx: &mockprovider.MockProvider{
 				Provider: &ariesmockprovider.Provider{
@@ -850,6 +917,8 @@ func TestOperation_WaitForStateCompletion(t *testing.T) {
 	})
 
 	t.Run("test wait for state completion - register msg event error", func(t *testing.T) {
+		t.Parallel()
+
 		mockDIDExSvc := &mockdidexsvc.MockDIDExchangeSvc{}
 
 		op, err := New(&Config{
@@ -884,6 +953,8 @@ func TestOperation_WaitForStateCompletion(t *testing.T) {
 }
 
 func TestOperation_SaveWalletPreferences(t *testing.T) {
+	t.Parallel()
+
 	const (
 		validSaveRequest         = `{"userID":"sampleUser", "walletType":"remote"}`
 		missingIDRequest         = `{"walletType":"remote"}`
@@ -892,6 +963,8 @@ func TestOperation_SaveWalletPreferences(t *testing.T) {
 	)
 
 	t.Run("test save wallet preferences - success", func(t *testing.T) {
+		t.Parallel()
+
 		op, err := New(newMockConfig())
 		require.NoError(t, err)
 		require.NotEmpty(t, op)
@@ -906,6 +979,8 @@ func TestOperation_SaveWalletPreferences(t *testing.T) {
 	})
 
 	t.Run("test save wallet preferences - invalid request", func(t *testing.T) {
+		t.Parallel()
+
 		op, err := New(newMockConfig())
 		require.NoError(t, err)
 		require.NotEmpty(t, op)
@@ -920,6 +995,8 @@ func TestOperation_SaveWalletPreferences(t *testing.T) {
 	})
 
 	t.Run("test save wallet preferences - invalid user ID", func(t *testing.T) {
+		t.Parallel()
+
 		op, err := New(newMockConfig())
 		require.NoError(t, err)
 		require.NotEmpty(t, op)
@@ -934,6 +1011,8 @@ func TestOperation_SaveWalletPreferences(t *testing.T) {
 	})
 
 	t.Run("test save wallet preferences - missing wallet Type", func(t *testing.T) {
+		t.Parallel()
+
 		op, err := New(newMockConfig())
 		require.NoError(t, err)
 		require.NotEmpty(t, op)
@@ -948,6 +1027,8 @@ func TestOperation_SaveWalletPreferences(t *testing.T) {
 	})
 
 	t.Run("test save wallet preferences - invalid wallet Type", func(t *testing.T) {
+		t.Parallel()
+
 		op, err := New(newMockConfig())
 		require.NoError(t, err)
 		require.NotEmpty(t, op)
@@ -962,6 +1043,8 @@ func TestOperation_SaveWalletPreferences(t *testing.T) {
 	})
 
 	t.Run("test save wallet preferences - save error", func(t *testing.T) {
+		t.Parallel()
+
 		config := &Config{
 			AriesCtx: &mockprovider.MockProvider{
 				Provider: &ariesmockprovider.Provider{
@@ -998,9 +1081,13 @@ func TestOperation_SaveWalletPreferences(t *testing.T) {
 }
 
 func TestOperation_GetWalletPreferences(t *testing.T) {
+	t.Parallel()
+
 	const validSaveRequest = `{"userID":"userID-001", "walletType":"remote"}`
 
 	t.Run("test get wallet preferences - success", func(t *testing.T) {
+		t.Parallel()
+
 		op, err := New(newMockConfig())
 		require.NoError(t, err)
 		require.NotEmpty(t, op)
@@ -1026,6 +1113,8 @@ func TestOperation_GetWalletPreferences(t *testing.T) {
 	})
 
 	t.Run("test save wallet preferences - invalid request", func(t *testing.T) {
+		t.Parallel()
+
 		op, err := New(newMockConfig())
 		require.NoError(t, err)
 		require.NotEmpty(t, op)
@@ -1041,6 +1130,8 @@ func TestOperation_GetWalletPreferences(t *testing.T) {
 	})
 
 	t.Run("test save wallet preferences - data not found", func(t *testing.T) {
+		t.Parallel()
+
 		op, err := New(newMockConfig())
 		require.NoError(t, err)
 		require.NotEmpty(t, op)
@@ -1101,22 +1192,4 @@ func (m *mockDIDExchangeSvc) pushEvent(msg service.StateMsg, index int) {
 	if index < len(m.events) {
 		m.events[index] <- msg
 	}
-}
-
-type mockDIDCommContext struct {
-	myDIDValue    string
-	theirDIDValue string
-	props         map[string]interface{}
-}
-
-func (m *mockDIDCommContext) All() map[string]interface{} {
-	return m.props
-}
-
-func (m *mockDIDCommContext) MyDID() string {
-	return m.myDIDValue
-}
-
-func (m *mockDIDCommContext) TheirDID() string {
-	return m.theirDIDValue
 }

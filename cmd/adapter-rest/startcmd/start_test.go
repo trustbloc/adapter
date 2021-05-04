@@ -40,14 +40,14 @@ func (s *mockServer) ListenAndServe(host, certPath, keyPath string, handler http
 	return nil
 }
 
-func TestListenAndServe(t *testing.T) {
+func TestListenAndServe(t *testing.T) { // nolint:paralleltest // shared environment variables
 	var w HTTPServer
 	err := w.ListenAndServe("wronghost", "", "", nil)
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "address wronghost: missing port in address")
 }
 
-func TestStartCmdContents(t *testing.T) {
+func TestStartCmdContents(t *testing.T) { // nolint:paralleltest // shared environment variables
 	startCmd := GetStartCmd(&mockServer{})
 
 	require.Equal(t, "start", startCmd.Use)
@@ -57,7 +57,7 @@ func TestStartCmdContents(t *testing.T) {
 	checkFlagPropertiesCorrect(t, startCmd, hostURLFlagName, hostURLFlagShorthand, hostURLFlagUsage)
 }
 
-func TestStartCmdWithBlankArg(t *testing.T) {
+func TestStartCmdWithBlankArg(t *testing.T) { // nolint:paralleltest // shared environment variables
 	t.Run("test blank host url arg", func(t *testing.T) {
 		startCmd := GetStartCmd(&mockServer{})
 
@@ -66,23 +66,22 @@ func TestStartCmdWithBlankArg(t *testing.T) {
 
 		err := startCmd.Execute()
 		require.Error(t, err)
-		require.Equal(t, "host-url value is empty", err.Error())
+		require.Contains(t, err.Error(), "host-url value is empty")
 	})
 }
 
-func TestStartCmdWithMissingArg(t *testing.T) {
-	t.Run("test missing host url arg", func(t *testing.T) {
+func TestStartCmdWithMissingArg(t *testing.T) { // nolint:paralleltest // shared environment variables
+	t.Run("test missing host url arg", func(t *testing.T) { // nolint:paralleltest // shared environment variables
 		startCmd := GetStartCmd(&mockServer{})
 
 		err := startCmd.Execute()
 
 		require.Error(t, err)
-		require.Equal(t,
-			"Neither host-url (command line flag) nor ADAPTER_REST_HOST_URL (environment variable) have been set.",
-			err.Error())
+		require.Contains(t, err.Error(),
+			"Neither host-url (command line flag) nor ADAPTER_REST_HOST_URL (environment variable) have been set.")
 	})
 
-	t.Run("test missing presentation definition file arg (rpMode)", func(t *testing.T) {
+	t.Run("test missing presentation definition file arg (rpMode)", func(t *testing.T) { // nolint:paralleltest,lll // shared environment variables
 		startCmd := GetStartCmd(&mockServer{})
 
 		file, err := ioutil.TempFile("", "*.json")
@@ -103,13 +102,12 @@ func TestStartCmdWithMissingArg(t *testing.T) {
 
 		err = startCmd.Execute()
 		require.Error(t, err)
-		require.Equal(t,
+		require.Contains(t, err.Error(),
 			"Neither presentation-definitions-file (command line flag) nor "+
-				"ADAPTER_REST_PRESENTATION_DEFINITIONS_FILE (environment variable) have been set.",
-			err.Error())
+				"ADAPTER_REST_PRESENTATION_DEFINITIONS_FILE (environment variable) have been set.")
 	})
 
-	t.Run("missing presentation-exchange arg", func(t *testing.T) {
+	t.Run("missing presentation-exchange arg", func(t *testing.T) { // nolint:paralleltest // shared environment variables
 		startCmd := GetStartCmd(&mockServer{})
 
 		args := []string{
@@ -127,7 +125,7 @@ func TestStartCmdWithMissingArg(t *testing.T) {
 		require.Error(t, err)
 	})
 
-	t.Run("malformed presentation-exchange config file", func(t *testing.T) {
+	t.Run("malformed presentation-exchange config file", func(t *testing.T) { // nolint:paralleltest,lll // shared environment variables
 		startCmd := GetStartCmd(&mockServer{})
 
 		file, err := ioutil.TempFile("", "*.json")
@@ -152,7 +150,7 @@ func TestStartCmdWithMissingArg(t *testing.T) {
 		require.Contains(t, err.Error(), "failed unmarshal to input descriptors")
 	})
 
-	t.Run("nonexistent presentation-exchange config file", func(t *testing.T) {
+	t.Run("nonexistent presentation-exchange config file", func(t *testing.T) { // nolint:paralleltest,lll // shared environment variables
 		startCmd := GetStartCmd(&mockServer{})
 
 		file := strings.ReplaceAll(uuid.New().String(), "-", "")
@@ -175,7 +173,7 @@ func TestStartCmdWithMissingArg(t *testing.T) {
 	})
 }
 
-func TestStartCmdWithBlankEnvVar(t *testing.T) {
+func TestStartCmdWithBlankEnvVar(t *testing.T) { // nolint:paralleltest // shared environment variables
 	t.Run("test blank host env var", func(t *testing.T) {
 		startCmd := GetStartCmd(&mockServer{})
 
@@ -184,11 +182,11 @@ func TestStartCmdWithBlankEnvVar(t *testing.T) {
 
 		err = startCmd.Execute()
 		require.Error(t, err)
-		require.Equal(t, "ADAPTER_REST_HOST_URL value is empty", err.Error())
+		require.Contains(t, err.Error(), "ADAPTER_REST_HOST_URL value is empty")
 	})
 }
 
-func TestStartCmdValidArgs(t *testing.T) {
+func TestStartCmdValidArgs(t *testing.T) { // nolint:paralleltest // shared environment variables
 	startCmd := GetStartCmd(&mockServer{})
 
 	file, err := ioutil.TempFile("", "*.json")
@@ -218,7 +216,7 @@ func TestStartCmdValidArgs(t *testing.T) {
 	require.NoError(t, err)
 }
 
-func TestStartCmdValidArgsEnvVar(t *testing.T) {
+func TestStartCmdValidArgsEnvVar(t *testing.T) { // nolint:paralleltest // shared environment variables
 	file, err := ioutil.TempFile("", "*.json")
 	require.NoError(t, err)
 
@@ -244,8 +242,8 @@ func TestStartCmdValidArgsEnvVar(t *testing.T) {
 	require.NoError(t, err)
 }
 
-func TestStartCmdDatasourceURL(t *testing.T) {
-	t.Run("unsupported driver", func(t *testing.T) {
+func TestStartCmdDatasourceURL(t *testing.T) { // nolint:paralleltest // shared environment variables
+	t.Run("unsupported driver", func(t *testing.T) { // nolint:paralleltest // shared environment variables
 		file, err := ioutil.TempFile("", "*.json")
 		require.NoError(t, err)
 
@@ -270,7 +268,7 @@ func TestStartCmdDatasourceURL(t *testing.T) {
 		require.Error(t, err)
 	})
 
-	t.Run("invalid db url format", func(t *testing.T) {
+	t.Run("invalid db url format", func(t *testing.T) { // nolint:paralleltest // shared environment variables
 		file, err := ioutil.TempFile("", "*.json")
 		require.NoError(t, err)
 
@@ -296,7 +294,7 @@ func TestStartCmdDatasourceURL(t *testing.T) {
 		require.Error(t, err)
 	})
 
-	t.Run("missing db timeout flag", func(t *testing.T) {
+	t.Run("missing db timeout flag", func(t *testing.T) { // nolint:paralleltest // shared environment variables
 		file, err := ioutil.TempFile("", "*.json")
 		require.NoError(t, err)
 
@@ -322,8 +320,8 @@ func TestStartCmdDatasourceURL(t *testing.T) {
 	})
 }
 
-func TestStartCmdDIDComm(t *testing.T) {
-	t.Run("test start didcomm - success", func(t *testing.T) {
+func TestStartCmdDIDComm(t *testing.T) { // nolint:paralleltest // shared environment variables
+	t.Run("test start didcomm - success", func(t *testing.T) { // nolint:paralleltest // shared environment variables
 		startCmd := GetStartCmd(&mockServer{})
 
 		file, err := ioutil.TempFile("", "*.key")
@@ -352,7 +350,7 @@ func TestStartCmdDIDComm(t *testing.T) {
 		require.NoError(t, err)
 	})
 
-	t.Run("test start didcomm - empty inbound host", func(t *testing.T) {
+	t.Run("test start didcomm - empty inbound host", func(t *testing.T) { // nolint:paralleltest,lll // shared environment variables
 		startCmd := GetStartCmd(&mockServer{})
 
 		args := []string{
@@ -369,8 +367,8 @@ func TestStartCmdDIDComm(t *testing.T) {
 	})
 }
 
-func TestAdapterModes(t *testing.T) {
-	t.Run("test adapter mode - rp", func(t *testing.T) {
+func TestAdapterModes(t *testing.T) { // nolint:paralleltest // shared environment variables
+	t.Run("test adapter mode - rp", func(t *testing.T) { // nolint:paralleltest // shared environment variables
 		startCmd := GetStartCmd(&mockServer{})
 
 		file, err := ioutil.TempFile("", "*.json")
@@ -396,7 +394,7 @@ func TestAdapterModes(t *testing.T) {
 		require.NoError(t, err)
 	})
 
-	t.Run("test adapter mode - issuer", func(t *testing.T) {
+	t.Run("test adapter mode - issuer", func(t *testing.T) { // nolint:paralleltest // shared environment variables
 		startCmd := GetStartCmd(&mockServer{})
 
 		testInboundHostURL := randomURL()
@@ -428,7 +426,7 @@ func TestAdapterModes(t *testing.T) {
 		require.NoError(t, err)
 	})
 
-	t.Run("test adapter mode - unsupported mode", func(t *testing.T) {
+	t.Run("test adapter mode - unsupported mode", func(t *testing.T) { // nolint:paralleltest,lll // shared environment variables
 		startCmd := GetStartCmd(&mockServer{})
 
 		args := []string{
@@ -445,21 +443,21 @@ func TestAdapterModes(t *testing.T) {
 		require.Contains(t, err.Error(), "invalid mode : invalidMode")
 	})
 
-	t.Run("test adapter mode - store errors", func(t *testing.T) {
+	t.Run("test adapter mode - store errors", func(t *testing.T) { // nolint:paralleltest // shared environment variables
 		parameters := &adapterRestParameters{
 			dsnParams: &dsnParams{},
 		}
 
 		err := addIssuerHandlers(parameters, nil, nil, nil, nil)
 		require.Error(t, err)
-		require.Contains(t, err.Error(), "failed to init storage provider : invalid dbURL")
+		require.Contains(t, err.Error(), "failed to init storage provider")
 
 		_, err = initStore("invaldidb://test", 10, "")
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "unsupported storage driver: invaldidb")
 	})
 
-	t.Run("test adapter mode - issuer client store key error", func(t *testing.T) {
+	t.Run("test adapter mode - issuer client store key error", func(t *testing.T) { // nolint:paralleltest,lll // shared environment variables
 		startCmd := GetStartCmd(&mockServer{})
 
 		testInboundHostURL := randomURL()
@@ -485,7 +483,7 @@ func TestAdapterModes(t *testing.T) {
 		require.Contains(t, err.Error(), "failed to read key")
 	})
 
-	t.Run("test adapter mode - wallet handler errors", func(t *testing.T) {
+	t.Run("test adapter mode - wallet handler errors", func(t *testing.T) { // nolint:paralleltest,lll // shared environment variables
 		file, err := ioutil.TempFile("", "*.key")
 		require.NoError(t, err)
 
@@ -508,6 +506,7 @@ func TestAdapterModes(t *testing.T) {
 
 		issuerAries, err := aries.New(aries.WithStoreProvider(&storage.MockStoreProvider{
 			FailNamespace: "walletappprofile",
+			Store:         &storage.MockStore{Store: make(map[string]storage.DBEntry)},
 		}))
 		require.NoError(t, err)
 
@@ -522,6 +521,7 @@ func TestAdapterModes(t *testing.T) {
 
 		rpAries, err := aries.New(aries.WithStoreProvider(&storage.MockStoreProvider{
 			FailNamespace: "walletappprofile",
+			Store:         &storage.MockStore{Store: make(map[string]storage.DBEntry)},
 		}))
 		require.NoError(t, err)
 
@@ -537,7 +537,7 @@ func TestAdapterModes(t *testing.T) {
 	})
 }
 
-func TestTLSSystemCertPoolInvalidArgsEnvVar(t *testing.T) {
+func TestTLSSystemCertPoolInvalidArgsEnvVar(t *testing.T) { // nolint:paralleltest // shared environment variables
 	startCmd := GetStartCmd(&mockServer{})
 
 	setEnvVars(t, "")
@@ -550,8 +550,8 @@ func TestTLSSystemCertPoolInvalidArgsEnvVar(t *testing.T) {
 	require.Contains(t, err.Error(), "invalid syntax")
 }
 
-func TestUIHandler(t *testing.T) {
-	t.Run("handle base path", func(t *testing.T) {
+func TestUIHandler(t *testing.T) { // nolint:paralleltest // shared environment variables
+	t.Run("handle base path", func(t *testing.T) { // nolint:paralleltest // shared environment variables
 		handled := false
 		uiHandler(uiEndpoint, func(_ http.ResponseWriter, _ *http.Request, path string) {
 			handled = true
@@ -559,7 +559,7 @@ func TestUIHandler(t *testing.T) {
 		})(nil, &http.Request{URL: &url.URL{Path: uiEndpoint}})
 		require.True(t, handled)
 	})
-	t.Run("handle subpaths", func(t *testing.T) {
+	t.Run("handle subpaths", func(t *testing.T) { // nolint:paralleltest // shared environment variables
 		const expected = uiEndpoint + "/css/abc123.css"
 		handled := false
 		uiHandler(uiEndpoint, func(_ http.ResponseWriter, _ *http.Request, path string) {
@@ -626,17 +626,17 @@ func getRandomPort() (int, error) {
 
 	addr, err := net.ResolveTCPAddr(network, "localhost:0")
 	if err != nil {
-		return 0, err
+		return 0, fmt.Errorf("failed to resolve tcp address: %w", err)
 	}
 
 	listener, err := net.ListenTCP(network, addr)
 	if err != nil {
-		return 0, err
+		return 0, fmt.Errorf("failed to listen on tcp address %s: %w", addr, err)
 	}
 
 	err = listener.Close()
 	if err != nil {
-		return 0, err
+		return 0, fmt.Errorf("failed to close listener: %w", err)
 	}
 
 	return listener.Addr().(*net.TCPAddr).Port, nil

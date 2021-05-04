@@ -17,12 +17,16 @@ import (
 )
 
 func Test_SetsHTTPClient(t *testing.T) {
+	t.Parallel()
+
 	check := func(c *http.Client) {
 		require.NotNil(t, c)
 		require.NotNil(t, c.Transport)
 	}
 
 	t.Run("get login request", func(t *testing.T) {
+		t.Parallel()
+
 		c := NewClient(testURL(t), x509.NewCertPool())
 		c.hydraClient = &stubHydra{
 			getLoginFunc: func(params *admin.GetLoginRequestParams) (*admin.GetLoginRequestOK, error) {
@@ -35,6 +39,8 @@ func Test_SetsHTTPClient(t *testing.T) {
 	})
 
 	t.Run("accept login request", func(t *testing.T) {
+		t.Parallel()
+
 		c := NewClient(testURL(t), x509.NewCertPool())
 		c.hydraClient = &stubHydra{
 			acceptLoginFunc: func(params *admin.AcceptLoginRequestParams) (*admin.AcceptLoginRequestOK, error) {
@@ -47,6 +53,8 @@ func Test_SetsHTTPClient(t *testing.T) {
 	})
 
 	t.Run("get consent request", func(t *testing.T) {
+		t.Parallel()
+
 		c := NewClient(testURL(t), x509.NewCertPool())
 		c.hydraClient = &stubHydra{
 			getConsentFunc: func(params *admin.GetConsentRequestParams) (*admin.GetConsentRequestOK, error) {
@@ -59,6 +67,8 @@ func Test_SetsHTTPClient(t *testing.T) {
 	})
 
 	t.Run("accept consent request", func(t *testing.T) {
+		t.Parallel()
+
 		c := NewClient(testURL(t), x509.NewCertPool())
 		c.hydraClient = &stubHydra{
 			acceptConsentFunc: func(params *admin.AcceptConsentRequestParams) (*admin.AcceptConsentRequestOK, error) {
@@ -71,6 +81,8 @@ func Test_SetsHTTPClient(t *testing.T) {
 	})
 
 	t.Run("create oauth2 client", func(t *testing.T) {
+		t.Parallel()
+
 		c := NewClient(testURL(t), x509.NewCertPool())
 		c.hydraClient = &stubHydra{
 			createClientFunc: func(params *admin.CreateOAuth2ClientParams) (*admin.CreateOAuth2ClientCreated, error) {

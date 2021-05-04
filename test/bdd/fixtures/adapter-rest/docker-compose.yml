@@ -21,7 +21,7 @@ services:
       - ADAPTER_REST_DIDCOMM_INBOUND_HOST_EXTERNAL=http://issuer-adapter-rest.trustbloc.local:9071
       - ADAPTER_REST_TRUSTBLOC_DOMAIN=${BLOC_DOMAIN}
       - ADAPTER_REST_UNIVERSAL_RESOLVER_URL=http://did.rest.example.com:8072/1.0/identifiers
-      - ADAPTER_REST_DSN=mysql://issueradapter:issueradapter-secret-pw@tcp(mysql:3306)/
+      - ADAPTER_REST_DSN=mysql://issueradapter:issueradapter-secret-pw@tcp(mysql:3306)/?interpolateParams=true&multiStatements=true
       - ADAPTER_REST_DSN_TIMEOUT=45
       - ADAPTER_REST_WALLET_APP_URL=http://demoapp/load
       - OIDC_STORE_KEY=/etc/store-keys/oidc-enc.key
@@ -48,7 +48,7 @@ services:
       - ADAPTER_REST_TLS_SYSTEMCERTPOOL=true
       - ADAPTER_REST_TLS_SERVE_CERT=/etc/tls/ec-pubCert.pem
       - ADAPTER_REST_TLS_SERVE_KEY=/etc/tls/ec-key.pem
-      - ADAPTER_REST_DSN=mysql://rpadapter:rpadapter-secret-pw@tcp(mysql:3306)/
+      - ADAPTER_REST_DSN=mysql://rpadapter:rpadapter-secret-pw@tcp(mysql:3306)/?interpolateParams=true&multiStatements=true
       - ADAPTER_REST_OP_URL=http://PUT-SOMETHING-HERE.com
       - ADAPTER_REST_PRESENTATION_DEFINITIONS_FILE=/etc/testdata/presentationdefinitions.json
       - ADAPTER_REST_DIDCOMM_INBOUND_HOST=0.0.0.0:8071

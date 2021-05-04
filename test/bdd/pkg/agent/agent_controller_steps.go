@@ -19,6 +19,7 @@ import (
 	"github.com/cenkalti/backoff"
 	"github.com/cucumber/godog"
 	"github.com/google/uuid"
+	"github.com/hyperledger/aries-framework-go/component/storageutil/mem"
 	"github.com/hyperledger/aries-framework-go/pkg/client/didexchange"
 	issuecredclient "github.com/hyperledger/aries-framework-go/pkg/client/issuecredential"
 	"github.com/hyperledger/aries-framework-go/pkg/client/outofband"
@@ -37,7 +38,6 @@ import (
 	issuecredsvc "github.com/hyperledger/aries-framework-go/pkg/didcomm/protocol/issuecredential"
 	presentproofsvc "github.com/hyperledger/aries-framework-go/pkg/didcomm/protocol/presentproof"
 	"github.com/hyperledger/aries-framework-go/pkg/doc/did"
-	"github.com/hyperledger/aries-framework-go/pkg/doc/presexch"
 	"github.com/hyperledger/aries-framework-go/pkg/doc/signature/suite/ed25519signature2018"
 	"github.com/hyperledger/aries-framework-go/pkg/doc/util"
 	"github.com/hyperledger/aries-framework-go/pkg/doc/verifiable"
@@ -47,6 +47,7 @@ import (
 	"github.com/piprate/json-gold/ld"
 	"github.com/trustbloc/edge-core/pkg/log"
 
+	"github.com/trustbloc/edge-adapter/pkg/jsonld"
 	issuerops "github.com/trustbloc/edge-adapter/pkg/restapi/issuer/operation"
 	adaptervc "github.com/trustbloc/edge-adapter/pkg/vc"
 	"github.com/trustbloc/edge-adapter/pkg/vc/issuer"
@@ -139,13 +140,14 @@ func (a *Steps) RegisterSteps(s *godog.Suite) {
 // ValidateAgentConnection checks if the controller agent is running.
 func (a *Steps) ValidateAgentConnection(agentID, inboundHost, inboundPort, controllerURL string) error {
 	if err := a.checkAgentIsRunning(agentID, controllerURL); err != nil {
-		return err
+		return fmt.Errorf("agent not running: %w", err)
 	}
 
 	// verify inbound
 	if err := a.healthCheck(fmt.Sprintf("http://%s:%s", inboundHost, inboundPort)); err != nil {
 		logger.Debugf("Unable to reach inbound '%s' for agent '%s', cause : %s", controllerURL, agentID, err)
-		return err
+
+		return fmt.Errorf("unable to reach inbound '%s' for agent '%s', cause : %w", controllerURL, agentID, err)
 	}
 
 	logger.Debugf("Agent '%s' running inbound on '%s' and port '%s'", agentID, inboundHost, inboundPort)
@@ -157,17 +159,17 @@ func (a *Steps) ValidateAgentConnection(agentID, inboundHost, inboundPort, contr
 func (a *Steps) ValidateAgentConnectionWithWebhook(agentID, inboundHost,
 	inboundPort, webhookURL, controllerURL string) error {
 	if err := a.checkAgentIsRunning(agentID, controllerURL); err != nil {
-		return err
+		return fmt.Errorf("agent not running: %w", err)
 	}
 
 	// verify inbound
 	if err := a.healthCheck(fmt.Sprintf("http://%s:%s", inboundHost, inboundPort)); err != nil {
 		logger.Debugf("Unable to reach inbound '%s' for agent '%s', cause : %s", controllerURL, agentID, err)
-		return err
+		return fmt.Errorf("unable to reach inbound '%s' for agent '%s', cause : %w", controllerURL, agentID, err)
 	}
 
 	if err := a.checkWebhookIsRunning(agentID, webhookURL); err != nil {
-		return err
+		return fmt.Errorf("webhook is not running: %w", err)
 	}
 
 	logger.Debugf("Agent '%s' running inbound on '%s' and port '%s'", agentID, inboundHost, inboundPort)
@@ -180,7 +182,7 @@ func (a *Steps) checkAgentIsRunning(agentID, controllerURL string) error {
 	err := a.healthCheck(controllerURL)
 	if err != nil {
 		logger.Debugf("Unable to reach controller '%s' for agent '%s', cause : %s", controllerURL, agentID, err)
-		return err
+		return fmt.Errorf("unable to reach controller '%s' for agent '%s', cause : %w", controllerURL, agentID, err)
 	}
 
 	logger.Debugf("Agent '%s' running controller '%s'", agentID, controllerURL)
@@ -195,7 +197,7 @@ func (a *Steps) checkWebhookIsRunning(agentID, webhookURL string) error {
 	err := a.healthCheck(webhookURL)
 	if err != nil {
 		logger.Debugf("Unable to reach webhook '%s' for agent '%s', cause : %s", webhookURL, agentID, err)
-		return err
+		return fmt.Errorf("unable to reach webhook '%s' for agent '%s', cause : %w", webhookURL, agentID, err)
 	}
 
 	logger.Debugf("Agent '%s' running webhook '%s'", agentID, webhookURL)
@@ -209,7 +211,7 @@ func (a *Steps) healthCheck(endpoint string) error {
 	if strings.HasPrefix(endpoint, "http") {
 		resp, err := http.Get(endpoint) //nolint: gosec
 		if err != nil {
-			return err
+			return fmt.Errorf("failed to get endpoint %s: %w", endpoint, err)
 		}
 
 		err = resp.Body.Close()
@@ -223,7 +225,7 @@ func (a *Steps) healthCheck(endpoint string) error {
 	return errors.New("url scheme is not supported for url = " + endpoint)
 }
 
-//nolint:funlen,gocyclo
+//nolint:funlen,gocyclo,cyclop
 func (a *Steps) handleDIDCommConnectRequest(agentID, supportedVCContexts, issuerID,
 	primaryVCType, supportsAssuranceCredStr string, timeout int) error {
 	// Mock CHAPI request from Issuer
@@ -236,12 +238,12 @@ func (a *Steps) handleDIDCommConnectRequest(agentID, supportedVCContexts, issuer
 
 	err := json.Unmarshal([]byte(didConnReq), request)
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to unmarshal request: %w", err)
 	}
 
 	supportsAssuranceCred, err := strconv.ParseBool(supportsAssuranceCredStr)
 	if err != nil {
-		return err
+		return fmt.Errorf("parse failure: %w", err)
 	}
 
 	if supportsAssuranceCred && len(request.Credentials) != 3 {
@@ -278,29 +280,29 @@ func (a *Steps) handleDIDCommConnectRequest(agentID, supportedVCContexts, issuer
 
 	err = UnregisterAllMsgServices(a.ControllerURLs[agentID])
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to unregister msg svcs: %w", err)
 	}
 
 	msgSvcName := uuid.New().String()
 
 	err = RegisterMsgService(a.ControllerURLs[agentID], msgSvcName, "https://trustbloc.dev/didexchange/1.0/state-complete")
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to register msg svc: %w", err)
 	}
 
 	connectionID, err := a.AcceptOOBInvitation(agentID, request.DIDCommInvitation, issuerID)
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to accept oob invitation: %w", err)
 	}
 
 	err = GetDIDExStateCompResp(a.WebhookURLs[agentID], msgSvcName)
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to get didexchange complete response: %w", err)
 	}
 
 	conn, err := a.ValidateConnection(agentID, connectionID)
 	if err != nil {
-		return err
+		return fmt.Errorf("cannot validate connection: %w", err)
 	}
 
 	subject := issuer.DIDConnectCredentialSubject{
@@ -322,12 +324,12 @@ func (a *Steps) handleDIDCommConnectRequest(agentID, supportedVCContexts, issuer
 
 	vp, err := verifiable.NewPresentation(verifiable.WithCredentials(&vc))
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to create new VP: %w", err)
 	}
 
 	vpJSON, err := vp.MarshalJSON()
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to marshal VP: %w", err)
 	}
 
 	a.bddContext.Store[bddutil.GetDIDConnectResponseKey(issuerID, agentID)] = string(vpJSON)
@@ -335,7 +337,7 @@ func (a *Steps) handleDIDCommConnectRequest(agentID, supportedVCContexts, issuer
 	return nil
 }
 
-func (a *Steps) didConnectReqWithRouting(agentID, routerURL, issuerID string) error { // nolint: funlen,gocyclo
+func (a *Steps) didConnectReqWithRouting(agentID, routerURL, issuerID string) error { // nolint: funlen,gocyclo,cyclop
 	didConnReq, found := a.bddContext.GetString(bddutil.GetDIDConnectRequestKey(issuerID, agentID))
 	if !found {
 		return fmt.Errorf("didconnect request not found")
@@ -345,23 +347,23 @@ func (a *Steps) didConnectReqWithRouting(agentID, routerURL, issuerID string) er
 
 	err := json.Unmarshal([]byte(didConnReq), request)
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to unmarsal chapi request: %w", err)
 	}
 
 	connectionID, err := a.AcceptOOBInvitation(agentID, request.DIDCommInvitation, issuerID)
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to accept oob invitation: %w", err)
 	}
 
 	err = validateConnection(a.ControllerURLs[agentID], connectionID, completedState)
 	if err != nil {
-		return err
+		return fmt.Errorf("cannot validate connection: %w", err)
 	}
 
 	// unregister all the msg services (to clear older data)
 	err = UnregisterAllMsgServices(a.ControllerURLs[agentID])
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to unregister msg svcs: %w", err)
 	}
 
 	// send request to adapter for fetching the peerDIDDoc
@@ -391,7 +393,7 @@ func (a *Steps) didConnectReqWithRouting(agentID, routerURL, issuerID string) er
 
 	conn, err := a.ValidateConnection(agentID, connectionID)
 	if err != nil {
-		return err
+		return fmt.Errorf("cannot validate connection: %w", err)
 	}
 
 	subject := issuer.DIDConnectCredentialSubject{
@@ -413,12 +415,12 @@ func (a *Steps) didConnectReqWithRouting(agentID, routerURL, issuerID string) er
 
 	vp, err := verifiable.NewPresentation(verifiable.WithCredentials(&vc))
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to create new presentation: %w", err)
 	}
 
 	vpJSON, err := vp.MarshalJSON()
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to marshal VP: %w", err)
 	}
 
 	a.bddContext.Store[bddutil.GetDIDConnectResponseKey(issuerID, agentID)] = string(vpJSON)
@@ -431,7 +433,7 @@ func (a *Steps) BlindedRouting(agentID, connID, routerURL string) error {
 	// unregister all the msg services (to clear older data)
 	err := UnregisterAllMsgServices(a.ControllerURLs[agentID])
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to unregister msg svcs: %w", err)
 	}
 
 	// send request to adapter for fetching the peerDIDDoc
@@ -466,7 +468,7 @@ func (a *Steps) BlindedRouting(agentID, connID, routerURL string) error {
 func (a *Steps) ValidateConnection(agentID, connID string) (*didexchange.Connection, error) {
 	conn, err := a.getConnection(agentID, connID)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to get connection: %w", err)
 	}
 
 	// Verify state
@@ -491,10 +493,14 @@ func (a *Steps) Connect(inviter, invitee string) error {
 		return fmt.Errorf("%s failed to accept outofband invitation from %s: %w", invitee, inviter, err)
 	}
 
-	return backoff.RetryNotify(
+	return backoff.RetryNotify( // nolint:wrapcheck // ignore
 		func() error {
 			_, err = a.ValidateConnection(invitee, inviteeConnID)
-			return err
+			if err != nil {
+				return fmt.Errorf("failed to validate connection: %w", err)
+			}
+
+			return nil
 		},
 		backoff.WithMaxRetries(backoff.NewConstantBackOff(time.Second), 3),
 		func(e error, d time.Duration) {
@@ -568,7 +574,7 @@ func (a *Steps) getConnection(agentID, connectionID string) (*didexchange.Connec
 		destination+fmt.Sprintf(connectionsByIDPath, connectionID), nil, &response)
 	if err != nil {
 		logger.Errorf("Failed to perform receive invitation, cause : %s", err)
-		return nil, err
+		return nil, fmt.Errorf("failed to execute request: %w", err)
 	}
 
 	return response.Result, nil
@@ -631,7 +637,7 @@ func (a *Steps) CreateConnection(agent, myDID, label string, theirDID *did.Doc) 
 	return resp.ID, nil
 }
 
-func (a *Steps) fetchCredential(agentID, issuerID string) error { // nolint: funlen, gocyclo
+func (a *Steps) fetchCredential(agentID, issuerID string) error { // nolint: funlen, gocyclo,cyclop
 	conn, ok := a.adapterConnections[agentID]
 	if !ok {
 		return fmt.Errorf("unable to find the issuer adapter connection data [%s]", agentID)
@@ -644,12 +650,12 @@ func (a *Steps) fetchCredential(agentID, issuerID string) error { // nolint: fun
 
 	didDocument, err := a.ResolveDID(agentID, conn.MyDID)
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to resolve DID: %w", err)
 	}
 
 	didDocJSON, err := didDocument.JSONBytes()
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to marshal did doc: %w", err)
 	}
 
 	ccReq := &issuerops.AuthorizationCredentialReq{
@@ -690,7 +696,7 @@ func (a *Steps) fetchCredential(agentID, issuerID string) error { // nolint: fun
 
 	piid, err := actionPIID(controllerURL, issueCredActions)
 	if err != nil {
-		return err
+		return fmt.Errorf("actionPIID: %w", err)
 	}
 
 	credentialName := uuid.New().String()
@@ -702,7 +708,7 @@ func (a *Steps) fetchCredential(agentID, issuerID string) error { // nolint: fun
 
 	vc, err := getCredential(credentialName, controllerURL, a.bddContext.VDRI)
 	if err != nil {
-		return err
+		return fmt.Errorf("getCredential: %w", err)
 	}
 
 	authorizationData, err := validateAndGetAuthorizationCredential(vc, ccReq)
@@ -712,24 +718,24 @@ func (a *Steps) fetchCredential(agentID, issuerID string) error { // nolint: fun
 
 	issuerDIDDoc, err := did.ParseDocument(authorizationData.IssuerDIDDoc.Doc)
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to parse did doc: %w", err)
 	}
 
 	issuerDIDDoc.ID = authorizationData.IssuerDIDDoc.ID
 
 	_, err = a.bddContext.VDRI.Create(peer.DIDMethod, issuerDIDDoc, vdriapi.WithOption("store", true))
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to create DID: %w", err)
 	}
 
 	connID, err := a.CreateConnection(agentID, authorizationData.RPDIDDoc.ID, uuid.New().String(), issuerDIDDoc)
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to create connection: %w", err)
 	}
 
 	extConn, err := a.getConnection(agentID, connID)
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to get connection: %w", err)
 	}
 
 	a.adapterConnections[getExtCreateConnKey(agentID)] = extConn
@@ -738,7 +744,7 @@ func (a *Steps) fetchCredential(agentID, issuerID string) error { // nolint: fun
 	return nil
 }
 
-// nolint:gocyclo
+// nolint:gocyclo,cyclop
 func (a *Steps) fetchPresentation(agentID, issuerID, expectedScope, supportsAssuranceCredStr string) error {
 	conn, ok := a.adapterConnections[getExtCreateConnKey(agentID)]
 	if !ok {
@@ -757,19 +763,19 @@ func (a *Steps) fetchPresentation(agentID, issuerID, expectedScope, supportsAssu
 
 	vp, err := verifiable.NewPresentation(verifiable.WithCredentials(vc))
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to create VP: %w", err)
 	}
 
 	// send presentation request
 	err = sendPresentationRequest(conn, vp, controllerURL)
 	if err != nil {
-		return err
+		return fmt.Errorf("cannot send presentation request: %w", err)
 	}
 
 	// receive presentation
 	piid, err := actionPIID(controllerURL, presentProofActions)
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to fetch action PIID: %w", err)
 	}
 
 	// accept presentation
@@ -777,23 +783,23 @@ func (a *Steps) fetchPresentation(agentID, issuerID, expectedScope, supportsAssu
 
 	err = acceptPresentation(piid, presentationName, controllerURL)
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to accept presentation: %w", err)
 	}
 
 	// validate presentation
 	vpID, err := validatePresentation(presentationName, controllerURL)
 	if err != nil {
-		return err
+		return fmt.Errorf("failed ot validate VP: %w", err)
 	}
 
 	supportsAssuranceCred, err := strconv.ParseBool(supportsAssuranceCredStr)
 	if err != nil {
-		return err
+		return fmt.Errorf("parse failed: %w", err)
 	}
 
 	err = a.validateIssuerVC(vpID, agentID, controllerURL, expectedScope, supportsAssuranceCred, a.bddContext.VDRI)
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to validate Issuer VC: %w", err)
 	}
 
 	return nil
@@ -869,7 +875,7 @@ func (a *Steps) AcceptRequestPresentation(agent string, presentation *verifiable
 
 	piid, err := actionPIID(destination, presentProofActions)
 	if err != nil {
-		return err
+		return fmt.Errorf("actionPIID: %w", err)
 	}
 
 	vpBytes, err := presentation.MarshalJSON()
@@ -896,7 +902,7 @@ func (a *Steps) AcceptRequestPresentation(agent string, presentation *verifiable
 
 	acceptRequestURL := fmt.Sprintf(destination+acceptRequestPresentation, piid)
 
-	return bddutil.SendHTTP(http.MethodPost, acceptRequestURL, request,
+	return bddutil.SendHTTP(http.MethodPost, acceptRequestURL, request, // nolint:wrapcheck // ignore
 		&presentproofcmd.AcceptRequestPresentationResponse{})
 }
 
@@ -927,7 +933,16 @@ func (a *Steps) SignCredential(agent, signingDID string, cred *verifiable.Creden
 		return nil, fmt.Errorf("'%s' failed to sign credential: %w", agent, err)
 	}
 
-	output, err := verifiable.ParseCredential(response.VerifiableCredential, verifiable.WithDisabledProofCheck())
+	l, err := jsonld.DocumentLoader(mem.NewProvider())
+	if err != nil {
+		return nil, fmt.Errorf("failed to init document loader: %w", err)
+	}
+
+	output, err := verifiable.ParseCredential(
+		response.VerifiableCredential,
+		verifiable.WithDisabledProofCheck(),
+		verifiable.WithJSONLDDocumentLoader(l),
+	)
 	if err != nil {
 		return nil, fmt.Errorf("'%s' failed to parse their own signed credential: %w", agent, err)
 	}
@@ -983,13 +998,10 @@ func (a *Steps) GeneratePresentation(agent, signingDID, verificationMethod strin
 		return nil, fmt.Errorf("'%s' failed to generate their own presentation: %w", agent, err)
 	}
 
-	presexchJSONLDCtx, err := ld.DocumentFromReader(strings.NewReader(presexch.PresentationSubmissionJSONLDContext))
+	docLoader, err := jsonld.DocumentLoader(mem.NewProvider())
 	if err != nil {
-		return nil, fmt.Errorf("failed to load presentation-exchange jsonld context: %w", err)
+		return nil, fmt.Errorf("failed to init document loader: %w", err)
 	}
-
-	docLoader := verifiable.CachingJSONLDLoader()
-	docLoader.AddDocument(presexch.PresentationSubmissionJSONLDContextIRI, presexchJSONLDCtx)
 
 	signedVP, err := verifiable.ParsePresentation(
 		response.VerifiablePresentation,
@@ -1044,12 +1056,12 @@ func sendPresentationRequest(conn *didexchange.Connection, vp *verifiable.Presen
 
 	reqBytes, err := json.Marshal(req)
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to marshal request: %w", err)
 	}
 
 	err = bddutil.SendHTTP(http.MethodPost, controllerURL+sendRequestPresentation, reqBytes, nil)
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to post request: %w", err)
 	}
 
 	return nil
@@ -1109,7 +1121,14 @@ func getCredential(credentialName, controllerURL string, vdriReg vdriapi.Registr
 			fmt.Sprintf("%s/verifiable/credential/%s", controllerURL,
 				base64.StdEncoding.EncodeToString([]byte(result.ID))), nil, &getVCResp)
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("failed to execute request: %w", err)
+		}
+
+		var l ld.DocumentLoader
+
+		l, err = jsonld.DocumentLoader(mem.NewProvider())
+		if err != nil {
+			return nil, fmt.Errorf("failed to init document loader: %w", err)
 		}
 
 		var vc *verifiable.Credential
@@ -1117,9 +1136,10 @@ func getCredential(credentialName, controllerURL string, vdriReg vdriapi.Registr
 		vc, err = verifiable.ParseCredential(
 			[]byte(getVCResp.VC),
 			verifiable.WithPublicKeyFetcher(verifiable.NewVDRKeyResolver(vdriReg).PublicKeyFetcher()),
+			verifiable.WithJSONLDDocumentLoader(l),
 		)
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("failed to parse vc: %w", err)
 		}
 
 		return vc, nil
@@ -1168,12 +1188,12 @@ func acceptPresentation(piid, presentationName, controllerURL string) error {
 
 	acceptReqBytes, err := json.Marshal(acceptReq)
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to marshal request: %w", err)
 	}
 
 	err = bddutil.SendHTTP(http.MethodPost, controllerURL+fmt.Sprintf(acceptPresentationPath, piid), acceptReqBytes, nil)
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to POST request: %w", err)
 	}
 
 	return nil
@@ -1194,7 +1214,7 @@ func validatePresentation(presentationName, controllerURL string) (string, error
 
 		var result verifiablecmd.RecordResult
 		if err := bddutil.SendHTTP(http.MethodGet, controllerURL+"/verifiable/presentations", nil, &result); err != nil {
-			return "", err
+			return "", fmt.Errorf("failed to execute request: %w", err)
 		}
 
 		for _, val := range result.Result {
@@ -1211,7 +1231,7 @@ func validatePresentation(presentationName, controllerURL string) (string, error
 	return "", errors.New("presentation not found")
 }
 
-// nolint: gocyclo
+// nolint: gocyclo,cyclop
 func (a *Steps) validateIssuerVC(id, agentID, controllerURL, expectedScope string, supportsAssuranceCred bool,
 	vdriReg vdriapi.Registry) error {
 	var vpResult verifiablecmd.Presentation
@@ -1219,20 +1239,26 @@ func (a *Steps) validateIssuerVC(id, agentID, controllerURL, expectedScope strin
 	if err := bddutil.SendHTTP(http.MethodGet,
 		controllerURL+"/verifiable/presentation/"+base64.StdEncoding.EncodeToString([]byte(id)),
 		nil, &vpResult); err != nil {
-		return err
+		return fmt.Errorf("failed to GET request: %w", err)
+	}
+
+	l, err := jsonld.DocumentLoader(mem.NewProvider())
+	if err != nil {
+		return fmt.Errorf("failed to init document loader: %w", err)
 	}
 
 	vp, err := verifiable.ParsePresentation(
 		vpResult.VerifiablePresentation,
 		verifiable.WithPresPublicKeyFetcher(verifiable.NewVDRKeyResolver(vdriReg).PublicKeyFetcher()),
+		verifiable.WithPresJSONLDDocumentLoader(l),
 	)
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to parse VP: %w", err)
 	}
 
 	creds, err := vp.MarshalledCredentials()
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to get VP creds: %w", err)
 	}
 
 	if len(creds) != 1 {
@@ -1242,15 +1268,16 @@ func (a *Steps) validateIssuerVC(id, agentID, controllerURL, expectedScope strin
 	vc, err := verifiable.ParseCredential(
 		creds[0],
 		verifiable.WithPublicKeyFetcher(verifiable.NewVDRKeyResolver(vdriReg).PublicKeyFetcher()),
+		verifiable.WithJSONLDDocumentLoader(l),
 	)
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to parse VC: %w", err)
 	}
 
 	if supportsAssuranceCred {
 		err = validateAssuranceVC(vc)
 		if err != nil {
-			return err
+			return fmt.Errorf("failed to validate assurance VC: %w", err)
 		}
 
 		if a.refCredentials[agentID].ID != fmt.Sprintf("%v", vc.CustomFields["referenceVCID"]) {
@@ -1314,9 +1341,14 @@ func actionPIID(endpoint, urlPath string) (string, error) {
 }
 
 func validateManifestCred(manifestVCBytes []byte, supportedVCContexts string) error {
-	manifestCred, err := verifiable.ParseCredential(manifestVCBytes)
+	l, err := jsonld.DocumentLoader(mem.NewProvider())
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to init document loader: %w", err)
+	}
+
+	manifestCred, err := verifiable.ParseCredential(manifestVCBytes, verifiable.WithJSONLDDocumentLoader(l))
+	if err != nil {
+		return fmt.Errorf("failed to parse VC: %w", err)
 	}
 
 	manifestCredSub := &issuer.ManifestCredential{}
@@ -1335,9 +1367,18 @@ func validateManifestCred(manifestVCBytes []byte, supportedVCContexts string) er
 }
 
 func validateGovernance(governanceVCBytes json.RawMessage) error {
-	governanceVC, err := verifiable.ParseCredential(governanceVCBytes, verifiable.WithDisabledProofCheck())
+	l, err := jsonld.DocumentLoader(mem.NewProvider())
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to init document loader: %w", err)
+	}
+
+	governanceVC, err := verifiable.ParseCredential(
+		governanceVCBytes,
+		verifiable.WithDisabledProofCheck(),
+		verifiable.WithJSONLDDocumentLoader(l),
+	)
+	if err != nil {
+		return fmt.Errorf("failed to parse VC: %w", err)
 	}
 
 	if len(governanceVC.Context) != governanceVCCTXSize {
@@ -1361,12 +1402,18 @@ func validateGovernance(governanceVCBytes json.RawMessage) error {
 
 func validateAndGetReferenceCred(vcBytes []byte, vcType string,
 	vdriReg vdriapi.Registry) (*verifiable.Credential, error) {
+	l, err := jsonld.DocumentLoader(mem.NewProvider())
+	if err != nil {
+		return nil, fmt.Errorf("failed to load document loader: %w", err)
+	}
+
 	cred, err := verifiable.ParseCredential(
 		vcBytes,
 		verifiable.WithPublicKeyFetcher(verifiable.NewVDRKeyResolver(vdriReg).PublicKeyFetcher()),
+		verifiable.WithJSONLDDocumentLoader(l),
 	)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to parse vc: %w", err)
 	}
 
 	for _, t := range cred.Types {
@@ -1388,14 +1435,14 @@ func validateConnection(controllerURL, connID, state string) error {
 		numRetries = 30
 	)
 
-	return backoff.RetryNotify(
+	return backoff.RetryNotify( // nolint:wrapcheck // ignore
 		func() error {
 			var openErr error
 
 			var result didexcmd.QueryConnectionResponse
 			if err := bddutil.SendHTTP(http.MethodGet, controllerURL+fmt.Sprintf(connectionsByIDPath, connID),
 				nil, &result); err != nil {
-				return err
+				return fmt.Errorf("failed to GET request: %w", err)
 			}
 
 			if result.Result.State != state {
@@ -1453,17 +1500,17 @@ func (a *Steps) connectWithRouter(agentID, routerURL string) (string, error) {
 	err := bddutil.SendHTTP(http.MethodGet, routerURL+"/didcomm/invitation",
 		nil, &routerInvitation)
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("failed to execute request: %w", err)
 	}
 
 	connectionID, err := a.AcceptOOBInvitation(agentID, routerInvitation.Invitation, "router")
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("failed to accept oob invitation: %w", err)
 	}
 
 	err = validateConnection(a.ControllerURLs[agentID], connectionID, completedState)
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("failed to validate connection: %w", err)
 	}
 
 	return connectionID, nil
@@ -1498,7 +1545,7 @@ func (a *Steps) ConnectToWalletBridge(userID, walletID string) error {
 
 	err = RegisterMsgService(a.ControllerURLs[walletID], msgSvcName, stateCompleteMsgType)
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to register msg service: %w", err)
 	}
 
 	connectionID, err := a.AcceptOOBInvitation(walletID, oobInvitation, userID)
@@ -1508,12 +1555,12 @@ func (a *Steps) ConnectToWalletBridge(userID, walletID string) error {
 
 	err = GetDIDExStateCompResp(a.WebhookURLs[walletID], msgSvcName)
 	if err != nil {
-		return err
+		return fmt.Errorf("cannot get didexchange response: %w", err)
 	}
 
 	_, err = a.ValidateConnection(walletID, connectionID)
 	if err != nil {
-		return err
+		return fmt.Errorf("cannot validate connection: %w", err)
 	}
 
 	return nil

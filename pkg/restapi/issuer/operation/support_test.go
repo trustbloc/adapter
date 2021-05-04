@@ -38,6 +38,7 @@ import (
 	mockstore "github.com/hyperledger/aries-framework-go/pkg/mock/storage"
 	mockvdri "github.com/hyperledger/aries-framework-go/pkg/mock/vdr"
 	"github.com/hyperledger/aries-framework-go/spi/storage"
+	"github.com/piprate/json-gold/ld"
 	"github.com/stretchr/testify/require"
 	"golang.org/x/oauth2"
 
@@ -48,6 +49,7 @@ import (
 	"github.com/trustbloc/edge-adapter/pkg/internal/mock/messenger"
 	mockoutofband "github.com/trustbloc/edge-adapter/pkg/internal/mock/outofband"
 	"github.com/trustbloc/edge-adapter/pkg/internal/mock/presentproof"
+	jsonld2 "github.com/trustbloc/edge-adapter/pkg/jsonld"
 	"github.com/trustbloc/edge-adapter/pkg/profile/issuer"
 	"github.com/trustbloc/edge-adapter/pkg/restapi"
 	mockprovider "github.com/trustbloc/edge-adapter/pkg/restapi/internal/mocks/provider"
@@ -55,7 +57,9 @@ import (
 	issuervc "github.com/trustbloc/edge-adapter/pkg/vc/issuer"
 )
 
-func getAriesCtx() aries.CtxProvider {
+func getAriesCtx(t *testing.T) aries.CtxProvider {
+	t.Helper()
+
 	return &mockprovider.MockProvider{
 		Provider: &ariesmockprovider.Provider{
 			ProtocolStateStorageProviderValue: mockstore.NewMockStoreProvider(),
@@ -78,22 +82,27 @@ func getAriesCtx() aries.CtxProvider {
 	}
 }
 
-func config() *Config {
+func config(t *testing.T) *Config {
+	t.Helper()
+
 	oidcClientStoreKey := make([]byte, 32)
 	_, _ = rand.Read(oidcClientStoreKey) // nolint:errcheck
 
 	return &Config{
-		AriesCtx:           getAriesCtx(),
-		StoreProvider:      mem.NewProvider(),
-		MsgRegistrar:       msghandler.NewRegistrar(),
-		AriesMessenger:     &messenger.MockMessenger{},
-		PublicDIDCreator:   &stubPublicDIDCreator{createValue: mockdiddoc.GetMockDIDDoc("did:example:def567")},
-		GovernanceProvider: &mockgovernance.MockProvider{},
-		OIDCClientStoreKey: oidcClientStoreKey,
+		AriesCtx:             getAriesCtx(t),
+		StoreProvider:        mem.NewProvider(),
+		MsgRegistrar:         msghandler.NewRegistrar(),
+		AriesMessenger:       &messenger.MockMessenger{},
+		PublicDIDCreator:     &stubPublicDIDCreator{createValue: mockdiddoc.GetMockDIDDoc("did:example:def567")},
+		GovernanceProvider:   &mockgovernance.MockProvider{},
+		OIDCClientStoreKey:   oidcClientStoreKey,
+		JSONLDDocumentLoader: docLoader(t),
 	}
 }
 
-func getHandler(t *testing.T, op *Operation, lookup string) restapi.Handler { // nolint:thelper
+func getHandler(t *testing.T, op *Operation, lookup string) restapi.Handler {
+	t.Helper()
+
 	return handlerLookup(t, op, lookup)
 }
 
@@ -147,14 +156,19 @@ func serveHTTPMux(t *testing.T, handler restapi.Handler, endpoint string, reqByt
 	return rr
 }
 
-func getDefaultTestVP(t *testing.T) []byte { // nolint: thelper
+func getDefaultTestVP(t *testing.T) []byte {
+	t.Helper()
+
 	return getTestVP(t, inviteeDID, inviterDID, uuid.New().String())
 }
 
 func getTestVP(t *testing.T, inviteeDID, inviterDID, threadID string) []byte { //nolint: unparam
 	t.Helper()
 
-	vc, err := verifiable.ParseCredential([]byte(fmt.Sprintf(vcFmt, inviteeDID, inviterDID, threadID)))
+	vc, err := verifiable.ParseCredential(
+		[]byte(fmt.Sprintf(vcFmt, inviteeDID, inviterDID, threadID)),
+		verifiable.WithJSONLDDocumentLoader(docLoader(t)),
+	)
 	require.NoError(t, err)
 
 	vp, err := verifiable.NewPresentation(verifiable.WithCredentials(vc))
@@ -389,11 +403,11 @@ func (f *failingStoreProvider) OpenStore(name string) (storage.Store, error) {
 
 	f.openN--
 
-	return f.SuccessProvider.OpenStore(name)
+	return f.SuccessProvider.OpenStore(name) // nolint:wrapcheck // test
 }
 
 func (f *failingStoreProvider) Close() error {
-	return f.SuccessProvider.Close()
+	return f.SuccessProvider.Close() // nolint:wrapcheck // test
 }
 
 type mockVCCrypto struct {
@@ -462,6 +476,15 @@ func (c *mockOIDCClient) HandleOIDCCallback(context.Context, string) (*oauth2.To
 
 func (c *mockOIDCClient) CheckRefresh(*oauth2.Token) (*oauth2.Token, error) {
 	return c.CheckRefreshTok, c.CheckRefreshErr
+}
+
+func docLoader(t *testing.T) ld.DocumentLoader {
+	t.Helper()
+
+	l, err := jsonld2.DocumentLoader(mem.NewProvider())
+	require.NoError(t, err)
+
+	return l
 }
 
 const (

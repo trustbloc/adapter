@@ -159,6 +159,7 @@ type AriesContextProvider interface {
 	Service(id string) (interface{}, error)
 	ServiceEndpoint() string
 	Messenger() service.Messenger
+	JSONLDDocumentLoader() ld.DocumentLoader
 }
 
 // Storage config.
@@ -186,7 +187,7 @@ type userDataCollection struct {
 }
 
 // New returns CreateCredential instance.
-func New(config *Config) (*Operation, error) { // nolint:funlen,gocyclo
+func New(config *Config) (*Operation, error) { // nolint:funlen,gocyclo,cyclop
 	o := &Operation{
 		presentationExProvider: config.PresentationExProvider,
 		hydra:                  config.Hydra,
@@ -208,6 +209,7 @@ func New(config *Config) (*Operation, error) { // nolint:funlen,gocyclo
 		messenger:              config.AriesMessenger,
 		docLoader:              config.JSONLDDocumentLoader,
 		didDomain:              config.DidDomain,
+		ariesCtx:               config.AriesContextProvider,
 	}
 
 	err := o.didClient.RegisterActionEvent(o.didActions)
@@ -334,6 +336,7 @@ type Operation struct {
 	walletBridge           *walletops.Operation
 	docLoader              ld.DocumentLoader
 	didDomain              string
+	ariesCtx               AriesContextProvider
 }
 
 // GetRESTHandlers get all controller API handler available for this service.
@@ -790,7 +793,7 @@ func (o *Operation) updateUserConnection(r *consentRequestCtx) error {
 // - all required credentials in a single response, or
 // - consent credential + didcomm endpoint where the requested presentations can be obtained, or
 // - nothing (an error response?), indicating they cannot satisfy the request.
-func (o *Operation) chapiResponseHandler(w http.ResponseWriter, r *http.Request) { //nolint:funlen,gocyclo
+func (o *Operation) chapiResponseHandler(w http.ResponseWriter, r *http.Request) { //nolint:funlen,gocyclo,cyclop
 	request := &HandleCHAPIResponse{}
 
 	err := json.NewDecoder(r.Body).Decode(request)
@@ -1009,7 +1012,11 @@ func (o *Operation) collectedUserData(ref *userDataCollection) (map[string]*veri
 
 	for descriptorID, rawCred := range ref.Local {
 		// credential's proof has been validated upstream in the flow
-		cred, err := verifiable.ParseCredential(rawCred, verifiable.WithDisabledProofCheck())
+		cred, err := verifiable.ParseCredential(
+			rawCred,
+			verifiable.WithDisabledProofCheck(),
+			verifiable.WithJSONLDDocumentLoader(o.docLoader),
+		)
 		if err != nil {
 			return nil, fmt.Errorf("failed to parse credential [%s]: %w", rawCred, err)
 		}
@@ -1026,7 +1033,11 @@ func (o *Operation) collectedUserData(ref *userDataCollection) (map[string]*veri
 		}
 
 		// credential's proof has been validated upstream in the flow
-		cred, err := verifiable.ParseCredential(bits, verifiable.WithDisabledProofCheck())
+		cred, err := verifiable.ParseCredential(
+			bits,
+			verifiable.WithDisabledProofCheck(),
+			verifiable.WithJSONLDDocumentLoader(o.docLoader),
+		)
 		if err != nil {
 			return nil, fmt.Errorf("failed to parse credential [%s]: %w", bits, err)
 		}
@@ -1123,7 +1134,7 @@ func (o *Operation) handleIncomingDIDExchangeRequestAction(action service.DIDCom
 	action.Continue(nil)
 }
 
-func (o *Operation) listenForConnectionCompleteEvents() { // nolint: gocyclo
+func (o *Operation) listenForConnectionCompleteEvents() { // nolint: gocyclo,cyclop
 	for msg := range o.didStateMsgs {
 		if msg.Type != service.PostState || msg.StateID != didexchangesvc.StateIDCompleted {
 			continue
@@ -1322,13 +1333,12 @@ func (o *Operation) handleIssuerPresentationMsg(msg service.DIDCommMsg) error {
 }
 
 func testResponse(w io.Writer) {
-	_, err := w.Write([]byte("OK"))
-	if err != nil {
-		fmt.Printf("error writing test response: %s", err.Error())
+	if _, err := w.Write([]byte("OK")); err != nil {
+		logger.Errorf("error writing test response: %s", err.Error())
 	}
 }
 
-//nolint:funlen,gocyclo
+//nolint:funlen,gocyclo,cyclop
 func (o *Operation) createRPTenant(w http.ResponseWriter, r *http.Request) {
 	request := &CreateRPTenantRequest{}
 
@@ -1430,7 +1440,7 @@ func (o *Operation) createOAuth2Client(scopes []string, callback string) (*admin
 		RedirectUris:  []string{callback},
 	})
 
-	return o.hydra.CreateOAuth2Client(req)
+	return o.hydra.CreateOAuth2Client(req) // nolint:wrapcheck // reduce cyclo
 }
 
 // TODO add an LD proof that contains the issuer's challenge: https://github.com/trustbloc/edge-adapter/issues/145
@@ -1450,12 +1460,17 @@ func (o *Operation) toMarshalledVP(authZ *verifiable.Credential, signingDID stri
 		return nil, fmt.Errorf("failed to obtain a verification method from rp did %s: %w", signingDID, err)
 	}
 
-	signedVP, err := crypto.New(o.km, o.ariesCrypto, o.vdrReg).SignPresentation(vp, verificationMethod)
+	signedVP, err := crypto.New(
+		o.km,
+		o.ariesCrypto,
+		o.vdrReg,
+		o.docLoader,
+	).SignPresentation(vp, verificationMethod)
 	if err != nil {
 		return nil, fmt.Errorf("failed to sign authZ vp with verMethod %s: %w", verificationMethod, err)
 	}
 
-	return json.Marshal(signedVP)
+	return json.Marshal(signedVP) // nolint:wrapcheck // reduce cyclo
 }
 
 func removeOIDCScope(scopes []string) []string {
@@ -1471,11 +1486,11 @@ func removeOIDCScope(scopes []string) []string {
 }
 
 func transientStore(p storage.Provider) (storage.Store, error) {
-	return p.OpenStore(transientStoreName)
+	return p.OpenStore(transientStoreName) // nolint:wrapcheck // reduce cyclo
 }
 
 func persistenceStore(p storage.Provider) (storage.Store, error) {
-	return p.OpenStore(persistenceStoreName)
+	return p.OpenStore(persistenceStoreName) // nolint:wrapcheck // reduce cyclo
 }
 
 func handleError(w http.ResponseWriter, statusCode int, msg string) {
@@ -1511,7 +1526,7 @@ func createRouteSvc(config *Config, connectionLookup connectionRecorder) (routeS
 
 	mediatorClient, err := mediator.New(config.AriesContextProvider)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to init mediator client: %w", err)
 	}
 
 	routeSvc, err := route.New(&route.Config{

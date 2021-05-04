@@ -21,7 +21,11 @@ import (
 )
 
 func TestController_New(t *testing.T) {
+	t.Parallel()
+
 	t.Run("test success", func(t *testing.T) {
+		t.Parallel()
+
 		controller, err := New(&operation.Config{
 			DIDExchClient: &didexchange.MockClient{},
 			Storage: &operation.Storage{

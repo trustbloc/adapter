@@ -42,6 +42,7 @@ import (
 	"github.com/hyperledger/aries-framework-go/pkg/framework/aries/api/vdr"
 	"github.com/hyperledger/aries-framework-go/pkg/store/connection"
 	"github.com/hyperledger/aries-framework-go/spi/storage"
+	"github.com/piprate/json-gold/ld"
 	"github.com/trustbloc/edge-core/pkg/log"
 	"golang.org/x/oauth2"
 
@@ -132,22 +133,23 @@ type didExClient interface {
 
 // Config defines configuration for issuer operations.
 type Config struct {
-	AriesCtx           aries.CtxProvider
-	AriesMessenger     service.Messenger
-	MsgRegistrar       *msghandler.Registrar
-	UIEndpoint         string
-	StoreProvider      storage.Provider
-	PublicDIDCreator   PublicDIDCreator
-	TLSConfig          *tls.Config
-	GovernanceProvider GovernanceProvider
-	WalletBridgeAppURL string
-	OIDCClientStoreKey []byte
-	ExternalURL        string
-	DidDomain          string
+	AriesCtx             aries.CtxProvider
+	AriesMessenger       service.Messenger
+	MsgRegistrar         *msghandler.Registrar
+	UIEndpoint           string
+	StoreProvider        storage.Provider
+	PublicDIDCreator     PublicDIDCreator
+	TLSConfig            *tls.Config
+	GovernanceProvider   GovernanceProvider
+	WalletBridgeAppURL   string
+	OIDCClientStoreKey   []byte
+	ExternalURL          string
+	DidDomain            string
+	JSONLDDocumentLoader ld.DocumentLoader
 }
 
 // New returns issuer rest instance.
-func New(config *Config) (*Operation, error) { // nolint:funlen,gocyclo
+func New(config *Config) (*Operation, error) { // nolint:funlen,gocyclo,cyclop
 	oobClient, err := outofbandClient(config.AriesCtx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create aries outofband client : %w", err)
@@ -179,27 +181,27 @@ func New(config *Config) (*Operation, error) { // nolint:funlen,gocyclo
 
 	p, err := issuer.New(config.StoreProvider)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to init new issuer profile: %w", err)
 	}
 
 	txnStore, err := config.StoreProvider.OpenStore(txnStoreName)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to open store %s: %w", txnStoreName, err)
 	}
 
 	tokenStore, err := config.StoreProvider.OpenStore(tokenStoreName)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to open store %s: %w", tokenStoreName, err)
 	}
 
 	oidcClientStore, err := config.StoreProvider.OpenStore(oidcClientStoreName)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to open store %s: %w", oidcClientStoreName, err)
 	}
 
 	refreshStore, err := config.StoreProvider.OpenStore(refreshTokenStoreName)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to open store %s: %w", refreshTokenStoreName, err)
 	}
 
 	connectionLookup, err := connection.NewLookup(config.AriesCtx)
@@ -209,7 +211,7 @@ func New(config *Config) (*Operation, error) { // nolint:funlen,gocyclo
 
 	s, err := config.AriesCtx.Service(mediatorsvc.Coordination)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to lookup aries mediator coordination service: %w", err)
 	}
 
 	mediatorSvc, ok := s.(mediatorsvc.ProtocolService)
@@ -233,7 +235,12 @@ func New(config *Config) (*Operation, error) { // nolint:funlen,gocyclo
 		return nil, fmt.Errorf("create message service : %w", err)
 	}
 
-	vccrypto := adaptercrypto.New(config.AriesCtx.KMS(), config.AriesCtx.Crypto(), config.AriesCtx.VDRegistry())
+	vccrypto := adaptercrypto.New(
+		config.AriesCtx.KMS(),
+		config.AriesCtx.Crypto(),
+		config.AriesCtx.VDRegistry(),
+		config.JSONLDDocumentLoader,
+	)
 
 	walletBridge, err := walletops.New(&walletops.Config{
 		AriesCtx:     config.AriesCtx,
@@ -272,6 +279,7 @@ func New(config *Config) (*Operation, error) { // nolint:funlen,gocyclo
 		userTokens:         map[string]*oauth2.Token{},
 		refreshTokenStore:  refreshStore,
 		didDomain:          config.DidDomain,
+		jsonldDocLoader:    config.JSONLDDocumentLoader,
 	}
 
 	op.createOIDCClientFunc = op.getOrCreateOIDCClient
@@ -324,6 +332,7 @@ type Operation struct {
 	createOIDCClientFunc func(profileData *issuer.ProfileData) (oidcClient, error)
 	getOIDCClientFunc    func(string) (oidcClient, error)
 	didDomain            string
+	jsonldDocLoader      ld.DocumentLoader
 }
 
 // GetRESTHandlers get all controller API handler available for this service.
@@ -614,7 +623,7 @@ func (o *Operation) requestOIDCAuthHandler(rw http.ResponseWriter, req *http.Req
 }
 
 // OIDC callback from the OIDC provider through the auth code flow
-func (o *Operation) oidcAuthCallback(rw http.ResponseWriter, req *http.Request) { // nolint:funlen,gocyclo
+func (o *Operation) oidcAuthCallback(rw http.ResponseWriter, req *http.Request) { // nolint:funlen,gocyclo,cyclop
 	stateCookie, err := req.Cookie("oidcState")
 	if err != nil {
 		commhttp.WriteErrorResponseWithLog(rw, http.StatusInternalServerError,
@@ -728,7 +737,7 @@ func (o *Operation) getOIDCAccessToken(txnID string, profile *issuer.ProfileData
 	if !ok {
 		refresh, err := o.refreshTokenStore.Get(txnID)
 		if err != nil {
-			return "", err
+			return "", fmt.Errorf("failed to fetch refresh token: %w", err)
 		}
 
 		tok = &oauth2.Token{RefreshToken: string(refresh)}
@@ -736,12 +745,12 @@ func (o *Operation) getOIDCAccessToken(txnID string, profile *issuer.ProfileData
 
 	client, err := o.getOIDCClientFunc(profile.ID)
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("failed to fetch oidc client: %w", err)
 	}
 
 	tok2, err := client.CheckRefresh(tok)
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("failed to check refresh token: %w", err)
 	}
 
 	o.userTokens[txnID] = tok2
@@ -749,7 +758,7 @@ func (o *Operation) getOIDCAccessToken(txnID string, profile *issuer.ProfileData
 	if tok2.RefreshToken != tok.RefreshToken {
 		err = o.refreshTokenStore.Put(txnID, []byte(tok2.RefreshToken))
 		if err != nil {
-			return "", err
+			return "", fmt.Errorf("failed to save refresh token: %w", err)
 		}
 	}
 
@@ -786,7 +795,7 @@ func (o *Operation) validateWalletResponseHandler(rw http.ResponseWriter, req *h
 		return
 	}
 
-	connectData, err := issuervc.ParseWalletResponse(connectResp.Resp)
+	connectData, err := issuervc.ParseWalletResponse(connectResp.Resp, o.jsonldDocLoader)
 	if err != nil {
 		commhttp.WriteErrorResponseWithLog(rw, http.StatusBadRequest,
 			fmt.Sprintf("failed to validate presentation: %s", err.Error()), validateConnectResponseEndpoint, logger)
@@ -834,7 +843,7 @@ func (o *Operation) validateWalletResponseHandler(rw http.ResponseWriter, req *h
 		&ValidateConnectResp{RedirectURL: redirectURL}, validateConnectResponseEndpoint, logger)
 }
 
-func (o *Operation) getCHAPIRequestHandler(rw http.ResponseWriter, req *http.Request) { // nolint:funlen,gocyclo
+func (o *Operation) getCHAPIRequestHandler(rw http.ResponseWriter, req *http.Request) { // nolint:funlen,gocyclo,cyclop
 	// get the txnID
 	txnID := req.URL.Query().Get(txnIDQueryParam)
 
@@ -987,12 +996,12 @@ func (o *Operation) createTxn(profile *issuer.ProfileData, state, token string) 
 
 	dataBytes, err := json.Marshal(data)
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("failed to marshal txn data: %w", err)
 	}
 
 	err = o.txnStore.Put(txnID, dataBytes)
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("failed to store txn data: %w", err)
 	}
 
 	return txnID, nil
@@ -1018,12 +1027,12 @@ func (o *Operation) createTxnWithCredScope(profile *issuer.ProfileData, credScop
 
 	dataBytes, err := json.Marshal(data)
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("failed to marshal txn data: %w", err)
 	}
 
 	err = o.txnStore.Put(txnID, dataBytes)
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("failed to store txn data: %w", err)
 	}
 
 	return txnID, nil
@@ -1032,14 +1041,14 @@ func (o *Operation) createTxnWithCredScope(profile *issuer.ProfileData, credScop
 func (o *Operation) getTxn(id string) (*txnData, error) {
 	dataBytes, err := o.txnStore.Get(id)
 	if err != nil || dataBytes == nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to fetch txn data: %w", err)
 	}
 
 	data := &txnData{}
 
 	err = json.Unmarshal(dataBytes, data)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to unmarshal txn data: %w", err)
 	}
 
 	return data, nil
@@ -1048,12 +1057,12 @@ func (o *Operation) getTxn(id string) (*txnData, error) {
 func (o *Operation) storeUserConnectionMapping(userConnMap *UserConnectionMapping) error {
 	userConnMapBytes, err := json.Marshal(userConnMap)
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to marshal user connection mapping: %w", err)
 	}
 
 	err = o.tokenStore.Put(userConnMap.ConnectionID, userConnMapBytes)
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to save user connection mapping: %w", err)
 	}
 
 	return nil
@@ -1062,7 +1071,7 @@ func (o *Operation) storeUserConnectionMapping(userConnMap *UserConnectionMappin
 func (o *Operation) getUserConnectionMapping(connID string) (*UserConnectionMapping, error) {
 	userConnMapBytes, err := o.tokenStore.Get(connID)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to fetch user connection mapping: %w", err)
 	}
 
 	userConnMap := &UserConnectionMapping{}
@@ -1116,7 +1125,8 @@ func (o *Operation) didCommStateMsgListener(stateMsgCh <-chan service.StateMsg) 
 	}
 }
 
-func (o *Operation) handleRequestCredential(msg service.DIDCommAction) (interface{}, error) { // nolint: funlen, gocyclo
+// nolint:funlen,gocyclo,cyclop
+func (o *Operation) handleRequestCredential(msg service.DIDCommAction) (interface{}, error) {
 	connID, err := o.getConnectionIDFromEvent(msg)
 	if err != nil {
 		return nil, fmt.Errorf("connection using DIDs not found : %w", err)
@@ -1134,7 +1144,7 @@ func (o *Operation) handleRequestCredential(msg service.DIDCommAction) (interfac
 
 	authorizationCreReq, err := fetchAuthorizationCreReq(msg)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to fetch authz credential request: %w", err)
 	}
 
 	newDidDoc, err := o.routeSvc.GetDIDDoc(connID, profile.RequiresBlindedRoute)
@@ -1146,7 +1156,7 @@ func (o *Operation) handleRequestCredential(msg service.DIDCommAction) (interfac
 
 	docJSON, err := newDidDoc.JSONBytes()
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to marshal new did doc: %w", err)
 	}
 
 	rpDIDDoc, err := did.ParseDocument(authorizationCreReq.RPDIDDoc.Doc)
@@ -1193,9 +1203,9 @@ func (o *Operation) handleRequestCredential(msg service.DIDCommAction) (interfac
 }
 
 func (o *Operation) handleRequestPresentation(msg service.DIDCommAction) (interface{}, error) {
-	authorizationCred, err := fetchAuthorizationCred(msg, o.vdriRegistry)
+	authorizationCred, err := fetchAuthorizationCred(msg, o.vdriRegistry, o.jsonldDocLoader)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to fetch authz credential: %w", err)
 	}
 
 	data, err := o.txnStore.Get(authorizationCred.ID)
@@ -1222,7 +1232,7 @@ func (o *Operation) handleRequestPresentation(msg service.DIDCommAction) (interf
 
 	vp, err := o.generateUserPresentation(authorizationCredHandle, profile, docResolution.DIDDocument)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to generate user presentation: %w", err)
 	}
 
 	verificationMethod, err := adaptercrypto.GetVerificationMethodFromDID(docResolution.DIDDocument,
@@ -1263,22 +1273,22 @@ func (o *Operation) createRemoteCredential(token, oauthToken, signingKey string,
 	return vc, nil
 }
 
-func (o *Operation) createCredential(url, token, oauthToken, signingKey string, assuranceCred bool, profile *issuer.ProfileData) (*verifiable.Credential, error) { // nolint:lll,funlen,gocyclo
+func (o *Operation) createCredential(url, token, oauthToken, signingKey string, assuranceCred bool, profile *issuer.ProfileData) (*verifiable.Credential, error) { // nolint:lll,funlen,gocyclo,cyclop
 	dataReq := &UserDataReq{Token: token}
 
 	reqBytes, err := json.Marshal(dataReq)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to marshal user data request: %w", err)
 	}
 
 	req, err := http.NewRequest(http.MethodPost, url, bytes.NewBuffer(reqBytes))
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to create http request: %w", err)
 	}
 
 	dataBytes, err := sendHTTPRequest(req, o.httpClient, http.StatusOK, oauthToken)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to execute http request: %w", err)
 	}
 
 	resp := &UserDataRes{}
@@ -1360,23 +1370,23 @@ func (o *Operation) generateUserPresentation(handle *AuthorizationCredentialHand
 		return nil, fmt.Errorf("create remote data credential : %w", err)
 	}
 
-	return issuervc.CreatePresentation(vc)
+	return issuervc.CreatePresentation(vc) // nolint:wrapcheck // reduce cyclo
 }
 
 func (o *Operation) getConnectionIDFromEvent(msg service.DIDCommAction) (string, error) {
 	myDID, err := getStrPropFromEvent("myDID", msg)
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("failed to get myDID event property: %w", err)
 	}
 
 	theirDID, err := getStrPropFromEvent("theirDID", msg)
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("failed to get theirDID event property: %w", err)
 	}
 
 	connID, err := o.connectionLookup.GetConnectionIDByDIDs(myDID, theirDID)
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("failed to get connection id by dids: %w", err)
 	}
 
 	return connID, nil
@@ -1385,12 +1395,12 @@ func (o *Operation) getConnectionIDFromEvent(msg service.DIDCommAction) (string,
 func (o *Operation) storeAuthorizationCredHandle(handle *AuthorizationCredentialHandle) error {
 	dataBytes, err := json.Marshal(handle)
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to marshal authorization credential handle: %w", err)
 	}
 
 	err = o.txnStore.Put(handle.ID, dataBytes)
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to save authorization credential handle: %w", err)
 	}
 
 	return nil
@@ -1401,7 +1411,7 @@ func (o *Operation) retrieveIssuerToken(profile *issuer.ProfileData, state strin
 		State: state,
 	})
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to marshal issuer token request: %w", err)
 	}
 
 	req, err := http.NewRequest(http.MethodPost, getTokenURL(profile.URL), bytes.NewBuffer(reqBytes))
@@ -1460,28 +1470,28 @@ func (o *Operation) hanlDIDExStateMsg(msg service.StateMsg) error {
 func outofbandClient(ariesCtx outofband.Provider) (*outofband.Client, error) {
 	c, err := outofband.New(ariesCtx)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to create new outofband client: %w", err)
 	}
 
-	return c, err
+	return c, nil
 }
 
 func didExchangeClient(ariesCtx aries.CtxProvider, stateMsgCh chan service.StateMsg) (*didexchange.Client, error) {
 	didExClient, err := didexchange.New(ariesCtx)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to create new didexchange client: %w", err)
 	}
 
 	actionCh := make(chan service.DIDCommAction, 1)
 
 	err = didExClient.RegisterActionEvent(actionCh)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to register action event on didexchange client: %w", err)
 	}
 
 	err = didExClient.RegisterMsgEvent(stateMsgCh)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to register for msg events on didexchange client: %w", err)
 	}
 
 	// TODO https://github.com/trustbloc/edge-adapter/issues/102 verify connection request before approving
@@ -1493,21 +1503,21 @@ func didExchangeClient(ariesCtx aries.CtxProvider, stateMsgCh chan service.State
 func mediatorClient(prov mediatorClientProvider) (route.Mediator, error) {
 	c, err := mediator.New(prov)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to create new mediator client: %w", err)
 	}
 
-	return c, err
+	return c, nil
 }
 
 func issueCredentialClient(prov issuecredential.Provider, actionCh chan service.DIDCommAction) (*issuecredential.Client, error) { // nolint: lll
 	issueCredentialClient, err := issuecredential.New(prov)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to create new issuecredential client: %w", err)
 	}
 
 	err = issueCredentialClient.RegisterActionEvent(actionCh)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to register action events for issuecredential: %w", err)
 	}
 
 	return issueCredentialClient, nil
@@ -1516,23 +1526,24 @@ func issueCredentialClient(prov issuecredential.Provider, actionCh chan service.
 func presentProofClient(prov presentproof.Provider, actionCh chan service.DIDCommAction) (*presentproof.Client, error) { // nolint: lll
 	presentProofClient, err := presentproof.New(prov)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to create new presentproof client: %w", err)
 	}
 
 	err = presentProofClient.RegisterActionEvent(actionCh)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to register for presentproof action events: %w", err)
 	}
 
 	return presentProofClient, nil
 }
 
-func fetchAuthorizationCreReq(msg service.DIDCommAction) (*AuthorizationCredentialReq, error) { // nolint: gocyclo
+// nolint: gocyclo,cyclop
+func fetchAuthorizationCreReq(msg service.DIDCommAction) (*AuthorizationCredentialReq, error) {
 	credReq := &issuecredsvc.RequestCredential{}
 
 	err := msg.Message.Decode(credReq)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to decode credential request: %w", err)
 	}
 
 	if len(credReq.RequestsAttach) != 1 {
@@ -1565,7 +1576,8 @@ func fetchAuthorizationCreReq(msg service.DIDCommAction) (*AuthorizationCredenti
 	return authorizationCreReq, nil
 }
 
-func fetchAuthorizationCred(msg service.DIDCommAction, vdriRegistry vdr.Registry) (*verifiable.Credential, error) {
+func fetchAuthorizationCred(msg service.DIDCommAction,
+	vdriRegistry vdr.Registry, docLoader ld.DocumentLoader) (*verifiable.Credential, error) {
 	credReq := &presentproofsvc.RequestPresentation{}
 
 	err := msg.Message.Decode(credReq)
@@ -1586,6 +1598,7 @@ func fetchAuthorizationCred(msg service.DIDCommAction, vdriRegistry vdr.Registry
 	vp, err := verifiable.ParsePresentation(
 		reqJSON,
 		verifiable.WithPresPublicKeyFetcher(verifiable.NewVDRKeyResolver(vdriRegistry).PublicKeyFetcher()),
+		verifiable.WithPresJSONLDDocumentLoader(docLoader),
 	)
 	if err != nil {
 		return nil, fmt.Errorf("parse presentation : %w", err)
@@ -1604,6 +1617,7 @@ func fetchAuthorizationCred(msg service.DIDCommAction, vdriRegistry vdr.Registry
 	vc, err := verifiable.ParseCredential(
 		vcBytes,
 		verifiable.WithPublicKeyFetcher(verifiable.NewVDRKeyResolver(vdriRegistry).PublicKeyFetcher()),
+		verifiable.WithJSONLDDocumentLoader(docLoader),
 	)
 	if err != nil {
 		return nil, fmt.Errorf("parse credential : %w", err)
@@ -1676,7 +1690,7 @@ func sendHTTPRequest(req *http.Request, client httpClient, status int, bearerTok
 		return nil, fmt.Errorf("http request: %d %s", resp.StatusCode, string(body))
 	}
 
-	return ioutil.ReadAll(resp.Body)
+	return ioutil.ReadAll(resp.Body) // nolint:wrapcheck // reduce cyclo
 }
 
 func unmarshalSubject(data []byte) (map[string]interface{}, error) {
@@ -1710,6 +1724,7 @@ func mapProfileReqToData(data *ProfileDataRequest, didDoc *did.Doc, didDomain st
 	created := time.Now().UTC()
 
 	var clientParams *issuer.OIDCClientParams
+
 	if data.OIDCClientParams != nil {
 		clientParams = &issuer.OIDCClientParams{
 			ClientID:     data.OIDCClientParams.ClientID,

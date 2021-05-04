@@ -18,7 +18,11 @@ import (
 )
 
 func TestNewTrustblocDIDCreator(t *testing.T) {
+	t.Parallel()
+
 	t.Run("returns did creator", func(t *testing.T) {
+		t.Parallel()
+
 		c, err := NewTrustblocDIDCreator("", "", "", &mockKeyManager{}, nil)
 		require.NoError(t, err)
 		require.NotNil(t, c)
@@ -26,7 +30,11 @@ func TestNewTrustblocDIDCreator(t *testing.T) {
 }
 
 func TestTrustblocDIDCreator_Create(t *testing.T) {
+	t.Parallel()
+
 	t.Run("creates trustbloc DID", func(t *testing.T) {
+		t.Parallel()
+
 		domain := "http://example.trustbloc.com"
 		expected := newDIDDoc()
 		didcommURL := "http://example.didcomm.com"
@@ -47,6 +55,8 @@ func TestTrustblocDIDCreator_Create(t *testing.T) {
 	})
 
 	t.Run("error creating keys", func(t *testing.T) {
+		t.Parallel()
+
 		expected := errors.New("test")
 		c, err := NewTrustblocDIDCreator("", "", "", &mockKeyManager{err: expected}, nil)
 		require.NoError(t, err)
@@ -56,6 +66,8 @@ func TestTrustblocDIDCreator_Create(t *testing.T) {
 	})
 
 	t.Run("error creating didcomm keys", func(t *testing.T) {
+		t.Parallel()
+
 		expected := errors.New("test")
 		c, err := NewTrustblocDIDCreator("", "", "", &mockKeyManager{err: expected}, nil)
 		require.NoError(t, err)
@@ -65,6 +77,8 @@ func TestTrustblocDIDCreator_Create(t *testing.T) {
 	})
 
 	t.Run("error exporting public key bytes", func(t *testing.T) {
+		t.Parallel()
+
 		expected := errors.New("test")
 		c, err := NewTrustblocDIDCreator("", "", "", &mockKeyManager{err: expected}, nil)
 		require.NoError(t, err)
@@ -74,6 +88,8 @@ func TestTrustblocDIDCreator_Create(t *testing.T) {
 	})
 
 	t.Run("error creating trustbloc DID", func(t *testing.T) {
+		t.Parallel()
+
 		_, pubKey, err := ed25519.GenerateKey(rand.Reader)
 		require.NoError(t, err)
 

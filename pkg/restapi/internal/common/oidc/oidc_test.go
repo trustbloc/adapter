@@ -25,7 +25,11 @@ import (
 )
 
 func TestNew(t *testing.T) {
+	t.Parallel()
+
 	t.Run("success", func(t *testing.T) {
+		t.Parallel()
+
 		mockOIDCData := ""
 
 		mockOIDCServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -33,7 +37,7 @@ func TestNew(t *testing.T) {
 			require.NoError(t, e)
 		}))
 
-		defer mockOIDCServer.Close()
+		t.Cleanup(mockOIDCServer.Close)
 
 		mockOIDCData = fmt.Sprintf(`{
     "issuer":"%s",
@@ -57,6 +61,8 @@ func TestNew(t *testing.T) {
 	})
 
 	t.Run("failure - bad provider url", func(t *testing.T) {
+		t.Parallel()
+
 		_, err := New(&Config{
 			TLSConfig:        nil,
 			OIDCProviderURL:  "badurl",
@@ -71,6 +77,8 @@ func TestNew(t *testing.T) {
 }
 
 func TestClient_CreateOIDCRequest(t *testing.T) {
+	t.Parallel()
+
 	mockOIDCData := ""
 
 	mockOIDCServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -78,7 +86,7 @@ func TestClient_CreateOIDCRequest(t *testing.T) {
 		require.NoError(t, e)
 	}))
 
-	defer mockOIDCServer.Close()
+	t.Cleanup(mockOIDCServer.Close)
 
 	mockOIDCData = fmt.Sprintf(`{
     "issuer":"%s",
@@ -101,6 +109,8 @@ func TestClient_CreateOIDCRequest(t *testing.T) {
 	require.NoError(t, err)
 
 	t.Run("success", func(t *testing.T) {
+		t.Parallel()
+
 		reqURL := o.CreateOIDCRequest("stateDataStateDataState", "scopescopescope")
 		require.Contains(t, reqURL, mockOIDCServer.URL+"/authorize")
 		require.Contains(t, reqURL, "stateDataStateDataState")
@@ -123,7 +133,9 @@ type idTokenJSONType struct {
 	} `json:"_claim_sources,omitempty"`
 }
 
-func TestClient_GetIDTokenClaims(t *testing.T) {
+func TestClient_GetIDTokenClaims(t *testing.T) { // nolint:tparallel // data race
+	t.Parallel()
+
 	sigPriv, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
 	require.NoError(t, err)
 
@@ -171,7 +183,7 @@ func TestClient_GetIDTokenClaims(t *testing.T) {
 		}
 	}))
 
-	defer mockOIDCServer.Close()
+	t.Cleanup(mockOIDCServer.Close)
 
 	mockServerData.Config = []byte(fmt.Sprintf(`{
     "issuer":"%s",
@@ -212,12 +224,12 @@ func TestClient_GetIDTokenClaims(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	t.Run("success", func(t *testing.T) {
+	t.Run("success", func(t *testing.T) { // nolint:paralleltest // data race
 		_, err := o.GetIDTokenClaims(context.TODO(), "blahblah")
 		require.NoError(t, err)
 	})
 
-	t.Run("failure - exchanging oauth code for token", func(t *testing.T) {
+	t.Run("failure - exchanging oauth code for token", func(t *testing.T) { // nolint:paralleltest // data race
 		goodToken := mockServerData.Token
 		mockServerData.Token = nil
 
@@ -228,7 +240,7 @@ func TestClient_GetIDTokenClaims(t *testing.T) {
 		mockServerData.Token = goodToken
 	})
 
-	t.Run("failure - missing id_token", func(t *testing.T) {
+	t.Run("failure - missing id_token", func(t *testing.T) { // nolint:paralleltest // data race
 		goodToken := mockServerData.Token
 		mockServerData.Token = []byte(`{"access_token":"tokenTokenTokenToken","token_type":"bearer"}`)
 
@@ -239,7 +251,7 @@ func TestClient_GetIDTokenClaims(t *testing.T) {
 		mockServerData.Token = goodToken
 	})
 
-	t.Run("failure - verifying id_token", func(t *testing.T) {
+	t.Run("failure - verifying id_token", func(t *testing.T) { // nolint:paralleltest // data race
 		goodToken := mockServerData.Token
 		mockServerData.Token = []byte(`{"access_token":"tokenTokenTokenToken","token_type":"bearer","id_token":"abcd"}`)
 
@@ -251,7 +263,9 @@ func TestClient_GetIDTokenClaims(t *testing.T) {
 	})
 }
 
-func TestClient_CheckRefresh(t *testing.T) {
+func TestClient_CheckRefresh(t *testing.T) { // nolint:tparallel // data race
+	t.Parallel()
+
 	mockServerData := struct {
 		Config []byte
 		Token  []byte
@@ -279,7 +293,7 @@ func TestClient_CheckRefresh(t *testing.T) {
 		}
 	}))
 
-	defer mockOIDCServer.Close()
+	t.Cleanup(mockOIDCServer.Close)
 
 	mockServerData.Config = []byte(fmt.Sprintf(`{
     "issuer":"%s",
@@ -299,14 +313,14 @@ func TestClient_CheckRefresh(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	t.Run("success - no refresh", func(t *testing.T) {
+	t.Run("success - no refresh", func(t *testing.T) { // nolint:paralleltest // data race
 		tok := oauth2.Token{AccessToken: "abcd", RefreshToken: "abcd"}
 
 		_, err := o.CheckRefresh(&tok)
 		require.NoError(t, err)
 	})
 
-	t.Run("success - must refresh", func(t *testing.T) {
+	t.Run("success - must refresh", func(t *testing.T) { // nolint:paralleltest // data race
 		tok := oauth2.Token{RefreshToken: "abcd"}
 
 		mockServerData.Token = []byte(`{
@@ -318,7 +332,7 @@ func TestClient_CheckRefresh(t *testing.T) {
 		require.NoError(t, err)
 	})
 
-	t.Run("failure - missing refresh token on expired token", func(t *testing.T) {
+	t.Run("failure - missing refresh token on expired token", func(t *testing.T) { // nolint:paralleltest // data race
 		tok := oauth2.Token{AccessToken: "abcd", Expiry: time.Unix(0, 0)}
 
 		mockServerData.Token = []byte(`{

@@ -21,7 +21,11 @@ import (
 )
 
 func TestGetVerificationMethodFromDID(t *testing.T) {
+	t.Parallel()
+
 	t.Run("returns ver method", func(t *testing.T) {
+		t.Parallel()
+
 		doc := newPeerDID(t)
 		actual, err := crypto.GetVerificationMethodFromDID(doc, did.Authentication)
 		require.NoError(t, err)
@@ -30,6 +34,8 @@ func TestGetVerificationMethodFromDID(t *testing.T) {
 	})
 
 	t.Run("error if doc does not have verification method", func(t *testing.T) {
+		t.Parallel()
+
 		doc := newPeerDID(t)
 		doc.Authentication = nil
 		_, err := crypto.GetVerificationMethodFromDID(doc, did.Authentication)
@@ -37,6 +43,8 @@ func TestGetVerificationMethodFromDID(t *testing.T) {
 	})
 
 	t.Run("error if verification method ID is empty", func(t *testing.T) {
+		t.Parallel()
+
 		doc := newPeerDID(t)
 		doc.Authentication[0].VerificationMethod.ID = ""
 		_, err := crypto.GetVerificationMethodFromDID(doc, did.Authentication)

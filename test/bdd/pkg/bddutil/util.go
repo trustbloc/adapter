@@ -52,7 +52,7 @@ var sharedJar *cookiejar.Jar
 func HTTPDo(method, url, contentType, token string, body io.Reader, tlsConfig *tls.Config) (*http.Response, error) {
 	req, err := http.NewRequest(method, url, body)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to create http request: %w", err)
 	}
 
 	if contentType != "" {
@@ -66,7 +66,7 @@ func HTTPDo(method, url, contentType, token string, body io.Reader, tlsConfig *t
 	if sharedJar == nil {
 		sharedJar, err = cookiejar.New(&cookiejar.Options{PublicSuffixList: &suffixList{}})
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("failed to create cookie jar: %w", err)
 		}
 	}
 
@@ -78,7 +78,12 @@ func HTTPDo(method, url, contentType, token string, body io.Reader, tlsConfig *t
 		CheckRedirect: checkRedirect,
 	}
 
-	return httpClient.Do(req)
+	resp, err := httpClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("failed to execute request: %w", err)
+	}
+
+	return resp, nil
 }
 
 // CookieData logs the cookies contained within the bdd shared cookie jar for the given url.
@@ -104,8 +109,7 @@ func ExpectedStatusCodeError(expected, actual int, respBytes []byte) error {
 
 // CloseResponseBody closes the response body.
 func CloseResponseBody(respBody io.Closer) {
-	err := respBody.Close()
-	if err != nil {
+	if err := respBody.Close(); err != nil {
 		logger.Errorf("Failed to close response body: %s", err.Error())
 	}
 }
@@ -120,9 +124,10 @@ func ResolveDID(vdriRegistry vdriapi.Registry, did string, maxRetry int) (*docdi
 
 		if err != nil {
 			if !strings.Contains(err.Error(), "DID does not exist") {
-				return nil, err
+				return nil, fmt.Errorf("did resolution error: %w", err)
 			}
 
+			// nolint:forbidigo // ignored because this is test code
 			fmt.Printf("did %s not found - will retry %d of %d\n", did, i, maxRetry)
 			time.Sleep(3 * time.Second) // nolint:gomnd
 
@@ -219,7 +224,7 @@ func SendHTTP(method, destination string, message []byte, result interface{}) er
 		return nil
 	}
 
-	return json.Unmarshal(data, result)
+	return json.Unmarshal(data, result) // nolint:wrapcheck // ignore
 }
 
 // JSONBytesEqual compares 2 JSON bytes
@@ -227,11 +232,11 @@ func JSONBytesEqual(a, b []byte) (bool, error) {
 	var ar, br interface{}
 
 	if err := json.Unmarshal(a, &ar); err != nil {
-		return false, err
+		return false, fmt.Errorf("failed to unmarshal a: %w", err)
 	}
 
 	if err := json.Unmarshal(b, &br); err != nil {
-		return false, err
+		return false, fmt.Errorf("failed to unmarshal b: %w", err)
 	}
 
 	return reflect.DeepEqual(br, ar), nil

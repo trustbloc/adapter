@@ -11,11 +11,13 @@ import (
 
 	ariescrypto "github.com/hyperledger/aries-framework-go/pkg/crypto"
 	"github.com/hyperledger/aries-framework-go/pkg/doc/did"
+	"github.com/hyperledger/aries-framework-go/pkg/doc/signature/jsonld"
 	"github.com/hyperledger/aries-framework-go/pkg/doc/signature/suite"
 	"github.com/hyperledger/aries-framework-go/pkg/doc/signature/suite/ed25519signature2018"
 	"github.com/hyperledger/aries-framework-go/pkg/doc/verifiable"
 	vdriapi "github.com/hyperledger/aries-framework-go/pkg/framework/aries/api/vdr"
 	"github.com/hyperledger/aries-framework-go/pkg/kms"
+	"github.com/piprate/json-gold/ld"
 )
 
 const (
@@ -37,8 +39,13 @@ const (
 )
 
 // New returns new instance of vc crypto.
-func New(keyManager kms.KeyManager, c ariescrypto.Crypto, vdri vdriapi.Registry) *Crypto {
-	return &Crypto{keyManager: keyManager, crypto: c, vdri: vdri}
+func New(keyManager kms.KeyManager, c ariescrypto.Crypto, vdri vdriapi.Registry, dl ld.DocumentLoader) *Crypto {
+	return &Crypto{
+		keyManager: keyManager,
+		crypto:     c,
+		vdri:       vdri,
+		docLoader:  dl,
+	}
 }
 
 // Crypto vc crypto.
@@ -46,6 +53,7 @@ type Crypto struct {
 	keyManager kms.KeyManager
 	crypto     ariescrypto.Crypto
 	vdri       vdriapi.Registry
+	docLoader  ld.DocumentLoader
 }
 
 // SignCredential signs a credential.
@@ -55,7 +63,7 @@ func (c *Crypto) SignCredential(vc *verifiable.Credential, signingKeyID string) 
 		return nil, fmt.Errorf("sign credential : %w", err)
 	}
 
-	err = vc.AddLinkedDataProof(signingCtx)
+	err = vc.AddLinkedDataProof(signingCtx, jsonld.WithDocumentLoader(c.docLoader))
 	if err != nil {
 		return nil, fmt.Errorf("failed to sign credential: %w", err)
 	}
@@ -71,7 +79,7 @@ func (c *Crypto) SignPresentation(vp *verifiable.Presentation, signingKeyID stri
 		return nil, fmt.Errorf("sign presentation : %w", err)
 	}
 
-	err = vp.AddLinkedDataProof(signingCtx)
+	err = vp.AddLinkedDataProof(signingCtx, jsonld.WithDocumentLoader(c.docLoader))
 	if err != nil {
 		return nil, fmt.Errorf("failed to sign presentation: %w", err)
 	}
@@ -109,7 +117,7 @@ func (c *Crypto) validateDIDDoc(signingKeyID, proofPurpose string) error {
 
 	docResolution, err := c.vdri.Resolve(didID)
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to resolve did %s: %w", didID, err)
 	}
 
 	err = validateProofPurpose(proofPurpose, signingKeyID, docResolution.DIDDocument)
@@ -168,7 +176,7 @@ func newKMSSigner(keyManager kms.KeyManager, c ariescrypto.Crypto, signingKeyID 
 
 	keyHandler, err := keyManager.Get(keyID)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to fetch keyID %s: %w", keyID, err)
 	}
 
 	return &kmsSigner{keyHandle: keyHandler, crypto: c}, nil
@@ -177,7 +185,7 @@ func newKMSSigner(keyManager kms.KeyManager, c ariescrypto.Crypto, signingKeyID 
 func (s *kmsSigner) Sign(data []byte) ([]byte, error) {
 	v, err := s.crypto.Sign(data, s.keyHandle)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to sign data: %w", err)
 	}
 
 	return v, nil

@@ -31,8 +31,6 @@ import (
 	arieslog "github.com/hyperledger/aries-framework-go/pkg/common/log"
 	"github.com/hyperledger/aries-framework-go/pkg/didcomm/messaging/msghandler"
 	arieshttp "github.com/hyperledger/aries-framework-go/pkg/didcomm/transport/http"
-	"github.com/hyperledger/aries-framework-go/pkg/doc/presexch"
-	"github.com/hyperledger/aries-framework-go/pkg/doc/verifiable"
 	"github.com/hyperledger/aries-framework-go/pkg/framework/aries"
 	"github.com/hyperledger/aries-framework-go/pkg/framework/aries/api"
 	"github.com/hyperledger/aries-framework-go/pkg/framework/aries/defaults"
@@ -48,6 +46,7 @@ import (
 	"github.com/trustbloc/edge-adapter/pkg/did"
 	"github.com/trustbloc/edge-adapter/pkg/governance"
 	"github.com/trustbloc/edge-adapter/pkg/hydra"
+	"github.com/trustbloc/edge-adapter/pkg/jsonld"
 	"github.com/trustbloc/edge-adapter/pkg/presentationex"
 	"github.com/trustbloc/edge-adapter/pkg/restapi/healthcheck"
 	"github.com/trustbloc/edge-adapter/pkg/restapi/issuer"
@@ -204,10 +203,14 @@ const (
 	sleep                          = 1 * time.Second
 )
 
+const (
+	confErrMsg = "configuration failed: %w"
+)
+
 // nolint:gochecknoglobals
 var supportedStorageProviders = map[string]func(string, string) (storage.Provider, error){
 	"mysql": func(dsn, prefix string) (storage.Provider, error) {
-		return mysql.NewProvider(dsn, mysql.WithDBPrefix(prefix))
+		return mysql.NewProvider(dsn, mysql.WithDBPrefix(prefix)) // nolint:wrapcheck // reduce cyclo
 	},
 	"mem": func(_, _ string) (storage.Provider, error) { // nolint:unparam
 		return mem.NewProvider(), nil
@@ -250,6 +253,7 @@ type adapterRestParameters struct {
 	oidcClientDBKeyPath  string
 	externalURL          string
 	didAnchorOrigin      string
+	jsonldDocLoader      ld.DocumentLoader
 }
 
 // governanceProvider governance provider.
@@ -268,10 +272,10 @@ type HTTPServer struct{}
 // ListenAndServe starts the server using the standard Go HTTP server implementation.
 func (s *HTTPServer) ListenAndServe(host, certFile, keyFile string, router http.Handler) error {
 	if certFile == "" || keyFile == "" {
-		return http.ListenAndServe(host, router)
+		return http.ListenAndServe(host, router) // nolint:wrapcheck // reduce cyclo
 	}
 
-	return http.ListenAndServeTLS(host, certFile, keyFile, router)
+	return http.ListenAndServeTLS(host, certFile, keyFile, router) // nolint:wrapcheck // reduce cyclo
 }
 
 // GetStartCmd returns the Cobra start command.
@@ -291,7 +295,7 @@ func createStartCmd(srv server) *cobra.Command {
 		RunE: func(cmd *cobra.Command, args []string) error {
 			parameters, err := getAdapterRestParameters(cmd)
 			if err != nil {
-				return err
+				return fmt.Errorf("failed to configure adapter: %w", err)
 			}
 
 			return startAdapterService(parameters, srv)
@@ -299,104 +303,112 @@ func createStartCmd(srv server) *cobra.Command {
 	}
 }
 
-//nolint:funlen,gocyclo
+//nolint:funlen,gocyclo,cyclop
 func getAdapterRestParameters(cmd *cobra.Command) (*adapterRestParameters, error) {
 	hostURL, err := cmdutils.GetUserSetVarFromString(cmd, hostURLFlagName, hostURLEnvKey, false)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf(confErrMsg, err)
 	}
 
 	tlsParams, err := getTLS(cmd)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf(confErrMsg, err)
 	}
 
 	dsnParams, err := getDsnParams(cmd)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf(confErrMsg, err)
 	}
 
 	externalURL, err := cmdutils.GetUserSetVarFromString(cmd, externalURLFlagName, externalURLEnvKey, true)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf(confErrMsg, err)
 	}
 
 	oidcURL, err := cmdutils.GetUserSetVarFromString(cmd, oidcProviderURLFlagName, oidcProviderEnvKey, true)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf(confErrMsg, err)
 	}
 
 	staticFiles, err := cmdutils.GetUserSetVarFromString(cmd, staticFilesPathFlagName, staticFilesPathEnvKey, true)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf(confErrMsg, err)
 	}
 
 	mode, err := cmdutils.GetUserSetVarFromString(cmd, modeFlagName, modeEnvKey, true)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf(confErrMsg, err)
 	}
 
 	presentationDefinitionsFile, err := cmdutils.GetUserSetVarFromString(cmd, presentationDefinitionsFlagName,
 		presentationDefinitionsEnvKey, mode != rpMode)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf(confErrMsg, err)
 	}
 
 	hydraURL, err := cmdutils.GetUserSetVarFromString(cmd, hydraURLFlagName, hydraURLEnvKey, true)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf(confErrMsg, err)
 	}
 
 	issuerOIDCKeyPath, err := cmdutils.GetUserSetVarFromString(cmd, issuerOIDCClientStoreKeyFlagName,
 		issuerOIDCClientStoreKeyEnvKey, true)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf(confErrMsg, err)
 	}
 
 	// didcomm
 	didCommParameters, err := getDIDCommParams(cmd)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf(confErrMsg, err)
 	}
 
 	trustblocDomain, err := cmdutils.GetUserSetVarFromString(cmd, trustblocDomainFlagName, trustblocDomainEnvKey, true)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf(confErrMsg, err)
 	}
 
 	universalResolverURL, err := cmdutils.GetUserSetVarFromString(cmd, universalResolverURLFlagName,
 		universalResolverURLEnvKey, true)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf(confErrMsg, err)
 	}
 
 	logLevel, err := cmdutils.GetUserSetVarFromString(cmd, logLevelFlagName, logLevelEnvKey, true)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf(confErrMsg, err)
 	}
 
 	governanceVCSURL, err := cmdutils.GetUserSetVarFromString(cmd, governanceVCSURLFlagName,
 		governanceVCSURLEnvKey, true)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf(confErrMsg, err)
 	}
 
 	requestTokens, err := getRequestTokens(cmd)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf(confErrMsg, err)
 	}
 
 	err = setLogLevel(logLevel)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf(confErrMsg, err)
 	}
 
 	walletAppURL, err := cmdutils.GetUserSetVarFromString(cmd, walletAppURLFlagName, walletAppURLEnvKey, true)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf(confErrMsg, err)
 	}
 
 	didAnchorOrigin := cmdutils.GetUserSetOptionalVarFromString(cmd, didAnchorOriginFlagName, didAnchorOriginEnvKey)
+
+	// TODO the expectation is to switch to persistent storage and expose an API that allows updating the contexts
+	//  stored there.
+	// TODO need to first check if the context documents are already in the storage in order not to overwrite them
+	docLoader, err := jsonld.DocumentLoader(mem.NewProvider())
+	if err != nil {
+		return nil, fmt.Errorf(confErrMsg, err)
+	}
 
 	logger.Infof("logger level set to %s", logLevel)
 
@@ -418,6 +430,7 @@ func getAdapterRestParameters(cmd *cobra.Command) (*adapterRestParameters, error
 		oidcClientDBKeyPath:         issuerOIDCKeyPath,
 		externalURL:                 externalURL,
 		didAnchorOrigin:             didAnchorOrigin,
+		jsonldDocLoader:             docLoader,
 	}, nil
 }
 
@@ -425,7 +438,7 @@ func getRequestTokens(cmd *cobra.Command) (map[string]string, error) {
 	requestTokens, err := cmdutils.GetUserSetVarFromArrayString(cmd, requestTokensFlagName,
 		requestTokensEnvKey, true)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf(confErrMsg, err)
 	}
 
 	tokens := make(map[string]string)
@@ -450,7 +463,7 @@ func setLogLevel(logLevel string) error {
 
 	err := setEdgeCoreLogLevel(logLevel)
 	if err != nil {
-		return err
+		return fmt.Errorf(confErrMsg, err)
 	}
 
 	return setAriesFrameworkLogLevel(logLevel)
@@ -512,13 +525,13 @@ func getDIDCommParams(cmd *cobra.Command) (*didCommParameters, error) {
 	inboundHostInternal, err := cmdutils.GetUserSetVarFromString(cmd, didCommInboundHostFlagName,
 		didCommInboundHostEnvKey, true)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf(confErrMsg, err)
 	}
 
 	inboundHostExternal, err := cmdutils.GetUserSetVarFromString(cmd, didCommInboundHostExternalFlagName,
 		didCommInboundHostExternalEnvKey, true)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf(confErrMsg, err)
 	}
 
 	return &didCommParameters{
@@ -531,30 +544,30 @@ func getTLS(cmd *cobra.Command) (*tlsParameters, error) {
 	tlsSystemCertPoolString, err := cmdutils.GetUserSetVarFromString(cmd, tlsSystemCertPoolFlagName,
 		tlsSystemCertPoolEnvKey, true)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf(confErrMsg, err)
 	}
 
 	tlsSystemCertPool := false
 	if tlsSystemCertPoolString != "" {
 		tlsSystemCertPool, err = strconv.ParseBool(tlsSystemCertPoolString)
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf(confErrMsg, err)
 		}
 	}
 
 	tlsCACerts, err := cmdutils.GetUserSetVarFromArrayString(cmd, tlsCACertsFlagName, tlsCACertsEnvKey, true)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf(confErrMsg, err)
 	}
 
 	tlsServeCertPath, err := cmdutils.GetUserSetVarFromString(cmd, tlsServeCertPathFlagName, tlsServeCertPathEnvKey, true)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf(confErrMsg, err)
 	}
 
 	tlsServeKeyPath, err := cmdutils.GetUserSetVarFromString(cmd, tlsServeKeyPathFlagName, tlsServeKeyPathFlagEnvKey, true)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf(confErrMsg, err)
 	}
 
 	return &tlsParameters{
@@ -598,7 +611,7 @@ func createFlags(startCmd *cobra.Command) {
 func startAdapterService(parameters *adapterRestParameters, srv server) error {
 	rootCAs, err := tlsutils.GetCertPool(parameters.tlsParams.systemCertPool, parameters.tlsParams.caCerts)
 	if err != nil {
-		return err
+		return fmt.Errorf(confErrMsg, err)
 	}
 
 	router := mux.NewRouter()
@@ -616,10 +629,12 @@ func startAdapterService(parameters *adapterRestParameters, srv server) error {
 	// add endpoints
 	switch parameters.mode {
 	case rpMode:
-		framework, err := createAriesAgent(parameters, &tls.Config{RootCAs: rootCAs, MinVersion: tls.VersionTLS12},
+		framework, err := createAriesAgent(
+			parameters,
+			&tls.Config{RootCAs: rootCAs, MinVersion: tls.VersionTLS12},
 			rpAdapterPersistentStorePrefix, msgRegistrar)
 		if err != nil {
-			return err
+			return fmt.Errorf("failed to create rp aries agent: %w", err)
 		}
 
 		err = addRPHandlers(parameters, framework, router, rootCAs, msgRegistrar)
@@ -630,7 +645,7 @@ func startAdapterService(parameters *adapterRestParameters, srv server) error {
 		framework, err := createAriesAgent(parameters, &tls.Config{RootCAs: rootCAs, MinVersion: tls.VersionTLS12},
 			issuerAdapterStorePrefix, msgRegistrar)
 		if err != nil {
-			return err
+			return fmt.Errorf("failed to create issuer aries agent: %w", err)
 		}
 
 		err = addIssuerHandlers(parameters, framework, router, rootCAs, msgRegistrar)
@@ -644,24 +659,24 @@ func startAdapterService(parameters *adapterRestParameters, srv server) error {
 
 	logger.Infof("starting %s adapter rest server on host %s", parameters.mode, parameters.hostURL)
 
-	return srv.ListenAndServe(
+	return srv.ListenAndServe( // nolint:wrapcheck // reduce cyclo
 		parameters.hostURL,
 		parameters.tlsParams.serveCertPath,
 		parameters.tlsParams.serveKeyPath,
 		constructCORSHandler(router))
 }
 
-// nolint:funlen,gocyclo
+// nolint:funlen,gocyclo,cyclop
 func addRPHandlers(parameters *adapterRestParameters, framework *aries.Aries, router *mux.Router,
 	rootCAs *x509.CertPool, msgRegistrar *msghandler.Registrar) error {
 	presentationExProvider, err := getPresentationExchangeProvider(parameters.presentationDefinitionsFile)
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to create pres-exch provider: %w", err)
 	}
 
 	hydraURL, err := url.Parse(parameters.hydraURL)
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to parse hydra url: %w", err)
 	}
 
 	ctx, err := framework.Context()
@@ -681,7 +696,7 @@ func addRPHandlers(parameters *adapterRestParameters, framework *aries.Aries, ro
 
 	presentProofClient, err := presentproof.New(ctx)
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to create presentproof client: %w", err)
 	}
 
 	store, tStore, err := initStores(parameters.dsnParams.dsn, parameters.dsnParams.timeout,
@@ -698,7 +713,7 @@ func addRPHandlers(parameters *adapterRestParameters, framework *aries.Aries, ro
 		governanceProv, errNew = newGovernanceProvider(parameters.governanceVCSURL, rootCAs, store,
 			parameters.requestTokens, parameters.trustblocDomain)
 		if errNew != nil {
-			return errNew
+			return fmt.Errorf("failed to create governance provider: %w", errNew)
 		}
 	}
 
@@ -711,19 +726,8 @@ func addRPHandlers(parameters *adapterRestParameters, framework *aries.Aries, ro
 		ctx.KMS(),
 		rootCAs)
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to create trustbloc did creator: %w", err)
 	}
-
-	presExchJSONLDCtx, err := ld.DocumentFromReader(strings.NewReader(presexch.PresentationSubmissionJSONLDContext))
-	if err != nil {
-		return fmt.Errorf("failed to preload presentation-exchange jsonld context: %w", err)
-	}
-
-	docLoader := verifiable.CachingJSONLDLoader()
-	docLoader.AddDocument(
-		presexch.PresentationSubmissionJSONLDContextIRI,
-		presExchJSONLDCtx,
-	)
 
 	// add rp endpoints
 	rpService, err := rp.New(&rpops.Config{
@@ -740,11 +744,11 @@ func addRPHandlers(parameters *adapterRestParameters, framework *aries.Aries, ro
 		GovernanceProvider:     governanceProv,
 		PresentProofClient:     presentProofClient,
 		WalletBridgeAppURL:     parameters.walletAppURL,
-		JSONLDDocumentLoader:   docLoader,
+		JSONLDDocumentLoader:   parameters.jsonldDocLoader,
 		DidDomain:              parameters.trustblocDomain,
 	})
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to init rp operations: %w", err)
 	}
 
 	rpHandlers := rpService.GetOperations()
@@ -777,7 +781,7 @@ func addIssuerHandlers(parameters *adapterRestParameters, framework *aries.Aries
 		governanceProv, errNew = newGovernanceProvider(parameters.governanceVCSURL, rootCAs, store,
 			parameters.requestTokens, parameters.trustblocDomain)
 		if errNew != nil {
-			return errNew
+			return fmt.Errorf("failed to init governance provider: %w", errNew)
 		}
 	}
 
@@ -788,7 +792,7 @@ func addIssuerHandlers(parameters *adapterRestParameters, framework *aries.Aries
 
 	clientStoreKey, err := getIssuerOIDCClientStoreKey(parameters.oidcClientDBKeyPath)
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to fetch OIDC client store key: %w", err)
 	}
 
 	didCreator, err := did.NewTrustblocDIDCreator(
@@ -799,25 +803,26 @@ func addIssuerHandlers(parameters *adapterRestParameters, framework *aries.Aries
 		rootCAs,
 	)
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to init trustbloc did creator: %w", err)
 	}
 
 	// add issuer endpoints
 	issuerService, err := issuer.New(&issuerops.Config{
-		AriesCtx:           ariesCtx,
-		AriesMessenger:     framework.Messenger(),
-		MsgRegistrar:       msgRegistrar,
-		UIEndpoint:         uiEndpoint,
-		StoreProvider:      store,
-		PublicDIDCreator:   didCreator,
-		TLSConfig:          &tls.Config{RootCAs: rootCAs, MinVersion: tls.VersionTLS12},
-		GovernanceProvider: governanceProv,
-		OIDCClientStoreKey: clientStoreKey,
-		ExternalURL:        parameters.externalURL,
-		DidDomain:          parameters.trustblocDomain,
+		AriesCtx:             ariesCtx,
+		AriesMessenger:       framework.Messenger(),
+		MsgRegistrar:         msgRegistrar,
+		UIEndpoint:           uiEndpoint,
+		StoreProvider:        store,
+		PublicDIDCreator:     didCreator,
+		TLSConfig:            &tls.Config{RootCAs: rootCAs, MinVersion: tls.VersionTLS12},
+		GovernanceProvider:   governanceProv,
+		OIDCClientStoreKey:   clientStoreKey,
+		ExternalURL:          parameters.externalURL,
+		DidDomain:            parameters.trustblocDomain,
+		JSONLDDocumentLoader: parameters.jsonldDocLoader,
 	})
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to init issuer ops: %w", err)
 	}
 
 	rpHandlers := issuerService.GetOperations()
@@ -845,7 +850,7 @@ func getIssuerOIDCClientStoreKey(keyPath string) ([]byte, error) {
 
 func newGovernanceProvider(governanceVCSURL string, rootCAs *x509.CertPool,
 	store storage.Provider, requestTokens map[string]string, domain string) (*governance.Provider, error) {
-	return governance.New(governanceVCSURL, &tls.Config{RootCAs: rootCAs, MinVersion: tls.VersionTLS12}, store,
+	return governance.New(governanceVCSURL, &tls.Config{RootCAs: rootCAs}, store, // nolint:gosec,wrapcheck
 		requestTokens, domain)
 }
 
@@ -895,7 +900,7 @@ func retry(fn func() error, timeout uint64) error {
 		numRetries = timeout
 	}
 
-	return backoff.RetryNotify(
+	return backoff.RetryNotify( // nolint:wrapcheck // reduce cyclo
 		fn,
 		backoff.WithMaxRetries(backoff.NewConstantBackOff(sleep), numRetries),
 		func(retryErr error, t time.Duration) {
@@ -909,7 +914,7 @@ func retry(fn func() error, timeout uint64) error {
 func initStore(dbURL string, timeout uint64, prefix string) (storage.Provider, error) {
 	driver, dsn, err := getDBParams(dbURL)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to init store [%s]: %w", dbURL, err)
 	}
 
 	providerFunc, supported := supportedStorageProviders[driver]

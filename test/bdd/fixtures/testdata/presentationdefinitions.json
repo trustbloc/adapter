@@ -1,7 +1,7 @@
 {
   "credit_card_stmt:remote": {
     "schema": [{
-      "uri": "https://trustbloc.github.io/context/vc/authorization-credential-v1.jsonld"
+      "uri": "https://trustbloc.github.io/context/vc/authorization-credential-v1.jsonld#AuthorizationCredential"
     }],
     "constraints": {
       "fields": [
@@ -17,12 +17,12 @@
   },
   "driver_license:local": {
     "schema": [{
-      "uri": "https://trustbloc.github.io/context/vc/examples/mdl-v1.jsonld"
+      "uri": "https://trustbloc.github.io/context/vc/examples/mdl-v1.jsonld#mDL"
     }]
   },
   "driver_license_evidence:remote": {
     "schema": [{
-      "uri": "https://trustbloc.github.io/context/vc/authorization-credential-v1.jsonld"
+      "uri": "https://trustbloc.github.io/context/vc/authorization-credential-v1.jsonld#AuthorizationCredential"
     }],
     "constraints": {
       "fields": [
@@ -38,7 +38,7 @@
   },
   "credit_score:remote": {
     "schema": [{
-      "uri": "https://trustbloc.github.io/context/vc/authorization-credential-v1.jsonld"
+      "uri": "https://trustbloc.github.io/context/vc/authorization-credential-v1.jsonld#AuthorizationCredential"
     }],
     "constraints": {
       "fields": [

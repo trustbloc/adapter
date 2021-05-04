@@ -27,7 +27,7 @@ func (t *transientData) Put(k string, v interface{}) error {
 		return fmt.Errorf("failed to marshal transient data : %w", err)
 	}
 
-	return t.s.Put(k, bits)
+	return t.s.Put(k, bits) // nolint:wrapcheck // reduce cyclo
 }
 
 func (t *transientData) GetConsentRequest(k string) (*consentRequestCtx, error) {
@@ -38,5 +38,5 @@ func (t *transientData) GetConsentRequest(k string) (*consentRequestCtx, error) 
 
 	cr := &consentRequestCtx{}
 
-	return cr, json.Unmarshal(bits, cr)
+	return cr, json.Unmarshal(bits, cr) // nolint:wrapcheck // reduce cyclo
 }

@@ -12,7 +12,6 @@ import (
 	"net/http"
 
 	"github.com/cucumber/godog"
-	"github.com/pkg/errors"
 	logger "github.com/sirupsen/logrus"
 	"github.com/tidwall/gjson"
 
@@ -45,12 +44,12 @@ func (e *Steps) httpGet(url string) error {
 
 	httpReq, err := http.NewRequest(http.MethodGet, url, nil)
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to create request: %w", err)
 	}
 
 	resp, err := client.Do(httpReq)
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to execute request: %w", err)
 	}
 
 	defer func() {
@@ -67,7 +66,7 @@ func (e *Steps) httpGet(url string) error {
 	e.queryValue = string(payload)
 
 	if resp.StatusCode != http.StatusOK {
-		return errors.Errorf("received status code %d", resp.StatusCode)
+		return fmt.Errorf("received status code %d", resp.StatusCode)
 	}
 
 	return nil

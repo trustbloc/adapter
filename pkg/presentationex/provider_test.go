@@ -18,19 +18,27 @@ import (
 )
 
 func TestProvider_New(t *testing.T) {
+	t.Parallel()
+
 	t.Run("test success", func(t *testing.T) {
+		t.Parallel()
+
 		p, err := New(reader(t, map[string]*presexch.InputDescriptor{}))
 		require.NoError(t, err)
 		require.NotNil(t, p)
 	})
 
 	t.Run("test failed to read input descriptors file", func(t *testing.T) {
+		t.Parallel()
+
 		_, err := New(&mockReader{err: errors.New("test")})
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "failed to read input descriptors file")
 	})
 
 	t.Run("test failed unmarshal to input descriptors", func(t *testing.T) {
+		t.Parallel()
+
 		_, err := New(bytes.NewReader([]byte("{")))
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "failed unmarshal to input descriptors")
@@ -38,7 +46,11 @@ func TestProvider_New(t *testing.T) {
 }
 
 func TestProvider_Create(t *testing.T) {
+	t.Parallel()
+
 	t.Run("test success", func(t *testing.T) {
+		t.Parallel()
+
 		scopes := []string{"CreditCardStatement", "Address", "CreditScore", "Email"}
 		expected := map[string]*presexch.InputDescriptor{}
 
@@ -66,6 +78,8 @@ func TestProvider_Create(t *testing.T) {
 	})
 
 	t.Run("invalid scope", func(t *testing.T) {
+		t.Parallel()
+
 		p, err := New(reader(t, map[string]*presexch.InputDescriptor{
 			"CreditCardStatement": {
 				Schema: []*presexch.Schema{},
@@ -78,6 +92,8 @@ func TestProvider_Create(t *testing.T) {
 	})
 
 	t.Run("invalid schema", func(t *testing.T) {
+		t.Parallel()
+
 		p, err := New(reader(t, map[string]*presexch.InputDescriptor{
 			"test": {
 				Schema: nil,

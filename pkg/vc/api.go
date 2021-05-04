@@ -39,5 +39,5 @@ type Crypto interface {
 func AuthZSubject(vc json.Marshaler) (*AuthorizationCredentialSubject, error) {
 	authz := &AuthorizationCredential{}
 
-	return authz.Subject, adapterutil.DecodeJSONMarshaller(vc, authz)
+	return authz.Subject, adapterutil.DecodeJSONMarshaller(vc, authz) // nolint:wrapcheck // reduce cyclo
 }

@@ -31,6 +31,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/hyperledger/aries-framework-go-ext/component/vdr/orb"
 	"github.com/hyperledger/aries-framework-go-ext/component/vdr/sidetree/doc"
+	"github.com/hyperledger/aries-framework-go/component/storageutil/mem"
 	"github.com/hyperledger/aries-framework-go/pkg/client/outofband"
 	"github.com/hyperledger/aries-framework-go/pkg/doc/did"
 	"github.com/hyperledger/aries-framework-go/pkg/doc/jose"
@@ -45,6 +46,7 @@ import (
 	"golang.org/x/oauth2"
 
 	"github.com/trustbloc/edge-adapter/pkg/crypto"
+	"github.com/trustbloc/edge-adapter/pkg/jsonld"
 	"github.com/trustbloc/edge-adapter/pkg/presentationex"
 	"github.com/trustbloc/edge-adapter/pkg/restapi/rp/operation"
 	"github.com/trustbloc/edge-adapter/test/bdd/pkg/agent"
@@ -137,19 +139,23 @@ func (s *Steps) RegisterSteps(g *godog.Suite) {
 }
 
 func (s *Steps) registerAgentController(agentID, inboundHost, inboundPort, controllerURL string) error {
+	// nolint:wrapcheck // ignore
 	return s.controller.ValidateAgentConnection(agentID, inboundHost, inboundPort, controllerURL)
 }
 
 func (s *Steps) registerAgentControllerWithWebhook(agentID, inboundHost, inboundPort,
 	webhookURL, controllerURL string) error {
+	// nolint:wrapcheck // ignore
 	return s.controller.ValidateAgentConnectionWithWebhook(agentID, inboundHost, inboundPort, webhookURL, controllerURL)
 }
 
 func (s *Steps) registerCHAPIMsgHandler(agentID string) error {
+	// nolint:wrapcheck // ignore
 	return s.controller.RegisterCHAPIMsgHandler(agentID)
 }
 
 func (s *Steps) connectToWalletBridge(userID, agentID string) error {
+	// nolint:wrapcheck // ignore
 	return s.controller.ConnectToWalletBridge(userID, agentID)
 }
 
@@ -160,7 +166,7 @@ func (s *Steps) createTenant(label, scopesStr, blindedRouteStr string) error {
 
 	blindedRoute, err := strconv.ParseBool(blindedRouteStr)
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to parse bool: %w", err)
 	}
 
 	requestBytes, err := json.Marshal(&operation.CreateRPTenantRequest{
@@ -170,7 +176,7 @@ func (s *Steps) createTenant(label, scopesStr, blindedRouteStr string) error {
 		RequiresBlindedRoute: blindedRoute,
 	})
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to marshal request: %w", err)
 	}
 
 	resp, err := (&http.Client{
@@ -188,6 +194,7 @@ func (s *Steps) createTenant(label, scopesStr, blindedRouteStr string) error {
 	}
 
 	if resp.StatusCode != http.StatusCreated {
+		// nolint:wrapcheck // ignore
 		return bddutil.ExpectedStatusCodeError(http.StatusCreated, resp.StatusCode, respBytes)
 	}
 
@@ -220,7 +227,7 @@ func (s *Steps) resolveDID(label string) error {
 		orb.WithDomain("testnet.orb.local"),
 	)
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to init orb VDR: %w", err)
 	}
 
 	const (
@@ -232,8 +239,11 @@ func (s *Steps) resolveDID(label string) error {
 
 	err = backoff.RetryNotify(
 		func() error {
-			_, errRead := vdri.Read(publicDID)
-			return errRead
+			if _, errRead := vdri.Read(publicDID); errRead != nil {
+				return fmt.Errorf("vdr read: %w", errRead)
+			}
+
+			return nil
 		},
 		backoff.WithMaxRetries(backoff.NewConstantBackOff(sleep), maxRetries),
 		func(retryErr error, sleep time.Duration) {
@@ -266,19 +276,19 @@ func (s *Steps) newTrustBlocDID(agentID string) (*did.Doc, error) {
 	orbClient, err := orb.New(nil, orb.WithDomain(trustblocDIDMethodDomain),
 		orb.WithTLSConfig(&tls.Config{RootCAs: s.context.TLSConfig().RootCAs, MinVersion: tls.VersionTLS12}))
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to init orb VDR %w", err)
 	}
 
 	didDoc := did.Doc{}
 
 	jwk, err := jose.JWKFromKey(ed25519.PublicKey(keys[0].bits))
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to create jwk: %w", err)
 	}
 
 	vm, err := did.NewVerificationMethodFromJWK(keys[0].keyID, doc.JWSVerificationKey2020, "", jwk)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to create new vm: %w", err)
 	}
 
 	didDoc.Authentication = append(didDoc.Authentication, *did.NewReferencedVerification(vm, did.Authentication))
@@ -373,12 +383,12 @@ func validateTenantRegistration(expected *tenantContext, result *models.OAuth2Cl
 func (s *Steps) registerTenantFlow(label, scopesStr string) error {
 	err := s.createTenant(label, scopesStr, "false")
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to create tenant: %w", err)
 	}
 
 	err = s.resolveDID(label)
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to resolve DID: %w", err)
 	}
 
 	return s.lookupClientID(label, scopesStr)
@@ -489,7 +499,8 @@ func (s *Steps) sendCHAPIRequestToWallet(tenantID, walletID string) error {
 	return nil
 }
 
-func validatePresentationDefinitions(pd *presexch.PresentationDefinition, scope []string) error { // nolint:gocyclo
+// nolint:gocyclo,cyclop
+func validatePresentationDefinitions(pd *presexch.PresentationDefinition, scope []string) error {
 	file, err := os.Open("./fixtures/testdata/presentationdefinitions.json")
 	if err != nil {
 		return fmt.Errorf("failed open presentation definitions config file: %w", err)
@@ -498,6 +509,7 @@ func validatePresentationDefinitions(pd *presexch.PresentationDefinition, scope 
 	defer func() {
 		closeErr := file.Close()
 		if closeErr != nil {
+			// nolint:forbidigo // ignored because this is test code
 			fmt.Printf("WARNING - failed to close presentation definitions config file: %s", closeErr)
 		}
 	}()
@@ -547,9 +559,18 @@ func validatePresentationDefinitions(pd *presexch.PresentationDefinition, scope 
 }
 
 func validateGovernance(governanceVCBytes []byte) error {
-	governanceVC, err := verifiable.ParseCredential(governanceVCBytes, verifiable.WithDisabledProofCheck())
+	l, err := jsonld.DocumentLoader(mem.NewProvider())
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to init document loader: %w", err)
+	}
+
+	governanceVC, err := verifiable.ParseCredential(
+		governanceVCBytes,
+		verifiable.WithDisabledProofCheck(),
+		verifiable.WithJSONLDDocumentLoader(l),
+	)
+	if err != nil {
+		return fmt.Errorf("failed to parse VC: %w", err)
 	}
 
 	if len(governanceVC.Context) != governanceVCCTXSize {
@@ -586,7 +607,7 @@ func (s *Steps) walletAcceptsDIDCommInvitation(walletID, tenantID string) error 
 
 	err = agent.UnregisterAllMsgServices(s.controller.ControllerURLs[walletID])
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to unregister msg svc: %w", err)
 	}
 
 	msgSvcName := uuid.New().String()
@@ -594,7 +615,7 @@ func (s *Steps) walletAcceptsDIDCommInvitation(walletID, tenantID string) error 
 	err = agent.RegisterMsgService(s.controller.ControllerURLs[walletID], msgSvcName,
 		"https://trustbloc.dev/didexchange/1.0/state-complete")
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to register msg svc: %w", err)
 	}
 
 	connID, err := s.controller.AcceptOOBInvitation(walletID, inv, walletID)
@@ -604,7 +625,7 @@ func (s *Steps) walletAcceptsDIDCommInvitation(walletID, tenantID string) error 
 
 	err = agent.GetDIDExStateCompResp(s.controller.WebhookURLs[walletID], msgSvcName)
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to get didexchange state: %w", err)
 	}
 
 	s.tenantCtx[tenantID].walletConnID = connID
@@ -615,7 +636,8 @@ func (s *Steps) walletAcceptsDIDCommInvitation(walletID, tenantID string) error 
 func (s *Steps) validateConnection(walletID, tenantID string) error {
 	tenant := s.tenantCtx[tenantID]
 
-	err := backoff.RetryNotify(
+	// nolint:wrapcheck // ignore
+	return backoff.RetryNotify(
 		func() error {
 			_, err := s.controller.ValidateConnection(walletID, tenant.walletConnID)
 			return err
@@ -627,33 +649,32 @@ func (s *Steps) validateConnection(walletID, tenantID string) error {
 				e.Error(), walletID, tenantID, d)
 		},
 	)
-
-	return err
 }
 
 func (s *Steps) connectAgents(agentA, agentB string) error {
+	// nolint:wrapcheck // ignore
 	return s.controller.Connect(agentA, agentB)
 }
 
 func (s *Steps) didexchangeFlow(tenantID, scopesStr, scope, walletID string) error {
 	err := s.registerTenantFlow(tenantID, scopesStr)
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to register tenant: %w", err)
 	}
 
 	err = s.redirectUserToAdapter(tenantID, scope)
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to redirect user: %w", err)
 	}
 
 	err = s.sendCHAPIRequestToWallet(tenantID, walletID)
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to send CHAPI request: %w", err)
 	}
 
 	err = s.walletAcceptsDIDCommInvitation(walletID, tenantID)
 	if err != nil {
-		return err
+		return fmt.Errorf("wallet failed to accept invitation :%w", err)
 	}
 
 	return s.validateConnection(walletID, tenantID)
@@ -710,18 +731,18 @@ func (s *Steps) walletRespondsWithBlindedRPAuthzCredential(wallet, tenant, route
 	return s.respondWithAuthZ(wallet, tenant, issuer, routerURL)
 }
 
-// nolint:funlen,gocyclo
+// nolint:funlen,gocyclo,cyclop
 func (s *Steps) walletCreatesAuthorizationCredential(wallet, tenant, issuer,
 	routerURL string) (*verifiable.Presentation, error) {
 	walletTenantConn, err := s.controller.GetConnectionBetweenAgents(wallet, tenant)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to get wallet-tenant connection: %w", err)
 	}
 
 	if routerURL != "" {
 		err = s.controller.BlindedRouting(wallet, walletTenantConn.ConnectionID, routerURL)
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("blinded routing failed: %w", err)
 		}
 	}
 
@@ -732,7 +753,7 @@ func (s *Steps) walletCreatesAuthorizationCredential(wallet, tenant, issuer,
 
 	walletIssuerConn, err := s.controller.GetConnectionBetweenAgents(wallet, issuer)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to get wallet-issuer connection: %w", err)
 	}
 
 	walletDID, err := s.controller.ResolveDID(wallet, walletIssuerConn.MyDID)
@@ -895,7 +916,7 @@ func (s *Steps) findCred(
 	return cred, nil
 }
 
-// nolint:funlen,gocyclo
+// nolint:funlen,gocyclo,cyclop
 func (s *Steps) userRedirectBackToTenant(tenant string) error {
 	tenantCtx := s.tenantCtx[tenant]
 
@@ -932,12 +953,13 @@ func (s *Steps) userRedirectBackToTenant(tenant string) error {
 		},
 		backoff.WithMaxRetries(backoff.NewConstantBackOff(time.Second), 20),
 		func(err error, duration time.Duration) {
+			// nolint:forbidigo // ignore
 			fmt.Printf("failed to fetch redirectURL from the rp adapter. Error=[%s]. Will retry in %s.\n",
 				err.Error(), duration)
 		},
 	)
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to fetch presentations result: %w", err)
 	}
 
 	if result.RedirectURL == "" {
@@ -999,8 +1021,7 @@ func (s *Steps) validate(tenant string, idToken *oidc.IDToken) error {
 	tenantCtx := s.tenantCtx[tenant]
 	claims := make(map[string]interface{})
 
-	err := idToken.Claims(&claims)
-	if err != nil {
+	if err := idToken.Claims(&claims); err != nil {
 		return fmt.Errorf(`"%s" failed to extract the claims from the id_token : %w`, tenant, err)
 	}
 

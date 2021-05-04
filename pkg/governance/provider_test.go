@@ -19,13 +19,19 @@ import (
 )
 
 func TestNew(t *testing.T) {
+	t.Parallel()
+
 	t.Run("test success", func(t *testing.T) {
+		t.Parallel()
+
 		p, err := New("", nil, mem.NewProvider(), nil, "")
 		require.NoError(t, err)
 		require.NotNil(t, p)
 	})
 
 	t.Run("test failed to open store", func(t *testing.T) {
+		t.Parallel()
+
 		p, err := New("", nil, &mockstorage.Provider{
 			ErrOpenStore: fmt.Errorf("failed to open store"),
 		}, nil, "")
@@ -36,7 +42,11 @@ func TestNew(t *testing.T) {
 }
 
 func TestProvider_IssueCredential(t *testing.T) {
+	t.Parallel()
+
 	t.Run("test error governance vc already issued", func(t *testing.T) {
+		t.Parallel()
+
 		memProvider := mem.NewProvider()
 
 		store, err := memProvider.OpenStore(storeName)
@@ -54,6 +64,8 @@ func TestProvider_IssueCredential(t *testing.T) {
 	})
 
 	t.Run("test failed to get governance vc from store", func(t *testing.T) {
+		t.Parallel()
+
 		p, err := New("", nil, &mockstorage.Provider{
 			OpenStoreReturn: &mockstorage.Store{ErrGet: fmt.Errorf("failed to get")},
 		},
@@ -66,6 +78,8 @@ func TestProvider_IssueCredential(t *testing.T) {
 	})
 
 	t.Run("test failed to send http request", func(t *testing.T) {
+		t.Parallel()
+
 		p, err := New("", nil, mem.NewProvider(),
 			map[string]string{vcsGovernanceRequestTokenName: "token"}, "")
 		require.NoError(t, err)
@@ -78,6 +92,8 @@ func TestProvider_IssueCredential(t *testing.T) {
 	})
 
 	t.Run("test vcs return 500 status code", func(t *testing.T) {
+		t.Parallel()
+
 		p, err := New("", nil, mem.NewProvider(),
 			map[string]string{vcsGovernanceRequestTokenName: "token"}, "")
 		require.NoError(t, err)
@@ -93,6 +109,8 @@ func TestProvider_IssueCredential(t *testing.T) {
 	})
 
 	t.Run("test put vc in db", func(t *testing.T) {
+		t.Parallel()
+
 		p, err := New("", nil, &mockstorage.Provider{
 			OpenStoreReturn: &mockstorage.Store{ErrGet: storage.ErrDataNotFound, ErrPut: fmt.Errorf("error put")},
 		},
@@ -110,6 +128,8 @@ func TestProvider_IssueCredential(t *testing.T) {
 	})
 
 	t.Run("test success", func(t *testing.T) {
+		t.Parallel()
+
 		p, err := New("", nil, mem.NewProvider(),
 			map[string]string{vcsGovernanceRequestTokenName: "token"}, "")
 		require.NoError(t, err)

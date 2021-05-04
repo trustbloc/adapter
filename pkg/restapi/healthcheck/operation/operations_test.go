@@ -14,11 +14,15 @@ import (
 )
 
 func TestGetRESTHandlers(t *testing.T) {
+	t.Parallel()
+
 	c := New()
 	require.Equal(t, 1, len(c.GetRESTHandlers()))
 }
 
 func TestHealthCheck(t *testing.T) {
+	t.Parallel()
+
 	c := New()
 
 	b := &httptest.ResponseRecorder{}

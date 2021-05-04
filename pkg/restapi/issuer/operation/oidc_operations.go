@@ -136,7 +136,7 @@ func (o *Operation) getOpenIDConfiguration(providerURL string) (*openidConfig, e
 
 	req, err := http.NewRequest(http.MethodGet, wellKnown, bytes.NewReader(nil))
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to create http request: %w", err)
 	}
 
 	respData, err := sendHTTPRequest(req, o.httpClient, http.StatusOK, "")
@@ -193,12 +193,12 @@ func (o *Operation) registerOAuthClient(registerURL string, profileData *issuer.
 
 	reqBytes, err := json.Marshal(reqData)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to marshal request data: %w", err)
 	}
 
 	req, err := http.NewRequest(http.MethodPost, registerURL, bytes.NewReader(reqBytes))
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to create http request: %w", err)
 	}
 
 	respData, err := sendHTTPRequest(req, o.httpClient, http.StatusCreated, "")
@@ -210,7 +210,7 @@ func (o *Operation) registerOAuthClient(registerURL string, profileData *issuer.
 
 	err = json.Unmarshal(respData, &response)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to unmarshal response: %w", err)
 	}
 
 	return &oidcClientData{
@@ -251,7 +251,7 @@ func (o *Operation) loadOIDCClientData(issuerProfileID string) (*oidcClientData,
 	readBytes, err := o.oidcClientStore.Get(issuerProfileID)
 	if err != nil {
 		if errors.Is(err, storage.ErrDataNotFound) {
-			return nil, err
+			return nil, fmt.Errorf("failed to fetch oidc client data: %w", err)
 		}
 
 		return nil, fmt.Errorf("error loading client data: %w", err)
@@ -343,17 +343,17 @@ func makeNonce(data []byte) ([]byte, error) {
 
 	timestamp, err := time.Now().MarshalBinary()
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to marshal timestamp: %w", err)
 	}
 
 	_, err = sha.Write(timestamp)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to write timestamp to hash function: %w", err)
 	}
 
 	_, err = sha.Write(data)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to write data to hash function: %w", err)
 	}
 
 	counter := atomic.AddUint32(&nonceCounter, 1)

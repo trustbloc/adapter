@@ -444,7 +444,7 @@ func (o *Operation) stateMsgListener(ch <-chan service.StateMsg) {
 	}
 }
 
-// nolint:gocyclo //can't split function further and maintain readability.
+// nolint:gocyclo,cyclop //can't split function further and maintain readability.
 func (o *Operation) waitForConnectionCompletion(ctx context.Context, userID string) (string, error) {
 	stateCh := make(chan service.StateMsg)
 
@@ -510,7 +510,7 @@ func prepareAppProfileRequest(r io.Reader) (*ApplicationProfileRequest, error) {
 
 	err := json.NewDecoder(r).Decode(&request)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to decode request: %w", err)
 	}
 
 	if request.UserID == "" {
@@ -529,7 +529,7 @@ func prepareCHAPIRequest(r io.Reader) (*CHAPIRequest, error) {
 
 	err := json.NewDecoder(r).Decode(&request)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to decode request: %w", err)
 	}
 
 	if request.UserID == "" {
@@ -552,7 +552,7 @@ func prepareSavePreferencesRequest(r io.Reader) (*SaveWalletPreferencesRequest, 
 
 	err := json.NewDecoder(r).Decode(&request)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to decode request: %w", err)
 	}
 
 	if request.UserID == "" {
@@ -585,7 +585,7 @@ func extractCHAPIResponse(msgBytes []byte) (json.RawMessage, error) {
 
 	err := json.Unmarshal(msgBytes, &response)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to unmarshal response: %w", err)
 	}
 
 	return response.Message.Data, nil
