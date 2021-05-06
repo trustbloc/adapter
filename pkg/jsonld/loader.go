@@ -38,6 +38,12 @@ var (
 	creditCardV1Vocab []byte // nolint:gochecknoglobals // required for go:embed
 	//go:embed contexts/driver-license-evidence-v1.jsonld
 	driverLicenseEvidenceV1Vocab []byte // nolint:gochecknoglobals // required for go:embed
+	//go:embed contexts/booking-reference-v1.jsonld
+	bookingRefV1Vocab []byte // nolint:gochecknoglobals // required for go:embed
+	//go:embed contexts/w3id-citizenship-v1.jsonld
+	w3idCitizenshipV1Vocab []byte // nolint:gochecknoglobals // required for go:embed
+	//go:embed contexts/w3id-vaccination-v1.jsonld
+	w3idVaccinationV1Vocab []byte // nolint:gochecknoglobals // required for go:embed
 )
 
 // nolint:gochecknoglobals // preset
@@ -85,6 +91,20 @@ var contextDocuments = []jsonld.ContextDocument{
 	{
 		URL:     "https://trustbloc.github.io/context/vc/examples/driver-license-evidence-v1.jsonld",
 		Content: driverLicenseEvidenceV1Vocab,
+	},
+	{
+		URL:     "https://trustbloc.github.io/context/vc/examples/booking-ref-v1.jsonld",
+		Content: bookingRefV1Vocab,
+	},
+	{
+		URL:         "https://w3id.org/citizenship/v1",
+		DocumentURL: "https://w3c-ccg.github.io/citizenship-vocab/contexts/citizenship-v1.jsonld",
+		Content:     w3idCitizenshipV1Vocab,
+	},
+	{
+		URL:         "https://w3id.org/vaccination/v1",
+		DocumentURL: "https://w3c-ccg.github.io/vaccination-vocab/context/v1/index.json",
+		Content:     w3idVaccinationV1Vocab,
 	},
 }
 
