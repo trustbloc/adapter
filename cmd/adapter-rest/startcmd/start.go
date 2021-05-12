@@ -999,6 +999,7 @@ func createAriesAgent(parameters *adapterRestParameters, tlsConfig *tls.Config, 
 		aries.WithStoreProvider(store),
 		aries.WithProtocolStateStoreProvider(tStore),
 		aries.WithMessageServiceProvider(msgRegistrar),
+		aries.WithJSONLDDocumentLoader(parameters.jsonldDocLoader),
 	)
 
 	framework, err := aries.New(opts...)
