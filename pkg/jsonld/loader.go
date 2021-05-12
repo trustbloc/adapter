@@ -36,6 +36,8 @@ var (
 	governanceVocab []byte // nolint:gochecknoglobals // required for go:embed
 	//go:embed contexts/credit-card-v1.jsonld
 	creditCardV1Vocab []byte // nolint:gochecknoglobals // required for go:embed
+	//go:embed contexts/credit-score-v1.jsonld
+	creditScoreV1Vocab []byte // nolint:gochecknoglobals // required for go:embed
 	//go:embed contexts/driver-license-evidence-v1.jsonld
 	driverLicenseEvidenceV1Vocab []byte // nolint:gochecknoglobals // required for go:embed
 	//go:embed contexts/booking-reference-v1.jsonld
@@ -87,6 +89,10 @@ var contextDocuments = []jsonld.ContextDocument{
 	{
 		URL:     "https://trustbloc.github.io/context/vc/examples/credit-card-v1.jsonld",
 		Content: creditCardV1Vocab,
+	},
+	{
+		URL:     "https://trustbloc.github.io/context/vc/examples/credit-score-v1.jsonld",
+		Content: creditScoreV1Vocab,
 	},
 	{
 		URL:     "https://trustbloc.github.io/context/vc/examples/driver-license-evidence-v1.jsonld",
