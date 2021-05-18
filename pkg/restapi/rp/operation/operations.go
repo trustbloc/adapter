@@ -20,7 +20,6 @@ import (
 
 	"github.com/coreos/go-oidc"
 	"github.com/google/uuid"
-	"github.com/hyperledger/aries-framework-go-ext/component/vdr/orb"
 	"github.com/hyperledger/aries-framework-go/pkg/client/didexchange"
 	"github.com/hyperledger/aries-framework-go/pkg/client/mediator"
 	"github.com/hyperledger/aries-framework-go/pkg/client/outofband"
@@ -160,6 +159,8 @@ type AriesContextProvider interface {
 	ServiceEndpoint() string
 	Messenger() service.Messenger
 	JSONLDDocumentLoader() ld.DocumentLoader
+	KeyAgreementType() kms.KeyType
+	KeyType() kms.KeyType
 }
 
 // Storage config.
@@ -1391,8 +1392,7 @@ func (o *Operation) createRPTenant(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	didID := strings.ReplaceAll(publicDID.ID, fmt.Sprintf("did:%s", orb.DIDMethod),
-		fmt.Sprintf("did:%s:%s", orb.DIDMethod, o.didDomain))
+	didID := publicDID.ID
 
 	if o.governanceProvider != nil {
 		_, err = o.governanceProvider.IssueCredential(didID, created.Payload.ClientID)

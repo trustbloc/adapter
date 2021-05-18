@@ -23,7 +23,6 @@ import (
 	oidclib "github.com/coreos/go-oidc"
 	"github.com/google/uuid"
 	"github.com/gorilla/mux"
-	"github.com/hyperledger/aries-framework-go-ext/component/vdr/orb"
 	"github.com/hyperledger/aries-framework-go/pkg/client/didexchange"
 	"github.com/hyperledger/aries-framework-go/pkg/client/issuecredential"
 	"github.com/hyperledger/aries-framework-go/pkg/client/mediator"
@@ -369,7 +368,7 @@ func (o *Operation) createIssuerProfileHandler(rw http.ResponseWriter, req *http
 		return
 	}
 
-	profileData, err := mapProfileReqToData(data, newDidDoc, o.didDomain)
+	profileData, err := mapProfileReqToData(data, newDidDoc)
 	if err != nil {
 		commhttp.WriteErrorResponseWithLog(rw, http.StatusInternalServerError,
 			fmt.Sprintf("failed to map request to issuer profile: %s", err.Error()),
@@ -396,8 +395,7 @@ func (o *Operation) createIssuerProfileHandler(rw http.ResponseWriter, req *http
 	}
 
 	if o.governanceProvider != nil {
-		didID := strings.ReplaceAll(newDidDoc.ID, fmt.Sprintf("did:%s", orb.DIDMethod),
-			fmt.Sprintf("did:%s:%s", orb.DIDMethod, o.didDomain))
+		didID := newDidDoc.ID
 
 		_, err = o.governanceProvider.IssueCredential(didID, data.ID)
 		if err != nil {
@@ -1704,22 +1702,16 @@ func unmarshalSubject(data []byte) (map[string]interface{}, error) {
 	return subject, nil
 }
 
-func mapProfileReqToData(data *ProfileDataRequest, didDoc *did.Doc, didDomain string) (*issuer.ProfileData, error) {
+func mapProfileReqToData(data *ProfileDataRequest, didDoc *did.Doc) (*issuer.ProfileData, error) {
 	authMethod, err := adaptercrypto.GetVerificationMethodFromDID(didDoc, did.Authentication)
 	if err != nil {
 		return nil, fmt.Errorf("failed to fetch authentication method: %w", err)
 	}
 
-	authMethod = strings.ReplaceAll(authMethod, fmt.Sprintf("did:%s", orb.DIDMethod),
-		fmt.Sprintf("did:%s:%s", orb.DIDMethod, didDomain))
-
 	assertionMethod, err := adaptercrypto.GetVerificationMethodFromDID(didDoc, did.AssertionMethod)
 	if err != nil {
 		return nil, fmt.Errorf("failed to fetch assertion method: %w", err)
 	}
-
-	assertionMethod = strings.ReplaceAll(assertionMethod, fmt.Sprintf("did:%s", orb.DIDMethod),
-		fmt.Sprintf("did:%s:%s", orb.DIDMethod, didDomain))
 
 	created := time.Now().UTC()
 
