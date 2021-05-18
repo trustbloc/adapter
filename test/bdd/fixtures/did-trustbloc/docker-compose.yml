@@ -16,6 +16,7 @@ services:
       - DID_REST_CONFIG_FILE=/opt/did-rest/config.json
       - DID_REST_TLS_SYSTEMCERTPOOL=true
       - DID_REST_TLS_CACERTS=/etc/tls/ec-cacert.pem
+      - DID_REST_DID_DOMAIN=${BLOC_DOMAIN}
     ports:
       - 8072:8072
     command: start

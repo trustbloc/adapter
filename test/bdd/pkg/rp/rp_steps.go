@@ -305,8 +305,7 @@ func (s *Steps) newTrustBlocDID(agentID string) (*did.Doc, error) {
 
 	friendlyName := uuid.New().String()
 
-	resolvedDoc, err := bddutil.ResolveDID(s.context.VDRI, strings.ReplaceAll(docResolution.DIDDocument.ID, "did:orb",
-		"did:orb:testnet.orb.local"), 10)
+	resolvedDoc, err := bddutil.ResolveDID(s.context.VDRI, docResolution.DIDDocument.ID, 10)
 	if err != nil {
 		return nil, fmt.Errorf("failed to resolve did=%s err: %w", docResolution.DIDDocument.ID, err)
 	}
