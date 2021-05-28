@@ -724,7 +724,8 @@ func addRPHandlers(parameters *adapterRestParameters, framework *aries.Aries, ro
 		parameters.didAnchorOrigin,
 		parameters.didCommParameters.inboundHostExternal,
 		ctx.KMS(),
-		rootCAs)
+		rootCAs,
+		parameters.requestTokens["sidetreeToken"])
 	if err != nil {
 		return fmt.Errorf("failed to create trustbloc did creator: %w", err)
 	}
@@ -801,6 +802,7 @@ func addIssuerHandlers(parameters *adapterRestParameters, framework *aries.Aries
 		parameters.didCommParameters.inboundHostExternal,
 		ariesCtx.KMS(),
 		rootCAs,
+		parameters.requestTokens["sidetreeToken"],
 	)
 	if err != nil {
 		return fmt.Errorf("failed to init trustbloc did creator: %w", err)

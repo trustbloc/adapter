@@ -23,7 +23,7 @@ func TestNewTrustblocDIDCreator(t *testing.T) {
 	t.Run("returns did creator", func(t *testing.T) {
 		t.Parallel()
 
-		c, err := NewTrustblocDIDCreator("", "", "", &mockKeyManager{}, nil)
+		c, err := NewTrustblocDIDCreator("", "", "", &mockKeyManager{}, nil, "")
 		require.NoError(t, err)
 		require.NotNil(t, c)
 	})
@@ -41,7 +41,7 @@ func TestTrustblocDIDCreator_Create(t *testing.T) {
 		_, pubKey, err := ed25519.GenerateKey(rand.Reader)
 		require.NoError(t, err)
 
-		c, err := NewTrustblocDIDCreator(domain, "", didcommURL, &mockKeyManager{v: pubKey}, nil)
+		c, err := NewTrustblocDIDCreator(domain, "", didcommURL, &mockKeyManager{v: pubKey}, nil, "")
 		require.NoError(t, err)
 		c.tblocDIDs = &stubTrustblocClient{
 			createFunc: func(didDoc *did.Doc,
@@ -58,7 +58,7 @@ func TestTrustblocDIDCreator_Create(t *testing.T) {
 		t.Parallel()
 
 		expected := errors.New("test")
-		c, err := NewTrustblocDIDCreator("", "", "", &mockKeyManager{err: expected}, nil)
+		c, err := NewTrustblocDIDCreator("", "", "", &mockKeyManager{err: expected}, nil, "")
 		require.NoError(t, err)
 		_, err = c.Create()
 		require.Error(t, err)
@@ -69,7 +69,7 @@ func TestTrustblocDIDCreator_Create(t *testing.T) {
 		t.Parallel()
 
 		expected := errors.New("test")
-		c, err := NewTrustblocDIDCreator("", "", "", &mockKeyManager{err: expected}, nil)
+		c, err := NewTrustblocDIDCreator("", "", "", &mockKeyManager{err: expected}, nil, "")
 		require.NoError(t, err)
 		_, err = c.Create()
 		require.Error(t, err)
@@ -80,7 +80,7 @@ func TestTrustblocDIDCreator_Create(t *testing.T) {
 		t.Parallel()
 
 		expected := errors.New("test")
-		c, err := NewTrustblocDIDCreator("", "", "", &mockKeyManager{err: expected}, nil)
+		c, err := NewTrustblocDIDCreator("", "", "", &mockKeyManager{err: expected}, nil, "")
 		require.NoError(t, err)
 		_, err = c.Create()
 		require.Error(t, err)
@@ -94,7 +94,7 @@ func TestTrustblocDIDCreator_Create(t *testing.T) {
 		require.NoError(t, err)
 
 		expected := errors.New("test")
-		c, err := NewTrustblocDIDCreator("", "", "", &mockKeyManager{v: pubKey}, nil)
+		c, err := NewTrustblocDIDCreator("", "", "", &mockKeyManager{v: pubKey}, nil, "")
 		require.NoError(t, err)
 		c.tblocDIDs = &stubTrustblocClient{
 			createFunc: func(did *did.Doc,
