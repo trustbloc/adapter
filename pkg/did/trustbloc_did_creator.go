@@ -41,11 +41,11 @@ type TrustblocDIDCreator struct {
 
 // NewTrustblocDIDCreator returns a new TrustblocDIDCreator.
 func NewTrustblocDIDCreator(blocDomain, didAnchorOrigin, didcommInboundURL string,
-	km KeyManager, rootCAs *x509.CertPool) (*TrustblocDIDCreator, error) {
+	km KeyManager, rootCAs *x509.CertPool, token string) (*TrustblocDIDCreator, error) {
 	blocVDR, err := orb.New(nil, orb.WithDomain(blocDomain), orb.WithTLSConfig(&tls.Config{
 		RootCAs:    rootCAs,
 		MinVersion: tls.VersionTLS12,
-	}))
+	}), orb.WithAuthToken(token))
 	if err != nil {
 		return nil, fmt.Errorf("failed to init orb VDR: %w", err)
 	}
