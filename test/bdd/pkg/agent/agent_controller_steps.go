@@ -19,7 +19,6 @@ import (
 	"github.com/cenkalti/backoff"
 	"github.com/cucumber/godog"
 	"github.com/google/uuid"
-	"github.com/hyperledger/aries-framework-go/component/storageutil/mem"
 	"github.com/hyperledger/aries-framework-go/pkg/client/didexchange"
 	issuecredclient "github.com/hyperledger/aries-framework-go/pkg/client/issuecredential"
 	"github.com/hyperledger/aries-framework-go/pkg/client/outofband"
@@ -47,7 +46,6 @@ import (
 	"github.com/piprate/json-gold/ld"
 	"github.com/trustbloc/edge-core/pkg/log"
 
-	"github.com/trustbloc/edge-adapter/pkg/jsonld"
 	issuerops "github.com/trustbloc/edge-adapter/pkg/restapi/issuer/operation"
 	adaptervc "github.com/trustbloc/edge-adapter/pkg/vc"
 	"github.com/trustbloc/edge-adapter/pkg/vc/issuer"
@@ -789,7 +787,7 @@ func (a *Steps) fetchPresentation(agentID, issuerID, expectedScope, supportsAssu
 	// validate presentation
 	vpID, err := validatePresentation(presentationName, controllerURL)
 	if err != nil {
-		return fmt.Errorf("failed ot validate VP: %w", err)
+		return fmt.Errorf("failed to validate VP: %w", err)
 	}
 
 	supportsAssuranceCred, err := strconv.ParseBool(supportsAssuranceCredStr)
@@ -933,7 +931,7 @@ func (a *Steps) SignCredential(agent, signingDID string, cred *verifiable.Creden
 		return nil, fmt.Errorf("'%s' failed to sign credential: %w", agent, err)
 	}
 
-	l, err := jsonld.DocumentLoader(mem.NewProvider())
+	l, err := bddutil.DocumentLoader()
 	if err != nil {
 		return nil, fmt.Errorf("failed to init document loader: %w", err)
 	}
@@ -998,7 +996,7 @@ func (a *Steps) GeneratePresentation(agent, signingDID, verificationMethod strin
 		return nil, fmt.Errorf("'%s' failed to generate their own presentation: %w", agent, err)
 	}
 
-	docLoader, err := jsonld.DocumentLoader(mem.NewProvider())
+	docLoader, err := bddutil.DocumentLoader()
 	if err != nil {
 		return nil, fmt.Errorf("failed to init document loader: %w", err)
 	}
@@ -1126,7 +1124,7 @@ func getCredential(credentialName, controllerURL string, vdriReg vdriapi.Registr
 
 		var l ld.DocumentLoader
 
-		l, err = jsonld.DocumentLoader(mem.NewProvider())
+		l, err = bddutil.DocumentLoader()
 		if err != nil {
 			return nil, fmt.Errorf("failed to init document loader: %w", err)
 		}
@@ -1242,7 +1240,7 @@ func (a *Steps) validateIssuerVC(id, agentID, controllerURL, expectedScope strin
 		return fmt.Errorf("failed to GET request: %w", err)
 	}
 
-	l, err := jsonld.DocumentLoader(mem.NewProvider())
+	l, err := bddutil.DocumentLoader()
 	if err != nil {
 		return fmt.Errorf("failed to init document loader: %w", err)
 	}
@@ -1341,7 +1339,7 @@ func actionPIID(endpoint, urlPath string) (string, error) {
 }
 
 func validateManifestCred(manifestVCBytes []byte, supportedVCContexts string) error {
-	l, err := jsonld.DocumentLoader(mem.NewProvider())
+	l, err := bddutil.DocumentLoader()
 	if err != nil {
 		return fmt.Errorf("failed to init document loader: %w", err)
 	}
@@ -1367,7 +1365,7 @@ func validateManifestCred(manifestVCBytes []byte, supportedVCContexts string) er
 }
 
 func validateGovernance(governanceVCBytes json.RawMessage) error {
-	l, err := jsonld.DocumentLoader(mem.NewProvider())
+	l, err := bddutil.DocumentLoader()
 	if err != nil {
 		return fmt.Errorf("failed to init document loader: %w", err)
 	}
@@ -1402,7 +1400,7 @@ func validateGovernance(governanceVCBytes json.RawMessage) error {
 
 func validateAndGetReferenceCred(vcBytes []byte, vcType string,
 	vdriReg vdriapi.Registry) (*verifiable.Credential, error) {
-	l, err := jsonld.DocumentLoader(mem.NewProvider())
+	l, err := bddutil.DocumentLoader()
 	if err != nil {
 		return nil, fmt.Errorf("failed to load document loader: %w", err)
 	}

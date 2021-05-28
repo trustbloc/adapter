@@ -4,48 +4,53 @@ Copyright SecureKey Technologies Inc. All Rights Reserved.
 SPDX-License-Identifier: Apache-2.0
 */
 
-package jsonld
+package testutil
 
 import (
-	_ "embed" // nolint:gci // required for go:embed
-	"fmt"
+	_ "embed" //nolint:gci // required for go:embed
+	"testing"
 
 	"github.com/hyperledger/aries-framework-go/pkg/doc/jsonld"
-	"github.com/hyperledger/aries-framework-go/spi/storage"
-	"github.com/piprate/json-gold/ld"
+	ariesmockstorage "github.com/hyperledger/aries-framework-go/pkg/mock/storage"
+	"github.com/stretchr/testify/require"
 )
 
+// nolint:gochecknoglobals // embedded test contexts
 var (
 	//go:embed contexts/citizenship-v1.jsonld
-	citizenshipV1Vocab []byte // nolint:gochecknoglobals // required for go:embed
+	citizenshipV1Vocab []byte
 	//go:embed contexts/authorization-credential-v1.jsonld
-	authorizationV1Vocab []byte // nolint:gochecknoglobals // required for go:embed
+	authorizationV1Vocab []byte
 	//go:embed contexts/assurance-credential-v1.jsonld
-	assuranceV1Vocab []byte // nolint:gochecknoglobals // required for go:embed
+	assuranceV1Vocab []byte
 	//go:embed contexts/verifiable_credentials_v1.0.jsonld
-	verifiableCredentialsV1Vocab []byte // nolint:gochecknoglobals // required for go:embed
+	verifiableCredentialsV1Vocab []byte
 	//go:embed contexts/schema.org.jsonld
-	schemaDotOrgVocab []byte // nolint:gochecknoglobals // required for go:embed
+	schemaDotOrgVocab []byte
 	//go:embed contexts/examples-ext-v1.jsonld
-	trustblocExamplesV1Vocab []byte // nolint:gochecknoglobals // required for go:embed
+	trustblocExamplesV1Vocab []byte
 	//go:embed contexts/mdl-v1.jsonld
-	mdlV1Vocab []byte // nolint:gochecknoglobals // required for go:embed
+	mdlV1Vocab []byte
 	//go:embed contexts/issuer-manifest-credential-v1.jsonld
-	issuerManifestV1Vocab []byte // nolint:gochecknoglobals // required for go:embed
+	issuerManifestV1Vocab []byte
 	//go:embed contexts/governance.jsonld
-	governanceVocab []byte // nolint:gochecknoglobals // required for go:embed
+	governanceVocab []byte
 	//go:embed contexts/credit-card-v1.jsonld
-	creditCardV1Vocab []byte // nolint:gochecknoglobals // required for go:embed
+	creditCardV1Vocab []byte
 	//go:embed contexts/credit-score-v1.jsonld
-	creditScoreV1Vocab []byte // nolint:gochecknoglobals // required for go:embed
+	creditScoreV1Vocab []byte
 	//go:embed contexts/driver-license-evidence-v1.jsonld
-	driverLicenseEvidenceV1Vocab []byte // nolint:gochecknoglobals // required for go:embed
+	driverLicenseEvidenceV1Vocab []byte
 	//go:embed contexts/booking-reference-v1.jsonld
-	bookingRefV1Vocab []byte // nolint:gochecknoglobals // required for go:embed
+	bookingRefV1Vocab []byte
 	//go:embed contexts/w3id-citizenship-v1.jsonld
-	w3idCitizenshipV1Vocab []byte // nolint:gochecknoglobals // required for go:embed
+	w3idCitizenshipV1Vocab []byte
 	//go:embed contexts/w3id-vaccination-v1.jsonld
-	w3idVaccinationV1Vocab []byte // nolint:gochecknoglobals // required for go:embed
+	w3idVaccinationV1Vocab []byte
+	//go:embed contexts/credentials-examples_v1.jsonld
+	credentialExamplesVocab []byte
+	//go:embed contexts/odrl.jsonld
+	odrlVocab []byte
 )
 
 // nolint:gochecknoglobals // preset
@@ -112,14 +117,23 @@ var contextDocuments = []jsonld.ContextDocument{
 		DocumentURL: "https://w3c-ccg.github.io/vaccination-vocab/context/v1/index.json",
 		Content:     w3idVaccinationV1Vocab,
 	},
+	{
+		URL:     "https://www.w3.org/2018/credentials/examples/v1",
+		Content: credentialExamplesVocab,
+	},
+	{
+		URL:     "https://www.w3.org/ns/odrl.jsonld",
+		Content: odrlVocab,
+	},
 }
 
-// DocumentLoader returns an ld.DocumentLoader with all relevant contexts preloaded.
-func DocumentLoader(s storage.Provider) (ld.DocumentLoader, error) {
-	l, err := jsonld.NewDocumentLoader(s, jsonld.WithExtraContexts(contextDocuments...))
-	if err != nil {
-		return nil, fmt.Errorf("failed to init jsonld document loader: %w", err)
-	}
+// DocumentLoader returns a document loader with preloaded test contexts.
+func DocumentLoader(t *testing.T) *jsonld.DocumentLoader {
+	t.Helper()
 
-	return l, nil
+	loader, err := jsonld.NewDocumentLoader(ariesmockstorage.NewMockStoreProvider(),
+		jsonld.WithExtraContexts(contextDocuments...))
+	require.NoError(t, err)
+
+	return loader
 }

@@ -14,7 +14,6 @@ require (
 	github.com/hyperledger/aries-framework-go-ext/component/storage/mysql v0.0.0-20210429200350-4099d2551ddd
 	github.com/hyperledger/aries-framework-go/component/storageutil v0.0.0-20210520055214-ae429bb89bf7
 	github.com/hyperledger/aries-framework-go/spi v0.0.0-20210520055214-ae429bb89bf7
-	github.com/piprate/json-gold v0.4.0
 	github.com/rs/cors v1.7.0
 	github.com/spf13/cobra v1.1.3
 	github.com/stretchr/testify v1.7.0

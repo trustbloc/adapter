@@ -4,13 +4,12 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/hyperledger/aries-framework-go/component/storageutil/mem"
 	"github.com/hyperledger/aries-framework-go/pkg/doc/did"
 	"github.com/hyperledger/aries-framework-go/pkg/doc/presexch"
 	"github.com/hyperledger/aries-framework-go/pkg/doc/util"
 	"github.com/hyperledger/aries-framework-go/pkg/doc/verifiable"
 
-	"github.com/trustbloc/edge-adapter/pkg/jsonld"
+	"github.com/trustbloc/edge-adapter/test/bdd/pkg/bddutil"
 )
 
 func newPresentationSubmissionVP(submission *presexch.PresentationSubmission,
@@ -83,13 +82,13 @@ func newUserAuthorizationVC(subjectDID, rpDID, issuerDID *did.Doc) (*verifiable.
 		userAuthorizationVCTemplate,
 		subjectDID.ID, subjectDID.ID, rpDIDClaim, issuerDIDClaim, subjectDIDClaim)
 
-	docLoader, err := jsonld.DocumentLoader(mem.NewProvider())
+	documentLoader, err := bddutil.DocumentLoader()
 	if err != nil {
 		return nil, fmt.Errorf("failed to init document loader: %w", err)
 	}
 
 	// nolint:wrapcheck // ignore
-	return verifiable.ParseCredential([]byte(contents), verifiable.WithJSONLDDocumentLoader(docLoader))
+	return verifiable.ParseCredential([]byte(contents), verifiable.WithJSONLDDocumentLoader(documentLoader))
 }
 
 func newCreditCardStatementVC() *verifiable.Credential {

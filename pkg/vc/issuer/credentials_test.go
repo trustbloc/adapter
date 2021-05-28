@@ -9,14 +9,12 @@ package issuer
 import (
 	"testing"
 
-	"github.com/hyperledger/aries-framework-go/component/storageutil/mem"
 	"github.com/hyperledger/aries-framework-go/pkg/doc/verifiable"
 	mockdiddoc "github.com/hyperledger/aries-framework-go/pkg/mock/diddoc"
-	"github.com/piprate/json-gold/ld"
 	"github.com/stretchr/testify/require"
 
 	"github.com/trustbloc/edge-adapter/pkg/internal/common/adapterutil"
-	"github.com/trustbloc/edge-adapter/pkg/jsonld"
+	"github.com/trustbloc/edge-adapter/pkg/internal/testutil"
 	adaptervc "github.com/trustbloc/edge-adapter/pkg/vc"
 )
 
@@ -63,7 +61,7 @@ func TestCreateManifestCredential(t *testing.T) {
 		vcBytes, err := CreateManifestCredential(issuerName, contexts)
 		require.NoError(t, err)
 
-		vc, err := verifiable.ParseCredential(vcBytes, verifiable.WithJSONLDDocumentLoader(docLoader(t)))
+		vc, err := verifiable.ParseCredential(vcBytes, verifiable.WithJSONLDDocumentLoader(testutil.DocumentLoader(t)))
 		require.NoError(t, err)
 		require.True(t, adapterutil.StringsContains(ManifestCredentialType, vc.Types))
 
@@ -84,7 +82,7 @@ func TestParseWalletResponse(t *testing.T) {
 	t.Run("test parse wallet - success", func(t *testing.T) {
 		t.Parallel()
 
-		conn, err := ParseWalletResponse(getTestVP(t), docLoader(t))
+		conn, err := ParseWalletResponse(getTestVP(t), testutil.DocumentLoader(t))
 		require.NoError(t, err)
 		require.NotNil(t, conn)
 
@@ -99,7 +97,7 @@ func TestParseWalletResponse(t *testing.T) {
 	t.Run("test parse wallet - invalid vp", func(t *testing.T) {
 		t.Parallel()
 
-		conn, err := ParseWalletResponse([]byte("invalid json"), docLoader(t))
+		conn, err := ParseWalletResponse([]byte("invalid json"), testutil.DocumentLoader(t))
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "invalid presentation")
 		require.Nil(t, conn)
@@ -115,7 +113,7 @@ func TestParseWalletResponse(t *testing.T) {
 		vpJSON, err := vp.MarshalJSON()
 		require.NoError(t, err)
 
-		conn, err := ParseWalletResponse(vpJSON, docLoader(t))
+		conn, err := ParseWalletResponse(vpJSON, testutil.DocumentLoader(t))
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "there should be only one credential")
 		require.Nil(t, conn)
@@ -135,7 +133,7 @@ func TestParseWalletResponse(t *testing.T) {
 		vpJSON, err := vp.MarshalJSON()
 		require.NoError(t, err)
 
-		conn, err := ParseWalletResponse(vpJSON, docLoader(t))
+		conn, err := ParseWalletResponse(vpJSON, testutil.DocumentLoader(t))
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "failed to parse credential")
 		require.Nil(t, conn)
@@ -144,7 +142,7 @@ func TestParseWalletResponse(t *testing.T) {
 	t.Run("test parse wallet - no credential of DIDConnectCredential type inside vp", func(t *testing.T) {
 		t.Parallel()
 
-		vc, err := verifiable.ParseCredential([]byte(vc), verifiable.WithJSONLDDocumentLoader(docLoader(t)))
+		vc, err := verifiable.ParseCredential([]byte(vc), verifiable.WithJSONLDDocumentLoader(testutil.DocumentLoader(t)))
 		require.NoError(t, err)
 
 		vc.Types = []string{"VerifiableCredential"}
@@ -155,7 +153,7 @@ func TestParseWalletResponse(t *testing.T) {
 		vpJSON, err := vp.MarshalJSON()
 		require.NoError(t, err)
 
-		conn, err := ParseWalletResponse(vpJSON, docLoader(t))
+		conn, err := ParseWalletResponse(vpJSON, testutil.DocumentLoader(t))
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "vc doesn't contain DIDConnection type")
 		require.Nil(t, conn)
@@ -226,7 +224,7 @@ func TestCreatePresentation(t *testing.T) {
 func getTestVP(t *testing.T) []byte {
 	t.Helper()
 
-	vc, err := verifiable.ParseCredential([]byte(vc), verifiable.WithJSONLDDocumentLoader(docLoader(t)))
+	vc, err := verifiable.ParseCredential([]byte(vc), verifiable.WithJSONLDDocumentLoader(testutil.DocumentLoader(t)))
 	require.NoError(t, err)
 
 	vp, err := verifiable.NewPresentation(verifiable.WithCredentials(vc))
@@ -236,13 +234,4 @@ func getTestVP(t *testing.T) []byte {
 	require.NoError(t, err)
 
 	return vpJSON
-}
-
-func docLoader(t *testing.T) ld.DocumentLoader {
-	t.Helper()
-
-	l, err := jsonld.DocumentLoader(mem.NewProvider())
-	require.NoError(t, err)
-
-	return l
 }

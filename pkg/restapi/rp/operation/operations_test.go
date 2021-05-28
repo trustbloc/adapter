@@ -58,6 +58,7 @@ import (
 	"github.com/trustbloc/edge-adapter/pkg/internal/mock/messenger"
 	mockoutofband "github.com/trustbloc/edge-adapter/pkg/internal/mock/outofband"
 	mockpresentproof "github.com/trustbloc/edge-adapter/pkg/internal/mock/presentproof"
+	"github.com/trustbloc/edge-adapter/pkg/internal/testutil"
 	mockprovider "github.com/trustbloc/edge-adapter/pkg/restapi/internal/mocks/provider"
 	"github.com/trustbloc/edge-adapter/pkg/vc"
 )
@@ -1897,7 +1898,7 @@ func TestCHAPIResponseHandler(t *testing.T) {
 			},
 			MsgRegistrar:         msghandler.NewRegistrar(),
 			AriesMessenger:       &messenger.MockMessenger{},
-			JSONLDDocumentLoader: docLoader(t),
+			JSONLDDocumentLoader: testutil.DocumentLoader(t),
 		})
 		require.NoError(t, err)
 
@@ -2006,7 +2007,7 @@ func TestCHAPIResponseHandler(t *testing.T) {
 			PresentProofClient:   &mockpresentproof.MockClient{},
 			MsgRegistrar:         msghandler.NewRegistrar(),
 			AriesMessenger:       &messenger.MockMessenger{},
-			JSONLDDocumentLoader: docLoader(t),
+			JSONLDDocumentLoader: testutil.DocumentLoader(t),
 		})
 		require.NoError(t, err)
 
@@ -2062,7 +2063,7 @@ func TestCHAPIResponseHandler(t *testing.T) {
 			PresentProofClient:   &mockpresentproof.MockClient{},
 			MsgRegistrar:         msghandler.NewRegistrar(),
 			AriesMessenger:       &messenger.MockMessenger{},
-			JSONLDDocumentLoader: docLoader(t),
+			JSONLDDocumentLoader: testutil.DocumentLoader(t),
 		})
 		require.NoError(t, err)
 
@@ -2152,7 +2153,7 @@ func TestCHAPIResponseHandler(t *testing.T) {
 			},
 			MsgRegistrar:         msghandler.NewRegistrar(),
 			AriesMessenger:       &messenger.MockMessenger{},
-			JSONLDDocumentLoader: docLoader(t),
+			JSONLDDocumentLoader: testutil.DocumentLoader(t),
 		})
 		require.NoError(t, err)
 
@@ -2221,7 +2222,7 @@ func TestCHAPIResponseHandler(t *testing.T) {
 			},
 			MsgRegistrar:         msghandler.NewRegistrar(),
 			AriesMessenger:       &messenger.MockMessenger{},
-			JSONLDDocumentLoader: docLoader(t),
+			JSONLDDocumentLoader: testutil.DocumentLoader(t),
 		})
 		require.NoError(t, err)
 
@@ -2319,7 +2320,7 @@ func TestCHAPIResponseHandler(t *testing.T) {
 			},
 			MsgRegistrar:         msghandler.NewRegistrar(),
 			AriesMessenger:       &messenger.MockMessenger{},
-			JSONLDDocumentLoader: docLoader(t),
+			JSONLDDocumentLoader: testutil.DocumentLoader(t),
 		})
 		require.NoError(t, err)
 
@@ -2402,7 +2403,7 @@ func TestGetPresentationResponseResultHandler(t *testing.T) {
 			},
 			MsgRegistrar:         msghandler.NewRegistrar(),
 			AriesMessenger:       &messenger.MockMessenger{},
-			JSONLDDocumentLoader: docLoader(t),
+			JSONLDDocumentLoader: testutil.DocumentLoader(t),
 		})
 		require.NoError(t, err)
 
@@ -2598,7 +2599,7 @@ func TestGetPresentationResponseResultHandler(t *testing.T) {
 			},
 			MsgRegistrar:         msghandler.NewRegistrar(),
 			AriesMessenger:       &messenger.MockMessenger{},
-			JSONLDDocumentLoader: docLoader(t),
+			JSONLDDocumentLoader: testutil.DocumentLoader(t),
 		})
 		require.NoError(t, err)
 
@@ -2644,7 +2645,7 @@ func TestHandleIssuerPresentationMsg(t *testing.T) {
 			PresentProofClient:   &mockpresentproof.MockClient{},
 			MsgRegistrar:         msghandler.NewRegistrar(),
 			AriesMessenger:       &messenger.MockMessenger{},
-			JSONLDDocumentLoader: docLoader(t),
+			JSONLDDocumentLoader: testutil.DocumentLoader(t),
 		})
 		require.NoError(t, err)
 
@@ -2661,7 +2662,7 @@ func TestHandleIssuerPresentationMsg(t *testing.T) {
 		actual, err := verifiable.ParseCredential(
 			bits,
 			verifiable.WithDisabledProofCheck(),
-			verifiable.WithJSONLDDocumentLoader(docLoader(t)),
+			verifiable.WithJSONLDDocumentLoader(testutil.DocumentLoader(t)),
 		)
 		require.NoError(t, err)
 
@@ -3798,7 +3799,7 @@ func checkPresentationDefinitionAttachment(
 	vp, err := verifiable.ParsePresentation(
 		bits,
 		verifiable.WithPresDisabledProofCheck(),
-		verifiable.WithPresJSONLDDocumentLoader(docLoader(t)),
+		verifiable.WithPresJSONLDDocumentLoader(testutil.DocumentLoader(t)),
 	)
 	require.NoError(t, err)
 
@@ -3809,7 +3810,7 @@ func checkPresentationDefinitionAttachment(
 
 	result, err := verifiable.ParseCredential(
 		authzBits[0],
-		verifiable.WithJSONLDDocumentLoader(docLoader(t)),
+		verifiable.WithJSONLDDocumentLoader(testutil.DocumentLoader(t)),
 	)
 	require.NoError(t, err)
 
