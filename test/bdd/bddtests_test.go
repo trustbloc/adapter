@@ -18,6 +18,7 @@ import (
 
 	"github.com/trustbloc/edge-adapter/test/bdd/dockerutil"
 	"github.com/trustbloc/edge-adapter/test/bdd/pkg/agent"
+	"github.com/trustbloc/edge-adapter/test/bdd/pkg/bddutil"
 	"github.com/trustbloc/edge-adapter/test/bdd/pkg/common"
 	bddctx "github.com/trustbloc/edge-adapter/test/bdd/pkg/context"
 	"github.com/trustbloc/edge-adapter/test/bdd/pkg/issuer"
@@ -52,12 +53,23 @@ func TestMain(m *testing.M) {
 	os.Exit(status)
 }
 
-func runBDDTests(tags, format string) int { //nolint: gocognit
+func runBDDTests(tags, format string) int { //nolint:gocognit,gocyclo,cyclop
 	return godog.RunWithOptions("godogs", func(s *godog.Suite) {
 		var composition []*dockerutil.Composition
 		composeFiles := []string{"./fixtures/adapter-rest", "./fixtures/did-trustbloc", "./fixtures/integration"}
+
+		bddContext, err := bddctx.NewBDDContext("fixtures/keys/tls/ec-cacert.pem")
+		if err != nil {
+			panic(fmt.Sprintf("Error returned from NewBDDContext: %s", err))
+		}
+
+		services := []string{
+			"https://issuer-adapter-rest.trustbloc.local:9070",
+			rp.AdapterURL,
+		}
+
 		s.BeforeSuite(func() {
-			if os.Getenv("DISABLE_COMPOSITION") != "true" {
+			if os.Getenv("DISABLE_COMPOSITION") != "true" { //nolint:nestif
 				// Need a unique name, but docker does not allow '-' in names
 				composeProjectName := strings.ReplaceAll(generateUUID(), "-", "")
 
@@ -80,15 +92,24 @@ func runBDDTests(tags, format string) int { //nolint: gocognit
 					}
 				}
 
-				fmt.Printf("*** testSleep=%d", testSleep) // nolint:forbidigo // ignore
+				fmt.Printf("*** testSleep=%d", testSleep) // nolint:forbidigo // ignored
 				println()
 				time.Sleep(time.Second * time.Duration(testSleep))
+
+				for _, svc := range services {
+					fmt.Printf("importing JSON-LD contexts for service %q ... ", svc) // nolint:forbidigo // ignored
+					if err := bddutil.AddJSONLDContexts(svc, bddContext.TLSConfig()); err != nil {
+						panic(fmt.Sprintf("Add JSON-LD contexts for '%s': %s", svc, err))
+					}
+					fmt.Println("done") // nolint:forbidigo // ignored
+				}
+				println()
 			}
 		})
 		s.AfterSuite(func() {
 			err := dockerutil.GenerateSplitLogs("docker-compose.log")
 			if err != nil {
-				fmt.Println("failed to generate Docker logs to a file: ", err.Error()) // nolint:forbidigo // ignore
+				fmt.Println("failed to generate Docker logs to a file: ", err.Error()) // nolint:forbidigo // ignored
 			}
 
 			for _, c := range composition {
@@ -99,7 +120,7 @@ func runBDDTests(tags, format string) int { //nolint: gocognit
 				}
 			}
 		})
-		FeatureContext(s)
+		FeatureContext(s, bddContext)
 	}, godog.Options{
 		Tags:          tags,
 		Format:        format,
@@ -125,12 +146,7 @@ func generateUUID() string {
 	return fmt.Sprintf("%x-%x-%x-%x-%x", id[0:4], id[4:6], id[6:8], id[8:10], id[10:])
 }
 
-func FeatureContext(s *godog.Suite) {
-	bddContext, err := bddctx.NewBDDContext("fixtures/keys/tls/ec-cacert.pem")
-	if err != nil {
-		panic(fmt.Sprintf("Error returned from NewBDDContext: %s", err))
-	}
-
+func FeatureContext(s *godog.Suite, bddContext *bddctx.BDDContext) {
 	common.NewSteps(bddContext).RegisterSteps(s)
 	common.NewWalletSteps(bddContext).RegisterSteps(s)
 	issuer.NewSteps(bddContext).RegisterSteps(s)

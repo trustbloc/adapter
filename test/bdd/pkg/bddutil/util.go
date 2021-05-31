@@ -8,7 +8,9 @@ package bddutil
 
 import (
 	"bytes"
+	"context"
 	"crypto/tls"
+	_ "embed" //nolint:gci // required for go:embed
 	"encoding/json"
 	"fmt"
 	"io"
@@ -20,7 +22,10 @@ import (
 	"strings"
 	"time"
 
+	"github.com/hyperledger/aries-framework-go/component/storageutil/mem"
+	jsonldcontext "github.com/hyperledger/aries-framework-go/pkg/client/jsonld/context"
 	docdid "github.com/hyperledger/aries-framework-go/pkg/doc/did"
+	"github.com/hyperledger/aries-framework-go/pkg/doc/jsonld"
 	vdriapi "github.com/hyperledger/aries-framework-go/pkg/framework/aries/api/vdr"
 	"github.com/trustbloc/edge-core/pkg/log"
 )
@@ -240,4 +245,95 @@ func JSONBytesEqual(a, b []byte) (bool, error) {
 	}
 
 	return reflect.DeepEqual(br, ar), nil
+}
+
+// nolint:gochecknoglobals //embedded test contexts
+var (
+	//go:embed contexts/assurance-credential-v1.jsonld
+	assuranceV1Vocab []byte
+	//go:embed contexts/authorization-credential-v1.jsonld
+	authorizationV1Vocab []byte
+	//go:embed contexts/citizenship-v1.jsonld
+	citizenshipV1Vocab []byte
+	//go:embed contexts/credit-card-v1.jsonld
+	creditCardV1Vocab []byte
+	//go:embed contexts/driver-license-evidence-v1.jsonld
+	driverLicenseEvidenceV1Vocab []byte
+	//go:embed contexts/governance.jsonld
+	governanceVocab []byte
+	//go:embed contexts/mdl-v1.jsonld
+	mdlV1Vocab []byte
+	//go:embed contexts/issuer-manifest-credential-v1.jsonld
+	issuerManifestV1Vocab []byte
+	//go:embed contexts/examples-ext-v1.jsonld
+	examplesExtVocab []byte
+)
+
+var extraContexts = []jsonld.ContextDocument{ //nolint:gochecknoglobals
+	{
+		URL:     "https://trustbloc.github.io/context/vc/assurance-credential-v1.jsonld",
+		Content: assuranceV1Vocab,
+	},
+	{
+		URL:     "https://trustbloc.github.io/context/vc/authorization-credential-v1.jsonld",
+		Content: authorizationV1Vocab,
+	},
+	{
+		URL:     "https://trustbloc.github.io/context/vc/issuer-manifest-credential-v1.jsonld",
+		Content: issuerManifestV1Vocab,
+	},
+	{
+		URL:     "https://trustbloc.github.io/context/governance/context.jsonld",
+		Content: governanceVocab,
+	},
+	{
+		URL:     "https://trustbloc.github.io/context/vc/examples/citizenship-v1.jsonld",
+		Content: citizenshipV1Vocab,
+	},
+	{
+		URL:     "https://trustbloc.github.io/context/vc/examples/credit-card-v1.jsonld",
+		Content: creditCardV1Vocab,
+	},
+	{
+		URL:     "https://trustbloc.github.io/context/vc/examples/driver-license-evidence-v1.jsonld",
+		Content: driverLicenseEvidenceV1Vocab,
+	},
+	{
+		URL:     "https://trustbloc.github.io/context/vc/examples/mdl-v1.jsonld",
+		Content: mdlV1Vocab,
+	},
+	{
+		URL:     "https://trustbloc.github.io/context/vc/examples-ext-v1.jsonld",
+		Content: examplesExtVocab,
+	},
+}
+
+// DocumentLoader returns a JSON-LD document loader with preloaded test contexts.
+func DocumentLoader() (*jsonld.DocumentLoader, error) {
+	loader, err := jsonld.NewDocumentLoader(mem.NewProvider(), jsonld.WithExtraContexts(extraContexts...))
+	if err != nil {
+		return nil, fmt.Errorf("create document loader: %w", err)
+	}
+
+	return loader, nil
+}
+
+type httpClient struct {
+	tlsConfig *tls.Config
+}
+
+func (c *httpClient) Do(req *http.Request) (*http.Response, error) {
+	return HTTPDo(req.Method, req.URL.String(), "", "", req.Body, c.tlsConfig)
+}
+
+// AddJSONLDContexts imports extra contexts for the service instance.
+func AddJSONLDContexts(serviceURL string, tlsConfig *tls.Config) error {
+	const timeout = 5 * time.Second
+
+	client := jsonldcontext.NewClient(serviceURL, jsonldcontext.WithHTTPClient(&httpClient{tlsConfig: tlsConfig}))
+
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	defer cancel()
+
+	return client.Add(ctx, extraContexts...) //nolint:wrapcheck
 }

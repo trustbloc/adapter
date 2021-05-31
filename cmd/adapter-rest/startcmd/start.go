@@ -36,7 +36,6 @@ import (
 	"github.com/hyperledger/aries-framework-go/pkg/framework/aries/defaults"
 	"github.com/hyperledger/aries-framework-go/pkg/vdr/httpbinding"
 	"github.com/hyperledger/aries-framework-go/spi/storage"
-	"github.com/piprate/json-gold/ld"
 	"github.com/rs/cors"
 	"github.com/spf13/cobra"
 	"github.com/trustbloc/edge-core/pkg/log"
@@ -253,7 +252,6 @@ type adapterRestParameters struct {
 	oidcClientDBKeyPath  string
 	externalURL          string
 	didAnchorOrigin      string
-	jsonldDocLoader      ld.DocumentLoader
 }
 
 // governanceProvider governance provider.
@@ -402,14 +400,6 @@ func getAdapterRestParameters(cmd *cobra.Command) (*adapterRestParameters, error
 
 	didAnchorOrigin := cmdutils.GetUserSetOptionalVarFromString(cmd, didAnchorOriginFlagName, didAnchorOriginEnvKey)
 
-	// TODO the expectation is to switch to persistent storage and expose an API that allows updating the contexts
-	//  stored there.
-	// TODO need to first check if the context documents are already in the storage in order not to overwrite them
-	docLoader, err := jsonld.DocumentLoader(mem.NewProvider())
-	if err != nil {
-		return nil, fmt.Errorf(confErrMsg, err)
-	}
-
 	logger.Infof("logger level set to %s", logLevel)
 
 	return &adapterRestParameters{
@@ -430,7 +420,6 @@ func getAdapterRestParameters(cmd *cobra.Command) (*adapterRestParameters, error
 		oidcClientDBKeyPath:         issuerOIDCKeyPath,
 		externalURL:                 externalURL,
 		didAnchorOrigin:             didAnchorOrigin,
-		jsonldDocLoader:             docLoader,
 	}, nil
 }
 
@@ -730,6 +719,11 @@ func addRPHandlers(parameters *adapterRestParameters, framework *aries.Aries, ro
 		return fmt.Errorf("failed to create trustbloc did creator: %w", err)
 	}
 
+	documentLoader, err := jsonld.DocumentLoader(store)
+	if err != nil {
+		return fmt.Errorf("create RP document loader: %w", err)
+	}
+
 	// add rp endpoints
 	rpService, err := rp.New(&rpops.Config{
 		PresentationExProvider: presentationExProvider,
@@ -745,7 +739,7 @@ func addRPHandlers(parameters *adapterRestParameters, framework *aries.Aries, ro
 		GovernanceProvider:     governanceProv,
 		PresentProofClient:     presentProofClient,
 		WalletBridgeAppURL:     parameters.walletAppURL,
-		JSONLDDocumentLoader:   parameters.jsonldDocLoader,
+		JSONLDDocumentLoader:   documentLoader,
 		DidDomain:              parameters.trustblocDomain,
 	})
 	if err != nil {
@@ -808,6 +802,11 @@ func addIssuerHandlers(parameters *adapterRestParameters, framework *aries.Aries
 		return fmt.Errorf("failed to init trustbloc did creator: %w", err)
 	}
 
+	documentLoader, err := jsonld.DocumentLoader(store)
+	if err != nil {
+		return fmt.Errorf("create document loader: %w", err)
+	}
+
 	// add issuer endpoints
 	issuerService, err := issuer.New(&issuerops.Config{
 		AriesCtx:             ariesCtx,
@@ -821,7 +820,7 @@ func addIssuerHandlers(parameters *adapterRestParameters, framework *aries.Aries
 		OIDCClientStoreKey:   clientStoreKey,
 		ExternalURL:          parameters.externalURL,
 		DidDomain:            parameters.trustblocDomain,
-		JSONLDDocumentLoader: parameters.jsonldDocLoader,
+		JSONLDDocumentLoader: documentLoader,
 	})
 	if err != nil {
 		return fmt.Errorf("failed to init issuer ops: %w", err)
@@ -995,13 +994,18 @@ func createAriesAgent(parameters *adapterRestParameters, tlsConfig *tls.Config, 
 		return nil, fmt.Errorf("failed to init edge storage: %w", err)
 	}
 
+	documentLoader, err := jsonld.DocumentLoader(store)
+	if err != nil {
+		return nil, fmt.Errorf("create document loader: %w", err)
+	}
+
 	opts = append(opts,
 		inboundTransportOpt,
 		aries.WithOutboundTransports(outbound),
 		aries.WithStoreProvider(store),
 		aries.WithProtocolStateStoreProvider(tStore),
 		aries.WithMessageServiceProvider(msgRegistrar),
-		aries.WithJSONLDDocumentLoader(parameters.jsonldDocLoader),
+		aries.WithJSONLDDocumentLoader(documentLoader),
 	)
 
 	framework, err := aries.New(opts...)

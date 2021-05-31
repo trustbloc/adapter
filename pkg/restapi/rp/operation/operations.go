@@ -24,6 +24,7 @@ import (
 	"github.com/hyperledger/aries-framework-go/pkg/client/mediator"
 	"github.com/hyperledger/aries-framework-go/pkg/client/outofband"
 	"github.com/hyperledger/aries-framework-go/pkg/client/presentproof"
+	jsonldcontextrest "github.com/hyperledger/aries-framework-go/pkg/controller/rest/jsonld/context"
 	ariescrypto "github.com/hyperledger/aries-framework-go/pkg/crypto"
 	"github.com/hyperledger/aries-framework-go/pkg/didcomm/common/service"
 	"github.com/hyperledger/aries-framework-go/pkg/didcomm/messaging/msghandler"
@@ -189,31 +190,37 @@ type userDataCollection struct {
 
 // New returns CreateCredential instance.
 func New(config *Config) (*Operation, error) { // nolint:funlen,gocyclo,cyclop
-	o := &Operation{
-		presentationExProvider: config.PresentationExProvider,
-		hydra:                  config.Hydra,
-		oidc:                   config.OIDC,
-		oauth2Config:           config.OAuth2Config,
-		oidcStates:             make(map[string]*models.LoginRequest),
-		uiEndpoint:             config.UIEndpoint,
-		oobClient:              config.OOBClient,
-		didClient:              config.DIDExchClient,
-		didActions:             make(chan service.DIDCommAction),
-		didStateMsgs:           make(chan service.StateMsg),
-		publicDIDCreator:       config.PublicDIDCreator,
-		ppClient:               config.PresentProofClient,
-		ppActions:              make(chan service.DIDCommAction),
-		vdrReg:                 config.AriesContextProvider.VDRegistry(),
-		governanceProvider:     config.GovernanceProvider,
-		km:                     config.AriesContextProvider.KMS(),
-		ariesCrypto:            config.AriesContextProvider.Crypto(),
-		messenger:              config.AriesMessenger,
-		docLoader:              config.JSONLDDocumentLoader,
-		didDomain:              config.DidDomain,
-		ariesCtx:               config.AriesContextProvider,
+	contextOp, err := jsonldcontextrest.New(&storeProvider{config.Storage.Persistent})
+	if err != nil {
+		return nil, fmt.Errorf("create jsonld context operation: %w", err)
 	}
 
-	err := o.didClient.RegisterActionEvent(o.didActions)
+	o := &Operation{
+		presentationExProvider:  config.PresentationExProvider,
+		hydra:                   config.Hydra,
+		oidc:                    config.OIDC,
+		oauth2Config:            config.OAuth2Config,
+		oidcStates:              make(map[string]*models.LoginRequest),
+		uiEndpoint:              config.UIEndpoint,
+		oobClient:               config.OOBClient,
+		didClient:               config.DIDExchClient,
+		didActions:              make(chan service.DIDCommAction),
+		didStateMsgs:            make(chan service.StateMsg),
+		publicDIDCreator:        config.PublicDIDCreator,
+		ppClient:                config.PresentProofClient,
+		ppActions:               make(chan service.DIDCommAction),
+		vdrReg:                  config.AriesContextProvider.VDRegistry(),
+		governanceProvider:      config.GovernanceProvider,
+		km:                      config.AriesContextProvider.KMS(),
+		ariesCrypto:             config.AriesContextProvider.Crypto(),
+		messenger:               config.AriesMessenger,
+		docLoader:               config.JSONLDDocumentLoader,
+		didDomain:               config.DidDomain,
+		ariesCtx:                config.AriesContextProvider,
+		addJSONLDContextHandler: contextOp.Add,
+	}
+
+	err = o.didClient.RegisterActionEvent(o.didActions)
 	if err != nil {
 		return nil, fmt.Errorf("failed to register listener for action events on didexchange client : %w", err)
 	}
@@ -310,34 +317,35 @@ type Config struct {
 
 // Operation defines handlers for rp operations.
 type Operation struct {
-	presentationExProvider presentationExProvider
-	hydra                  Hydra
-	oidc                   func(string, context.Context) (*oidc.IDToken, error)
-	oauth2Config           OAuth2Config
-	oidcStates             map[string]*models.LoginRequest
-	oidcStateLock          sync.Mutex
-	uiEndpoint             string
-	oobClient              OOBClient
-	didClient              DIDClient
-	didActions             chan service.DIDCommAction
-	didStateMsgs           chan service.StateMsg
-	rpStore                *rp.Store
-	publicDIDCreator       PublicDIDCreator
-	connections            connectionRecorder
-	ppClient               PresentProofClient
-	ppActions              chan service.DIDCommAction
-	vdrReg                 vdrapi.Registry
-	transientStore         storage.Store
-	persistenceStore       storage.Store
-	governanceProvider     GovernanceProvider
-	km                     kms.KeyManager
-	ariesCrypto            ariescrypto.Crypto
-	routeSvc               routeService
-	messenger              service.Messenger
-	walletBridge           *walletops.Operation
-	docLoader              ld.DocumentLoader
-	didDomain              string
-	ariesCtx               AriesContextProvider
+	presentationExProvider  presentationExProvider
+	hydra                   Hydra
+	oidc                    func(string, context.Context) (*oidc.IDToken, error)
+	oauth2Config            OAuth2Config
+	oidcStates              map[string]*models.LoginRequest
+	oidcStateLock           sync.Mutex
+	uiEndpoint              string
+	oobClient               OOBClient
+	didClient               DIDClient
+	didActions              chan service.DIDCommAction
+	didStateMsgs            chan service.StateMsg
+	rpStore                 *rp.Store
+	publicDIDCreator        PublicDIDCreator
+	connections             connectionRecorder
+	ppClient                PresentProofClient
+	ppActions               chan service.DIDCommAction
+	vdrReg                  vdrapi.Registry
+	transientStore          storage.Store
+	persistenceStore        storage.Store
+	governanceProvider      GovernanceProvider
+	km                      kms.KeyManager
+	ariesCrypto             ariescrypto.Crypto
+	routeSvc                routeService
+	messenger               service.Messenger
+	walletBridge            *walletops.Operation
+	docLoader               ld.DocumentLoader
+	didDomain               string
+	ariesCtx                AriesContextProvider
+	addJSONLDContextHandler http.HandlerFunc
 }
 
 // GetRESTHandlers get all controller API handler available for this service.
@@ -351,6 +359,9 @@ func (o *Operation) GetRESTHandlers() []restapi.Handler {
 		support.NewHTTPHandler(userInfoEndpoint, http.MethodGet, o.userInfoHandler),
 		support.NewHTTPHandler(createRPTenantEndpoint, http.MethodPost, o.createRPTenant),
 		support.NewHTTPHandler(getPresentationResultEndpoint, http.MethodGet, o.getPresentationResponseResultHandler),
+
+		// JSON-LD contexts API
+		support.NewHTTPHandler(jsonldcontextrest.AddContextPath, http.MethodPost, o.addJSONLDContextHandler),
 	}, o.walletBridge.GetRESTHandlers()...)
 }
 
@@ -1554,4 +1565,12 @@ func getConnectionToAuthZDIDMappingDBKey(connID string) string {
 
 func getConnToTenantMappingDBKey(connID string) string {
 	return "conntenantmap_" + connID
+}
+
+type storeProvider struct {
+	storage.Provider
+}
+
+func (p *storeProvider) StorageProvider() storage.Provider {
+	return p
 }

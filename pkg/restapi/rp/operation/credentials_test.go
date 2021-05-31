@@ -23,6 +23,7 @@ import (
 	ariesctx "github.com/hyperledger/aries-framework-go/pkg/framework/context"
 	"github.com/stretchr/testify/require"
 
+	"github.com/trustbloc/edge-adapter/pkg/internal/testutil"
 	vc2 "github.com/trustbloc/edge-adapter/pkg/vc"
 )
 
@@ -80,7 +81,7 @@ func TestParseWalletResponse(t *testing.T) {
 			},
 			relyingParty.VDRegistry(),
 			marshal(t, vp),
-			docLoader(t))
+			testutil.DocumentLoader(t))
 		require.NoError(t, err)
 		require.Contains(t, actualLocal, localID)
 		require.Equal(t, expectedLocal[localID].Subject, actualLocal[localID].Subject)
@@ -98,7 +99,7 @@ func TestParseWalletResponse(t *testing.T) {
 			newPeerDID(t, subject).ID, newPeerDID(t, relyingParty), newPeerDID(t, issuer))
 		vp, err := verifiable.NewPresentation(verifiable.WithCredentials(authorizationVC))
 		require.NoError(t, err)
-		_, _, err = parseWalletResponse(nil, nil, marshal(t, vp), docLoader(t))
+		_, _, err = parseWalletResponse(nil, nil, marshal(t, vp), testutil.DocumentLoader(t))
 		require.True(t, errors.Is(err, errInvalidCredential))
 	})
 
@@ -123,7 +124,7 @@ func TestParseWalletResponse(t *testing.T) {
 			},
 			relyingParty.VDRegistry(),
 			marshal(t, vp),
-			docLoader(t))
+			testutil.DocumentLoader(t))
 		require.True(t, errors.Is(err, errInvalidCredential))
 	})
 
@@ -156,7 +157,7 @@ func TestParseWalletResponse(t *testing.T) {
 			definitions,
 			relyingParty.VDRegistry(),
 			marshal(t, vp),
-			docLoader(t))
+			testutil.DocumentLoader(t))
 		require.True(t, errors.Is(err, errInvalidCredential))
 	})
 
@@ -185,7 +186,7 @@ func TestParseWalletResponse(t *testing.T) {
 				Path: "$.verifiableCredential[0]",
 			}}},
 			newUserAuthorizationVCMissingIssuerDIDDoc(t, subjectDID.ID, rpDID))
-		_, _, err := parseWalletResponse(definitions, relyingParty.VDRegistry(), marshal(t, vp), docLoader(t))
+		_, _, err := parseWalletResponse(definitions, relyingParty.VDRegistry(), marshal(t, vp), testutil.DocumentLoader(t))
 		require.True(t, errors.Is(err, errInvalidCredential))
 	})
 }
@@ -211,7 +212,7 @@ func TestParseIssuerResponse(t *testing.T) {
 					JSON: expectedVP,
 				},
 			}},
-		}, relyingParty.VDRegistry(), docLoader(t))
+		}, relyingParty.VDRegistry(), testutil.DocumentLoader(t))
 		require.NoError(t, err)
 		require.Equal(t, expectedVC.Subject, actualVC.Subject)
 	})
@@ -219,7 +220,7 @@ func TestParseIssuerResponse(t *testing.T) {
 	t.Run("error if no attachments were provided", func(t *testing.T) {
 		t.Parallel()
 
-		_, err := parseIssuerResponse(&presentproof.Presentation{}, nil, docLoader(t))
+		_, err := parseIssuerResponse(&presentproof.Presentation{}, nil, testutil.DocumentLoader(t))
 		require.Error(t, err)
 	})
 
@@ -233,7 +234,7 @@ func TestParseIssuerResponse(t *testing.T) {
 					Base64: "MALFORMED",
 				},
 			}},
-		}, nil, docLoader(t))
+		}, nil, testutil.DocumentLoader(t))
 		require.Error(t, err)
 	})
 
@@ -247,7 +248,7 @@ func TestParseIssuerResponse(t *testing.T) {
 					JSON: map[string]interface{}{},
 				},
 			}},
-		}, nil, docLoader(t))
+		}, nil, testutil.DocumentLoader(t))
 		require.True(t, errors.Is(err, errInvalidCredential))
 	})
 
@@ -267,7 +268,7 @@ func TestParseIssuerResponse(t *testing.T) {
 					JSON: newPresentationSubmissionVP(t, issuer, issuerDID, nil),
 				},
 			}},
-		}, relyingParty.VDRegistry(), docLoader(t))
+		}, relyingParty.VDRegistry(), testutil.DocumentLoader(t))
 		require.True(t, errors.Is(err, errInvalidCredential))
 	})
 }

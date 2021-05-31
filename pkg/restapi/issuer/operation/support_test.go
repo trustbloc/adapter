@@ -38,7 +38,6 @@ import (
 	mockstore "github.com/hyperledger/aries-framework-go/pkg/mock/storage"
 	mockvdri "github.com/hyperledger/aries-framework-go/pkg/mock/vdr"
 	"github.com/hyperledger/aries-framework-go/spi/storage"
-	"github.com/piprate/json-gold/ld"
 	"github.com/stretchr/testify/require"
 	"golang.org/x/oauth2"
 
@@ -49,7 +48,7 @@ import (
 	"github.com/trustbloc/edge-adapter/pkg/internal/mock/messenger"
 	mockoutofband "github.com/trustbloc/edge-adapter/pkg/internal/mock/outofband"
 	"github.com/trustbloc/edge-adapter/pkg/internal/mock/presentproof"
-	jsonld2 "github.com/trustbloc/edge-adapter/pkg/jsonld"
+	"github.com/trustbloc/edge-adapter/pkg/internal/testutil"
 	"github.com/trustbloc/edge-adapter/pkg/profile/issuer"
 	"github.com/trustbloc/edge-adapter/pkg/restapi"
 	mockprovider "github.com/trustbloc/edge-adapter/pkg/restapi/internal/mocks/provider"
@@ -96,7 +95,7 @@ func config(t *testing.T) *Config {
 		PublicDIDCreator:     &stubPublicDIDCreator{createValue: mockdiddoc.GetMockDIDDoc("did:example:def567")},
 		GovernanceProvider:   &mockgovernance.MockProvider{},
 		OIDCClientStoreKey:   oidcClientStoreKey,
-		JSONLDDocumentLoader: docLoader(t),
+		JSONLDDocumentLoader: testutil.DocumentLoader(t),
 	}
 }
 
@@ -167,7 +166,7 @@ func getTestVP(t *testing.T, inviteeDID, inviterDID, threadID string) []byte { /
 
 	vc, err := verifiable.ParseCredential(
 		[]byte(fmt.Sprintf(vcFmt, inviteeDID, inviterDID, threadID)),
-		verifiable.WithJSONLDDocumentLoader(docLoader(t)),
+		verifiable.WithJSONLDDocumentLoader(testutil.DocumentLoader(t)),
 	)
 	require.NoError(t, err)
 
@@ -476,15 +475,6 @@ func (c *mockOIDCClient) HandleOIDCCallback(context.Context, string) (*oauth2.To
 
 func (c *mockOIDCClient) CheckRefresh(*oauth2.Token) (*oauth2.Token, error) {
 	return c.CheckRefreshTok, c.CheckRefreshErr
-}
-
-func docLoader(t *testing.T) ld.DocumentLoader {
-	t.Helper()
-
-	l, err := jsonld2.DocumentLoader(mem.NewProvider())
-	require.NoError(t, err)
-
-	return l
 }
 
 const (

@@ -31,7 +31,6 @@ import (
 	"github.com/google/uuid"
 	"github.com/hyperledger/aries-framework-go-ext/component/vdr/orb"
 	"github.com/hyperledger/aries-framework-go-ext/component/vdr/sidetree/doc"
-	"github.com/hyperledger/aries-framework-go/component/storageutil/mem"
 	"github.com/hyperledger/aries-framework-go/pkg/client/outofband"
 	"github.com/hyperledger/aries-framework-go/pkg/doc/did"
 	"github.com/hyperledger/aries-framework-go/pkg/doc/jose"
@@ -46,7 +45,6 @@ import (
 	"golang.org/x/oauth2"
 
 	"github.com/trustbloc/edge-adapter/pkg/crypto"
-	"github.com/trustbloc/edge-adapter/pkg/jsonld"
 	"github.com/trustbloc/edge-adapter/pkg/presentationex"
 	"github.com/trustbloc/edge-adapter/pkg/restapi/rp/operation"
 	"github.com/trustbloc/edge-adapter/test/bdd/pkg/agent"
@@ -558,7 +556,7 @@ func validatePresentationDefinitions(pd *presexch.PresentationDefinition, scope 
 }
 
 func validateGovernance(governanceVCBytes []byte) error {
-	l, err := jsonld.DocumentLoader(mem.NewProvider())
+	l, err := bddutil.DocumentLoader()
 	if err != nil {
 		return fmt.Errorf("failed to init document loader: %w", err)
 	}
