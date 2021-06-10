@@ -30,7 +30,6 @@ import (
 	"github.com/cucumber/godog"
 	"github.com/google/uuid"
 	"github.com/hyperledger/aries-framework-go-ext/component/vdr/orb"
-	"github.com/hyperledger/aries-framework-go-ext/component/vdr/sidetree/doc"
 	"github.com/hyperledger/aries-framework-go/pkg/client/outofband"
 	"github.com/hyperledger/aries-framework-go/pkg/doc/did"
 	"github.com/hyperledger/aries-framework-go/pkg/doc/jose"
@@ -45,6 +44,7 @@ import (
 	"golang.org/x/oauth2"
 
 	"github.com/trustbloc/edge-adapter/pkg/crypto"
+	adapterdid "github.com/trustbloc/edge-adapter/pkg/did"
 	"github.com/trustbloc/edge-adapter/pkg/presentationex"
 	"github.com/trustbloc/edge-adapter/pkg/restapi/rp/operation"
 	"github.com/trustbloc/edge-adapter/test/bdd/pkg/agent"
@@ -284,7 +284,7 @@ func (s *Steps) newTrustBlocDID(agentID string) (*did.Doc, error) {
 		return nil, fmt.Errorf("failed to create jwk: %w", err)
 	}
 
-	vm, err := did.NewVerificationMethodFromJWK(keys[0].keyID, doc.JWSVerificationKey2020, "", jwk)
+	vm, err := did.NewVerificationMethodFromJWK(keys[0].keyID, adapterdid.JSONWebKey2020, "", jwk)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create new vm: %w", err)
 	}
