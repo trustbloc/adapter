@@ -13,13 +13,15 @@ import (
 	"fmt"
 
 	"github.com/hyperledger/aries-framework-go-ext/component/vdr/orb"
-	"github.com/hyperledger/aries-framework-go-ext/component/vdr/sidetree/doc"
 	"github.com/hyperledger/aries-framework-go/pkg/doc/did"
 	"github.com/hyperledger/aries-framework-go/pkg/doc/jose"
 	vdrapi "github.com/hyperledger/aries-framework-go/pkg/framework/aries/api/vdr"
 	"github.com/hyperledger/aries-framework-go/pkg/kms"
 	"github.com/hyperledger/aries-framework-go/pkg/vdr/fingerprint"
 )
+
+// JSONWebKey2020 type.
+const JSONWebKey2020 = "JsonWebKey2020"
 
 type trustblocDIDClient interface {
 	Create(did *did.Doc, opts ...vdrapi.DIDMethodOption) (*did.DocResolution, error)
@@ -116,7 +118,7 @@ func (p *TrustblocDIDCreator) newPublicKeys() (*did.Doc, error) {
 		return nil, fmt.Errorf("failed to convert key to JWK: %w", err)
 	}
 
-	vm, err := did.NewVerificationMethodFromJWK(keyID, doc.JWSVerificationKey2020, "", jwk)
+	vm, err := did.NewVerificationMethodFromJWK(keyID, JSONWebKey2020, "", jwk)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create new verification method from JWK: %w", err)
 	}
