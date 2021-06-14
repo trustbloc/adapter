@@ -1,14 +1,22 @@
 # Building and Testing
 
 ## Prerequisites
-- Go 1.15
+- Go 1.16
 - Docker
 - Docker-Compose
 - Make
 - bash
-- Configure Docker to use GitHub Packages: [Authenticate](https://help.github.com/en/packages/using-github-packages-with-your-projects-ecosystem/configuring-docker-for-use-with-github-packages#authenticating-to-github-packages) 
-  using a [GitHub token](https://help.github.com/en/github/authenticating-to-github/creating-a-personal-access-token-for-the-command-line#creating-a-token) 
+- npm v7  
 
+## Host file
+Add following entries to the host file.
+
+```
+127.0.0.1 testnet.orb.local
+127.0.0.1 issuer-adapter-rest.trustbloc.local
+127.0.0.1 issuer-hydra.trustbloc.local
+127.0.0.1 mock-issuer-login.trustbloc.local
+```
 
 ## Targets
 
