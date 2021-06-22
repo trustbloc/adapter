@@ -27,6 +27,7 @@ type CreateRPTenantRequest struct {
 	Callback             string   `json:"callback"`
 	Scopes               []string `json:"scopes"`
 	RequiresBlindedRoute bool     `json:"requiresBlindedRoute"`
+	SupportsWACI         bool     `json:"supportsWACI"`
 }
 
 // CreateRPTenantResponse API response body to register an RP tenant.
@@ -36,6 +37,7 @@ type CreateRPTenantResponse struct {
 	PublicDID            string   `json:"publicDID"`
 	Scopes               []string `json:"scopes"`
 	RequiresBlindedRoute bool     `json:"requiresBlindedRoute"`
+	SupportsWACI         bool     `json:"supportsWACI"`
 }
 
 // HandleCHAPIResponse is the input message to the chapiResponseHandler handler.

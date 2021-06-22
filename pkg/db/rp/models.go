@@ -17,6 +17,7 @@ type Tenant struct {
 	Label                string
 	Scopes               []string
 	RequiresBlindedRoute bool
+	SupportsWACI         bool
 }
 
 // UserConnection describes a connection a relying party has with a user.
