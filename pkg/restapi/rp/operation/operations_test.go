@@ -2798,6 +2798,7 @@ func TestCreateRPTenant(t *testing.T) {
 			Label:                "test label",
 			Scopes:               []string{creditCardStatementScope},
 			RequiresBlindedRoute: true,
+			SupportsWACI:         true,
 		}
 		clientSecret := uuid.New().String()
 
@@ -2838,6 +2839,7 @@ func TestCreateRPTenant(t *testing.T) {
 			Callback:             callback,
 			Scopes:               []string{creditCardStatementScope},
 			RequiresBlindedRoute: true,
+			SupportsWACI:         true,
 		}))
 		require.Equal(t, http.StatusCreated, w.Code)
 		response := &CreateRPTenantResponse{}
@@ -2848,6 +2850,7 @@ func TestCreateRPTenant(t *testing.T) {
 		require.Equal(t, expected.Scopes, response.Scopes)
 		require.Equal(t, clientSecret, response.ClientSecret)
 		require.Equal(t, expected.RequiresBlindedRoute, response.RequiresBlindedRoute)
+		require.Equal(t, expected.SupportsWACI, response.SupportsWACI)
 
 		rpStore, err := rp.New(store)
 		require.NoError(t, err)

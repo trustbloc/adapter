@@ -1423,6 +1423,7 @@ func (o *Operation) createRPTenant(w http.ResponseWriter, r *http.Request) {
 		Label:                request.Label,
 		Scopes:               request.Scopes,
 		RequiresBlindedRoute: request.RequiresBlindedRoute,
+		SupportsWACI:         request.SupportsWACI,
 	})
 	if err != nil {
 		msg := fmt.Sprintf("failed to save relying party : %s", err)
@@ -1439,6 +1440,7 @@ func (o *Operation) createRPTenant(w http.ResponseWriter, r *http.Request) {
 		PublicDID:            didID,
 		Scopes:               request.Scopes,
 		RequiresBlindedRoute: request.RequiresBlindedRoute,
+		SupportsWACI:         request.SupportsWACI,
 	})
 }
 
