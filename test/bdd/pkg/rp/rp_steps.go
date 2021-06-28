@@ -121,8 +121,10 @@ func (s *Steps) RegisterSteps(g *godog.Suite) {
 	g.Step(`^the client ID of the tenant with label "([^"]*)" and scopes "([^"]*)" is registered at hydra$`, s.lookupClientID) //nolint:lll
 	g.Step(`^a request is sent to create an RP tenant with label "([^"]*)" and scopes "([^"]*)"$`, s.registerTenantFlow)
 	g.Step(`^a registered rp tenant with label "([^"]*)" and scopes "([^"]*)"$`, s.registerTenantFlow)
+	g.Step(`^a registered rp tenant with label "([^"]*)" and scopes "([^"]*)" with WACI support$`, s.registerTenantFlowWithWACI) //nolint:lll
 	g.Step(`^the rp tenant "([^"]*)" redirects the user to the rp adapter with scope "([^"]*)"$`, s.redirectUserToAdapter)
 	g.Step(`the rp adapter "([^"]*)" submits a CHAPI request to "([^"]*)" with presentation-definitions and a didcomm invitation to connect`, s.sendCHAPIRequestToWallet) //nolint:lll
+	g.Step(`^the rp adapter "([^"]*)" submits a CHAPI request to "([^"]*)" with out-of-band invitation$`, s.sendWACIInvitationToWallet)                                   //nolint:lll
 	g.Step(`^"([^"]*)" accepts the didcomm invitation from "([^"]*)"$`, s.walletAcceptsDIDCommInvitation)
 	g.Step(`^"([^"]*)" connects with the RP adapter "([^"]*)"$`, s.validateConnection)
 	g.Step(`^"([^"]*)" and "([^"]*)" have a didcomm connection$`, s.connectAgents)
@@ -157,7 +159,7 @@ func (s *Steps) connectToWalletBridge(userID, agentID string) error {
 	return s.controller.ConnectToWalletBridge(userID, agentID)
 }
 
-func (s *Steps) createTenant(label, scopesStr, blindedRouteStr string) error {
+func (s *Steps) createTenant(label, scopesStr, blindedRouteStr string, supportsWACI bool) error { // nolint:funlen
 	callbackServer := httptest.NewServer(s)
 	callbackURL := callbackServer.URL + "/" + label
 	scopes := strings.Split(scopesStr, ",")
@@ -172,6 +174,7 @@ func (s *Steps) createTenant(label, scopesStr, blindedRouteStr string) error {
 		Callback:             callbackURL,
 		Scopes:               scopes,
 		RequiresBlindedRoute: blindedRoute,
+		SupportsWACI:         supportsWACI,
 	})
 	if err != nil {
 		return fmt.Errorf("failed to marshal request: %w", err)
@@ -206,6 +209,11 @@ func (s *Steps) createTenant(label, scopesStr, blindedRouteStr string) error {
 	if response.RequiresBlindedRoute != blindedRoute {
 		return fmt.Errorf("requiresBlindedRoute prop doesn't match : expected=%t actual=%t",
 			blindedRoute, response.RequiresBlindedRoute)
+	}
+
+	if response.SupportsWACI != supportsWACI {
+		return fmt.Errorf("supportsWACI prop doesn't match : expected=%t actual=%t",
+			supportsWACI, response.SupportsWACI)
 	}
 
 	s.tenantCtx[label] = &tenantContext{
@@ -378,7 +386,21 @@ func validateTenantRegistration(expected *tenantContext, result *models.OAuth2Cl
 }
 
 func (s *Steps) registerTenantFlow(label, scopesStr string) error {
-	err := s.createTenant(label, scopesStr, "false")
+	err := s.createTenant(label, scopesStr, "false", false)
+	if err != nil {
+		return fmt.Errorf("failed to create tenant: %w", err)
+	}
+
+	err = s.resolveDID(label)
+	if err != nil {
+		return fmt.Errorf("failed to resolve DID: %w", err)
+	}
+
+	return s.lookupClientID(label, scopesStr)
+}
+
+func (s *Steps) registerTenantFlowWithWACI(label, scopesStr string) error {
+	err := s.createTenant(label, scopesStr, "false", true)
 	if err != nil {
 		return fmt.Errorf("failed to create tenant: %w", err)
 	}
@@ -492,6 +514,31 @@ func (s *Steps) sendCHAPIRequestToWallet(tenantID, walletID string) error {
 	tenant.invitationID = result.Inv.ID
 	tenant.presDefs = result.PD
 	s.context.Store[bddutil.GetDIDConnectRequestKey(tenantID, walletID)] = string(bits)
+
+	return nil
+}
+
+func (s *Steps) sendWACIInvitationToWallet(tenantID, walletID string) error {
+	tenant := s.tenantCtx[tenantID]
+
+	//nolint:bodyclose
+	resp, err := tenant.browser.Get(fmt.Sprintf("%s/presentations/create?h=%s", AdapterURL, tenant.pdHandle))
+	if err != nil {
+		return fmt.Errorf("rp adapter failed to produce a chapi request : %w", err)
+	}
+
+	defer bddutil.CloseResponseBody(resp.Body)
+
+	invite := &outofband.Invitation{}
+
+	err = json.NewDecoder(resp.Body).Decode(invite)
+	if err != nil {
+		return fmt.Errorf("failed to decode rp adapter's response : %w", err)
+	}
+
+	if invite.ID == "" {
+		return errors.New("waci flow - out-of-band inviatation id can't be empty")
+	}
 
 	return nil
 }

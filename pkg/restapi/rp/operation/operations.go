@@ -181,6 +181,7 @@ type consentRequestCtx struct {
 	RPPairwiseDID string
 	RPLabel       string
 	UserData      *userDataCollection
+	SupportsWACI  bool
 }
 
 type userDataCollection struct {
@@ -423,9 +424,10 @@ func (o *Operation) hydraLoginHandlerIterOne(w http.ResponseWriter, r *http.Requ
 				Subject: subject,
 			},
 			RP: &rp.Tenant{
-				ClientID:  tenant.ClientID,
-				PublicDID: tenant.PublicDID,
-				Label:     tenant.Label,
+				ClientID:     tenant.ClientID,
+				PublicDID:    tenant.PublicDID,
+				Label:        tenant.Label,
+				SupportsWACI: tenant.SupportsWACI,
 			},
 			Request: &rp.DataRequest{
 				Scope: login.GetPayload().RequestedScope,
@@ -669,10 +671,11 @@ func (o *Operation) hydraConsentHandler(w http.ResponseWriter, r *http.Request) 
 	handle := url.QueryEscape(uuid.New().String())
 
 	err = newTransientStorage(o.transientStore).Put(handle, &consentRequestCtx{
-		CR:          consent,
-		PD:          presentationDefinition,
-		RPPublicDID: conn.RP.PublicDID,
-		RPLabel:     conn.RP.Label,
+		CR:           consent,
+		PD:           presentationDefinition,
+		RPPublicDID:  conn.RP.PublicDID,
+		RPLabel:      conn.RP.Label,
+		SupportsWACI: conn.RP.SupportsWACI,
 	})
 	if err != nil {
 		handleError(w, http.StatusInternalServerError, fmt.Sprintf("failed to write to transient storage : %s", err))
@@ -680,7 +683,7 @@ func (o *Operation) hydraConsentHandler(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	redirectURL := fmt.Sprintf("%s?h=%s&uID=%s", o.uiEndpoint, handle, conn.User.Subject)
+	redirectURL := fmt.Sprintf("%s?h=%s&uID=%s&waci=%t", o.uiEndpoint, handle, conn.User.Subject, conn.RP.SupportsWACI)
 
 	http.Redirect(w, r, redirectURL, http.StatusFound)
 	logger.Debugf("redirected to: %s", redirectURL)
@@ -742,6 +745,15 @@ func (o *Operation) getPresentationsRequest(w http.ResponseWriter, r *http.Reque
 	if err != nil {
 		handleError(w, http.StatusInternalServerError,
 			fmt.Sprintf("failed to create didcomm invitation with DID : %s", err))
+
+		return
+	}
+
+	if cr.SupportsWACI {
+		commhttp.WriteResponse(w, invitation)
+		w.WriteHeader(http.StatusOK)
+
+		logger.Debugf("[waci] walletRequest: %+v", invitation)
 
 		return
 	}

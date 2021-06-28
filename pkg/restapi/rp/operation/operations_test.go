@@ -1526,6 +1526,83 @@ func TestGetPresentationsRequest(t *testing.T) {
 		require.Equal(t, `{"key":"value"}`, string(resp.Credentials[0]))
 	})
 
+	t.Run("test waci success", func(t *testing.T) {
+		t.Parallel()
+		userSubject := uuid.New().String()
+		rpClientID := uuid.New().String()
+		rpPublicDID := newDID(t)
+		handle := uuid.New().String()
+		presDefs := &presexch.PresentationDefinition{
+			InputDescriptors: []*presexch.InputDescriptor{{ID: uuid.New().String()}},
+		}
+		provider := mem.NewProvider()
+		saveUserConn(t, provider, &rp.UserConnection{
+			User:    &rp.User{Subject: userSubject},
+			RP:      &rp.Tenant{ClientID: rpClientID, SupportsWACI: true},
+			Request: &rp.DataRequest{},
+		})
+
+		c, err := New(&Config{
+			PresentationExProvider: &mockPresentationExProvider{createValue: presDefs},
+			OOBClient: &mockoutofband.MockClient{
+				CreateInvVal: &outofband.Invitation{
+					ID:        uuid.New().String(),
+					Type:      outofband.InvitationMsgType,
+					Label:     "test-label",
+					Services:  []interface{}{rpPublicDID.String()},
+					Protocols: []string{didexchangesvc.PIURI},
+				},
+			},
+			DIDExchClient: &mockdidexchange.MockClient{
+				CreateInvWithDIDFunc: func(label, didID string) (*didexchange.Invitation, error) {
+					return &didexchange.Invitation{Invitation: &didexchangesvc.Invitation{
+						ID:    uuid.New().String(),
+						Type:  didexchange.InvitationMsgType,
+						Label: "test-label",
+						DID:   rpPublicDID.String(),
+					}}, nil
+				},
+			},
+			Storage: &Storage{
+				Persistent: provider,
+				Transient:  mem.NewProvider(),
+			},
+			AriesContextProvider: agent(t),
+			PresentProofClient:   &mockpresentproof.MockClient{},
+			GovernanceProvider: &mockgovernance.MockProvider{GetCredentialFunc: func(profileID string) ([]byte, error) {
+				return []byte(`{"key":"value"}`), nil
+			}},
+			MsgRegistrar:   msghandler.NewRegistrar(),
+			AriesMessenger: &messenger.MockMessenger{},
+		})
+		require.NoError(t, err)
+
+		storePut(t, c.transientStore, handle, &consentRequestCtx{
+			PD: presDefs,
+			CR: &admin.GetConsentRequestOK{
+				Payload: &models.ConsentRequest{
+					Subject: userSubject,
+					Client:  &models.OAuth2Client{ClientID: rpClientID},
+				},
+			},
+			RPPublicDID:  rpPublicDID.String(),
+			SupportsWACI: true,
+		})
+
+		r := httptest.NewRecorder()
+		c.getPresentationsRequest(r, newCreatePresentationDefinitionRequest(t, handle))
+
+		require.Equal(t, http.StatusOK, r.Code)
+
+		var resp outofband.Invitation
+		require.NoError(t, json.Unmarshal(r.Body.Bytes(), &resp))
+
+		require.NotNil(t, resp)
+		require.NotEmpty(t, resp.ID)
+		require.Len(t, resp.Services, 1)
+		require.Equal(t, rpPublicDID.String(), resp.Services[0])
+	})
+
 	t.Run("test get governance - failed", func(t *testing.T) {
 		t.Parallel()
 		userSubject := uuid.New().String()
