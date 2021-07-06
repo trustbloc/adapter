@@ -209,7 +209,6 @@ func New(config *Config) (*Operation, error) { // nolint:funlen,gocyclo,cyclop
 		didStateMsgs:            make(chan service.StateMsg),
 		publicDIDCreator:        config.PublicDIDCreator,
 		ppClient:                config.PresentProofClient,
-		ppActions:               make(chan service.DIDCommAction),
 		vdrReg:                  config.AriesContextProvider.VDRegistry(),
 		governanceProvider:      config.GovernanceProvider,
 		km:                      config.AriesContextProvider.KMS(),
@@ -241,7 +240,9 @@ func New(config *Config) (*Operation, error) { // nolint:funlen,gocyclo,cyclop
 		return nil, fmt.Errorf("failed to create a connection recorder : %w", err)
 	}
 
-	err = o.ppClient.RegisterActionEvent(o.ppActions)
+	ppActions := make(chan service.DIDCommAction)
+
+	err = o.ppClient.RegisterActionEvent(ppActions)
 	if err != nil {
 		return nil, fmt.Errorf("failed to register listener for action events on present proof client : %w", err)
 	}
@@ -276,7 +277,7 @@ func New(config *Config) (*Operation, error) { // nolint:funlen,gocyclo,cyclop
 
 	go o.listenForConnectionCompleteEvents()
 
-	go o.listenForIssuerResponses()
+	go o.presentProofListener(ppActions)
 
 	msgCh := make(chan message.Msg, 1)
 
@@ -333,7 +334,6 @@ type Operation struct {
 	publicDIDCreator        PublicDIDCreator
 	connections             connectionRecorder
 	ppClient                PresentProofClient
-	ppActions               chan service.DIDCommAction
 	vdrReg                  vdrapi.Registry
 	transientStore          storage.Store
 	persistenceStore        storage.Store
@@ -749,15 +749,6 @@ func (o *Operation) getPresentationsRequest(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
-	if cr.SupportsWACI {
-		commhttp.WriteResponse(w, invitation)
-		w.WriteHeader(http.StatusOK)
-
-		logger.Debugf("[waci] walletRequest: %+v", invitation)
-
-		return
-	}
-
 	cr.InvitationID = invitation.ID
 
 	// TODO delete transient data: https://github.com/trustbloc/edge-adapter/issues/255
@@ -765,6 +756,15 @@ func (o *Operation) getPresentationsRequest(w http.ResponseWriter, r *http.Reque
 	if err != nil {
 		handleError(w, http.StatusInternalServerError,
 			fmt.Sprintf("failed to update consentRequestCtx in transient store : %s", err))
+
+		return
+	}
+
+	if cr.SupportsWACI {
+		commhttp.WriteResponse(w, invitation)
+		w.WriteHeader(http.StatusOK)
+
+		logger.Debugf("[waci] walletRequest: %+v", invitation)
 
 		return
 	}
@@ -1221,23 +1221,35 @@ func (o *Operation) listenForConnectionCompleteEvents() { // nolint: gocyclo,cyc
 	}
 }
 
-func (o *Operation) listenForIssuerResponses() {
-	for action := range o.ppActions {
-		if action.Message.Type() != presentproofsvc.PresentationMsgType {
-			logger.Debugf("ignoring present-proof message of type: %s", action.Message.Type())
+func (o *Operation) presentProofListener(ppActions chan service.DIDCommAction) {
+	var err error
 
-			continue
+	var continueArg presentproofsvc.Opt
+
+	for action := range ppActions {
+		switch action.Message.Type() {
+		case presentproofsvc.PresentationMsgType:
+			err = o.handleIssuerPresentationMsg(action.Message)
+
+			continueArg = presentproof.WithFriendlyNames(uuid.New().String())
+		case presentproofsvc.ProposePresentationMsgType:
+			// TODO add logic to send PEx in the request
+			continueArg = presentproof.WithRequestPresentation(&presentproof.RequestPresentation{
+				Comment: "Request Presentation",
+			})
+		default:
+			err = fmt.Errorf("unsupported present-proof message : %s", action.Message.Type())
 		}
 
-		err := o.handleIssuerPresentationMsg(action.Message)
 		if err != nil {
-			logger.Warnf("failed to handle present-proof response : %s", err)
 			action.Stop(err)
 
-			continue
-		}
+			logger.Errorf("msgType=[%s] id=[%s] errMsg=[%s]", action.Message.Type(), action.Message.ID(), err.Error())
+		} else {
+			action.Continue(continueArg)
 
-		action.Continue(presentproof.WithFriendlyNames(uuid.New().String()))
+			logger.Infof("msgType=[%s] id=[%s] msg=[%s]", action.Message.Type(), action.Message.ID(), "success")
+		}
 	}
 }
 

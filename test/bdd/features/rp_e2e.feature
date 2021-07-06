@@ -36,10 +36,10 @@ Feature: RP Adapter
     Given a registered rp tenant with label "waci_demo" and scopes "driver_license:local" with WACI support
     When the rp tenant "waci_demo" redirects the user to the rp adapter with scope "driver_license:local"
     And the rp adapter "waci_demo" submits a CHAPI request to "Mock Wallet" with out-of-band invitation
-    # TODO - implement following steps
-    # And "Mock Wallet" accepts the out-of-band invitation from "waci_demo"
-    # Then "Mock Wallet" submits the presentation to the RP adapter "waci_demo"
-    # Then "waci_demo" validates the presentations
+    # TODO remove connections once AFG supports DIDComm v2
+    And "Mock Wallet" accepts the didcomm invitation from "waci_demo"
+    Then "Mock Wallet" connects with the RP adapter "waci_demo"
+    Then "Mock Wallet" submits the presentation to the RP adapter "waci_demo"
 
   @rp_adapter_cred
   Scenario: Returns both local and remote user data to the relying party with the user's consent

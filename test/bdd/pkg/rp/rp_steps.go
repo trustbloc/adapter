@@ -136,6 +136,7 @@ func (s *Steps) RegisterSteps(g *godog.Suite) {
 	g.Step(`^the rp tenant "([^"]*)" retrieves the user data from the rp adapter$`, s.rpTenantRetrievesUserData)
 	g.Step(`^remote wallet "([^"]*)" supports credential handler request/response through DIDComm$`, s.registerCHAPIMsgHandler) //nolint:lll
 	g.Step(`^"([^"]*)" loads remote wallet app "([^"]*)" and accepts rp tenant's invitation$`, s.connectToWalletBridge)
+	g.Step(`^"([^"]*)" submits the presentation to the RP adapter "([^"]*)"$`, s.submitWACIPresentation)
 }
 
 func (s *Steps) registerAgentController(agentID, inboundHost, inboundPort, controllerURL string) error {
@@ -540,6 +541,13 @@ func (s *Steps) sendWACIInvitationToWallet(tenantID, walletID string) error {
 		return errors.New("waci flow - out-of-band inviatation id can't be empty")
 	}
 
+	invitationBytes, err := json.Marshal(invite)
+	if err != nil {
+		return fmt.Errorf("failed to marshal oob invitation : %w", err)
+	}
+
+	s.context.Store[bddutil.GetDIDConnectRequestKey(tenantID, walletID)] = string(invitationBytes)
+
 	return nil
 }
 
@@ -916,6 +924,15 @@ func (s *Steps) issuerRepliesWithUserData(issuer, tenant string) error {
 	err = s.controller.AcceptRequestPresentation(issuer, signedVP)
 	if err != nil {
 		return fmt.Errorf("%s failed to accept request-presentation : %w", issuer, err)
+	}
+
+	return nil
+}
+
+func (s *Steps) submitWACIPresentation(walletID, tenantID string) error {
+	err := s.controller.SubmitWACIPresentation(walletID, s.tenantCtx[tenantID].walletConnID)
+	if err != nil {
+		return fmt.Errorf("send propose presentation: %w", err)
 	}
 
 	return nil

@@ -3232,6 +3232,111 @@ func TestRemoveOIDCScope(t *testing.T) {
 	})
 }
 
+func TestHandlePresentProofMsg(t *testing.T) {
+	t.Parallel()
+
+	t.Run("unsupported message type", func(t *testing.T) {
+		t.Parallel()
+
+		c, err := New(config(t))
+		require.NoError(t, err)
+
+		actionCh := make(chan service.DIDCommAction, 1)
+
+		done := make(chan struct{})
+
+		go c.presentProofListener(actionCh)
+
+		actionCh <- service.DIDCommAction{
+			Message: service.NewDIDCommMsgMap(struct {
+				Type string `json:"@type,omitempty"`
+			}{Type: "unsupported-message-type"}),
+			Stop: func(err error) {
+				require.Contains(t, err.Error(), "unsupported present-proof message : unsupported-message-type")
+				done <- struct{}{}
+			},
+		}
+
+		select {
+		case <-done:
+		case <-time.After(5 * time.Second):
+			require.Fail(t, "tests are not validated due to timeout")
+		}
+	})
+
+	t.Run("presentation message", func(t *testing.T) {
+		t.Parallel()
+
+		relyingParty, issuer, _ := trio(t)
+		rpDID := newPeerDID(t, relyingParty)
+		issuerDID := newPeerDID(t, issuer)
+
+		simulateDIDExchange(t, relyingParty, rpDID, issuer, issuerDID)
+
+		c, err := New(&Config{
+			DIDExchClient:        &mockdidexchange.MockClient{},
+			Storage:              memStorage(),
+			AriesContextProvider: relyingParty,
+			PresentProofClient:   &mockpresentproof.MockClient{},
+			MsgRegistrar:         msghandler.NewRegistrar(),
+			AriesMessenger:       &messenger.MockMessenger{},
+			JSONLDDocumentLoader: testutil.DocumentLoader(t),
+		})
+		require.NoError(t, err)
+
+		actionCh := make(chan service.DIDCommAction, 1)
+
+		done := make(chan struct{})
+
+		go c.presentProofListener(actionCh)
+
+		thid := uuid.New().String()
+
+		expected := newCreditCardStatementVC(t, issuer, issuerDID)
+
+		actionCh <- service.DIDCommAction{
+			Message: newIssuerResponse(t, thid, newPresentationSubmissionVP(t, issuer, issuerDID, nil, expected)),
+			Continue: func(args interface{}) {
+				done <- struct{}{}
+			},
+		}
+
+		select {
+		case <-done:
+		case <-time.After(5 * time.Second):
+			require.Fail(t, "tests are not validated due to timeout")
+		}
+	})
+
+	t.Run("propose message", func(t *testing.T) {
+		t.Parallel()
+
+		c, err := New(config(t))
+		require.NoError(t, err)
+
+		actionCh := make(chan service.DIDCommAction, 1)
+
+		done := make(chan struct{})
+
+		go c.presentProofListener(actionCh)
+
+		actionCh <- service.DIDCommAction{
+			Message: service.NewDIDCommMsgMap(struct {
+				Type string `json:"@type,omitempty"`
+			}{Type: presentproofsvc.ProposePresentationMsgType}),
+			Continue: func(args interface{}) {
+				done <- struct{}{}
+			},
+		}
+
+		select {
+		case <-done:
+		case <-time.After(5 * time.Second):
+			require.Fail(t, "tests are not validated due to timeout")
+		}
+	})
+}
+
 func TestDIDDocReq(t *testing.T) { // nolint:gocyclo,cyclop
 	t.Parallel()
 
