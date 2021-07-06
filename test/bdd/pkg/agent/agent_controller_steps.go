@@ -71,6 +71,7 @@ const (
 
 	presentProofOperationID   = "/presentproof"
 	sendRequestPresentation   = presentProofOperationID + "/send-request-presentation"
+	sendProposePresentation   = presentProofOperationID + "/send-propose-presentation"
 	acceptRequestPresentation = presentProofOperationID + "/%s/accept-request-presentation"
 	acceptPresentationPath    = presentProofOperationID + "/%s/accept-presentation"
 	presentProofActions       = presentProofOperationID + "/actions"
@@ -692,14 +693,14 @@ func (a *Steps) fetchCredential(agentID, issuerID string) error { // nolint: fun
 		return fmt.Errorf("[issue-credential] failed to send request : %w", err)
 	}
 
-	piid, err := actionPIID(controllerURL, issueCredActions)
+	action, err := actionPIID(controllerURL, issueCredActions)
 	if err != nil {
 		return fmt.Errorf("actionPIID: %w", err)
 	}
 
 	credentialName := uuid.New().String()
 
-	err = acceptCredential(piid, credentialName, controllerURL)
+	err = acceptCredential(action.PIID, credentialName, controllerURL)
 	if err != nil {
 		return fmt.Errorf("[issue-credential] failed to accept credential : %w", err)
 	}
@@ -771,7 +772,7 @@ func (a *Steps) fetchPresentation(agentID, issuerID, expectedScope, supportsAssu
 	}
 
 	// receive presentation
-	piid, err := actionPIID(controllerURL, presentProofActions)
+	action, err := actionPIID(controllerURL, presentProofActions)
 	if err != nil {
 		return fmt.Errorf("failed to fetch action PIID: %w", err)
 	}
@@ -779,7 +780,7 @@ func (a *Steps) fetchPresentation(agentID, issuerID, expectedScope, supportsAssu
 	// accept presentation
 	presentationName := uuid.New().String()
 
-	err = acceptPresentation(piid, presentationName, controllerURL)
+	err = acceptPresentation(action.PIID, presentationName, controllerURL)
 	if err != nil {
 		return fmt.Errorf("failed to accept presentation: %w", err)
 	}
@@ -871,7 +872,7 @@ func (a *Steps) SaveDID(agent, friendlyName string, d *did.Doc) error {
 func (a *Steps) AcceptRequestPresentation(agent string, presentation *verifiable.Presentation) error {
 	destination := a.ControllerURLs[agent]
 
-	piid, err := actionPIID(destination, presentProofActions)
+	action, err := actionPIID(destination, presentProofActions)
 	if err != nil {
 		return fmt.Errorf("actionPIID: %w", err)
 	}
@@ -882,7 +883,7 @@ func (a *Steps) AcceptRequestPresentation(agent string, presentation *verifiable
 	}
 
 	request, err := json.Marshal(presentproofcmd.AcceptRequestPresentationArgs{
-		PIID: piid,
+		PIID: action.PIID,
 		Presentation: &presentproof.Presentation{
 			Type: presentproofsvc.PresentationMsgType,
 			PresentationsAttach: []decorator.Attachment{{
@@ -898,7 +899,7 @@ func (a *Steps) AcceptRequestPresentation(agent string, presentation *verifiable
 		return fmt.Errorf("failed to marshal accept request presentation request : %w", err)
 	}
 
-	acceptRequestURL := fmt.Sprintf(destination+acceptRequestPresentation, piid)
+	acceptRequestURL := fmt.Sprintf(destination+acceptRequestPresentation, action.PIID)
 
 	return bddutil.SendHTTP(http.MethodPost, acceptRequestURL, request, // nolint:wrapcheck // ignore
 		&presentproofcmd.AcceptRequestPresentationResponse{})
@@ -1038,6 +1039,26 @@ func (a *Steps) CreateKey(agent string, t kms.KeyType) (id string, key []byte, e
 	return response.KeyID, bits, nil
 }
 
+func sendPresentationProposal(conn *didexchange.Connection, controllerURL string) error {
+	req := &presentproofcmd.SendProposePresentationArgs{
+		MyDID:               conn.MyDID,
+		TheirDID:            conn.TheirDID,
+		ProposePresentation: &presentproof.ProposePresentation{},
+	}
+
+	reqBytes, err := json.Marshal(req)
+	if err != nil {
+		return fmt.Errorf("failed to marshal request: %w", err)
+	}
+
+	err = bddutil.SendHTTP(http.MethodPost, controllerURL+sendProposePresentation, reqBytes, nil)
+	if err != nil {
+		return fmt.Errorf("failed to post request: %w", err)
+	}
+
+	return nil
+}
+
 func sendPresentationRequest(conn *didexchange.Connection, vp *verifiable.Presentation, controllerURL string) error {
 	req := &presentproofcmd.SendRequestPresentationArgs{
 		MyDID:    conn.MyDID,
@@ -1061,6 +1082,76 @@ func sendPresentationRequest(conn *didexchange.Connection, vp *verifiable.Presen
 	if err != nil {
 		return fmt.Errorf("failed to post request: %w", err)
 	}
+
+	return nil
+}
+
+func sendPresentation(vp *verifiable.Presentation, controllerURL, id string) error {
+	req := &presentproofcmd.AcceptRequestPresentationArgs{
+		PIID: id,
+		Presentation: &presentproof.Presentation{
+			Type: presentproofsvc.PresentationMsgType,
+			PresentationsAttach: []decorator.Attachment{{
+				ID:       uuid.New().String(),
+				MimeType: "application/ld+json",
+				Data: decorator.AttachmentData{
+					JSON: vp,
+				},
+			}},
+		},
+	}
+
+	reqBytes, err := json.Marshal(req)
+	if err != nil {
+		return fmt.Errorf("failed to marshal request: %w", err)
+	}
+
+	err = bddutil.SendHTTP(http.MethodPost, controllerURL+fmt.Sprintf(acceptRequestPresentation, id), reqBytes, nil)
+	if err != nil {
+		return fmt.Errorf("failed to post request: %w", err)
+	}
+
+	return nil
+}
+
+// SubmitWACIPresentation submits presentation through WACI flow.
+func (a *Steps) SubmitWACIPresentation(walletID, connID string) error {
+	conn, err := a.ValidateConnection(walletID, connID)
+	if err != nil {
+		return fmt.Errorf("fetch connection: %w", err)
+	}
+
+	controllerURL := a.ControllerURLs[walletID]
+
+	// send presentation proposal
+	err = sendPresentationProposal(conn, controllerURL)
+	if err != nil {
+		return fmt.Errorf("failed to send presentation: %w", err)
+	}
+
+	// receive presentation request
+	action, err := actionPIID(controllerURL, presentProofActions)
+	if err != nil {
+		return fmt.Errorf("failed to fetch action PIID: %w", err)
+	}
+
+	if action.Msg.Type() != presentproofsvc.RequestPresentationMsgType {
+		return fmt.Errorf("invalid present-proof message: expected=%s actual=%s",
+			presentproofsvc.RequestPresentationMsgType, action.Msg.Type())
+	}
+
+	// TODO read presentation request and construct presentation
+
+	// send presentation
+	err = sendPresentation(&verifiable.Presentation{
+		Context: []string{"https://www.w3.org/2018/credentials/v1"},
+		Type:    []string{"VerifiablePresentation"},
+	}, controllerURL, action.PIID)
+	if err != nil {
+		return fmt.Errorf("failed to send presentation: %w", err)
+	}
+
+	// TODO verify present-proof ack message
 
 	return nil
 }
@@ -1304,7 +1395,7 @@ func validateAssuranceVC(vc *verifiable.Credential) error {
 		adaptervc.AssuranceCredentialType, vc.Types)
 }
 
-func actionPIID(endpoint, urlPath string) (string, error) {
+func actionPIID(endpoint, urlPath string) (*issuecredsvc.Action, error) {
 	// TODO use listener rather than polling (update once aries bdd-tests are refactored)
 	const (
 		timeoutWait = 10 * time.Second
@@ -1324,7 +1415,7 @@ func actionPIID(endpoint, urlPath string) (string, error) {
 
 		err := bddutil.SendHTTP(http.MethodGet, endpoint+urlPath, nil, &result)
 		if err != nil {
-			return "", fmt.Errorf("failed to get action PIID: %w", err)
+			return nil, fmt.Errorf("failed to get action PIID: %w", err)
 		}
 
 		if len(result.Actions) == 0 {
@@ -1332,10 +1423,10 @@ func actionPIID(endpoint, urlPath string) (string, error) {
 			continue
 		}
 
-		return result.Actions[0].PIID, nil
+		return &result.Actions[0], nil
 	}
 
-	return "", fmt.Errorf("unable to get action PIID: timeout")
+	return nil, fmt.Errorf("unable to get action PIID: timeout")
 }
 
 func validateManifestCred(manifestVCBytes []byte, supportedVCContexts string) error {
