@@ -3232,7 +3232,7 @@ func TestRemoveOIDCScope(t *testing.T) {
 	})
 }
 
-func TestHandlePresentProofMsg(t *testing.T) {
+func TestHandlePresentProofMsg(t *testing.T) { // nolint: gocyclo,cyclop
 	t.Parallel()
 
 	t.Run("unsupported message type", func(t *testing.T) {
@@ -3264,7 +3264,7 @@ func TestHandlePresentProofMsg(t *testing.T) {
 		}
 	})
 
-	t.Run("presentation message", func(t *testing.T) {
+	t.Run("issuer presentation message - success", func(t *testing.T) {
 		t.Parallel()
 
 		relyingParty, issuer, _ := trio(t)
@@ -3284,21 +3284,30 @@ func TestHandlePresentProofMsg(t *testing.T) {
 		})
 		require.NoError(t, err)
 
+		rpClientID := uuid.NewString()
+		err = c.rpStore.SaveRP(&rp.Tenant{ClientID: rpClientID, SupportsWACI: false})
+		require.NoError(t, err)
+
+		connID := uuid.New().String()
+		c.connections = &mockconn.MockConnectionsLookup{ConnIDByDIDs: connID}
+
+		err = c.persistenceStore.Put(getConnToTenantMappingDBKey(connID), []byte(rpClientID))
+		require.NoError(t, err)
+
 		actionCh := make(chan service.DIDCommAction, 1)
 
 		done := make(chan struct{})
 
 		go c.presentProofListener(actionCh)
 
-		thid := uuid.New().String()
-
 		expected := newCreditCardStatementVC(t, issuer, issuerDID)
 
 		actionCh <- service.DIDCommAction{
-			Message: newIssuerResponse(t, thid, newPresentationSubmissionVP(t, issuer, issuerDID, nil, expected)),
+			Message: newIssuerResponse(t, uuid.NewString(), newPresentationSubmissionVP(t, issuer, issuerDID, nil, expected)),
 			Continue: func(args interface{}) {
 				done <- struct{}{}
 			},
+			Properties: &actionEventEvent{},
 		}
 
 		select {
@@ -3308,7 +3317,114 @@ func TestHandlePresentProofMsg(t *testing.T) {
 		}
 	})
 
-	t.Run("propose message", func(t *testing.T) {
+	t.Run("waci presentation message - success", func(t *testing.T) {
+		t.Parallel()
+
+		c, err := New(config(t))
+		require.NoError(t, err)
+
+		rpClientID := uuid.NewString()
+		err = c.rpStore.SaveRP(&rp.Tenant{ClientID: rpClientID, SupportsWACI: true})
+		require.NoError(t, err)
+
+		connID := uuid.New().String()
+		c.connections = &mockconn.MockConnectionsLookup{ConnIDByDIDs: connID}
+
+		err = c.persistenceStore.Put(getConnToTenantMappingDBKey(connID), []byte(rpClientID))
+		require.NoError(t, err)
+
+		actionCh := make(chan service.DIDCommAction, 1)
+
+		done := make(chan struct{})
+
+		go c.presentProofListener(actionCh)
+
+		actionCh <- service.DIDCommAction{
+			Message: service.NewDIDCommMsgMap(&presentproof.Presentation{
+				Type: presentproofsvc.PresentationMsgType,
+			}),
+			Continue: func(args interface{}) {
+				done <- struct{}{}
+			},
+			Properties: &actionEventEvent{},
+		}
+
+		select {
+		case <-done:
+		case <-time.After(5 * time.Second):
+			require.Fail(t, "tests are not validated due to timeout")
+		}
+	})
+
+	t.Run("presentation message - invalid connid", func(t *testing.T) {
+		t.Parallel()
+
+		c, err := New(config(t))
+		require.NoError(t, err)
+
+		actionCh := make(chan service.DIDCommAction, 1)
+
+		done := make(chan struct{})
+
+		go c.presentProofListener(actionCh)
+
+		actionCh <- service.DIDCommAction{
+			Message: service.NewDIDCommMsgMap(&presentproof.Presentation{
+				Type: presentproofsvc.PresentationMsgType,
+			}),
+			Stop: func(err error) {
+				done <- struct{}{}
+			},
+			Properties: &actionEventEvent{},
+		}
+
+		select {
+		case <-done:
+		case <-time.After(5 * time.Second):
+			require.Fail(t, "tests are not validated due to timeout")
+		}
+	})
+
+	t.Run("handle propose message - success", func(t *testing.T) {
+		t.Parallel()
+
+		c, err := New(config(t))
+		require.NoError(t, err)
+
+		invitationID := uuid.New().String()
+
+		storePut(t, c.transientStore, invitationID, &consentRequestCtx{InvitationID: invitationID})
+
+		connID := uuid.New().String()
+		c.connections = &mockconn.MockConnectionsLookup{ConnIDByDIDs: connID}
+
+		err = c.persistenceStore.Put(getConnToCtxMappingDBKey(connID), []byte(invitationID))
+		require.NoError(t, err)
+
+		actionCh := make(chan service.DIDCommAction, 1)
+
+		done := make(chan struct{})
+
+		go c.presentProofListener(actionCh)
+
+		actionCh <- service.DIDCommAction{
+			Message: service.NewDIDCommMsgMap(struct {
+				Type string `json:"@type,omitempty"`
+			}{Type: presentproofsvc.ProposePresentationMsgType}),
+			Continue: func(args interface{}) {
+				done <- struct{}{}
+			},
+			Properties: &actionEventEvent{},
+		}
+
+		select {
+		case <-done:
+		case <-time.After(5 * time.Second):
+			require.Fail(t, "tests are not validated due to timeout")
+		}
+	})
+
+	t.Run("handle propose message error", func(t *testing.T) {
 		t.Parallel()
 
 		c, err := New(config(t))
@@ -3324,7 +3440,8 @@ func TestHandlePresentProofMsg(t *testing.T) {
 			Message: service.NewDIDCommMsgMap(struct {
 				Type string `json:"@type,omitempty"`
 			}{Type: presentproofsvc.ProposePresentationMsgType}),
-			Continue: func(args interface{}) {
+			Stop: func(err error) {
+				require.Contains(t, err.Error(), "get connection id from event")
 				done <- struct{}{}
 			},
 		}

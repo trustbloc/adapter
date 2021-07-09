@@ -149,3 +149,20 @@ func newPeerDID(t *testing.T, agent *ariesctx.Provider) *did.Doc {
 
 	return d.DIDDocument
 }
+
+type actionEventEvent struct {
+	myDID    string
+	theirDID string
+	props    map[string]interface{}
+}
+
+func (e *actionEventEvent) All() map[string]interface{} {
+	if e.props != nil {
+		return e.props
+	}
+
+	return map[string]interface{}{
+		"myDID":    e.myDID,
+		"theirDID": e.theirDID,
+	}
+}

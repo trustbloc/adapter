@@ -37,6 +37,7 @@ import (
 	issuecredsvc "github.com/hyperledger/aries-framework-go/pkg/didcomm/protocol/issuecredential"
 	presentproofsvc "github.com/hyperledger/aries-framework-go/pkg/didcomm/protocol/presentproof"
 	"github.com/hyperledger/aries-framework-go/pkg/doc/did"
+	"github.com/hyperledger/aries-framework-go/pkg/doc/presexch"
 	"github.com/hyperledger/aries-framework-go/pkg/doc/signature/suite/ed25519signature2018"
 	"github.com/hyperledger/aries-framework-go/pkg/doc/util"
 	"github.com/hyperledger/aries-framework-go/pkg/doc/verifiable"
@@ -1115,7 +1116,7 @@ func sendPresentation(vp *verifiable.Presentation, controllerURL, id string) err
 }
 
 // SubmitWACIPresentation submits presentation through WACI flow.
-func (a *Steps) SubmitWACIPresentation(walletID, connID string) error {
+func (a *Steps) SubmitWACIPresentation(walletID, connID string) error { // nolint:funlen,gocyclo,cyclop
 	conn, err := a.ValidateConnection(walletID, connID)
 	if err != nil {
 		return fmt.Errorf("fetch connection: %w", err)
@@ -1140,13 +1141,72 @@ func (a *Steps) SubmitWACIPresentation(walletID, connID string) error {
 			presentproofsvc.RequestPresentationMsgType, action.Msg.Type())
 	}
 
-	// TODO read presentation request and construct presentation
+	reqMsg := &presentproof.RequestPresentation{}
+
+	err = action.Msg.Decode(reqMsg)
+	if err != nil {
+		return fmt.Errorf("decode req message: %w", err)
+	}
+
+	if len(reqMsg.RequestPresentationsAttach) != 1 {
+		return fmt.Errorf("request presentation attchement count mismatch: expected=%d actual=%d",
+			1, len(reqMsg.RequestPresentationsAttach))
+	}
+
+	presDefBytes, err := reqMsg.RequestPresentationsAttach[0].Data.Fetch()
+	if err != nil {
+		return fmt.Errorf("presentation definition from request attachment : %w", err)
+	}
+
+	presDef := &presexch.PresentationDefinition{}
+
+	err = json.Unmarshal(presDefBytes, presDef)
+	if err != nil {
+		return fmt.Errorf("unmarshal presentation definition : %w", err)
+	}
+
+	vp, err := verifiable.NewPresentation(verifiable.WithCredentials(&verifiable.Credential{
+		Context: []string{
+			"https://www.w3.org/2018/credentials/v1",
+			"https://trustbloc.github.io/context/vc/examples/mdl-v1.jsonld",
+		},
+		ID: "http://example.gov/credentials/ff98f978-588f-4eb0-b17b-60c18e1dac2c",
+		Types: []string{
+			"VerifiableCredential",
+			"mDL",
+		},
+		Issuer: verifiable.Issuer{
+			ID: "did:peer:issuer",
+		},
+		Issued: util.NewTimeWithTrailingZeroMsec(time.Now(), 0),
+		Subject: &verifiable.Subject{
+			ID: "did:peer:user",
+			CustomFields: map[string]interface{}{
+				"given_name":      "John",
+				"family_name":     "Smith",
+				"document_number": "123-456-789",
+			},
+		},
+	}))
+	if err != nil {
+		return fmt.Errorf("failed to create vp: %w", err)
+	}
+
+	vp.Context = append(vp.Context, presexch.PresentationSubmissionJSONLDContextIRI)
+	vp.Type = append(vp.Type, presexch.PresentationSubmissionJSONLDType)
+	vp.CustomFields = map[string]interface{}{
+		"presentation_submission": &presexch.PresentationSubmission{
+			DescriptorMap: []*presexch.InputDescriptorMapping{
+				{
+					ID:   presDef.InputDescriptors[0].ID,
+					Path: "$.verifiableCredential[0]",
+				},
+			},
+		},
+	}
 
 	// send presentation
-	err = sendPresentation(&verifiable.Presentation{
-		Context: []string{"https://www.w3.org/2018/credentials/v1"},
-		Type:    []string{"VerifiablePresentation"},
-	}, controllerURL, action.PIID)
+	err = sendPresentation(vp, controllerURL, action.PIID)
 	if err != nil {
 		return fmt.Errorf("failed to send presentation: %w", err)
 	}
