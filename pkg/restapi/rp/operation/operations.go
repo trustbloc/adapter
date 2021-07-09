@@ -1158,7 +1158,7 @@ func (o *Operation) handleIncomingDIDExchangeRequestAction(action service.DIDCom
 	action.Continue(nil)
 }
 
-func (o *Operation) listenForConnectionCompleteEvents() { // nolint: gocyclo,cyclop
+func (o *Operation) listenForConnectionCompleteEvents() { // nolint: gocyclo,cyclop,funlen
 	for msg := range o.didStateMsgs {
 		if msg.Type != service.PostState || msg.StateID != didexchangesvc.StateIDCompleted {
 			continue
@@ -1202,6 +1202,15 @@ func (o *Operation) listenForConnectionCompleteEvents() { // nolint: gocyclo,cyc
 			logger.Errorf("failed to update invitation data in transient storage : %s", err)
 		}
 
+		if crCtx.SupportsWACI {
+			// TODO remove this once AFG implements https://github.com/hyperledger/aries-framework-go/issues/2860
+			err = o.persistenceStore.Put(getConnToCtxMappingDBKey(event.ConnectionID()),
+				[]byte(crCtx.InvitationID))
+			if err != nil {
+				logger.Errorf("failed to update connectionID to ctx id : %s", err)
+			}
+		}
+
 		// consent request doesn't always apply, ex: remote wallet app connection through deep link invitation.
 		if crCtx.CR != nil {
 			err = o.persistenceStore.Put(getConnToTenantMappingDBKey(event.ConnectionID()),
@@ -1229,13 +1238,39 @@ func (o *Operation) presentProofListener(ppActions chan service.DIDCommAction) {
 	for action := range ppActions {
 		switch action.Message.Type() {
 		case presentproofsvc.PresentationMsgType:
-			err = o.handleIssuerPresentationMsg(action.Message)
+			supportsWACI, waciErr := o.supportsWACIFlagUsingConnection(action)
+			if waciErr != nil {
+				err = waciErr
+				break
+			}
+
+			if supportsWACI {
+				err = o.handleWACIPresentation(action.Message)
+			} else {
+				err = o.handleIssuerPresentationMsg(action.Message)
+			}
+
+			if err != nil {
+				break
+			}
 
 			continueArg = presentproof.WithFriendlyNames(uuid.New().String())
 		case presentproofsvc.ProposePresentationMsgType:
-			// TODO add logic to send PEx in the request
+			presDef, waciErr := o.getWACIPresDef(action)
+			if waciErr != nil {
+				err = waciErr
+				break
+			}
+
 			continueArg = presentproof.WithRequestPresentation(&presentproof.RequestPresentation{
 				Comment: "Request Presentation",
+				RequestPresentationsAttach: []decorator.Attachment{
+					{
+						ID:       uuid.NewString(),
+						MimeType: "application/json",
+						Data:     decorator.AttachmentData{JSON: presDef},
+					},
+				},
 			})
 		default:
 			err = fmt.Errorf("unsupported present-proof message : %s", action.Message.Type())
@@ -1331,6 +1366,55 @@ func (o *Operation) handleDIDDocReq(msg message.Msg) (service.DIDCommMsgMap, err
 			DIDDoc: docBytes,
 		},
 	}), nil
+}
+
+func (o *Operation) getWACIPresDef(msg service.DIDCommAction) (*presexch.PresentationDefinition, error) {
+	connID, err := o.getConnectionIDFromEvent(msg)
+	if err != nil {
+		return nil, fmt.Errorf("get connection id from event : %w", err)
+	}
+
+	ctxID, err := o.persistenceStore.Get(getConnToCtxMappingDBKey(connID))
+	if err != nil {
+		return nil, fmt.Errorf("get connection to rp tenant mapping : %w", err)
+	}
+
+	crCtx, err := newTransientStorage(o.transientStore).GetConsentRequest(string(ctxID))
+	if errors.Is(err, storage.ErrDataNotFound) {
+		return nil, fmt.Errorf("stale or invalid invitation : %w", err)
+	}
+
+	return crCtx.PD, nil
+}
+
+func (o *Operation) supportsWACIFlagUsingConnection(msg service.DIDCommAction) (bool, error) {
+	connID, err := o.getConnectionIDFromEvent(msg)
+	if err != nil {
+		return false, fmt.Errorf("get connection id from event : %w", err)
+	}
+
+	cID, err := o.persistenceStore.Get(getConnToTenantMappingDBKey(connID))
+
+	switch {
+	case errors.Is(err, storage.ErrDataNotFound):
+		return false, nil
+	case err != nil:
+		return false, fmt.Errorf("get connection to rp tenant mapping : %w", err)
+	}
+
+	rpTenant, err := o.rpStore.GetRP(string(cID))
+	if err != nil {
+		return false, fmt.Errorf("get rp tenant data : %w", err)
+	}
+
+	return rpTenant.SupportsWACI, nil
+}
+
+func (o *Operation) handleWACIPresentation(msg service.DIDCommMsg) error {
+	// TODO https://github.com/trustbloc/edge-adapter/issues/506 validate presentation
+	logger.Infof("received waci presentation")
+
+	return nil
 }
 
 func (o *Operation) handleIssuerPresentationMsg(msg service.DIDCommMsg) error {
@@ -1510,6 +1594,25 @@ func (o *Operation) toMarshalledVP(authZ *verifiable.Credential, signingDID stri
 	return json.Marshal(signedVP) // nolint:wrapcheck // reduce cyclo
 }
 
+func (o *Operation) getConnectionIDFromEvent(msg service.DIDCommAction) (string, error) {
+	myDID, err := getStrPropFromEvent("myDID", msg)
+	if err != nil {
+		return "", fmt.Errorf("failed to get myDID event property: %w", err)
+	}
+
+	theirDID, err := getStrPropFromEvent("theirDID", msg)
+	if err != nil {
+		return "", fmt.Errorf("failed to get theirDID event property: %w", err)
+	}
+
+	connID, err := o.connections.GetConnectionIDByDIDs(myDID, theirDID)
+	if err != nil {
+		return "", fmt.Errorf("failed to get connection id by dids: %w", err)
+	}
+
+	return connID, nil
+}
+
 func removeOIDCScope(scopes []string) []string {
 	filtered := make([]string, 0)
 
@@ -1593,10 +1696,32 @@ func getConnToTenantMappingDBKey(connID string) string {
 	return "conntenantmap_" + connID
 }
 
+func getConnToCtxMappingDBKey(connID string) string {
+	return "connctxmap_" + connID
+}
+
 type storeProvider struct {
 	storage.Provider
 }
 
 func (p *storeProvider) StorageProvider() storage.Provider {
 	return p
+}
+
+func getStrPropFromEvent(prop string, msg service.DIDCommAction) (string, error) {
+	if msg.Properties == nil || len(msg.Properties.All()) == 0 {
+		return "", errors.New("no properties in the event")
+	}
+
+	val, ok := msg.Properties.All()[prop]
+	if !ok {
+		return "", fmt.Errorf("%s not found", prop)
+	}
+
+	strVal, ok := val.(string)
+	if !ok {
+		return "", fmt.Errorf("%s not a string", prop)
+	}
+
+	return strVal, nil
 }
