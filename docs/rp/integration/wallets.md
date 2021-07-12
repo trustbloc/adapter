@@ -61,8 +61,8 @@ The RP Adapter sends a web credentials request to the web browser with the follo
         "VerifiablePresentation": {
             "query": [
                 {
-                    "type": "PresentationDefinitionQuery",
-                    "presentationDefinitionQuery": {
+                    "type": "PresentationExchange",
+                    "credentialQuery": {
                         // presentation definitions object
                     }
                 },
@@ -90,8 +90,8 @@ The RP Adapter sends a web credentials request to the web browser with the follo
         "VerifiablePresentation": {
             "query": [
                 {
-                    "type": "PresentationDefinitionQuery",
-                    "presentationDefinitionQuery": {
+                    "type": "PresentationExchange",
+                    "credentialQuery": {
                         "input_descriptors": [
                             {
                                 "id": "driver_license:local",
@@ -236,7 +236,7 @@ The RP Adapter sends a web credentials request to the web browser with the follo
 
 > **TODO** rationalize use of two query types. Note: there is no response received currently for DIDConnect
 
-### Query Type 'PresentationDefinitionQuery'
+### Query Type 'PresentationExchange'
 
 The [Presentation Definition](https://identity.foundation/presentation-exchange/#presentation-definition) may include
 descriptors for [`AuthorizationCredentials`](https://github.com/trustbloc/context/blob/main/vc/authorization-credential-v1.jsonld).

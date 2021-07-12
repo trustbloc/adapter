@@ -122,8 +122,8 @@ SPDX-License-Identifier: Apache-2.0
                         VerifiablePresentation: {
                             query: [
                                 {
-                                    type: "PresentationDefinitionQuery",
-                                    presentationDefinitionQuery: this.presentationRequest.pd
+                                    type: "PresentationExchange",
+                                    credentialQuery: this.presentationRequest.pd
 
                                 },
                                 {
