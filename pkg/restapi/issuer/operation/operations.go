@@ -252,7 +252,7 @@ func New(config *Config) (*Operation, error) { // nolint:funlen,gocyclo,cyclop
 		return nil, fmt.Errorf("failed to initialize wallet bridge : %w", err)
 	}
 
-	contextOp, err := jsonldcontextrest.New(&storeProvider{config.StoreProvider})
+	contextOp, err := jsonldcontextrest.New(&storeProvider{config.AriesCtx.StorageProvider()})
 	if err != nil {
 		return nil, fmt.Errorf("create jsonld context operation: %w", err)
 	}

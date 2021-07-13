@@ -719,11 +719,6 @@ func addRPHandlers(parameters *adapterRestParameters, framework *aries.Aries, ro
 		return fmt.Errorf("failed to create trustbloc did creator: %w", err)
 	}
 
-	documentLoader, err := jsonld.DocumentLoader(store)
-	if err != nil {
-		return fmt.Errorf("create RP document loader: %w", err)
-	}
-
 	// add rp endpoints
 	rpService, err := rp.New(&rpops.Config{
 		PresentationExProvider: presentationExProvider,
@@ -739,7 +734,7 @@ func addRPHandlers(parameters *adapterRestParameters, framework *aries.Aries, ro
 		GovernanceProvider:     governanceProv,
 		PresentProofClient:     presentProofClient,
 		WalletBridgeAppURL:     parameters.walletAppURL,
-		JSONLDDocumentLoader:   documentLoader,
+		JSONLDDocumentLoader:   ctx.JSONLDDocumentLoader(),
 		DidDomain:              parameters.trustblocDomain,
 	})
 	if err != nil {
@@ -802,11 +797,6 @@ func addIssuerHandlers(parameters *adapterRestParameters, framework *aries.Aries
 		return fmt.Errorf("failed to init trustbloc did creator: %w", err)
 	}
 
-	documentLoader, err := jsonld.DocumentLoader(store)
-	if err != nil {
-		return fmt.Errorf("create document loader: %w", err)
-	}
-
 	// add issuer endpoints
 	issuerService, err := issuer.New(&issuerops.Config{
 		AriesCtx:             ariesCtx,
@@ -820,7 +810,7 @@ func addIssuerHandlers(parameters *adapterRestParameters, framework *aries.Aries
 		OIDCClientStoreKey:   clientStoreKey,
 		ExternalURL:          parameters.externalURL,
 		DidDomain:            parameters.trustblocDomain,
-		JSONLDDocumentLoader: documentLoader,
+		JSONLDDocumentLoader: ariesCtx.JSONLDDocumentLoader(),
 	})
 	if err != nil {
 		return fmt.Errorf("failed to init issuer ops: %w", err)
