@@ -152,7 +152,21 @@ func TestNew(t *testing.T) {
 		t.Parallel()
 
 		cfg := config(t)
-		cfg.StoreProvider = &mockstore.MockStoreProvider{FailNamespace: jsonld.ContextsDBName}
+		cfg.AriesCtx = &mockprovider.MockProvider{
+			Provider: &ariesmockprovider.Provider{
+				StorageProviderValue: &mockstore.MockStoreProvider{
+					FailNamespace: jsonld.ContextsDBName,
+				},
+				ProtocolStateStorageProviderValue: mockstore.NewMockStoreProvider(),
+				ServiceMap: map[string]interface{}{
+					outofbandsvc.Name:       &mockoutofband.MockService{},
+					mediator.Coordination:   &mockroute.MockMediatorSvc{},
+					didexchange.DIDExchange: &mocksvc.MockDIDExchangeSvc{},
+					issuecredsvc.Name:       &issuecredential.MockIssueCredentialSvc{},
+					presentproofsvc.Name:    &presentproof.MockPresentProofSvc{},
+				},
+			},
+		}
 
 		c, err := New(cfg)
 

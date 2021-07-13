@@ -191,7 +191,7 @@ type userDataCollection struct {
 
 // New returns CreateCredential instance.
 func New(config *Config) (*Operation, error) { // nolint:funlen,gocyclo,cyclop
-	contextOp, err := jsonldcontextrest.New(&storeProvider{config.Storage.Persistent})
+	contextOp, err := jsonldcontextrest.New(&storeProvider{config.AriesContextProvider.StorageProvider()})
 	if err != nil {
 		return nil, fmt.Errorf("create jsonld context operation: %w", err)
 	}
