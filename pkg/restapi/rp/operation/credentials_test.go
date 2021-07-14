@@ -16,6 +16,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/hyperledger/aries-framework-go/pkg/client/presentproof"
 	"github.com/hyperledger/aries-framework-go/pkg/didcomm/protocol/decorator"
+	presentproofsvc "github.com/hyperledger/aries-framework-go/pkg/didcomm/protocol/presentproof"
 	"github.com/hyperledger/aries-framework-go/pkg/doc/did"
 	"github.com/hyperledger/aries-framework-go/pkg/doc/presexch"
 	"github.com/hyperledger/aries-framework-go/pkg/doc/util"
@@ -270,6 +271,73 @@ func TestParseIssuerResponse(t *testing.T) {
 			}},
 		}, relyingParty.VDRegistry(), testutil.DocumentLoader(t))
 		require.True(t, errors.Is(err, errInvalidCredential))
+	})
+}
+
+func TestGetPresentationSubmissionCredentials(t *testing.T) {
+	t.Parallel()
+
+	t.Run("success", func(t *testing.T) {
+		t.Parallel()
+
+		relyingParty, subject, _ := trio(t)
+		rpDID := newPeerDID(t, relyingParty)
+		subjectDID := newPeerDID(t, subject)
+
+		simulateDIDExchange(t, relyingParty, rpDID, subject, subjectDID)
+
+		pd := &presexch.PresentationDefinition{
+			InputDescriptors: []*presexch.InputDescriptor{{
+				ID: uuid.New().String(),
+				Schema: []*presexch.Schema{{
+					URI: "https://trustbloc.github.io/context/vc/examples-ext-v1.jsonld#CreditCardStatement",
+				}},
+			}},
+		}
+
+		expectedVC := newCreditCardStatementVC(t, subject, subjectDID)
+		expectedVP := newPresentationSubmissionVP(t, subject, subjectDID,
+			&presexch.PresentationSubmission{DescriptorMap: []*presexch.InputDescriptorMapping{{
+				ID:   pd.InputDescriptors[0].ID,
+				Path: "$.verifiableCredential[0]",
+			}}},
+			expectedVC,
+		)
+
+		pres := &presentproof.Presentation{
+			Type: presentproofsvc.PresentationMsgType,
+			PresentationsAttach: []decorator.Attachment{{
+				ID:       "123",
+				MimeType: "application/ld+json",
+				Data: decorator.AttachmentData{
+					JSON: expectedVP,
+				},
+			}},
+		}
+
+		credMap, err := getPresentationSubmissionCredentials(
+			pres,
+			pd,
+			agent(t).VDRegistry(),
+			testutil.DocumentLoader(t),
+		)
+
+		require.NoError(t, err)
+		require.NotNil(t, credMap)
+		require.Equal(t, 1, len(credMap))
+	})
+
+	t.Run("no presentation attachment", func(t *testing.T) {
+		t.Parallel()
+
+		_, err := getPresentationSubmissionCredentials(
+			&presentproof.Presentation{
+				Type: presentproofsvc.PresentationMsgType,
+			}, nil, nil, nil,
+		)
+
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "no presentation attachments")
 	})
 }
 

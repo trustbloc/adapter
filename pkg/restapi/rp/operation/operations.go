@@ -1245,7 +1245,7 @@ func (o *Operation) presentProofListener(ppActions chan service.DIDCommAction) {
 			}
 
 			if supportsWACI {
-				err = o.handleWACIPresentation(action.Message)
+				err = o.handleWACIPresentation(action)
 			} else {
 				err = o.handleIssuerPresentationMsg(action.Message)
 			}
@@ -1376,7 +1376,7 @@ func (o *Operation) getWACIPresDef(msg service.DIDCommAction) (*presexch.Present
 
 	ctxID, err := o.persistenceStore.Get(getConnToCtxMappingDBKey(connID))
 	if err != nil {
-		return nil, fmt.Errorf("get connection to rp tenant mapping : %w", err)
+		return nil, fmt.Errorf("get connection to context mapping : %w", err)
 	}
 
 	crCtx, err := newTransientStorage(o.transientStore).GetConsentRequest(string(ctxID))
@@ -1410,9 +1410,28 @@ func (o *Operation) supportsWACIFlagUsingConnection(msg service.DIDCommAction) (
 	return rpTenant.SupportsWACI, nil
 }
 
-func (o *Operation) handleWACIPresentation(msg service.DIDCommMsg) error {
-	// TODO https://github.com/trustbloc/edge-adapter/issues/506 validate presentation
-	logger.Infof("received waci presentation")
+func (o *Operation) handleWACIPresentation(action service.DIDCommAction) error {
+	logger.Debugf("received waci presentation")
+
+	presDef, err := o.getWACIPresDef(action)
+	if err != nil {
+		return fmt.Errorf("waci - get presentation definition : %w", err)
+	}
+
+	presentation := &presentproof.Presentation{}
+
+	err = action.Message.Decode(presentation)
+	if err != nil {
+		return fmt.Errorf("waci - decode present-proof presentation message: %w", err)
+	}
+
+	creds, err := getPresentationSubmissionCredentials(presentation, presDef, o.vdrReg, o.docLoader)
+	if err != nil {
+		return fmt.Errorf("waci - validate presentation submission against presentation definition : %w", err)
+	}
+
+	// TODO save credentials and retrieve during callback
+	logger.Infof("waci credentials : %s", creds)
 
 	return nil
 }

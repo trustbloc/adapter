@@ -3319,6 +3319,8 @@ func TestHandlePresentProofMsg(t *testing.T) { // nolint: gocyclo,cyclop
 
 	t.Run("waci presentation message - success", func(t *testing.T) {
 		t.Parallel()
+		_, issuer, _ := trio(t)
+		issuerDID := newPeerDID(t, issuer)
 
 		c, err := New(config(t))
 		require.NoError(t, err)
@@ -3333,6 +3335,24 @@ func TestHandlePresentProofMsg(t *testing.T) { // nolint: gocyclo,cyclop
 		err = c.persistenceStore.Put(getConnToTenantMappingDBKey(connID), []byte(rpClientID))
 		require.NoError(t, err)
 
+		invitationID := uuid.New().String()
+
+		definitions := &presexch.PresentationDefinition{
+			InputDescriptors: []*presexch.InputDescriptor{
+				{
+					ID: uuid.New().String(),
+					Schema: []*presexch.Schema{{
+						URI: "https://trustbloc.github.io/context/vc/examples-ext-v1.jsonld#CreditCardStatement",
+					}},
+				},
+			},
+		}
+
+		storePut(t, c.transientStore, invitationID, &consentRequestCtx{InvitationID: invitationID, PD: definitions})
+
+		err = c.persistenceStore.Put(getConnToCtxMappingDBKey(connID), []byte(invitationID))
+		require.NoError(t, err)
+
 		actionCh := make(chan service.DIDCommAction, 1)
 
 		done := make(chan struct{})
@@ -3340,9 +3360,16 @@ func TestHandlePresentProofMsg(t *testing.T) { // nolint: gocyclo,cyclop
 		go c.presentProofListener(actionCh)
 
 		actionCh <- service.DIDCommAction{
-			Message: service.NewDIDCommMsgMap(&presentproof.Presentation{
-				Type: presentproofsvc.PresentationMsgType,
-			}),
+			Message: newIssuerResponse(t, invitationID,
+				newPresentationSubmissionVP(t, issuer, issuerDID,
+					&presexch.PresentationSubmission{DescriptorMap: []*presexch.InputDescriptorMapping{
+						{
+							ID:   definitions.InputDescriptors[0].ID,
+							Path: "$.verifiableCredential[0]",
+						},
+					}}, newCreditCardStatementVC(t, issuer, issuerDID),
+				),
+			),
 			Continue: func(args interface{}) {
 				done <- struct{}{}
 			},
