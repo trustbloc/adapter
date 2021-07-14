@@ -118,6 +118,46 @@ func parseIssuerResponse(pres *presentproof.Presentation,
 	return data, nil
 }
 
+func getPresentationSubmissionCredentials(pres *presentproof.Presentation, definitions *presexch.PresentationDefinition,
+	vdriReg vdrapi.Registry, docLoader ld.DocumentLoader) (map[string]*verifiable.Credential, error) {
+	if len(pres.PresentationsAttach) == 0 {
+		return nil, fmt.Errorf("no presentation attachments")
+	}
+
+	attachment := pres.PresentationsAttach[0]
+
+	vpBytes, err := attachment.Data.Fetch()
+	if err != nil {
+		return nil, fmt.Errorf("failed to fetch contents of attachment with id %s : %w", attachment.ID, err)
+	}
+
+	vp, err := verifiable.ParsePresentation(
+		vpBytes,
+		verifiable.WithPresPublicKeyFetcher(verifiable.NewVDRKeyResolver(vdriReg).PublicKeyFetcher()),
+		verifiable.WithPresDisabledProofCheck(),
+		verifiable.WithPresJSONLDDocumentLoader(docLoader),
+	)
+	if err != nil {
+		return nil,
+			fmt.Errorf("%w: failed to parse verifiable presentation %s: %s", errInvalidCredential, vpBytes, err.Error())
+	}
+
+	matched, err := definitions.Match(
+		vp,
+		presexch.WithCredentialOptions(
+			verifiable.WithPublicKeyFetcher(verifiable.NewVDRKeyResolver(vdriReg).PublicKeyFetcher()),
+			verifiable.WithDisabledProofCheck(),
+			verifiable.WithJSONLDDocumentLoader(docLoader),
+		),
+	)
+	if err != nil {
+		return nil, fmt.Errorf("invalid presentation submission: %w", err)
+	}
+
+	// return data
+	return matched, nil
+}
+
 func evaluateAuthorizationCredential(c *verifiable.Credential) error {
 	authZ, err := vc.AuthZSubject(c)
 	if err != nil {
