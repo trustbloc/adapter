@@ -8,7 +8,7 @@ ARG GO_VER
 ARG ALPINE_VER
 
 FROM golang:${GO_VER}-alpine${ALPINE_VER}
-LABEL org.opencontainers.image.source https://github.com/trustbloc/edge-adapter
+LABEL org.opencontainers.image.source https://github.com/trustbloc/adapter
 
 RUN apk add --no-cache git make
 ADD . src/github.com/trustbloc/edge-adapter
