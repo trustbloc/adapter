@@ -9,7 +9,7 @@ ARG ALPINE_VER
 FROM ghcr.io/trustbloc/edge-adapter/adapter-base:latest as base
 
 FROM alpine:${ALPINE_VER}
-LABEL org.opencontainers.image.source https://github.com/trustbloc/edge-adapter
+LABEL org.opencontainers.image.source https://github.com/trustbloc/adapter
 
 COPY --from=base /go/src/github.com/trustbloc/edge-adapter/.build/bin/adapter-rest /usr/local/bin
 COPY .build/bin/issuer-adapter-vue /usr/local/static/issuer-adapter-vue/
