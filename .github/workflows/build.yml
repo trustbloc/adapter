@@ -68,9 +68,10 @@ jobs:
           echo '@hyperledger:registry=https://npm.pkg.github.com' >> ~/.npmrc
           echo '@trustbloc-cicd:registry=https://npm.pkg.github.com' >> ~/.npmrc
           echo '@trustbloc:registry=https://npm.pkg.github.com' >> ~/.npmrc
-          make issuer-adapter-bdd-test
+          make bdd-test
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAGS: issuer_adapter
 
   BDDTestRPAdapter:
     runs-on: ubuntu-20.04
@@ -91,9 +92,10 @@ jobs:
           echo '@hyperledger:registry=https://npm.pkg.github.com' >> ~/.npmrc
           echo '@trustbloc-cicd:registry=https://npm.pkg.github.com' >> ~/.npmrc
           echo '@trustbloc:registry=https://npm.pkg.github.com' >> ~/.npmrc
-          make rp-adapter-bdd-test
+          make bdd-test
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAGS: rp_adapter
 
   Publish:
     needs: [Checks, UnitTest, BDDTestIssuerAdapter, BDDTestRPAdapter]
