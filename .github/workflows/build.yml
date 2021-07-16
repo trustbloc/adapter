@@ -96,7 +96,7 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
   Publish:
-    needs: [Checks, UnitTest, BDDTest]
+    needs: [Checks, UnitTest, BDDTestIssuerAdapter, BDDTestRPAdapter]
     if: github.event_name == 'push' && (github.repository == 'trustbloc/edge-adapter' && github.ref == 'refs/heads/main')
     runs-on: ubuntu-20.04
     timeout-minutes: 30
