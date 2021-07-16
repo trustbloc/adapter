@@ -137,8 +137,8 @@ jobs:
           npm install
           npm publish
         env:
-          DOCKER_USER: $(DOCKER_USER)
-          DOCKER_PASSWORD: $(DOCKER_PASSWORD)
+          DOCKER_USER: ${{ secrets.CR_USER }}
+          DOCKER_PASSWORD: ${{ secrets.CR_PAT }}
           NPM_WALLET_PKG_TAG: $(NPM_WALLET_PKG_TAG)
           NPM_WALLET_PKG_NAME: $(NPM_WALLET_PKG_NAME)
           NPM_WALLET_PKG_REPO: $(NPM_WALLET_PKG_REPO)
