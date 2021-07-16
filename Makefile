@@ -82,14 +82,6 @@ unit-test:
 bdd-test: clean rp-adapter-rest-docker issuer-adapter-rest-docker mock-issuer-docker mock-webhook-docker mock-issuer-login-consent-docker generate-test-keys
 	@scripts/check_integration.sh
 
-.PHONY: issuer-adapter-bdd-test
-issuer-adapter-bdd-test: clean issuer-adapter-rest-docker mock-issuer-docker mock-webhook-docker mock-issuer-login-consent-docker generate-test-keys
-	@TAGS=issuer_adapter scripts/check_integration.sh
-
-.PHONY: rp-adapter-bdd-test
-rp-adapter-bdd-test: clean rp-adapter-rest-docker mock-webhook-docker generate-test-keys
-	@TAGS=rp_adapter scripts/check_integration.sh
-
 .PHONY: generate-test-keys
 generate-test-keys: clean
 	@mkdir -p -p test/bdd/fixtures/keys/tls
