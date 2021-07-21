@@ -40,6 +40,8 @@ Feature: RP Adapter
     And "Mock Wallet" accepts the didcomm invitation from "waci_demo"
     Then "Mock Wallet" connects with the RP adapter "waci_demo"
     Then "Mock Wallet" submits the presentation to the RP adapter "waci_demo"
+    Then the user is redirected to the rp tenant "waci_demo"
+    Then the rp tenant "waci_demo" retrieves the user data from the rp adapter
 
   @rp_adapter_cred
   Scenario: Returns both local and remote user data to the relying party with the user's consent
