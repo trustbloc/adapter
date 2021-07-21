@@ -548,6 +548,8 @@ func (s *Steps) sendWACIInvitationToWallet(tenantID, walletID string) error {
 
 	s.context.Store[bddutil.GetDIDConnectRequestKey(tenantID, walletID)] = string(invitationBytes)
 
+	tenant.invitationID = invite.ID
+
 	return nil
 }
 

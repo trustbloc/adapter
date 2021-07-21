@@ -676,6 +676,7 @@ func (o *Operation) hydraConsentHandler(w http.ResponseWriter, r *http.Request) 
 		RPPublicDID:  conn.RP.PublicDID,
 		RPLabel:      conn.RP.Label,
 		SupportsWACI: conn.RP.SupportsWACI,
+		UserData:     &userDataCollection{},
 	})
 	if err != nil {
 		handleError(w, http.StatusInternalServerError, fmt.Sprintf("failed to write to transient storage : %s", err))
@@ -1256,7 +1257,7 @@ func (o *Operation) presentProofListener(ppActions chan service.DIDCommAction) {
 
 			continueArg = presentproof.WithFriendlyNames(uuid.New().String())
 		case presentproofsvc.ProposePresentationMsgType:
-			presDef, waciErr := o.getWACIPresDef(action)
+			ctx, waciErr := o.getWACIPresDef(action)
 			if waciErr != nil {
 				err = waciErr
 				break
@@ -1268,7 +1269,7 @@ func (o *Operation) presentProofListener(ppActions chan service.DIDCommAction) {
 					{
 						ID:       uuid.NewString(),
 						MimeType: "application/json",
-						Data:     decorator.AttachmentData{JSON: presDef},
+						Data:     decorator.AttachmentData{JSON: ctx.PD},
 					},
 				},
 			})
@@ -1368,7 +1369,7 @@ func (o *Operation) handleDIDDocReq(msg message.Msg) (service.DIDCommMsgMap, err
 	}), nil
 }
 
-func (o *Operation) getWACIPresDef(msg service.DIDCommAction) (*presexch.PresentationDefinition, error) {
+func (o *Operation) getWACIPresDef(msg service.DIDCommAction) (*consentRequestCtx, error) {
 	connID, err := o.getConnectionIDFromEvent(msg)
 	if err != nil {
 		return nil, fmt.Errorf("get connection id from event : %w", err)
@@ -1384,7 +1385,7 @@ func (o *Operation) getWACIPresDef(msg service.DIDCommAction) (*presexch.Present
 		return nil, fmt.Errorf("stale or invalid invitation : %w", err)
 	}
 
-	return crCtx.PD, nil
+	return crCtx, nil
 }
 
 func (o *Operation) supportsWACIFlagUsingConnection(msg service.DIDCommAction) (bool, error) {
@@ -1411,9 +1412,7 @@ func (o *Operation) supportsWACIFlagUsingConnection(msg service.DIDCommAction) (
 }
 
 func (o *Operation) handleWACIPresentation(action service.DIDCommAction) error {
-	logger.Debugf("received waci presentation")
-
-	presDef, err := o.getWACIPresDef(action)
+	ctx, err := o.getWACIPresDef(action)
 	if err != nil {
 		return fmt.Errorf("waci - get presentation definition : %w", err)
 	}
@@ -1425,12 +1424,25 @@ func (o *Operation) handleWACIPresentation(action service.DIDCommAction) error {
 		return fmt.Errorf("waci - decode present-proof presentation message: %w", err)
 	}
 
-	creds, err := getPresentationSubmissionCredentials(presentation, presDef, o.vdrReg, o.docLoader)
+	creds, err := getPresentationSubmissionCredentials(presentation, ctx.PD, o.vdrReg, o.docLoader)
 	if err != nil {
 		return fmt.Errorf("waci - validate presentation submission against presentation definition : %w", err)
 	}
 
-	// TODO save credentials and retrieve during callback
+	localMarshalled, err := marshalCreds(creds)
+	if err != nil {
+		return fmt.Errorf("waci - marshal credentials : %w", err)
+	}
+
+	ctx.UserData = &userDataCollection{
+		Local: localMarshalled,
+	}
+
+	err = newTransientStorage(o.transientStore).Put(ctx.InvitationID, ctx)
+	if err != nil {
+		return fmt.Errorf("waci - marshal credentials : %w", err)
+	}
+
 	logger.Infof("waci credentials : %s", creds)
 
 	return nil
