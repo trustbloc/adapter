@@ -23,6 +23,7 @@ import (
 
 	"github.com/cenkalti/backoff"
 	"github.com/gorilla/mux"
+	"github.com/hyperledger/aries-framework-go-ext/component/storage/couchdb"
 	"github.com/hyperledger/aries-framework-go-ext/component/storage/mysql"
 	"github.com/hyperledger/aries-framework-go/component/storageutil/mem"
 	"github.com/hyperledger/aries-framework-go/pkg/client/didexchange"
@@ -210,6 +211,9 @@ const (
 var supportedStorageProviders = map[string]func(string, string) (storage.Provider, error){
 	"mysql": func(dsn, prefix string) (storage.Provider, error) {
 		return mysql.NewProvider(dsn, mysql.WithDBPrefix(prefix)) // nolint:wrapcheck // reduce cyclo
+	},
+	"couchdb": func(dsn, prefix string) (storage.Provider, error) {
+		return couchdb.NewProvider(dsn, couchdb.WithDBPrefix(prefix)) // nolint: wrapcheck
 	},
 	"mem": func(_, _ string) (storage.Provider, error) { // nolint:unparam
 		return mem.NewProvider(), nil

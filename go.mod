@@ -10,10 +10,10 @@ require (
 	github.com/coreos/go-oidc v2.2.1+incompatible
 	github.com/google/uuid v1.2.0
 	github.com/gorilla/mux v1.8.0
-	github.com/hyperledger/aries-framework-go v0.1.7-0.20210526123422-eec182deab9a
+	github.com/hyperledger/aries-framework-go v0.1.7-0.20210805134426-9b460169bb77
 	github.com/hyperledger/aries-framework-go-ext/component/vdr/orb v0.1.1
-	github.com/hyperledger/aries-framework-go/component/storageutil v0.0.0-20210520055214-ae429bb89bf7
-	github.com/hyperledger/aries-framework-go/spi v0.0.0-20210520055214-ae429bb89bf7
+	github.com/hyperledger/aries-framework-go/component/storageutil v0.0.0-20210730182900-b359a35d47c3
+	github.com/hyperledger/aries-framework-go/spi v0.0.0-20210730182900-b359a35d47c3
 	github.com/ory/hydra-client-go v1.4.10
 	github.com/piprate/json-gold v0.4.0
 	github.com/pkg/errors v0.9.1
