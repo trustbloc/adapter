@@ -69,13 +69,13 @@ func TestParseWalletResponse(t *testing.T) {
 					{
 						ID: localID,
 						Schema: []*presexch.Schema{{
-							URI: "https://www.w3.org/2018/credentials/examples/v1#UniversityDegreeCredential",
+							URI: "https://example.org/examples#UniversityDegreeCredential",
 						}},
 					},
 					{
 						ID: remoteID,
 						Schema: []*presexch.Schema{{
-							URI: vc2.AuthorizationCredentialContext + "#AuthorizationCredential",
+							URI: "https://example.org/examples#AuthorizationCredential",
 						}},
 					},
 				},
@@ -290,7 +290,7 @@ func TestGetPresentationSubmissionCredentials(t *testing.T) {
 			InputDescriptors: []*presexch.InputDescriptor{{
 				ID: uuid.New().String(),
 				Schema: []*presexch.Schema{{
-					URI: "https://trustbloc.github.io/context/vc/examples-ext-v1.jsonld#CreditCardStatement",
+					URI: "https://example.org/examples#CreditCardStatement",
 				}},
 			}},
 		}

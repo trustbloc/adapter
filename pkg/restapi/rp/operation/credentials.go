@@ -37,7 +37,7 @@ func parseWalletResponse(definitions *presexch.PresentationDefinition, vdriReg v
 	// TODO unable to verify credential proofs inside wallet's verifiable presentation - should remove the
 	//  'WithDisabledCredProofCheck()' once we can: https://github.com/trustbloc/edge-adapter/issues/300
 	matched, err := definitions.Match(
-		vp,
+		vp, docLoader,
 		presexch.WithCredentialOptions(
 			verifiable.WithPublicKeyFetcher(verifiable.NewVDRKeyResolver(vdriReg).PublicKeyFetcher()),
 			verifiable.WithDisabledProofCheck(),
@@ -143,7 +143,7 @@ func getPresentationSubmissionCredentials(pres *presentproof.Presentation, defin
 	}
 
 	matched, err := definitions.Match(
-		vp,
+		vp, docLoader,
 		presexch.WithCredentialOptions(
 			verifiable.WithPublicKeyFetcher(verifiable.NewVDRKeyResolver(vdriReg).PublicKeyFetcher()),
 			verifiable.WithDisabledProofCheck(),

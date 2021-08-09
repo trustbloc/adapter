@@ -15,6 +15,8 @@ import (
 const (
 	// AuthorizationCredentialContext is the JSON-LD context for the AuthorizationCredential.
 	AuthorizationCredentialContext = "https://trustbloc.github.io/context/vc/authorization-credential-v1.jsonld"
+	// AuthorizationCredentialURIID is the non-fragment URI portion of the AuthorizationCredential JSON-LD context ID.
+	AuthorizationCredentialURIID = "https://example.org/examples"
 	// AuthorizationCredentialType is the JSON-LD type for the AuthorizationCredential.
 	AuthorizationCredentialType = "AuthorizationCredential"
 )
