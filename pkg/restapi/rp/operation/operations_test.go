@@ -65,6 +65,8 @@ import (
 
 const (
 	creditCardStatementScope = "CreditCardStatement"
+	// authorizationCredentialURIID is the non-fragment URI portion of the AuthorizationCredential JSON-LD context ID.
+	authorizationCredentialURIID = "https://example.org/examples"
 )
 
 func TestNew(t *testing.T) {
@@ -1920,13 +1922,13 @@ func TestCHAPIResponseHandler(t *testing.T) {
 				{
 					ID: uuid.New().String(),
 					Schema: []*presexch.Schema{{
-						URI: vc.AuthorizationCredentialContext + "#AuthorizationCredential",
+						URI: authorizationCredentialURIID + "#AuthorizationCredential",
 					}},
 				},
 				{
 					ID: uuid.New().String(),
 					Schema: []*presexch.Schema{{
-						URI: "https://www.w3.org/2018/credentials/examples/v1#UniversityDegreeCredential",
+						URI: "https://example.org/examples#UniversityDegreeCredential",
 					}},
 				},
 			},
@@ -2063,7 +2065,7 @@ func TestCHAPIResponseHandler(t *testing.T) {
 			InputDescriptors: []*presexch.InputDescriptor{{
 				ID: uuid.New().String(),
 				Schema: []*presexch.Schema{{
-					URI: vc.AuthorizationCredentialContext,
+					URI: authorizationCredentialURIID, // TODO (Filip): https://example.org/examples ??
 				}},
 			}},
 		}
@@ -2116,7 +2118,7 @@ func TestCHAPIResponseHandler(t *testing.T) {
 			InputDescriptors: []*presexch.InputDescriptor{{
 				ID: uuid.New().String(),
 				Schema: []*presexch.Schema{{
-					URI: vc.AuthorizationCredentialContext + "#" + vc.AuthorizationCredentialType,
+					URI: authorizationCredentialURIID + "#" + vc.AuthorizationCredentialType,
 				}},
 			}},
 		}
@@ -2175,13 +2177,13 @@ func TestCHAPIResponseHandler(t *testing.T) {
 				{
 					ID: uuid.New().String(),
 					Schema: []*presexch.Schema{{
-						URI: vc.AuthorizationCredentialContext + "#" + vc.AuthorizationCredentialType,
+						URI: authorizationCredentialURIID + "#" + vc.AuthorizationCredentialType,
 					}},
 				},
 				{
 					ID: uuid.New().String(),
 					Schema: []*presexch.Schema{{
-						URI: "https://www.w3.org/2018/credentials/examples/v1#UniversityDegreeCredential",
+						URI: "https://example.org/examples#UniversityDegreeCredential",
 					}},
 				},
 			},
@@ -2275,7 +2277,7 @@ func TestCHAPIResponseHandler(t *testing.T) {
 			InputDescriptors: []*presexch.InputDescriptor{{
 				ID: uuid.New().String(),
 				Schema: []*presexch.Schema{{
-					URI: vc.AuthorizationCredentialContext + "#" + vc.AuthorizationCredentialType,
+					URI: authorizationCredentialURIID + "#" + vc.AuthorizationCredentialType,
 				}},
 			}},
 		}
@@ -2333,13 +2335,13 @@ func TestCHAPIResponseHandler(t *testing.T) {
 				{
 					ID: uuid.New().String(),
 					Schema: []*presexch.Schema{{
-						URI: vc.AuthorizationCredentialContext + "#" + vc.AuthorizationCredentialType,
+						URI: authorizationCredentialURIID + "#" + vc.AuthorizationCredentialType,
 					}},
 				},
 				{
 					ID: uuid.New().String(),
 					Schema: []*presexch.Schema{{
-						URI: "https://www.w3.org/2018/credentials/examples/v1#UniversityDegreeCredential",
+						URI: "https://example.org/examples#UniversityDegreeCredential",
 					}},
 				},
 			},
@@ -3342,7 +3344,7 @@ func TestHandlePresentProofMsg(t *testing.T) { // nolint: gocyclo,cyclop
 				{
 					ID: uuid.New().String(),
 					Schema: []*presexch.Schema{{
-						URI: "https://trustbloc.github.io/context/vc/examples-ext-v1.jsonld#CreditCardStatement",
+						URI: "https://example.org/examples#CreditCardStatement",
 					}},
 				},
 			},

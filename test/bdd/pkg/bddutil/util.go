@@ -8,7 +8,6 @@ package bddutil
 
 import (
 	"bytes"
-	"context"
 	"crypto/tls"
 	_ "embed" //nolint:gci // required for go:embed
 	"encoding/json"
@@ -23,10 +22,11 @@ import (
 	"time"
 
 	"github.com/hyperledger/aries-framework-go/component/storageutil/mem"
-	jsonldcontext "github.com/hyperledger/aries-framework-go/pkg/client/jsonld/context"
 	docdid "github.com/hyperledger/aries-framework-go/pkg/doc/did"
-	"github.com/hyperledger/aries-framework-go/pkg/doc/jsonld"
+	"github.com/hyperledger/aries-framework-go/pkg/doc/ld"
+	"github.com/hyperledger/aries-framework-go/pkg/doc/ldcontext"
 	vdriapi "github.com/hyperledger/aries-framework-go/pkg/framework/aries/api/vdr"
+	ldstore "github.com/hyperledger/aries-framework-go/pkg/store/ld"
 	"github.com/trustbloc/edge-core/pkg/log"
 )
 
@@ -269,7 +269,7 @@ var (
 	examplesExtVocab []byte
 )
 
-var extraContexts = []jsonld.ContextDocument{ //nolint:gochecknoglobals
+var extraContexts = []ldcontext.Document{ //nolint:gochecknoglobals
 	{
 		URL:     "https://trustbloc.github.io/context/vc/assurance-credential-v1.jsonld",
 		Content: assuranceV1Vocab,
@@ -308,32 +308,40 @@ var extraContexts = []jsonld.ContextDocument{ //nolint:gochecknoglobals
 	},
 }
 
+type ldStoreProvider struct {
+	ContextStore        ldstore.ContextStore
+	RemoteProviderStore ldstore.RemoteProviderStore
+}
+
+func (p *ldStoreProvider) JSONLDContextStore() ldstore.ContextStore {
+	return p.ContextStore
+}
+
+func (p *ldStoreProvider) JSONLDRemoteProviderStore() ldstore.RemoteProviderStore {
+	return p.RemoteProviderStore
+}
+
 // DocumentLoader returns a JSON-LD document loader with preloaded test contexts.
-func DocumentLoader() (*jsonld.DocumentLoader, error) {
-	loader, err := jsonld.NewDocumentLoader(mem.NewProvider(), jsonld.WithExtraContexts(extraContexts...))
+func DocumentLoader() (*ld.DocumentLoader, error) {
+	contextStore, err := ldstore.NewContextStore(mem.NewProvider())
+	if err != nil {
+		return nil, fmt.Errorf("create JSON-LD context store: %w", err)
+	}
+
+	remoteProviderStore, err := ldstore.NewRemoteProviderStore(mem.NewProvider())
+	if err != nil {
+		return nil, fmt.Errorf("create remote provider store: %w", err)
+	}
+
+	ldStore := &ldStoreProvider{
+		ContextStore:        contextStore,
+		RemoteProviderStore: remoteProviderStore,
+	}
+
+	loader, err := ld.NewDocumentLoader(ldStore, ld.WithExtraContexts(extraContexts...))
 	if err != nil {
 		return nil, fmt.Errorf("create document loader: %w", err)
 	}
 
 	return loader, nil
-}
-
-type httpClient struct {
-	tlsConfig *tls.Config
-}
-
-func (c *httpClient) Do(req *http.Request) (*http.Response, error) {
-	return HTTPDo(req.Method, req.URL.String(), "", "", req.Body, c.tlsConfig)
-}
-
-// AddJSONLDContexts imports extra contexts for the service instance.
-func AddJSONLDContexts(serviceURL string, tlsConfig *tls.Config) error {
-	const timeout = 5 * time.Second
-
-	client := jsonldcontext.NewClient(serviceURL, jsonldcontext.WithHTTPClient(&httpClient{tlsConfig: tlsConfig}))
-
-	ctx, cancel := context.WithTimeout(context.Background(), timeout)
-	defer cancel()
-
-	return client.Add(ctx, extraContexts...) //nolint:wrapcheck
 }
