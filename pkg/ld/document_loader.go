@@ -4,14 +4,16 @@ Copyright SecureKey Technologies Inc. All Rights Reserved.
 SPDX-License-Identifier: Apache-2.0
 */
 
-package jsonld
+package ld
 
 import (
 	_ "embed" //nolint:gci // required for go:embed
 	"fmt"
 
-	"github.com/hyperledger/aries-framework-go/pkg/doc/jsonld"
-	"github.com/hyperledger/aries-framework-go/spi/storage"
+	"github.com/hyperledger/aries-framework-go/pkg/doc/ld"
+	"github.com/hyperledger/aries-framework-go/pkg/doc/ldcontext"
+	ldstore "github.com/hyperledger/aries-framework-go/pkg/store/ld"
+	jsonld "github.com/piprate/json-gold/ld"
 )
 
 // nolint:gochecknoglobals //embedded contexts
@@ -24,7 +26,7 @@ var (
 	issuerManifestV1Vocab []byte
 )
 
-var embedContexts = []jsonld.ContextDocument{ //nolint:gochecknoglobals
+var embedContexts = []ldcontext.Document{ //nolint:gochecknoglobals
 	{
 		URL:     "https://trustbloc.github.io/context/vc/assurance-credential-v1.jsonld",
 		Content: assuranceV1Vocab,
@@ -39,11 +41,17 @@ var embedContexts = []jsonld.ContextDocument{ //nolint:gochecknoglobals
 	},
 }
 
-// DocumentLoader returns a JSON-LD document loader with preloaded contexts.
-func DocumentLoader(storageProvider storage.Provider) (*jsonld.DocumentLoader, error) {
-	loader, err := jsonld.NewDocumentLoader(storageProvider, jsonld.WithExtraContexts(embedContexts...))
+// provider contains dependencies for the JSON-LD document loader.
+type provider interface {
+	JSONLDContextStore() ldstore.ContextStore
+	JSONLDRemoteProviderStore() ldstore.RemoteProviderStore
+}
+
+// NewDocumentLoader returns a JSON-LD document loader with preloaded contexts.
+func NewDocumentLoader(p provider, opts ...ld.DocumentLoaderOpts) (jsonld.DocumentLoader, error) {
+	loader, err := ld.NewDocumentLoader(p, append(opts, ld.WithExtraContexts(embedContexts...))...)
 	if err != nil {
-		return nil, fmt.Errorf("create document loader: %w", err)
+		return nil, fmt.Errorf("new document loader: %w", err)
 	}
 
 	return loader, nil

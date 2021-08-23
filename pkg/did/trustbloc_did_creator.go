@@ -14,7 +14,7 @@ import (
 
 	"github.com/hyperledger/aries-framework-go-ext/component/vdr/orb"
 	"github.com/hyperledger/aries-framework-go/pkg/doc/did"
-	"github.com/hyperledger/aries-framework-go/pkg/doc/jose"
+	"github.com/hyperledger/aries-framework-go/pkg/doc/jose/jwk/jwksupport"
 	vdrapi "github.com/hyperledger/aries-framework-go/pkg/framework/aries/api/vdr"
 	"github.com/hyperledger/aries-framework-go/pkg/kms"
 	"github.com/hyperledger/aries-framework-go/pkg/vdr/fingerprint"
@@ -113,7 +113,7 @@ func (p *TrustblocDIDCreator) newPublicKeys() (*did.Doc, error) {
 		return nil, fmt.Errorf("failed to create key : %w", err)
 	}
 
-	jwk, err := jose.JWKFromKey(ed25519.PublicKey(bits))
+	jwk, err := jwksupport.JWKFromKey(ed25519.PublicKey(bits))
 	if err != nil {
 		return nil, fmt.Errorf("failed to convert key to JWK: %w", err)
 	}

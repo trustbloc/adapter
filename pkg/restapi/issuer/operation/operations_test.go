@@ -30,7 +30,6 @@ import (
 	"github.com/hyperledger/aries-framework-go/pkg/didcomm/protocol/mediator"
 	outofbandsvc "github.com/hyperledger/aries-framework-go/pkg/didcomm/protocol/outofband"
 	presentproofsvc "github.com/hyperledger/aries-framework-go/pkg/didcomm/protocol/presentproof"
-	"github.com/hyperledger/aries-framework-go/pkg/doc/jsonld"
 	"github.com/hyperledger/aries-framework-go/pkg/doc/verifiable"
 	mocksvc "github.com/hyperledger/aries-framework-go/pkg/mock/didcomm/protocol/didexchange"
 	mockroute "github.com/hyperledger/aries-framework-go/pkg/mock/didcomm/protocol/mediator"
@@ -71,7 +70,7 @@ func TestNew(t *testing.T) {
 		c, err := New(config(t))
 		require.NoError(t, err)
 
-		require.Equal(t, 13, len(c.GetRESTHandlers()))
+		require.Equal(t, 12, len(c.GetRESTHandlers()))
 	})
 
 	t.Run("test new - aries provider fail", func(t *testing.T) {
@@ -146,33 +145,6 @@ func TestNew(t *testing.T) {
 		require.Nil(t, c)
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "failed to initialize wallet bridge")
-	})
-
-	t.Run("create jsonld context operation error", func(t *testing.T) {
-		t.Parallel()
-
-		cfg := config(t)
-		cfg.AriesCtx = &mockprovider.MockProvider{
-			Provider: &ariesmockprovider.Provider{
-				StorageProviderValue: &mockstore.MockStoreProvider{
-					FailNamespace: jsonld.ContextsDBName,
-				},
-				ProtocolStateStorageProviderValue: mockstore.NewMockStoreProvider(),
-				ServiceMap: map[string]interface{}{
-					outofbandsvc.Name:       &mockoutofband.MockService{},
-					mediator.Coordination:   &mockroute.MockMediatorSvc{},
-					didexchange.DIDExchange: &mocksvc.MockDIDExchangeSvc{},
-					issuecredsvc.Name:       &issuecredential.MockIssueCredentialSvc{},
-					presentproofsvc.Name:    &presentproof.MockPresentProofSvc{},
-				},
-			},
-		}
-
-		c, err := New(cfg)
-
-		require.Nil(t, c)
-		require.Error(t, err)
-		require.Contains(t, err.Error(), "create jsonld context operation")
 	})
 }
 

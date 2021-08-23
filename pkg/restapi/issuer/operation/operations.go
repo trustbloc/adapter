@@ -28,7 +28,6 @@ import (
 	"github.com/hyperledger/aries-framework-go/pkg/client/mediator"
 	"github.com/hyperledger/aries-framework-go/pkg/client/outofband"
 	"github.com/hyperledger/aries-framework-go/pkg/client/presentproof"
-	jsonldcontextrest "github.com/hyperledger/aries-framework-go/pkg/controller/rest/jsonld/context"
 	"github.com/hyperledger/aries-framework-go/pkg/didcomm/common/service"
 	"github.com/hyperledger/aries-framework-go/pkg/didcomm/messaging/msghandler"
 	"github.com/hyperledger/aries-framework-go/pkg/didcomm/protocol/decorator"
@@ -252,40 +251,34 @@ func New(config *Config) (*Operation, error) { // nolint:funlen,gocyclo,cyclop
 		return nil, fmt.Errorf("failed to initialize wallet bridge : %w", err)
 	}
 
-	contextOp, err := jsonldcontextrest.New(&storeProvider{config.AriesCtx.StorageProvider()})
-	if err != nil {
-		return nil, fmt.Errorf("create jsonld context operation: %w", err)
-	}
-
 	op := &Operation{
-		oobClient:               oobClient,
-		didExClient:             didExClient,
-		issueCredClient:         issueCredClient,
-		presentProofClient:      presentProofClient,
-		uiEndpoint:              config.UIEndpoint,
-		profileStore:            p,
-		txnStore:                txnStore,
-		tokenStore:              tokenStore,
-		connectionLookup:        connectionLookup,
-		vdriRegistry:            config.AriesCtx.VDRegistry(),
-		serviceEndpoint:         config.AriesCtx.ServiceEndpoint(),
-		vccrypto:                vccrypto,
-		publicDIDCreator:        config.PublicDIDCreator,
-		governanceProvider:      config.GovernanceProvider,
-		httpClient:              &http.Client{Transport: &http.Transport{TLSClientConfig: config.TLSConfig}},
-		routeSvc:                routeSvc,
-		messenger:               config.AriesMessenger,
-		walletBridge:            walletBridge,
-		tlsConfig:               config.TLSConfig,
-		cachedOIDCClients:       map[string]oidcClient{},
-		oidcClientStore:         oidcClientStore,
-		oidcClientStoreKey:      config.OIDCClientStoreKey,
-		oidcCallbackURL:         config.ExternalURL + oidcCallbackEndpoint,
-		userTokens:              map[string]*oauth2.Token{},
-		refreshTokenStore:       refreshStore,
-		didDomain:               config.DidDomain,
-		jsonldDocLoader:         config.JSONLDDocumentLoader,
-		addJSONLDContextHandler: contextOp.Add,
+		oobClient:          oobClient,
+		didExClient:        didExClient,
+		issueCredClient:    issueCredClient,
+		presentProofClient: presentProofClient,
+		uiEndpoint:         config.UIEndpoint,
+		profileStore:       p,
+		txnStore:           txnStore,
+		tokenStore:         tokenStore,
+		connectionLookup:   connectionLookup,
+		vdriRegistry:       config.AriesCtx.VDRegistry(),
+		serviceEndpoint:    config.AriesCtx.ServiceEndpoint(),
+		vccrypto:           vccrypto,
+		publicDIDCreator:   config.PublicDIDCreator,
+		governanceProvider: config.GovernanceProvider,
+		httpClient:         &http.Client{Transport: &http.Transport{TLSClientConfig: config.TLSConfig}},
+		routeSvc:           routeSvc,
+		messenger:          config.AriesMessenger,
+		walletBridge:       walletBridge,
+		tlsConfig:          config.TLSConfig,
+		cachedOIDCClients:  map[string]oidcClient{},
+		oidcClientStore:    oidcClientStore,
+		oidcClientStoreKey: config.OIDCClientStoreKey,
+		oidcCallbackURL:    config.ExternalURL + oidcCallbackEndpoint,
+		userTokens:         map[string]*oauth2.Token{},
+		refreshTokenStore:  refreshStore,
+		didDomain:          config.DidDomain,
+		jsonldDocLoader:    config.JSONLDDocumentLoader,
 	}
 
 	op.createOIDCClientFunc = op.getOrCreateOIDCClient
@@ -310,36 +303,35 @@ type oidcClient interface {
 
 // Operation defines handlers for rp operations.
 type Operation struct {
-	oobClient               *outofband.Client
-	didExClient             didExClient
-	issueCredClient         *issuecredential.Client
-	presentProofClient      *presentproof.Client
-	uiEndpoint              string
-	profileStore            *issuer.Profile
-	txnStore                storage.Store
-	tokenStore              storage.Store
-	connectionLookup        connections
-	vdriRegistry            vdr.Registry
-	vccrypto                adaptervc.Crypto
-	serviceEndpoint         string
-	publicDIDCreator        PublicDIDCreator
-	httpClient              httpClient
-	governanceProvider      GovernanceProvider
-	routeSvc                routeService
-	messenger               service.Messenger
-	walletBridge            *walletops.Operation
-	tlsConfig               *tls.Config
-	oidcCallbackURL         string
-	cachedOIDCClients       map[string]oidcClient
-	userTokens              map[string]*oauth2.Token // keyed by the txn ID
-	oidcClientStore         storage.Store
-	oidcClientStoreKey      []byte
-	refreshTokenStore       storage.Store
-	createOIDCClientFunc    func(profileData *issuer.ProfileData) (oidcClient, error)
-	getOIDCClientFunc       func(string) (oidcClient, error)
-	didDomain               string
-	jsonldDocLoader         ld.DocumentLoader
-	addJSONLDContextHandler http.HandlerFunc
+	oobClient            *outofband.Client
+	didExClient          didExClient
+	issueCredClient      *issuecredential.Client
+	presentProofClient   *presentproof.Client
+	uiEndpoint           string
+	profileStore         *issuer.Profile
+	txnStore             storage.Store
+	tokenStore           storage.Store
+	connectionLookup     connections
+	vdriRegistry         vdr.Registry
+	vccrypto             adaptervc.Crypto
+	serviceEndpoint      string
+	publicDIDCreator     PublicDIDCreator
+	httpClient           httpClient
+	governanceProvider   GovernanceProvider
+	routeSvc             routeService
+	messenger            service.Messenger
+	walletBridge         *walletops.Operation
+	tlsConfig            *tls.Config
+	oidcCallbackURL      string
+	cachedOIDCClients    map[string]oidcClient
+	userTokens           map[string]*oauth2.Token // keyed by the txn ID
+	oidcClientStore      storage.Store
+	oidcClientStoreKey   []byte
+	refreshTokenStore    storage.Store
+	createOIDCClientFunc func(profileData *issuer.ProfileData) (oidcClient, error)
+	getOIDCClientFunc    func(string) (oidcClient, error)
+	didDomain            string
+	jsonldDocLoader      ld.DocumentLoader
 }
 
 // GetRESTHandlers get all controller API handler available for this service.
@@ -355,9 +347,6 @@ func (o *Operation) GetRESTHandlers() []restapi.Handler {
 		support.NewHTTPHandler(getCHAPIRequestEndpoint, http.MethodGet, o.getCHAPIRequestHandler),
 		support.NewHTTPHandler(oidcAuthRequestEndpoint, http.MethodGet, o.requestOIDCAuthHandler),
 		support.NewHTTPHandler(oidcCallbackEndpoint, http.MethodGet, o.oidcAuthCallback),
-
-		// JSON-LD contexts API
-		support.NewHTTPHandler(jsonldcontextrest.AddContextPath, http.MethodPost, o.addJSONLDContextHandler),
 	}, o.walletBridge.GetRESTHandlers()...)
 }
 
@@ -1750,12 +1739,4 @@ func mapProfileReqToData(data *ProfileDataRequest, didDoc *did.Doc) (*issuer.Pro
 		OIDCClientParams:            clientParams,
 		CredentialScopes:            data.CredentialScopes,
 	}, nil
-}
-
-type storeProvider struct {
-	storage.Provider
-}
-
-func (p *storeProvider) StorageProvider() storage.Provider {
-	return p
 }

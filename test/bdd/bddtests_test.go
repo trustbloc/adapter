@@ -18,7 +18,6 @@ import (
 
 	"github.com/trustbloc/edge-adapter/test/bdd/dockerutil"
 	"github.com/trustbloc/edge-adapter/test/bdd/pkg/agent"
-	"github.com/trustbloc/edge-adapter/test/bdd/pkg/bddutil"
 	"github.com/trustbloc/edge-adapter/test/bdd/pkg/common"
 	bddctx "github.com/trustbloc/edge-adapter/test/bdd/pkg/context"
 	"github.com/trustbloc/edge-adapter/test/bdd/pkg/issuer"
@@ -63,13 +62,8 @@ func runBDDTests(tags, format string) int { //nolint:gocognit,gocyclo,cyclop
 			panic(fmt.Sprintf("Error returned from NewBDDContext: %s", err))
 		}
 
-		services := []string{
-			"https://issuer-adapter-rest.trustbloc.local:9070",
-			rp.AdapterURL,
-		}
-
 		s.BeforeSuite(func() {
-			if os.Getenv("DISABLE_COMPOSITION") != "true" { //nolint:nestif
+			if os.Getenv("DISABLE_COMPOSITION") != "true" {
 				// Need a unique name, but docker does not allow '-' in names
 				composeProjectName := strings.ReplaceAll(generateUUID(), "-", "")
 
@@ -95,15 +89,6 @@ func runBDDTests(tags, format string) int { //nolint:gocognit,gocyclo,cyclop
 				fmt.Printf("*** testSleep=%d", testSleep) // nolint:forbidigo // ignored
 				println()
 				time.Sleep(time.Second * time.Duration(testSleep))
-
-				for _, svc := range services {
-					fmt.Printf("importing JSON-LD contexts for service %q ... ", svc) // nolint:forbidigo // ignored
-					if err := bddutil.AddJSONLDContexts(svc, bddContext.TLSConfig()); err != nil {
-						panic(fmt.Sprintf("Add JSON-LD contexts for '%s': %s", svc, err))
-					}
-					fmt.Println("done") // nolint:forbidigo // ignored
-				}
-				println()
 			}
 		})
 		s.AfterSuite(func() {

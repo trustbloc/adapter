@@ -829,19 +829,14 @@ func (a *Steps) ResolveDID(agent, didID string) (*did.Doc, error) {
 
 	destination = fmt.Sprintf(destination+resolveDIDPath, base64.StdEncoding.EncodeToString([]byte(didID)))
 
-	var resp vdricmd.Document
+	var resp did.DocResolution
 
 	err := bddutil.SendHTTP(http.MethodGet, destination, nil, &resp)
 	if err != nil {
 		return nil, fmt.Errorf("%s failed to fetch did=%s : %w", agent, didID, err)
 	}
 
-	doc, err := did.ParseDocument(resp.DID)
-	if err != nil {
-		return nil, fmt.Errorf("%s failed to parse did document : %w", agent, err)
-	}
-
-	return doc, nil
+	return resp.DIDDocument, nil
 }
 
 // SaveDID saves the did document.

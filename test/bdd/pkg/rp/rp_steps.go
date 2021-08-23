@@ -32,7 +32,7 @@ import (
 	"github.com/hyperledger/aries-framework-go-ext/component/vdr/orb"
 	"github.com/hyperledger/aries-framework-go/pkg/client/outofband"
 	"github.com/hyperledger/aries-framework-go/pkg/doc/did"
-	"github.com/hyperledger/aries-framework-go/pkg/doc/jose"
+	"github.com/hyperledger/aries-framework-go/pkg/doc/jose/jwk/jwksupport"
 	"github.com/hyperledger/aries-framework-go/pkg/doc/presexch"
 	"github.com/hyperledger/aries-framework-go/pkg/doc/verifiable"
 	vdrapi "github.com/hyperledger/aries-framework-go/pkg/framework/aries/api/vdr"
@@ -288,7 +288,7 @@ func (s *Steps) newTrustBlocDID(agentID string) (*did.Doc, error) {
 
 	didDoc := did.Doc{}
 
-	jwk, err := jose.JWKFromKey(ed25519.PublicKey(keys[0].bits))
+	jwk, err := jwksupport.JWKFromKey(ed25519.PublicKey(keys[0].bits))
 	if err != nil {
 		return nil, fmt.Errorf("failed to create jwk: %w", err)
 	}

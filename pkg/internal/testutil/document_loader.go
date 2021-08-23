@@ -10,8 +10,10 @@ import (
 	_ "embed" //nolint:gci // required for go:embed
 	"testing"
 
-	"github.com/hyperledger/aries-framework-go/pkg/doc/jsonld"
-	ariesmockstorage "github.com/hyperledger/aries-framework-go/pkg/mock/storage"
+	"github.com/hyperledger/aries-framework-go/pkg/doc/ld"
+	"github.com/hyperledger/aries-framework-go/pkg/doc/ldcontext"
+	mockldstore "github.com/hyperledger/aries-framework-go/pkg/mock/ld"
+	ldstore "github.com/hyperledger/aries-framework-go/pkg/store/ld"
 	"github.com/stretchr/testify/require"
 )
 
@@ -54,7 +56,7 @@ var (
 )
 
 // nolint:gochecknoglobals // preset
-var contextDocuments = []jsonld.ContextDocument{
+var contextDocuments = []ldcontext.Document{
 	{
 		URL:     "https://www.w3.org/2018/credentials/v1",
 		Content: verifiableCredentialsV1Vocab,
@@ -127,12 +129,29 @@ var contextDocuments = []jsonld.ContextDocument{
 	},
 }
 
+type mockLDStoreProvider struct {
+	ContextStore        ldstore.ContextStore
+	RemoteProviderStore ldstore.RemoteProviderStore
+}
+
+func (p *mockLDStoreProvider) JSONLDContextStore() ldstore.ContextStore {
+	return p.ContextStore
+}
+
+func (p *mockLDStoreProvider) JSONLDRemoteProviderStore() ldstore.RemoteProviderStore {
+	return p.RemoteProviderStore
+}
+
 // DocumentLoader returns a document loader with preloaded test contexts.
-func DocumentLoader(t *testing.T) *jsonld.DocumentLoader {
+func DocumentLoader(t *testing.T) *ld.DocumentLoader {
 	t.Helper()
 
-	loader, err := jsonld.NewDocumentLoader(ariesmockstorage.NewMockStoreProvider(),
-		jsonld.WithExtraContexts(contextDocuments...))
+	ldStore := &mockLDStoreProvider{
+		ContextStore:        mockldstore.NewMockContextStore(),
+		RemoteProviderStore: mockldstore.NewMockRemoteProviderStore(),
+	}
+
+	loader, err := ld.NewDocumentLoader(ldStore, ld.WithExtraContexts(contextDocuments...))
 	require.NoError(t, err)
 
 	return loader

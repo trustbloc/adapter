@@ -1,0 +1,91 @@
+{
+  "documents": [
+    {
+      "url": "https://trustbloc.github.io/context/vc/assurance-credential-v1.jsonld",
+      "content": {
+        "@context": {
+          "@version": 1.1,
+          "id": "@id",
+          "type": "@type",
+          "AssuranceCredential": {
+            "@id": "ex:AssuranceCredential",
+            "@context": {
+              "@version": 1.1,
+              "@protected": true,
+              "id": "@id",
+              "type": "@type",
+              "ex": "https://example.org/examples#",
+              "referenceVCID": {
+                "@id": "ex:referenceVCID"
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "url": "https://trustbloc.github.io/context/vc/authorization-credential-v1.jsonld",
+      "content": {
+        "@context": {
+          "@version": 1.1,
+          "@protected": true,
+          "name": "http://schema.org/name",
+          "ex": "https://example.org/examples#",
+          "xsd": "http://www.w3.org/2001/XMLSchema#",
+          "AuthorizationCredential": "ex:AuthorizationCredential",
+          "DIDDoc": {
+            "@id": "ex:DIDDoc",
+            "@context": {
+              "@version": 1.1,
+              "@protected": true,
+              "id": "@id",
+              "type": "@type",
+              "doc": {
+                "@id": "ex:doc",
+                "@type": "@json"
+              }
+            }
+          },
+          "subjectDIDDoc": {
+            "@id": "ex:subjectDIDDoc",
+            "@type": "DIDDoc"
+          },
+          "issuerDIDDoc": {
+            "@id": "ex:issuerDIDDoc",
+            "@type": "DIDDoc"
+          },
+          "requestingPartyDIDDoc": {
+            "@id": "ex:requestingPartyDIDDoc",
+            "@type": "DIDDoc"
+          },
+          "subjectDID": {
+            "@id": "ex:subjectDID",
+            "@type": "xsd:string"
+          }
+        }
+      }
+    },
+    {
+      "url": "https://trustbloc.github.io/context/vc/issuer-manifest-credential-v1.jsonld",
+      "content": {
+        "@context": {
+          "@version": 1.1,
+          "@protected": true,
+          "name": "http://schema.org/name",
+          "ex": "https://example.org/examples#",
+          "IssuerManifestCredential": {
+            "@id": "ex:IssuerManifestCredential",
+            "@context": {
+              "@version": 1.1,
+              "@protected": true,
+              "id": "@id",
+              "type": "@type",
+              "schema": "http://schema.org/",
+              "contexts": "schema:url"
+            }
+          }
+        }
+      }
+    }
+  ]
+}
