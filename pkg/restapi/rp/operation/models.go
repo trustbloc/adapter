@@ -15,10 +15,11 @@ import (
 
 // GetPresentationRequestResponse API response of getPresentationRequest.
 type GetPresentationRequestResponse struct {
-	PD                   *presexch.PresentationDefinition `json:"pd"`
+	PD                   *presexch.PresentationDefinition `json:"pd,omitempty"`
 	Inv                  *outofband.Invitation            `json:"invitation"`
 	Credentials          []json.RawMessage                `json:"credentials,omitempty"`
 	CredentialGovernance json.RawMessage                  `json:"credentialGovernance,omitempty"`
+	WACI                 bool                             `json:"waci,omitempty"`
 }
 
 // CreateRPTenantRequest API request body to register an RP tenant.

@@ -530,25 +530,25 @@ func (s *Steps) sendWACIInvitationToWallet(tenantID, walletID string) error {
 
 	defer bddutil.CloseResponseBody(resp.Body)
 
-	invite := &outofband.Invitation{}
+	result := &operation.GetPresentationRequestResponse{}
 
-	err = json.NewDecoder(resp.Body).Decode(invite)
+	err = json.NewDecoder(resp.Body).Decode(result)
 	if err != nil {
 		return fmt.Errorf("failed to decode rp adapter's response : %w", err)
 	}
 
-	if invite.ID == "" {
+	if result.Inv == nil || result.Inv.ID == "" {
 		return errors.New("waci flow - out-of-band inviatation id can't be empty")
 	}
 
-	invitationBytes, err := json.Marshal(invite)
+	invitationBytes, err := json.Marshal(result.Inv)
 	if err != nil {
 		return fmt.Errorf("failed to marshal oob invitation : %w", err)
 	}
 
 	s.context.Store[bddutil.GetDIDConnectRequestKey(tenantID, walletID)] = string(invitationBytes)
 
-	tenant.invitationID = invite.ID
+	tenant.invitationID = result.Inv.ID
 
 	return nil
 }
