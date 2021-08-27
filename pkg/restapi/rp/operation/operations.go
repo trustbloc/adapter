@@ -751,7 +751,10 @@ func (o *Operation) getPresentationsRequest(w http.ResponseWriter, r *http.Reque
 	}
 
 	if cr.SupportsWACI {
-		commhttp.WriteResponse(w, invitation)
+		commhttp.WriteResponse(w, &GetPresentationRequestResponse{
+			Inv:  invitation,
+			WACI: true,
+		})
 		w.WriteHeader(http.StatusOK)
 
 		logger.Debugf("[waci] walletRequest: %+v", invitation)

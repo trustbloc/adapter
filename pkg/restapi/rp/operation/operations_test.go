@@ -1596,13 +1596,14 @@ func TestGetPresentationsRequest(t *testing.T) {
 
 		require.Equal(t, http.StatusOK, r.Code)
 
-		var resp outofband.Invitation
-		require.NoError(t, json.Unmarshal(r.Body.Bytes(), &resp))
+		var res GetPresentationRequestResponse
+		require.NoError(t, json.Unmarshal(r.Body.Bytes(), &res))
 
-		require.NotNil(t, resp)
-		require.NotEmpty(t, resp.ID)
-		require.Len(t, resp.Services, 1)
-		require.Equal(t, rpPublicDID.String(), resp.Services[0])
+		require.True(t, res.WACI)
+		require.NotNil(t, res.Inv)
+		require.NotEmpty(t, res.Inv.ID)
+		require.Len(t, res.Inv.Services, 1)
+		require.Equal(t, rpPublicDID.String(), res.Inv.Services[0])
 	})
 
 	t.Run("test get governance - failed", func(t *testing.T) {

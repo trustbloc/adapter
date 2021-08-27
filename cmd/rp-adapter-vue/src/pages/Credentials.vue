@@ -77,11 +77,28 @@ SPDX-License-Identifier: Apache-2.0
             WalletPreference
         },
         created: async function() {
-            this.walletClient = new WalletClient({
-                user: this.$route.query.uID,
-                preferenceGETURL: `/wallet-bridge/get-preferences/${this.$route.query.uID}`,
-                remoteBridge: '/wallet-bridge/send-chapi-request'
-            })
+            try {
+                this.presentationRequest = await this.getRequestForPresentation()
+            } catch (e) {
+                console.error(e)
+                this.connectWalletErr = e.message
+                return
+            }
+
+            if (this.presentationRequest.waci) {
+                // For now, only CHAPI support for WACI, QRCode & Redirect to be added soon.
+                // CHAPI bridge won't be necessary.
+                this.walletClient = new WalletClient({
+                    user: this.$route.query.uID,
+                    defaultPreference: 'browser'
+                })
+            } else {
+                this.walletClient = new WalletClient({
+                    user: this.$route.query.uID,
+                    preferenceGETURL: `/wallet-bridge/get-preferences/${this.$route.query.uID}`,
+                    remoteBridge: '/wallet-bridge/send-chapi-request'
+                })
+            }
 
             try {
                 await this.walletClient.init()
@@ -89,11 +106,11 @@ SPDX-License-Identifier: Apache-2.0
                 if (e instanceof LoadPreferenceError) {
                     console.debug('failed to initialize wallet selection, presenting user preference selection dialog.')
                     this.showDialog = true
+                } else {
+                    console.error(e)
+                    this.connectWalletErr = e.message
+                    return
                 }
-
-                console.error(e)
-                this.connectWalletErr = e.message
-                return
             }
 
             console.log('wallet client initialized successfully !')
@@ -116,26 +133,45 @@ SPDX-License-Identifier: Apache-2.0
                 }
             },
             async sendCHAPRequest() {
-                await this.getRequestForPresentation()
-                const credentialQuery = {
-                    web: {
-                        VerifiablePresentation: {
-                            query: [
-                                {
-                                    type: "PresentationExchange",
-                                    credentialQuery: this.presentationRequest.pd
+                let credentialQuery
 
-                                },
-                                {
-                                    type: "DIDConnect",
-                                    invitation: this.presentationRequest.invitation,
-                                    credentials: this.presentationRequest.credentials
-                                }
-                            ]
+                if (this.presentationRequest.waci) {
+                    credentialQuery = {
+                        web: {
+                            VerifiablePresentation: {
+                                query: [
+                                    {
+                                        type: 'WACIShare',
+                                        credentialQuery: {
+                                            oob: this.presentationRequest.invitation,
+                                        },
+                                    },
+                                ],
+                            },
+                        },
+                    }
+                } else {
+                    credentialQuery = {
+                        web: {
+                            VerifiablePresentation: {
+                                query: [
+                                    {
+                                        type: "PresentationExchange",
+                                        credentialQuery: this.presentationRequest.pd
+
+                                    },
+                                    {
+                                        type: "DIDConnect",
+                                        invitation: this.presentationRequest.invitation,
+                                        credentials: this.presentationRequest.credentials
+                                    }
+                                ]
+                            }
                         }
                     }
                 }
-                console.log("rp-adapter: chapi request: " + JSON.stringify(credentialQuery, undefined, 4))
+
+                console.log("rp-adapter: chapi request: ", JSON.stringify(credentialQuery, undefined, 4))
 
                 const webCredential = await this.walletClient.get(credentialQuery)
                 if (!webCredential) {
@@ -149,17 +185,12 @@ SPDX-License-Identifier: Apache-2.0
                 window.location.replace(redirectURL)
             },
             async getRequestForPresentation() {
-                const handle = this.$route.query.h
+                let handle = this.$route.query.h
                 console.info(`using handle: ${handle}`)
-                await this.$http.get(`/presentations/create?h=${handle}`).then(
-                    resp => {
-                        this.presentationRequest = resp.data
-                    },
-                    err => {
-                        console.error(`failed to retrieve presentation-definitions: ${err}`)
-                        throw err
-                    }
-                )
+
+                const {data} = await this.$http.get(`/presentations/create?h=${handle}`)
+
+                return data
             },
             async requestPresentationValidation(presentation) {
                 if (!presentation || !presentation.data) {
