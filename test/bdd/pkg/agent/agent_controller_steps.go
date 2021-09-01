@@ -1153,9 +1153,11 @@ func (a *Steps) SubmitWACIPresentation(walletID, connID string) error { // nolin
 		return fmt.Errorf("presentation definition from request attachment : %w", err)
 	}
 
-	presDef := &presexch.PresentationDefinition{}
+	var presDef struct {
+		PD *presexch.PresentationDefinition `json:"presentation_definition"`
+	}
 
-	err = json.Unmarshal(presDefBytes, presDef)
+	err = json.Unmarshal(presDefBytes, &presDef)
 	if err != nil {
 		return fmt.Errorf("unmarshal presentation definition : %w", err)
 	}
@@ -1193,7 +1195,7 @@ func (a *Steps) SubmitWACIPresentation(walletID, connID string) error { // nolin
 		"presentation_submission": &presexch.PresentationSubmission{
 			DescriptorMap: []*presexch.InputDescriptorMapping{
 				{
-					ID:   presDef.InputDescriptors[0].ID,
+					ID:   presDef.PD.InputDescriptors[0].ID,
 					Path: "$.verifiableCredential[0]",
 				},
 			},

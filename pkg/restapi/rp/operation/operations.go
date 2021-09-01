@@ -1261,7 +1261,11 @@ func (o *Operation) presentProofListener(ppActions chan service.DIDCommAction) {
 					{
 						ID:       uuid.NewString(),
 						MimeType: "application/json",
-						Data:     decorator.AttachmentData{JSON: ctx.PD},
+						Data: decorator.AttachmentData{JSON: struct {
+							Challenge string                           `json:"challenge"`
+							Domain    string                           `json:"domain"`
+							PD        *presexch.PresentationDefinition `json:"presentation_definition"`
+						}{PD: ctx.PD}},
 					},
 				},
 			})
