@@ -135,7 +135,9 @@ SPDX-License-Identifier: Apache-2.0
             async sendCHAPRequest() {
                 let credentialQuery
 
-                if (this.presentationRequest.waci) {
+                const { waci } = this.presentationRequest
+
+                if (waci) {
                     credentialQuery = {
                         web: {
                             VerifiablePresentation: {
@@ -177,12 +179,21 @@ SPDX-License-Identifier: Apache-2.0
                 if (!webCredential) {
                     console.error("no webcredential received from wallet!")
                 }
-                console.log("received from user: " + JSON.stringify(webCredential))
-                await this.requestPresentationValidation(webCredential)
-                const redirectURL = await this.validationResult(this.presentationRequest.invitation["@id"])
+
+                console.log("response from chapi: ", JSON.stringify(webCredential))
+
+                let redirectURL
+                if (waci) {
+                    redirectURL = await this.validationResult(this.$route.query.h)
+                } else {
+                    await this.requestPresentationValidation(webCredential)
+                    redirectURL = await this.validationResult(this.presentationRequest.invitation["@id"])
+                }
+
                 // redirect user
                 console.log(`redirecting user to ${redirectURL}`)
                 window.location.replace(redirectURL)
+
             },
             async getRequestForPresentation() {
                 let handle = this.$route.query.h
