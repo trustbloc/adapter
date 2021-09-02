@@ -184,7 +184,7 @@ SPDX-License-Identifier: Apache-2.0
 
                 let redirectURL
                 if (waci) {
-                    redirectURL = await this.validationResult(this.$route.query.h)
+                    redirectURL = await this.validationResult(this.presentationRequest.invitation["@id"])
                 } else {
                     await this.requestPresentationValidation(webCredential)
                     redirectURL = await this.validationResult(this.presentationRequest.invitation["@id"])

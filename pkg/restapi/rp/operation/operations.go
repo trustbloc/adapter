@@ -1224,11 +1224,11 @@ func (o *Operation) listenForConnectionCompleteEvents() { // nolint: gocyclo,cyc
 }
 
 func (o *Operation) presentProofListener(ppActions chan service.DIDCommAction) {
-	var err error
-
-	var continueArg presentproofsvc.Opt
-
 	for action := range ppActions {
+		var err error
+
+		var continueArg presentproofsvc.Opt
+
 		switch action.Message.Type() {
 		case presentproofsvc.PresentationMsgType:
 			supportsWACI, waciErr := o.supportsWACIFlagUsingConnection(action)
