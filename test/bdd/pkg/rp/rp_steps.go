@@ -160,7 +160,7 @@ func (s *Steps) connectToWalletBridge(userID, agentID string) error {
 	return s.controller.ConnectToWalletBridge(userID, agentID)
 }
 
-func (s *Steps) createTenant(label, scopesStr, blindedRouteStr string, supportsWACI bool) error { // nolint:funlen
+func (s *Steps) createTenant(label, scopesStr, blindedRouteStr, linkedWallet string, supportsWACI bool) error { // nolint:funlen,lll
 	callbackServer := httptest.NewServer(s)
 	callbackURL := callbackServer.URL + "/" + label
 	scopes := strings.Split(scopesStr, ",")
@@ -176,6 +176,7 @@ func (s *Steps) createTenant(label, scopesStr, blindedRouteStr string, supportsW
 		Scopes:               scopes,
 		RequiresBlindedRoute: blindedRoute,
 		SupportsWACI:         supportsWACI,
+		LinkedWalletURL:      linkedWallet,
 	})
 	if err != nil {
 		return fmt.Errorf("failed to marshal request: %w", err)
@@ -215,6 +216,11 @@ func (s *Steps) createTenant(label, scopesStr, blindedRouteStr string, supportsW
 	if response.SupportsWACI != supportsWACI {
 		return fmt.Errorf("supportsWACI prop doesn't match : expected=%t actual=%t",
 			supportsWACI, response.SupportsWACI)
+	}
+
+	if response.LinkedWalletURL != linkedWallet {
+		return fmt.Errorf("linkedWallet prop doesn't match : expected=%s actual=%s",
+			linkedWallet, response.LinkedWalletURL)
 	}
 
 	s.tenantCtx[label] = &tenantContext{
@@ -387,7 +393,7 @@ func validateTenantRegistration(expected *tenantContext, result *models.OAuth2Cl
 }
 
 func (s *Steps) registerTenantFlow(label, scopesStr string) error {
-	err := s.createTenant(label, scopesStr, "false", false)
+	err := s.createTenant(label, scopesStr, "false", "", false)
 	if err != nil {
 		return fmt.Errorf("failed to create tenant: %w", err)
 	}
@@ -401,7 +407,7 @@ func (s *Steps) registerTenantFlow(label, scopesStr string) error {
 }
 
 func (s *Steps) registerTenantFlowWithWACI(label, scopesStr string) error {
-	err := s.createTenant(label, scopesStr, "false", true)
+	err := s.createTenant(label, scopesStr, "false", "https://example.wallet.com/waci", true)
 	if err != nil {
 		return fmt.Errorf("failed to create tenant: %w", err)
 	}
@@ -987,7 +993,7 @@ func (s *Steps) userRedirectBackToTenant(tenant string) error {
 
 	err := backoff.RetryNotify(
 		func() error {
-			req := fmt.Sprintf("%s/presentations/result?h=%s", AdapterURL, tenantCtx.invitationID)
+			req := fmt.Sprintf("%s/presentations/result?h=%s&redirect=false", AdapterURL, tenantCtx.invitationID)
 
 			resp, serviceErr := tenantCtx.browser.Get(req) // nolint:bodyclose
 			if serviceErr != nil {

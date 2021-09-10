@@ -28,30 +28,43 @@ SPDX-License-Identifier: Apache-2.0
                                 <ul class="list-none">
                                     <li class="py-2">
                                         <div class="flex items-center">
-                                            <div><span class="text-4xl font-semibold inline-block py-1 px-2 uppercase rounded-full text-pink-600 bg-pink-200 mr-3">
+                                            <div><span
+                                                    class="text-4xl font-semibold inline-block py-1 px-2 uppercase rounded-full text-pink-600 bg-pink-200 mr-3">
                                                  <i class="fas fa-cog fa-spin text-4xl items-center"></i></span>
                                             </div>
                                             <div>
-                                                <h4 class="text-3xl font-bold">
+                                                <span class="text-2xl font-bold">
                                                     RP requesting credential(s) from Wallet
-                                                </h4>
+                                                </span>
                                             </div>
                                         </div>
                                     </li>
                                     <li class="py-2 px-4">
-                                        <div>
+                                        <div v-if="connectWalletErr">
                                             <p class="text-2xl font-bold" style="color: red">{{ connectWalletErr }}</p>
                                         </div>
-                                    </li>
-                                    <li class="py-2 px-4">
-                                        <div class="flex items-center">
-                                        <div>
-                                            <a class="no-underline hover:underline font-bold text-blue-700"
-                                               href="https://github.com/trustbloc/edge-sandbox/blob/master/docs/demo/sandbox_nondidcomm_playground.md">
-                                                <i class="fas fa-info-circle text-xl"></i>  Find more about User's wallet here</a>
+
+                                        <div v-else class="flex flex-col" style="margin: 5%">
+                                            <div class="rounded-lg shadow-lg" style="padding: 10%">
+                                                <a class="no-underline hover:underline font-bold text-blue-700"
+                                                   :href="redirect">
+                                                    <i class="text-2xl"></i>Click here to redirect to your wallet</a>
+                                                <p class="text-1xl text-blue-500">or scan this code from your mobile device</p>
+                                                <img class="md:w-3/4 ml-auto mr-auto rounded-lg shadow-lg" src=""
+                                                     id="qr-result"/>
+                                            </div>
+
+                                            <div class="text-1xl">
+                                                <p style="padding: 10px" class="text-1xl text-blue-900">or continue using,</p>
+                                                <md-button class="md-primary md-size-60" @click="requestCredentialsCHAPI">
+                                                    <md-icon>remove_from_queue</md-icon>
+                                                    CHAPI Wallet
+                                                </md-button>
+                                            </div>
                                         </div>
-                                        </div>
+
                                     </li>
+
                                 </ul>
                             </div>
                         </div>
@@ -76,7 +89,7 @@ SPDX-License-Identifier: Apache-2.0
             FooterComponent,
             WalletPreference
         },
-        created: async function() {
+        created: async function () {
             try {
                 this.presentationRequest = await this.getRequestForPresentation()
             } catch (e) {
@@ -114,28 +127,44 @@ SPDX-License-Identifier: Apache-2.0
             }
 
             console.log('wallet client initialized successfully !')
-            await this.requestCredentials()
+
+            if (this.presentationRequest.walletRedirect) {
+                this.renderCredentialShareOptions(this.presentationRequest.walletRedirect)
+            } else {
+                await this.requestCredentialsCHAPI()
+            }
+
         },
         data() {
             return {
                 presentationRequest: null,
                 connectWalletErr: null,
                 showDialog: false,
+                redirect: null,
             }
         },
         methods: {
-            async requestCredentials(){
+            async renderCredentialShareOptions(redirect) {
+                this.redirect = redirect
+
+                let QRCode = require('qrcode')
+                QRCode.toDataURL(redirect, function (err, url) {
+                    let canvas = document.getElementById('qr-result')
+                    canvas.src = url
+                })
+            },
+            async requestCredentialsCHAPI() {
                 try {
                     await this.sendCHAPRequest()
                 } catch (e) {
                     console.error(e)
-                    this.connectWalletErr = 'Failed to Connect Wallet'
+                    this.connectWalletErr = 'Failed to establish connection with your wallet'
                 }
             },
             async sendCHAPRequest() {
                 let credentialQuery
 
-                const { waci } = this.presentationRequest
+                const {waci} = this.presentationRequest
 
                 if (waci) {
                     credentialQuery = {
@@ -184,13 +213,13 @@ SPDX-License-Identifier: Apache-2.0
 
                 let redirectURL
                 if (waci) {
-                    redirectURL = await this.validationResult(this.presentationRequest.invitation["@id"])
+                    redirectURL = `/presentations/result?h=${this.presentationRequest.invitation["@id"]}`
                 } else {
                     await this.requestPresentationValidation(webCredential)
                     redirectURL = await this.validationResult(this.presentationRequest.invitation["@id"])
                 }
 
-                // redirect user
+                // redirect user`
                 console.log(`redirecting user to ${redirectURL}`)
                 window.location.replace(redirectURL)
 
@@ -229,7 +258,7 @@ SPDX-License-Identifier: Apache-2.0
                 let redirectURL = ""
 
                 for (let i = 0; i < 40; i++) {
-                    await this.$http.get(`/presentations/result?h=${handle}`).then(
+                    await this.$http.get(`/presentations/result?h=${handle}&redirect=false`).then(
                         resp => {
                             redirectURL = resp.data.redirectURL
                         },
@@ -268,7 +297,7 @@ SPDX-License-Identifier: Apache-2.0
                     return
                 }
 
-                await this.requestCredentials()
+                await this.requestCredentialsCHAPI()
             },
         }
     }

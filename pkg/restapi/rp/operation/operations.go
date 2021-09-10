@@ -14,6 +14,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -171,16 +172,17 @@ type Storage struct {
 
 // context active in the consent phase all the way up to sending the CHAPI request.
 type consentRequestCtx struct {
-	InvitationID  string
-	PD            *presexch.PresentationDefinition
-	CR            *admin.GetConsentRequestOK
-	UserDID       string
-	RPPublicDID   string
-	ConnectionID  string
-	RPPairwiseDID string
-	RPLabel       string
-	UserData      *userDataCollection
-	SupportsWACI  bool
+	InvitationID    string
+	PD              *presexch.PresentationDefinition
+	CR              *admin.GetConsentRequestOK
+	UserDID         string
+	RPPublicDID     string
+	ConnectionID    string
+	RPPairwiseDID   string
+	RPLabel         string
+	UserData        *userDataCollection
+	SupportsWACI    bool
+	LinkedWalletURL string
 }
 
 type userDataCollection struct {
@@ -211,6 +213,7 @@ func New(config *Config) (*Operation, error) { // nolint:funlen,gocyclo,cyclop
 		docLoader:              config.JSONLDDocumentLoader,
 		didDomain:              config.DidDomain,
 		ariesCtx:               config.AriesContextProvider,
+		externalURL:            config.ExternalURL,
 	}
 
 	err := o.didClient.RegisterActionEvent(o.didActions)
@@ -305,6 +308,7 @@ type Config struct {
 	WalletBridgeAppURL     string
 	JSONLDDocumentLoader   ld.DocumentLoader
 	DidDomain              string
+	ExternalURL            string
 }
 
 // TODO implement an eviction strategy for Operation.oidcStates and OIDC.consentRequests
@@ -339,6 +343,7 @@ type Operation struct {
 	docLoader              ld.DocumentLoader
 	didDomain              string
 	ariesCtx               AriesContextProvider
+	externalURL            string
 }
 
 // GetRESTHandlers get all controller API handler available for this service.
@@ -413,10 +418,11 @@ func (o *Operation) hydraLoginHandlerIterOne(w http.ResponseWriter, r *http.Requ
 				Subject: subject,
 			},
 			RP: &rp.Tenant{
-				ClientID:     tenant.ClientID,
-				PublicDID:    tenant.PublicDID,
-				Label:        tenant.Label,
-				SupportsWACI: tenant.SupportsWACI,
+				ClientID:        tenant.ClientID,
+				PublicDID:       tenant.PublicDID,
+				Label:           tenant.Label,
+				SupportsWACI:    tenant.SupportsWACI,
+				LinkedWalletURL: tenant.LinkedWalletURL,
 			},
 			Request: &rp.DataRequest{
 				Scope: login.GetPayload().RequestedScope,
@@ -660,12 +666,13 @@ func (o *Operation) hydraConsentHandler(w http.ResponseWriter, r *http.Request) 
 	handle := url.QueryEscape(uuid.New().String())
 
 	err = newTransientStorage(o.transientStore).Put(handle, &consentRequestCtx{
-		CR:           consent,
-		PD:           presentationDefinition,
-		RPPublicDID:  conn.RP.PublicDID,
-		RPLabel:      conn.RP.Label,
-		SupportsWACI: conn.RP.SupportsWACI,
-		UserData:     &userDataCollection{},
+		CR:              consent,
+		PD:              presentationDefinition,
+		RPPublicDID:     conn.RP.PublicDID,
+		RPLabel:         conn.RP.Label,
+		SupportsWACI:    conn.RP.SupportsWACI,
+		LinkedWalletURL: conn.RP.LinkedWalletURL,
+		UserData:        &userDataCollection{},
 	})
 	if err != nil {
 		handleError(w, http.StatusInternalServerError, fmt.Sprintf("failed to write to transient storage : %s", err))
@@ -699,7 +706,7 @@ func (o *Operation) skipConsentScreen(w http.ResponseWriter, r *http.Request, co
 }
 
 // Frontend requests to create presentation definition.
-func (o *Operation) getPresentationsRequest(w http.ResponseWriter, r *http.Request) { //nolint:funlen
+func (o *Operation) getPresentationsRequest(w http.ResponseWriter, r *http.Request) { //nolint:funlen,gocyclo,cyclop
 	logger.Debugf("getPresentationsRequest request: %s", r.URL.String())
 
 	// get the request
@@ -751,9 +758,28 @@ func (o *Operation) getPresentationsRequest(w http.ResponseWriter, r *http.Reque
 	}
 
 	if cr.SupportsWACI {
+		var walletRedirect string
+
+		if cr.LinkedWalletURL != "" {
+			callback := fmt.Sprintf("%s%s?h=%s", o.externalURL, getPresentationResultEndpoint, invitation.ID)
+
+			invBytes, err := json.Marshal(invitation)
+			if err != nil {
+				handleError(w, http.StatusInternalServerError,
+					fmt.Sprintf("failed to unmarshal invitation : %s", err))
+
+				return
+			}
+
+			walletRedirect = fmt.Sprintf("%s?oob=%s&redirect=%s", cr.LinkedWalletURL,
+				base64.URLEncoding.EncodeToString(invBytes),
+				base64.URLEncoding.EncodeToString([]byte(callback)))
+		}
+
 		commhttp.WriteResponse(w, &GetPresentationRequestResponse{
-			Inv:  invitation,
-			WACI: true,
+			Inv:            invitation,
+			WACI:           true,
+			WalletRedirect: walletRedirect,
 		})
 		w.WriteHeader(http.StatusOK)
 
@@ -967,6 +993,13 @@ func (o *Operation) getPresentationResponseResultHandler(w http.ResponseWriter, 
 		return
 	}
 
+	redirect := true
+
+	rVal := r.URL.Query().Get("redirect")
+	if rVal != "" {
+		redirect, _ = strconv.ParseBool(rVal) //nolint:errcheck
+	}
+
 	crCtx, err := newTransientStorage(o.transientStore).GetConsentRequest(handle)
 	if err != nil {
 		handleError(w, http.StatusBadRequest,
@@ -1017,11 +1050,15 @@ func (o *Operation) getPresentationResponseResultHandler(w http.ResponseWriter, 
 		return
 	}
 
-	commhttp.WriteResponse(w, &HandleCHAPIResponseResult{
-		RedirectURL: resp.Payload.RedirectTo,
-	})
+	logger.Debugf("redirecting user to: %s", resp.Payload.RedirectTo)
 
-	logger.Debugf("redirected user to: %s", resp.Payload.RedirectTo)
+	if redirect {
+		http.Redirect(w, r, resp.Payload.RedirectTo, http.StatusFound)
+	} else {
+		commhttp.WriteResponse(w, &HandleCHAPIResponseResult{
+			RedirectURL: resp.Payload.RedirectTo,
+		})
+	}
 }
 
 func (o *Operation) collectedUserData(ref *userDataCollection) (map[string]*verifiable.Credential, error) {
@@ -1559,6 +1596,7 @@ func (o *Operation) createRPTenant(w http.ResponseWriter, r *http.Request) {
 		Scopes:               request.Scopes,
 		RequiresBlindedRoute: request.RequiresBlindedRoute,
 		SupportsWACI:         request.SupportsWACI,
+		LinkedWalletURL:      request.LinkedWalletURL,
 	})
 	if err != nil {
 		msg := fmt.Sprintf("failed to save relying party : %s", err)
@@ -1576,6 +1614,7 @@ func (o *Operation) createRPTenant(w http.ResponseWriter, r *http.Request) {
 		Scopes:               request.Scopes,
 		RequiresBlindedRoute: request.RequiresBlindedRoute,
 		SupportsWACI:         request.SupportsWACI,
+		LinkedWalletURL:      request.LinkedWalletURL,
 	})
 }
 

@@ -59,6 +59,7 @@ services:
       - ADAPTER_REST_UNIVERSAL_RESOLVER_URL=http://did.rest.example.com:8072/1.0/identifiers
       - ADAPTER_REST_DSN_TIMEOUT=45
       - ADAPTER_REST_WALLET_APP_URL=http://demoapp/load
+      - ADAPTER_REST_EXTERNAL_URL=https://rp.adapter.rest.example.com:8070
       - ADAPTER_REST_DID_ANCHOR_ORIGIN=origin
       - ADAPTER_REST_CONTEXT_PROVIDER_URL=${CONTEXT_PROVIDER_URL}
     ports:
