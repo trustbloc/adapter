@@ -758,6 +758,7 @@ func addRPHandlers(parameters *adapterRestParameters, framework *aries.Aries, ro
 		WalletBridgeAppURL:     parameters.walletAppURL,
 		JSONLDDocumentLoader:   ctx.JSONLDDocumentLoader(),
 		DidDomain:              parameters.trustblocDomain,
+		ExternalURL:            parameters.externalURL,
 	})
 	if err != nil {
 		return fmt.Errorf("failed to init rp operations: %w", err)

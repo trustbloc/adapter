@@ -67,6 +67,8 @@ const (
 	creditCardStatementScope = "CreditCardStatement"
 	// authorizationCredentialURIID is the non-fragment URI portion of the AuthorizationCredential JSON-LD context ID.
 	authorizationCredentialURIID = "https://example.org/examples"
+
+	redirectURL = "http://hydra.example.com/accept"
 )
 
 func TestNew(t *testing.T) {
@@ -599,7 +601,6 @@ func TestHydraLoginHandlerIterOne(t *testing.T) {
 			require.NoError(t, err)
 			err = rpStore.SaveRP(tenant)
 			require.NoError(t, err)
-			const redirectURL = "http://redirect.com"
 			o, err := New(&Config{
 				Hydra: &stubHydra{
 					loginRequestFunc: func(*admin.GetLoginRequestParams) (*admin.GetLoginRequestOK, error) {
@@ -657,7 +658,6 @@ func TestHydraLoginHandlerIterOne(t *testing.T) {
 			require.NoError(t, err)
 			err = rpStore.SaveUserConnection(conn)
 			require.NoError(t, err)
-			const redirectURL = "http://redirect.com"
 			o, err := New(&Config{
 				Hydra: &stubHydra{
 					loginRequestFunc: func(*admin.GetLoginRequestParams) (*admin.GetLoginRequestOK, error) {
@@ -767,7 +767,7 @@ func TestHydraLoginHandlerIterOne(t *testing.T) {
 		err = rpStore.SaveRP(tenant)
 		require.NoError(t, err)
 		mockStore.ErrPut = errors.New("test")
-		const redirectURL = "http://redirect.com"
+
 		o, err := New(&Config{
 			Hydra: &stubHydra{
 				loginRequestFunc: func(*admin.GetLoginRequestParams) (*admin.GetLoginRequestOK, error) {
@@ -882,7 +882,7 @@ func TestHydraLoginHandler(t *testing.T) {
 	})
 	t.Run("redirects back to hydra when skipping", func(t *testing.T) {
 		t.Parallel()
-		const redirectURL = "http://redirect.com"
+
 		o, err := New(&Config{
 			Hydra: &stubHydra{
 				loginRequestFunc: func(*admin.GetLoginRequestParams) (*admin.GetLoginRequestOK, error) {
@@ -976,7 +976,6 @@ func TestOidcCallbackHandler(t *testing.T) {
 	t.Parallel()
 	t.Run("redirects to hydra", func(t *testing.T) {
 		t.Parallel()
-		const redirectURL = "http://hydra.example.com"
 		const state = "123"
 		const code = "test_code"
 		const clientID = "test_client_id"
@@ -1540,7 +1539,7 @@ func TestGetPresentationsRequest(t *testing.T) {
 		provider := mem.NewProvider()
 		saveUserConn(t, provider, &rp.UserConnection{
 			User:    &rp.User{Subject: userSubject},
-			RP:      &rp.Tenant{ClientID: rpClientID, SupportsWACI: true},
+			RP:      &rp.Tenant{ClientID: rpClientID, SupportsWACI: true, LinkedWalletURL: "example.com"},
 			Request: &rp.DataRequest{},
 		})
 
@@ -1587,8 +1586,9 @@ func TestGetPresentationsRequest(t *testing.T) {
 					Client:  &models.OAuth2Client{ClientID: rpClientID},
 				},
 			},
-			RPPublicDID:  rpPublicDID.String(),
-			SupportsWACI: true,
+			RPPublicDID:     rpPublicDID.String(),
+			SupportsWACI:    true,
+			LinkedWalletURL: "example.com",
 		})
 
 		r := httptest.NewRecorder()
@@ -1602,6 +1602,7 @@ func TestGetPresentationsRequest(t *testing.T) {
 		require.True(t, res.WACI)
 		require.NotNil(t, res.Inv)
 		require.NotEmpty(t, res.Inv.ID)
+		require.NotEmpty(t, res.WalletRedirect)
 		require.Len(t, res.Inv.Services, 1)
 		require.Equal(t, rpPublicDID.String(), res.Inv.Services[0])
 	})
@@ -1901,8 +1902,6 @@ func TestGetPresentationsRequest(t *testing.T) {
 
 func TestCHAPIResponseHandler(t *testing.T) {
 	t.Parallel()
-
-	redirectURL := "http://hydra.example.com/accept"
 
 	t.Run("valid chapi response", func(t *testing.T) {
 		t.Parallel()
@@ -2459,7 +2458,67 @@ func TestGetPresentationResponseResultHandler(t *testing.T) {
 
 		relyingParty, issuer, _ := trio(t)
 		issuerDID := newPeerDID(t, issuer)
-		redirectURL := "http://hydra.example.com/accept"
+		invitationID := uuid.New().String()
+		thid := uuid.New().String()
+
+		local := map[string][]byte{
+			uuid.New().String(): marshal(t, newUniversityDegreeVC(t, issuer, issuerDID)),
+		}
+
+		remote := map[string]string{
+			uuid.New().String(): thid,
+		}
+
+		o, err := New(&Config{
+			DIDExchClient:        &mockdidexchange.MockClient{},
+			Storage:              memStorage(),
+			AriesContextProvider: relyingParty,
+			PresentProofClient:   &mockpresentproof.MockClient{},
+			Hydra: &stubHydra{
+				acceptConsentRequestFunc: func(*admin.AcceptConsentRequestParams) (*admin.AcceptConsentRequestOK, error) {
+					return &admin.AcceptConsentRequestOK{Payload: &models.CompletedRequest{RedirectTo: redirectURL}}, nil
+				},
+			},
+			MsgRegistrar:         msghandler.NewRegistrar(),
+			AriesMessenger:       &messenger.MockMessenger{},
+			JSONLDDocumentLoader: testutil.DocumentLoader(t),
+		})
+		require.NoError(t, err)
+
+		storePut(t, o.transientStore, invitationID, &consentRequestCtx{
+			InvitationID: invitationID,
+			CR: &admin.GetConsentRequestOK{Payload: &models.ConsentRequest{
+				Challenge:                    uuid.New().String(),
+				RequestedAccessTokenAudience: []string{uuid.New().String()},
+				RequestedScope:               []string{uuid.New().String()},
+			}},
+			UserData: &userDataCollection{
+				Local:  local,
+				Remote: remote,
+			},
+		})
+
+		// simulate response from remote issuer
+		storePut(t, o.transientStore, thid, newCreditCardStatementVC(t, issuer, issuerDID))
+
+		w := httptest.NewRecorder()
+		o.getPresentationResponseResultHandler(w, newGetPresentationResponseResult(invitationID, "false"))
+
+		require.Equal(t, http.StatusOK, w.Code)
+
+		result := &HandleCHAPIResponseResult{}
+
+		err = json.NewDecoder(w.Body).Decode(result)
+		require.NoError(t, err)
+
+		require.Equal(t, redirectURL, result.RedirectURL)
+	})
+
+	t.Run("redirect to redirectURL if user data has been collected", func(t *testing.T) {
+		t.Parallel()
+
+		relyingParty, issuer, _ := trio(t)
+		issuerDID := newPeerDID(t, issuer)
 		invitationID := uuid.New().String()
 		thid := uuid.New().String()
 
@@ -2506,14 +2565,7 @@ func TestGetPresentationResponseResultHandler(t *testing.T) {
 		w := httptest.NewRecorder()
 		o.getPresentationResponseResultHandler(w, newGetPresentationResponseResult(invitationID))
 
-		require.Equal(t, http.StatusOK, w.Code)
-
-		result := &HandleCHAPIResponseResult{}
-
-		err = json.NewDecoder(w.Body).Decode(result)
-		require.NoError(t, err)
-
-		require.Equal(t, redirectURL, result.RedirectURL)
+		require.Equal(t, http.StatusFound, w.Code)
 	})
 
 	t.Run("bad request error if handle query param is missing", func(t *testing.T) {
@@ -4001,8 +4053,12 @@ func newCHAPIResponse(t *testing.T, invID string, vp *verifiable.Presentation) *
 	return httptest.NewRequest(http.MethodPost, "/dummy", bytes.NewReader(bits))
 }
 
-func newGetPresentationResponseResult(h string) *http.Request {
-	return httptest.NewRequest(http.MethodGet, fmt.Sprintf("/dummy?h=%s", h), nil)
+func newGetPresentationResponseResult(h ...string) *http.Request {
+	if len(h) > 1 {
+		return httptest.NewRequest(http.MethodGet, fmt.Sprintf("/dummy?h=%s&redirect=%s", h[0], h[1]), nil)
+	}
+
+	return httptest.NewRequest(http.MethodGet, fmt.Sprintf("/dummy?h=%s", h[0]), nil)
 }
 
 type stubStorageProvider struct {

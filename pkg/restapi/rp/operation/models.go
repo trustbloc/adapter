@@ -20,6 +20,7 @@ type GetPresentationRequestResponse struct {
 	Credentials          []json.RawMessage                `json:"credentials,omitempty"`
 	CredentialGovernance json.RawMessage                  `json:"credentialGovernance,omitempty"`
 	WACI                 bool                             `json:"waci,omitempty"`
+	WalletRedirect       string                           `json:"walletRedirect,omitempty"`
 }
 
 // CreateRPTenantRequest API request body to register an RP tenant.
@@ -29,6 +30,7 @@ type CreateRPTenantRequest struct {
 	Scopes               []string `json:"scopes"`
 	RequiresBlindedRoute bool     `json:"requiresBlindedRoute"`
 	SupportsWACI         bool     `json:"supportsWACI"`
+	LinkedWalletURL      string   `json:"linkedWalletURL"`
 }
 
 // CreateRPTenantResponse API response body to register an RP tenant.
@@ -39,6 +41,7 @@ type CreateRPTenantResponse struct {
 	Scopes               []string `json:"scopes"`
 	RequiresBlindedRoute bool     `json:"requiresBlindedRoute"`
 	SupportsWACI         bool     `json:"supportsWACI"`
+	LinkedWalletURL      string   `json:"linkedWalletURL"`
 }
 
 // HandleCHAPIResponse is the input message to the chapiResponseHandler handler.
