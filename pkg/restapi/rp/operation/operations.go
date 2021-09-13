@@ -81,6 +81,11 @@ const (
 	transientStoreName   = "rpadapter_trx"
 	persistenceStoreName = "rpadapter_pst"
 	rpWalletBridgeLabel  = "rp_wallet_bridge"
+
+	// timeout to wait for user credential collection data to be available.
+	waitForUserDataTimeout = 20 * time.Second
+	// interval to wait before each retry.
+	userDataRetryInterval = 500 * time.Millisecond
 )
 
 // Msg svc constants.
@@ -1008,9 +1013,10 @@ func (o *Operation) getPresentationResponseResultHandler(w http.ResponseWriter, 
 		return
 	}
 
-	// TODO validate all credentials against presentation definitions:
-	//  https://github.com/trustbloc/edge-adapter/issues/108
-	userData, err := o.collectedUserData(crCtx.UserData)
+	ctx, cancel := context.WithTimeout(context.Background(), waitForUserDataTimeout)
+	defer cancel()
+
+	userData, err := o.fetchUserDataWithRetry(ctx, newTransientStorage(o.transientStore), handle)
 	if err != nil {
 		// TODO we should distinguish between classes of errors here
 		//  (timeout, not all responses have been received, generic error):
@@ -1058,6 +1064,38 @@ func (o *Operation) getPresentationResponseResultHandler(w http.ResponseWriter, 
 		commhttp.WriteResponse(w, &HandleCHAPIResponseResult{
 			RedirectURL: resp.Payload.RedirectTo,
 		})
+	}
+}
+
+func (o *Operation) fetchUserDataWithRetry(ctx context.Context,
+	transient *transientData, handle string) (userData map[string]*verifiable.Credential, err error) {
+	for {
+		select {
+		case <-ctx.Done():
+			return nil, fmt.Errorf("failed to get userdata, context deadline exceeded")
+		default:
+			crCtx, e := transient.GetConsentRequest(handle)
+			if e != nil {
+				break
+			}
+
+			// TODO validate all credentials against presentation definitions:
+			//  https://github.com/trustbloc/edge-adapter/issues/108
+			userData, e = o.collectedUserData(crCtx.UserData)
+			if e != nil {
+				// TODO we should distinguish between classes of errors here
+				//  (timeout, not all responses have been received, generic error):
+				//  https://github.com/trustbloc/edge-adapter/issues/109
+				logger.Debugf(fmt.Sprintf("failed to lookup collected credentials: %s", e.Error()))
+				break
+			}
+
+			if len(userData) > 0 {
+				return userData, nil
+			}
+		}
+
+		time.Sleep(userDataRetryInterval)
 	}
 }
 
