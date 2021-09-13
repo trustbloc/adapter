@@ -2756,6 +2756,101 @@ func TestGetPresentationResponseResultHandler(t *testing.T) {
 
 		require.Equal(t, http.StatusBadGateway, w.Code)
 	})
+
+	t.Run("test retries to get user data", func(t *testing.T) {
+		t.Parallel()
+
+		relyingParty, issuer, _ := trio(t)
+		issuerDID := newPeerDID(t, issuer)
+
+		local := map[string][]byte{
+			uuid.New().String(): marshal(t, newUniversityDegreeVC(t, issuer, issuerDID)),
+		}
+
+		o, err := New(&Config{
+			DIDExchClient:        &mockdidexchange.MockClient{},
+			Storage:              memStorage(),
+			AriesContextProvider: relyingParty,
+			PresentProofClient:   &mockpresentproof.MockClient{},
+			Hydra: &stubHydra{
+				acceptConsentRequestFunc: func(*admin.AcceptConsentRequestParams) (*admin.AcceptConsentRequestOK, error) {
+					return &admin.AcceptConsentRequestOK{Payload: &models.CompletedRequest{RedirectTo: redirectURL}}, nil
+				},
+			},
+			MsgRegistrar:         msghandler.NewRegistrar(),
+			AriesMessenger:       &messenger.MockMessenger{},
+			JSONLDDocumentLoader: testutil.DocumentLoader(t),
+		})
+		require.NoError(t, err)
+
+		const handle = "sampleHandle"
+
+		transient := newTransientStorage(o.transientStore)
+		require.NoError(t, transient.Put(handle, &consentRequestCtx{
+			LinkedWalletURL: "sampleURL",
+			UserData: &userDataCollection{
+				Local:  map[string][]byte{},
+				Remote: map[string]string{},
+			},
+		}))
+
+		go func() {
+			time.Sleep(1 * time.Second)
+			require.NoError(t, transient.Put(handle, &consentRequestCtx{
+				UserData: &userDataCollection{
+					Local: local,
+				},
+			}))
+		}()
+
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		defer cancel()
+
+		userData, err := o.fetchUserDataWithRetry(ctx, transient, handle)
+		require.NoError(t, err)
+		require.Len(t, userData, 1)
+	})
+
+	t.Run("test retries to get user data - timeout", func(t *testing.T) {
+		t.Parallel()
+
+		relyingParty, _, _ := trio(t)
+
+		o, err := New(&Config{
+			DIDExchClient:        &mockdidexchange.MockClient{},
+			Storage:              memStorage(),
+			AriesContextProvider: relyingParty,
+			PresentProofClient:   &mockpresentproof.MockClient{},
+			Hydra: &stubHydra{
+				acceptConsentRequestFunc: func(*admin.AcceptConsentRequestParams) (*admin.AcceptConsentRequestOK, error) {
+					return &admin.AcceptConsentRequestOK{Payload: &models.CompletedRequest{RedirectTo: redirectURL}}, nil
+				},
+			},
+			MsgRegistrar:         msghandler.NewRegistrar(),
+			AriesMessenger:       &messenger.MockMessenger{},
+			JSONLDDocumentLoader: testutil.DocumentLoader(t),
+		})
+		require.NoError(t, err)
+
+		const handle = "sampleHandle"
+
+		transient := newTransientStorage(o.transientStore)
+		require.NoError(t, transient.Put(handle, &consentRequestCtx{
+			LinkedWalletURL: "sampleURL",
+			UserData: &userDataCollection{
+				Local:  map[string][]byte{},
+				Remote: map[string]string{},
+			},
+		}))
+
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		defer cancel()
+
+		userData, err := o.fetchUserDataWithRetry(ctx, transient, handle)
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "failed to get userdata")
+		require.Len(t, userData, 0)
+	})
 }
 
 func TestHandleIssuerPresentationMsg(t *testing.T) {
