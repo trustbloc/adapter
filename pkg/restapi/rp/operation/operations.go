@@ -1035,6 +1035,15 @@ func (o *Operation) getPresentationResponseResultHandler(w http.ResponseWriter, 
 		return
 	}
 
+	// TODO for debug purpose only, to be removed
+	rpDataBytes, err := json.MarshalIndent(rpData, "", "		")
+	if err != nil {
+		logger.Errorf("failed to marshal rp data: %s", err)
+
+		return
+	}
+	logger.Infof("rp data for handle[%s], : %s", handle, string(rpDataBytes))
+
 	// TODO support selective disclosure
 	accept := &admin.AcceptConsentRequestParams{}
 	accept.SetContext(r.Context())
