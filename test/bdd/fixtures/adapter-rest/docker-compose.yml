@@ -21,7 +21,7 @@ services:
       - ADAPTER_REST_DIDCOMM_INBOUND_HOST_EXTERNAL=http://issuer-adapter-rest.trustbloc.local:9071
       - ADAPTER_REST_TRUSTBLOC_DOMAIN=${BLOC_DOMAIN}
       - ADAPTER_REST_UNIVERSAL_RESOLVER_URL=http://did.rest.example.com:8072/1.0/identifiers
-      - ADAPTER_REST_DSN=mysql://issueradapter:issueradapter-secret-pw@tcp(mysql:3306)/?interpolateParams=true&multiStatements=true
+      - ADAPTER_REST_DSN=mongodb://mongodb.example.com:27017
       - ADAPTER_REST_DSN_TIMEOUT=45
       - ADAPTER_REST_WALLET_APP_URL=http://demoapp/load
       - OIDC_STORE_KEY=/etc/store-keys/oidc-enc.key
@@ -38,6 +38,8 @@ services:
       - ../keys/issuer-stores:/etc/store-keys
     networks:
       - bdd_net
+    depends_on:
+      - mongodb.example.com
 
   rp.adapter.rest.example.com:
     container_name: rp.adapter.rest.example.com
@@ -49,7 +51,7 @@ services:
       - ADAPTER_REST_TLS_SYSTEMCERTPOOL=true
       - ADAPTER_REST_TLS_SERVE_CERT=/etc/tls/ec-pubCert.pem
       - ADAPTER_REST_TLS_SERVE_KEY=/etc/tls/ec-key.pem
-      - ADAPTER_REST_DSN=mysql://rpadapter:rpadapter-secret-pw@tcp(mysql:3306)/?interpolateParams=true&multiStatements=true
+      - ADAPTER_REST_DSN=mongodb://mongodb.example.com:27017
       - ADAPTER_REST_OP_URL=http://PUT-SOMETHING-HERE.com
       - ADAPTER_REST_PRESENTATION_DEFINITIONS_FILE=/etc/testdata/presentationdefinitions.json
       - ADAPTER_REST_DIDCOMM_INBOUND_HOST=0.0.0.0:8071
@@ -73,7 +75,7 @@ services:
       - bdd_net
     depends_on:
       - hydra
-      - mysql
+      - mongodb.example.com
 
   file-server.trustbloc.local: # file server for hosting static resources (e.g. JSON-LD contexts)
     container_name: file-server.trustbloc.local
@@ -172,6 +174,15 @@ services:
       driver: "none"
     volumes:
       - ./mysql-config:/docker-entrypoint-initdb.d
+    networks:
+      - bdd_net
+
+
+  mongodb.example.com:
+    container_name: mongodb.example.com
+    image: mongo:4.0.0
+    ports:
+      - "27017:27017"
     networks:
       - bdd_net
 

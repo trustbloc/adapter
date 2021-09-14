@@ -23,6 +23,7 @@ import (
 
 	"github.com/cenkalti/backoff"
 	"github.com/gorilla/mux"
+	"github.com/hyperledger/aries-framework-go-ext/component/storage/mongodb"
 	"github.com/hyperledger/aries-framework-go-ext/component/storage/mysql"
 	"github.com/hyperledger/aries-framework-go/component/storageutil/mem"
 	"github.com/hyperledger/aries-framework-go/pkg/client/didexchange"
@@ -75,8 +76,8 @@ const (
 	datasourceNameFlagName  = "dsn"
 	datasourceNameFlagUsage = "Datasource Name with credentials if required." +
 		" Format must be <driver>:[//]<driver-specific-dsn>." +
-		" Examples: 'mysql://root:secret@tcp(localhost:3306)/adapter', 'mem://test'." +
-		" Supported drivers are [mem, mysql]." +
+		" Examples: 'mysql://root:secret@tcp(localhost:3306)/adapter', 'mem://test'," +
+		" 'mongodb://mongodb.example.com:27017'. Supported drivers are [mem, mysql, mongodb]." +
 		" Alternatively, this can be set with the following environment variable: " + datasourceNameEnvKey
 	datasourceNameEnvKey = "ADAPTER_REST_DSN"
 
@@ -198,6 +199,13 @@ const (
 		contextProviderEnvKey
 )
 
+// Database types
+const (
+	databaseTypeMemOption     = "mem"
+	databaseTypeMySQLOption   = "mysql"
+	databaseTypeMongoDBOption = "mongodb"
+)
+
 // API endpoints.
 const (
 	uiEndpoint = "/ui"
@@ -221,11 +229,14 @@ const (
 
 // nolint:gochecknoglobals
 var supportedStorageProviders = map[string]func(string, string) (storage.Provider, error){
-	"mysql": func(dsn, prefix string) (storage.Provider, error) {
+	databaseTypeMySQLOption: func(dsn, prefix string) (storage.Provider, error) {
 		return mysql.NewProvider(dsn, mysql.WithDBPrefix(prefix)) // nolint:wrapcheck // reduce cyclo
 	},
-	"mem": func(_, _ string) (storage.Provider, error) { // nolint:unparam
+	databaseTypeMemOption: func(_, _ string) (storage.Provider, error) { // nolint:unparam
 		return mem.NewProvider(), nil
+	},
+	databaseTypeMongoDBOption: func(dsn, prefix string) (storage.Provider, error) {
+		return mongodb.NewProvider(dsn, mongodb.WithDBPrefix(prefix)) // nolint:wrapcheck // reduce cyclo
 	},
 }
 
@@ -912,6 +923,12 @@ func getDBParams(dbURL string) (driver, dsn string, err error) {
 	}
 
 	driver = parsed[0]
+
+	if driver == "mongodb" {
+		// The MongoDB storage provider needs the full connection string (including the driver as part of it).
+		return driver, dbURL, nil
+	}
+
 	dsn = strings.TrimPrefix(parsed[1], "//")
 
 	return driver, dsn, nil

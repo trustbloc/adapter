@@ -443,19 +443,50 @@ func TestAdapterModes(t *testing.T) { // nolint:paralleltest // shared environme
 		require.Contains(t, err.Error(), "invalid mode : invalidMode")
 	})
 
-	t.Run("test adapter mode - store errors", func(t *testing.T) { // nolint:paralleltest // shared environment variables
-		parameters := &adapterRestParameters{
-			dsnParams: &dsnParams{},
-		}
+	t.Run("test adapter mode - invalid driver type", // nolint:paralleltest // shared environment variables
+		func(t *testing.T) {
+			parameters := &adapterRestParameters{
+				dsnParams: &dsnParams{},
+			}
 
-		err := addIssuerHandlers(parameters, nil, nil, nil, nil)
-		require.Error(t, err)
-		require.Contains(t, err.Error(), "failed to init storage provider")
+			err := addIssuerHandlers(parameters, nil, nil, nil, nil)
+			require.Error(t, err)
+			require.Contains(t, err.Error(), "failed to init storage provider")
 
-		_, err = initStore("invaldidb://test", 10, "")
-		require.Error(t, err)
-		require.Contains(t, err.Error(), "unsupported storage driver: invaldidb")
-	})
+			_, err = initStore("invaldidb://test", 10, "")
+			require.Error(t, err)
+			require.Contains(t, err.Error(), "unsupported storage driver: invaldidb")
+		})
+
+	t.Run("test adapter mode - invalid MySQL dsn", // nolint:paralleltest // shared environment variables
+		func(t *testing.T) {
+			parameters := &adapterRestParameters{
+				dsnParams: &dsnParams{},
+			}
+
+			err := addIssuerHandlers(parameters, nil, nil, nil, nil)
+			require.Error(t, err)
+			require.Contains(t, err.Error(), "failed to init storage provider")
+
+			_, err = initStore("mysql://", 1, "")
+			require.EqualError(t, err, "store init - failed to connect to storage at  : "+
+				"DB URL for new mySQL DB provider can't be blank")
+		})
+
+	t.Run("test adapter mode - invalid MongoDB dsn", // nolint:paralleltest // shared environment variables
+		func(t *testing.T) {
+			parameters := &adapterRestParameters{
+				dsnParams: &dsnParams{},
+			}
+
+			err := addIssuerHandlers(parameters, nil, nil, nil, nil)
+			require.Error(t, err)
+			require.Contains(t, err.Error(), "failed to init storage provider")
+
+			_, err = initStore("mongodb://", 1, "")
+			require.EqualError(t, err, "store init - failed to connect to storage at mongodb:// : "+
+				"failed to create a new MongoDB client: error parsing uri: must have at least 1 host")
+		})
 
 	t.Run("test adapter mode - issuer client store key error", func(t *testing.T) { // nolint:paralleltest,lll // shared environment variables
 		startCmd := GetStartCmd(&mockServer{})
