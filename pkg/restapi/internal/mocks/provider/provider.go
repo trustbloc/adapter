@@ -46,7 +46,7 @@ type MockMessenger struct {
 }
 
 // Send mock messenger Send.
-func (m *MockMessenger) Send(msg service.DIDCommMsgMap, myDID, theirDID string) error {
+func (m *MockMessenger) Send(msg service.DIDCommMsgMap, myDID, theirDID string, _ ...service.Opt) error {
 	m.lock.Lock()
 	defer m.lock.Unlock()
 

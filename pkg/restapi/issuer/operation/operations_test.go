@@ -1226,10 +1226,8 @@ func TestValidateWalletResponse(t *testing.T) {
 	t.Run("test validate response - invalid req", func(t *testing.T) {
 		t.Parallel()
 
-		txnID = "invalid-txn-id"
-
 		rr := serveHTTP(t, handler.Handle(), http.MethodPost,
-			validateConnectResponseEndpoint+"?"+txnIDQueryParam+"="+txnID, []byte("invalid-request"))
+			validateConnectResponseEndpoint+"?"+txnIDQueryParam+"=invalid-txn-id", []byte("invalid-request"))
 
 		require.Equal(t, http.StatusBadRequest, rr.Code)
 		require.Contains(t, rr.Body.String(), "invalid request")
@@ -1238,10 +1236,8 @@ func TestValidateWalletResponse(t *testing.T) {
 	t.Run("test validate response - invalid txn id", func(t *testing.T) {
 		t.Parallel()
 
-		txnID = "invalid-txn-id"
-
 		rr := serveHTTP(t, handler.Handle(), http.MethodPost,
-			validateConnectResponseEndpoint+"?"+txnIDQueryParam+"="+txnID, vReqBytes)
+			validateConnectResponseEndpoint+"?"+txnIDQueryParam+"=invalid-txn-id", vReqBytes)
 
 		require.Equal(t, http.StatusBadRequest, rr.Code)
 		require.Contains(t, rr.Body.String(), "txn data not found")
@@ -1250,13 +1246,11 @@ func TestValidateWalletResponse(t *testing.T) {
 	t.Run("test validate response - invalid txn data", func(t *testing.T) {
 		t.Parallel()
 
-		txnID = uuid.New().String()
-
 		putErr := c.txnStore.Put(txnID, []byte("invalid json"))
 		require.NoError(t, putErr)
 
 		rr := serveHTTP(t, handler.Handle(), http.MethodPost,
-			validateConnectResponseEndpoint+"?"+txnIDQueryParam+"="+txnID, vReqBytes)
+			validateConnectResponseEndpoint+"?"+txnIDQueryParam+"="+uuid.New().String(), vReqBytes)
 
 		require.Equal(t, http.StatusBadRequest, rr.Code)
 		require.Contains(t, rr.Body.String(), "txn data not found")
@@ -2718,8 +2712,8 @@ func TestPresentProofHandler(t *testing.T) {
 
 			done := make(chan struct{})
 
-			actionCh <- createProofReqMsg(t, presentproofsvc.RequestPresentation{
-				Type: presentproofsvc.RequestPresentationMsgType,
+			actionCh <- createProofReqMsgV2(t, presentproofsvc.RequestPresentation{
+				Type: presentproofsvc.RequestPresentationMsgTypeV2,
 				RequestPresentationsAttach: []decorator.Attachment{
 					{Data: decorator.AttachmentData{
 						JSON: vp,
@@ -2803,8 +2797,8 @@ func TestPresentProofHandler(t *testing.T) {
 
 			done := make(chan struct{})
 
-			actionCh <- createProofReqMsg(t, presentproofsvc.RequestPresentation{
-				Type: presentproofsvc.RequestPresentationMsgType,
+			actionCh <- createProofReqMsgV2(t, presentproofsvc.RequestPresentation{
+				Type: presentproofsvc.RequestPresentationMsgTypeV2,
 				RequestPresentationsAttach: []decorator.Attachment{
 					{Data: decorator.AttachmentData{
 						JSON: vp,
@@ -2834,8 +2828,8 @@ func TestPresentProofHandler(t *testing.T) {
 			done := make(chan struct{})
 
 			// request doesn't have attachment
-			actionCh <- createProofReqMsg(t, presentproofsvc.RequestPresentation{
-				Type: presentproofsvc.RequestPresentationMsgType,
+			actionCh <- createProofReqMsgV2(t, presentproofsvc.RequestPresentation{
+				Type: presentproofsvc.RequestPresentationMsgTypeV2,
 			}, nil, func(err error) {
 				require.NotNil(t, err)
 				require.Contains(t, err.Error(),
@@ -2850,8 +2844,8 @@ func TestPresentProofHandler(t *testing.T) {
 			}
 
 			// request doesn't have authorization cred
-			actionCh <- createProofReqMsg(t, presentproofsvc.RequestPresentation{
-				Type: presentproofsvc.RequestPresentationMsgType,
+			actionCh <- createProofReqMsgV2(t, presentproofsvc.RequestPresentation{
+				Type: presentproofsvc.RequestPresentationMsgTypeV2,
 				RequestPresentationsAttach: []decorator.Attachment{
 					{Data: decorator.AttachmentData{}},
 				},
@@ -2869,8 +2863,8 @@ func TestPresentProofHandler(t *testing.T) {
 			}
 
 			// invalid authorization cred
-			actionCh <- createProofReqMsg(t, presentproofsvc.RequestPresentation{
-				Type: presentproofsvc.RequestPresentationMsgType,
+			actionCh <- createProofReqMsgV2(t, presentproofsvc.RequestPresentation{
+				Type: presentproofsvc.RequestPresentationMsgTypeV2,
 				RequestPresentationsAttach: []decorator.Attachment{
 					{Data: decorator.AttachmentData{
 						JSON: "invalid vp",
@@ -2890,7 +2884,7 @@ func TestPresentProofHandler(t *testing.T) {
 			}
 
 			// authorization cred not found
-			actionCh <- createProofReqMsg(t, nil, nil, func(err error) {
+			actionCh <- createProofReqMsgV2(t, nil, nil, func(err error) {
 				require.NotNil(t, err)
 				require.Contains(t, err.Error(), "authorization credential not found")
 				done <- struct{}{}
@@ -2922,8 +2916,8 @@ func TestPresentProofHandler(t *testing.T) {
 			err = c.txnStore.Put(vc.ID, []byte("invalid data"))
 			require.NoError(t, err)
 
-			actionCh <- createProofReqMsg(t, presentproofsvc.RequestPresentation{
-				Type: presentproofsvc.RequestPresentationMsgType,
+			actionCh <- createProofReqMsgV2(t, presentproofsvc.RequestPresentation{
+				Type: presentproofsvc.RequestPresentationMsgTypeV2,
 				RequestPresentationsAttach: []decorator.Attachment{
 					{Data: decorator.AttachmentData{
 						JSON: vp,
@@ -2954,8 +2948,8 @@ func TestPresentProofHandler(t *testing.T) {
 			err = c.storeAuthorizationCredHandle(handle)
 			require.NoError(t, err)
 
-			actionCh <- createProofReqMsg(t, presentproofsvc.RequestPresentation{
-				Type: presentproofsvc.RequestPresentationMsgType,
+			actionCh <- createProofReqMsgV2(t, presentproofsvc.RequestPresentation{
+				Type: presentproofsvc.RequestPresentationMsgTypeV2,
 				RequestPresentationsAttach: []decorator.Attachment{
 					{Data: decorator.AttachmentData{
 						JSON: vp,
@@ -2989,8 +2983,8 @@ func TestPresentProofHandler(t *testing.T) {
 				Type:    []string{"VerifiablePresentation"},
 			}
 
-			actionCh <- createProofReqMsg(t, presentproofsvc.RequestPresentation{
-				Type: presentproofsvc.RequestPresentationMsgType,
+			actionCh <- createProofReqMsgV2(t, presentproofsvc.RequestPresentation{
+				Type: presentproofsvc.RequestPresentationMsgTypeV2,
 				RequestPresentationsAttach: []decorator.Attachment{
 					{Data: decorator.AttachmentData{
 						JSON: pres,
@@ -3017,8 +3011,8 @@ func TestPresentProofHandler(t *testing.T) {
 
 			c.vccrypto = &mockVCCrypto{signVPErr: errors.New("sign error")}
 
-			actionCh <- createProofReqMsg(t, presentproofsvc.RequestPresentation{
-				Type: presentproofsvc.RequestPresentationMsgType,
+			actionCh <- createProofReqMsgV2(t, presentproofsvc.RequestPresentation{
+				Type: presentproofsvc.RequestPresentationMsgTypeV2,
 				RequestPresentationsAttach: []decorator.Attachment{
 					{Data: decorator.AttachmentData{
 						JSON: vp,
@@ -3043,8 +3037,8 @@ func TestPresentProofHandler(t *testing.T) {
 				ResolveValue: didDocument,
 			}
 
-			actionCh <- createProofReqMsg(t, presentproofsvc.RequestPresentation{
-				Type: presentproofsvc.RequestPresentationMsgType,
+			actionCh <- createProofReqMsgV2(t, presentproofsvc.RequestPresentation{
+				Type: presentproofsvc.RequestPresentationMsgTypeV2,
 				RequestPresentationsAttach: []decorator.Attachment{
 					{Data: decorator.AttachmentData{
 						JSON: vp,
@@ -3076,8 +3070,8 @@ func TestPresentProofHandler(t *testing.T) {
 				},
 			}
 
-			actionCh <- createProofReqMsg(t, presentproofsvc.RequestPresentation{
-				Type: presentproofsvc.RequestPresentationMsgType,
+			actionCh <- createProofReqMsgV2(t, presentproofsvc.RequestPresentation{
+				Type: presentproofsvc.RequestPresentationMsgTypeV2,
 				RequestPresentationsAttach: []decorator.Attachment{
 					{Data: decorator.AttachmentData{
 						JSON: vp,
@@ -3106,8 +3100,8 @@ func TestPresentProofHandler(t *testing.T) {
 				},
 			}
 
-			actionCh <- createProofReqMsg(t, presentproofsvc.RequestPresentation{
-				Type: presentproofsvc.RequestPresentationMsgType,
+			actionCh <- createProofReqMsgV2(t, presentproofsvc.RequestPresentation{
+				Type: presentproofsvc.RequestPresentationMsgTypeV2,
 				RequestPresentationsAttach: []decorator.Attachment{
 					{Data: decorator.AttachmentData{
 						JSON: vp,
@@ -3155,8 +3149,8 @@ func TestPresentProofHandler(t *testing.T) {
 			require.NoError(t, err)
 
 			// http request fails
-			actionCh <- createProofReqMsg(t, presentproofsvc.RequestPresentation{
-				Type: presentproofsvc.RequestPresentationMsgType,
+			actionCh <- createProofReqMsgV2(t, presentproofsvc.RequestPresentation{
+				Type: presentproofsvc.RequestPresentationMsgTypeV2,
 				RequestPresentationsAttach: []decorator.Attachment{
 					{Data: decorator.AttachmentData{
 						JSON: vp,
@@ -3181,8 +3175,8 @@ func TestPresentProofHandler(t *testing.T) {
 				},
 			}
 
-			actionCh <- createProofReqMsg(t, presentproofsvc.RequestPresentation{
-				Type: presentproofsvc.RequestPresentationMsgType,
+			actionCh <- createProofReqMsgV2(t, presentproofsvc.RequestPresentation{
+				Type: presentproofsvc.RequestPresentationMsgTypeV2,
 				RequestPresentationsAttach: []decorator.Attachment{
 					{Data: decorator.AttachmentData{
 						JSON: vp,
@@ -3209,8 +3203,8 @@ func TestPresentProofHandler(t *testing.T) {
 				},
 			}
 
-			actionCh <- createProofReqMsg(t, presentproofsvc.RequestPresentation{
-				Type: presentproofsvc.RequestPresentationMsgType,
+			actionCh <- createProofReqMsgV2(t, presentproofsvc.RequestPresentation{
+				Type: presentproofsvc.RequestPresentationMsgTypeV2,
 				RequestPresentationsAttach: []decorator.Attachment{
 					{Data: decorator.AttachmentData{
 						JSON: vp,
@@ -3236,8 +3230,8 @@ func TestPresentProofHandler(t *testing.T) {
 			}
 			c.vccrypto = &mockVCCrypto{signVCErr: errors.New("sign error")}
 
-			actionCh <- createProofReqMsg(t, presentproofsvc.RequestPresentation{
-				Type: presentproofsvc.RequestPresentationMsgType,
+			actionCh <- createProofReqMsgV2(t, presentproofsvc.RequestPresentation{
+				Type: presentproofsvc.RequestPresentationMsgTypeV2,
 				RequestPresentationsAttach: []decorator.Attachment{
 					{Data: decorator.AttachmentData{
 						JSON: vp,
@@ -3313,8 +3307,8 @@ func TestPresentProofHandler(t *testing.T) {
 
 			done := make(chan struct{})
 
-			actionCh <- createProofReqMsg(t, presentproofsvc.RequestPresentation{
-				Type: presentproofsvc.RequestPresentationMsgType,
+			actionCh <- createProofReqMsgV2(t, presentproofsvc.RequestPresentation{
+				Type: presentproofsvc.RequestPresentationMsgTypeV2,
 				RequestPresentationsAttach: []decorator.Attachment{
 					{Data: decorator.AttachmentData{
 						JSON: vp,
@@ -3455,7 +3449,7 @@ func TestDIDCommStateMsgListener(t *testing.T) {
 		done := make(chan struct{})
 
 		c.messenger = &messenger.MockMessenger{
-			SendFunc: func(msg service.DIDCommMsgMap, myDID, theirDID string) error {
+			SendFunc: func(msg service.DIDCommMsgMap, myDID, theirDID string, _ ...service.Opt) error {
 				pMsg := &aries.DIDCommMsg{}
 				err = msg.Decode(pMsg)
 				require.NoError(t, err)
@@ -3512,7 +3506,7 @@ func TestDIDCommStateMsgListener(t *testing.T) {
 		require.NoError(t, err)
 
 		c.messenger = &messenger.MockMessenger{
-			SendFunc: func(msg service.DIDCommMsgMap, myDID, theirDID string) error {
+			SendFunc: func(msg service.DIDCommMsgMap, myDID, theirDID string, _ ...service.Opt) error {
 				return errors.New("send error")
 			},
 		}
@@ -3539,7 +3533,7 @@ func TestDIDCommStateMsgListener(t *testing.T) {
 		require.NoError(t, err)
 
 		c.messenger = &messenger.MockMessenger{
-			SendFunc: func(msg service.DIDCommMsgMap, myDID, theirDID string) error {
+			SendFunc: func(msg service.DIDCommMsgMap, myDID, theirDID string, _ ...service.Opt) error {
 				return errors.New("send error")
 			},
 		}
@@ -3563,7 +3557,7 @@ func TestDIDCommStateMsgListener(t *testing.T) {
 		require.NoError(t, err)
 
 		c.messenger = &messenger.MockMessenger{
-			SendFunc: func(msg service.DIDCommMsgMap, myDID, theirDID string) error {
+			SendFunc: func(msg service.DIDCommMsgMap, myDID, theirDID string, _ ...service.Opt) error {
 				return errors.New("send error")
 			},
 		}

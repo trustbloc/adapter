@@ -167,6 +167,7 @@ type AriesContextProvider interface {
 	JSONLDDocumentLoader() ld.DocumentLoader
 	KeyAgreementType() kms.KeyType
 	KeyType() kms.KeyType
+	MediaTypeProfiles() []string
 }
 
 // Storage config.
@@ -1305,7 +1306,8 @@ func (o *Operation) presentProofListener(ppActions chan service.DIDCommAction) {
 		var continueArg presentproofsvc.Opt
 
 		switch action.Message.Type() {
-		case presentproofsvc.PresentationMsgType:
+		case presentproofsvc.PresentationMsgTypeV2, presentproofsvc.PresentationMsgTypeV3:
+			// TODO add proper handling for presentproof VCT V3 here and the case below.
 			supportsWACI, waciErr := o.supportsWACIFlagUsingConnection(action)
 			if waciErr != nil {
 				err = waciErr
@@ -1323,7 +1325,7 @@ func (o *Operation) presentProofListener(ppActions chan service.DIDCommAction) {
 			}
 
 			continueArg = presentproof.WithFriendlyNames(uuid.New().String())
-		case presentproofsvc.ProposePresentationMsgType:
+		case presentproofsvc.ProposePresentationMsgTypeV2, presentproofsvc.ProposePresentationMsgTypeV3:
 			ctx, waciErr := o.getWACIPresDef(action)
 			if waciErr != nil {
 				err = waciErr

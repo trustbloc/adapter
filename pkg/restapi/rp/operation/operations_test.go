@@ -2915,8 +2915,7 @@ func TestHandleIssuerPresentationMsg(t *testing.T) {
 		msg := service.NewDIDCommMsgMap(&presentproof.Presentation{
 			PresentationsAttach: []decorator.Attachment{},
 		})
-		err = msg.SetID(thid)
-		require.NoError(t, err)
+		msg.SetID(thid)
 
 		err = o.handleIssuerPresentationMsg(msg)
 		require.Error(t, err)
@@ -2938,8 +2937,7 @@ func TestHandleIssuerPresentationMsg(t *testing.T) {
 		})
 		thid := uuid.New().String()
 
-		err = msg.SetID(thid)
-		require.NoError(t, err)
+		msg.SetID(thid)
 
 		err = o.handleIssuerPresentationMsg(msg)
 		require.Error(t, err)
@@ -3547,7 +3545,7 @@ func TestHandlePresentProofMsg(t *testing.T) { // nolint: gocyclo,cyclop
 
 		actionCh <- service.DIDCommAction{
 			Message: service.NewDIDCommMsgMap(&presentproof.Presentation{
-				Type: presentproofsvc.PresentationMsgType,
+				Type: presentproofsvc.PresentationMsgTypeV2,
 			}),
 			Stop: func(err error) {
 				done <- struct{}{}
@@ -3587,7 +3585,7 @@ func TestHandlePresentProofMsg(t *testing.T) { // nolint: gocyclo,cyclop
 		actionCh <- service.DIDCommAction{
 			Message: service.NewDIDCommMsgMap(struct {
 				Type string `json:"@type,omitempty"`
-			}{Type: presentproofsvc.ProposePresentationMsgType}),
+			}{Type: presentproofsvc.ProposePresentationMsgTypeV2}),
 			Continue: func(args interface{}) {
 				done <- struct{}{}
 			},
@@ -3616,7 +3614,7 @@ func TestHandlePresentProofMsg(t *testing.T) { // nolint: gocyclo,cyclop
 		actionCh <- service.DIDCommAction{
 			Message: service.NewDIDCommMsgMap(struct {
 				Type string `json:"@type,omitempty"`
-			}{Type: presentproofsvc.ProposePresentationMsgType}),
+			}{Type: presentproofsvc.ProposePresentationMsgTypeV2}),
 			Stop: func(err error) {
 				require.Contains(t, err.Error(), "get connection id from event")
 				done <- struct{}{}
@@ -3643,7 +3641,7 @@ func TestDIDDocReq(t *testing.T) { // nolint:gocyclo,cyclop
 		done := make(chan struct{})
 
 		c.messenger = &messenger.MockMessenger{
-			ReplyToFunc: func(msgID string, msg service.DIDCommMsgMap) error {
+			ReplyToFunc: func(msgID string, msg service.DIDCommMsgMap, _ ...service.Opt) error {
 				pMsg := &DIDDocResp{}
 				err = msg.Decode(pMsg)
 				require.NoError(t, err)
@@ -3678,7 +3676,7 @@ func TestDIDDocReq(t *testing.T) { // nolint:gocyclo,cyclop
 		require.NoError(t, err)
 
 		c.messenger = &messenger.MockMessenger{
-			ReplyToFunc: func(msgID string, msg service.DIDCommMsgMap) error {
+			ReplyToFunc: func(msgID string, msg service.DIDCommMsgMap, _ ...service.Opt) error {
 				return errors.New("reply error")
 			},
 		}
@@ -3700,7 +3698,7 @@ func TestDIDDocReq(t *testing.T) { // nolint:gocyclo,cyclop
 		done := make(chan struct{})
 
 		c.messenger = &messenger.MockMessenger{
-			ReplyToFunc: func(msgID string, msg service.DIDCommMsgMap) error {
+			ReplyToFunc: func(msgID string, msg service.DIDCommMsgMap, _ ...service.Opt) error {
 				pMsg := &DIDDocResp{}
 				dErr := msg.Decode(pMsg)
 				require.NoError(t, dErr)
@@ -3751,7 +3749,7 @@ func TestDIDDocReq(t *testing.T) { // nolint:gocyclo,cyclop
 		done := make(chan struct{})
 
 		c.messenger = &messenger.MockMessenger{
-			ReplyToFunc: func(msgID string, msg service.DIDCommMsgMap) error {
+			ReplyToFunc: func(msgID string, msg service.DIDCommMsgMap, _ ...service.Opt) error {
 				pMsg := &ErrorResp{}
 				dErr := msg.Decode(pMsg)
 				require.NoError(t, dErr)
@@ -3801,7 +3799,7 @@ func TestDIDDocReq(t *testing.T) { // nolint:gocyclo,cyclop
 		}
 
 		conf.AriesMessenger = &messenger.MockMessenger{
-			ReplyToFunc: func(msgID string, msg service.DIDCommMsgMap) error {
+			ReplyToFunc: func(msgID string, msg service.DIDCommMsgMap, _ ...service.Opt) error {
 				pMsg := &ErrorResp{}
 				dErr := msg.Decode(pMsg)
 				require.NoError(t, dErr)
@@ -3851,7 +3849,7 @@ func TestDIDDocReq(t *testing.T) { // nolint:gocyclo,cyclop
 		done := make(chan struct{})
 
 		c.messenger = &messenger.MockMessenger{
-			ReplyToFunc: func(msgID string, msg service.DIDCommMsgMap) error {
+			ReplyToFunc: func(msgID string, msg service.DIDCommMsgMap, _ ...service.Opt) error {
 				pMsg := &ErrorResp{}
 				dErr := msg.Decode(pMsg)
 				require.NoError(t, dErr)
@@ -3901,7 +3899,7 @@ func TestDIDDocReq(t *testing.T) { // nolint:gocyclo,cyclop
 		done := make(chan struct{})
 
 		c.messenger = &messenger.MockMessenger{
-			ReplyToFunc: func(msgID string, msg service.DIDCommMsgMap) error {
+			ReplyToFunc: func(msgID string, msg service.DIDCommMsgMap, _ ...service.Opt) error {
 				pMsg := &ErrorResp{}
 				dErr := msg.Decode(pMsg)
 				require.NoError(t, dErr)
@@ -3941,7 +3939,7 @@ func TestDIDDocReq(t *testing.T) { // nolint:gocyclo,cyclop
 		done := make(chan struct{})
 
 		c.messenger = &messenger.MockMessenger{
-			ReplyToFunc: func(msgID string, msg service.DIDCommMsgMap) error {
+			ReplyToFunc: func(msgID string, msg service.DIDCommMsgMap, opts ...service.Opt) error {
 				pMsg := &ErrorResp{}
 				dErr := msg.Decode(pMsg)
 				require.NoError(t, dErr)
@@ -4307,7 +4305,7 @@ func newIssuerResponse(t *testing.T, thid string, payload interface{}) service.D
 	t.Helper()
 
 	response := service.NewDIDCommMsgMap(&presentproof.Presentation{
-		Type: presentproofsvc.PresentationMsgType,
+		Type: presentproofsvc.PresentationMsgTypeV2,
 		PresentationsAttach: []decorator.Attachment{{
 			ID:       "123",
 			MimeType: "application/ld+json",
@@ -4316,8 +4314,7 @@ func newIssuerResponse(t *testing.T, thid string, payload interface{}) service.D
 			},
 		}},
 	})
-	err := response.SetID(thid)
-	require.NoError(t, err)
+	response.SetID(thid)
 
 	return response
 }

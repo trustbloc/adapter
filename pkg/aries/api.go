@@ -31,6 +31,7 @@ type CtxProvider interface {
 	Crypto() ariescrypto.Crypto
 	KeyType() kms.KeyType
 	KeyAgreementType() kms.KeyType
+	MediaTypeProfiles() []string
 }
 
 // DIDCommMsg core didcomm message model.

@@ -305,7 +305,7 @@ func TestGetPresentationSubmissionCredentials(t *testing.T) {
 		)
 
 		pres := &presentproof.Presentation{
-			Type: presentproofsvc.PresentationMsgType,
+			Type: presentproofsvc.PresentationMsgTypeV2,
 			PresentationsAttach: []decorator.Attachment{{
 				ID:       "123",
 				MimeType: "application/ld+json",
@@ -332,7 +332,7 @@ func TestGetPresentationSubmissionCredentials(t *testing.T) {
 
 		_, err := getPresentationSubmissionCredentials(
 			&presentproof.Presentation{
-				Type: presentproofsvc.PresentationMsgType,
+				Type: presentproofsvc.PresentationMsgTypeV2,
 			}, nil, nil, nil,
 		)
 
@@ -391,7 +391,7 @@ func newAuthorizationVC(t *testing.T, subjectDID string, rpDID, issuerDID *did.D
 		Issuer: verifiable.Issuer{
 			ID: issuerDID.ID,
 		},
-		Issued: util.NewTimeWithTrailingZeroMsec(time.Now(), 0),
+		Issued: util.NewTime(time.Now()),
 		Subject: &verifiable.Subject{
 			ID: subjectDID,
 			CustomFields: map[string]interface{}{
