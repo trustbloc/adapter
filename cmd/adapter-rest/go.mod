@@ -12,7 +12,7 @@ require (
 	github.com/gorilla/mux v1.8.0
 	github.com/hyperledger/aries-framework-go v0.1.7
 	github.com/hyperledger/aries-framework-go-ext/component/storage/mongodb v0.0.0-20210915134807-3e19121646a4
-	github.com/hyperledger/aries-framework-go-ext/component/storage/mysql v0.0.0-20210714131038-41b5bccef1f9
+	github.com/hyperledger/aries-framework-go-ext/component/storage/mysql v0.0.0-20210909220549-ce3a2ee13e22
 	github.com/hyperledger/aries-framework-go/component/storageutil v0.0.0-20210914204856-8b82016f473c
 	github.com/hyperledger/aries-framework-go/spi v0.0.0-20210914204856-8b82016f473c
 	github.com/piprate/json-gold v0.4.1-0.20210813112359-33b90c4ca86c

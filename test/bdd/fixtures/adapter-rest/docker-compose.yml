@@ -26,7 +26,7 @@ services:
       - ADAPTER_REST_WALLET_APP_URL=http://demoapp/load
       - OIDC_STORE_KEY=/etc/store-keys/oidc-enc.key
       - ADAPTER_REST_EXTERNAL_URL=https://issuer-adapter-rest.trustbloc.local:9070
-      - ADAPTER_REST_DID_ANCHOR_ORIGIN=origin
+      - ADAPTER_REST_DID_ANCHOR_ORIGIN=https://testnet.orb.local
       - ADAPTER_REST_CONTEXT_PROVIDER_URL=${CONTEXT_PROVIDER_URL}
     ports:
       - 9070:9070
@@ -62,7 +62,7 @@ services:
       - ADAPTER_REST_DSN_TIMEOUT=45
       - ADAPTER_REST_WALLET_APP_URL=http://demoapp/load
       - ADAPTER_REST_EXTERNAL_URL=https://rp.adapter.rest.example.com:8070
-      - ADAPTER_REST_DID_ANCHOR_ORIGIN=origin
+      - ADAPTER_REST_DID_ANCHOR_ORIGIN=https://testnet.orb.local
       - ADAPTER_REST_CONTEXT_PROVIDER_URL=${CONTEXT_PROVIDER_URL}
     ports:
       - 8070:8070
