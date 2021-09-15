@@ -266,7 +266,8 @@ func createCredentialReqMsg(t *testing.T, msg interface{}, continueFn func(args 
 	}
 }
 
-func createProofReqMsg(t *testing.T, msg interface{}, continueFn func(args interface{}),
+// TODO add createProofReqMsgV3 for VCT present proof V3
+func createProofReqMsgV2(t *testing.T, msg interface{}, continueFn func(args interface{}),
 	stopFn func(err error)) service.DIDCommAction {
 	t.Helper()
 
@@ -276,7 +277,7 @@ func createProofReqMsg(t *testing.T, msg interface{}, continueFn func(args inter
 
 	if msg == nil {
 		msg = presentproofsvc.RequestPresentation{
-			Type: presentproofsvc.RequestPresentationMsgType,
+			Type: presentproofsvc.RequestPresentationMsgTypeV2,
 			RequestPresentationsAttach: []decorator.Attachment{
 				{Data: decorator.AttachmentData{
 					JSON: vp,

@@ -881,7 +881,7 @@ func (a *Steps) AcceptRequestPresentation(agent string, presentation *verifiable
 	request, err := json.Marshal(presentproofcmd.AcceptRequestPresentationArgs{
 		PIID: action.PIID,
 		Presentation: &presentproof.Presentation{
-			Type: presentproofsvc.PresentationMsgType,
+			Type: presentproofsvc.PresentationMsgTypeV2,
 			PresentationsAttach: []decorator.Attachment{{
 				ID:       uuid.New().String(),
 				MimeType: "application/ld+json",
@@ -1060,7 +1060,7 @@ func sendPresentationRequest(conn *didexchange.Connection, vp *verifiable.Presen
 		MyDID:    conn.MyDID,
 		TheirDID: conn.TheirDID,
 		RequestPresentation: &presentproof.RequestPresentation{
-			Type: presentproofsvc.RequestPresentationMsgType,
+			Type: presentproofsvc.RequestPresentationMsgTypeV2,
 			RequestPresentationsAttach: []decorator.Attachment{
 				{Data: decorator.AttachmentData{
 					JSON: vp,
@@ -1086,7 +1086,7 @@ func sendPresentation(vp *verifiable.Presentation, controllerURL, id string) err
 	req := &presentproofcmd.AcceptRequestPresentationArgs{
 		PIID: id,
 		Presentation: &presentproof.Presentation{
-			Type: presentproofsvc.PresentationMsgType,
+			Type: presentproofsvc.PresentationMsgTypeV2,
 			PresentationsAttach: []decorator.Attachment{{
 				ID:       uuid.New().String(),
 				MimeType: "application/ld+json",
@@ -1131,9 +1131,9 @@ func (a *Steps) SubmitWACIPresentation(walletID, connID string) error { // nolin
 		return fmt.Errorf("failed to fetch action PIID: %w", err)
 	}
 
-	if action.Msg.Type() != presentproofsvc.RequestPresentationMsgType {
+	if action.Msg.Type() != presentproofsvc.RequestPresentationMsgTypeV2 {
 		return fmt.Errorf("invalid present-proof message: expected=%s actual=%s",
-			presentproofsvc.RequestPresentationMsgType, action.Msg.Type())
+			presentproofsvc.RequestPresentationMsgTypeV2, action.Msg.Type())
 	}
 
 	reqMsg := &presentproof.RequestPresentation{}
@@ -1175,7 +1175,7 @@ func (a *Steps) SubmitWACIPresentation(walletID, connID string) error { // nolin
 		Issuer: verifiable.Issuer{
 			ID: "did:peer:issuer",
 		},
-		Issued: util.NewTimeWithTrailingZeroMsec(time.Now(), 0),
+		Issued: util.NewTime(time.Now()),
 		Subject: &verifiable.Subject{
 			ID: "did:peer:user",
 			CustomFields: map[string]interface{}{

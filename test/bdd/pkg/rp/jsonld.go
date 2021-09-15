@@ -105,7 +105,7 @@ func newCreditCardStatementVC() *verifiable.Credential {
 		Issuer: verifiable.Issuer{
 			ID: "did:peer:issuer",
 		},
-		Issued: util.NewTimeWithTrailingZeroMsec(time.Now(), 0),
+		Issued: util.NewTime(time.Now()),
 		Subject: &verifiable.Subject{
 			ID: "did:peer:user",
 			CustomFields: map[string]interface{}{
@@ -150,7 +150,7 @@ func newDriversLicenseVC() *verifiable.Credential {
 		Issuer: verifiable.Issuer{
 			ID: "did:peer:issuer",
 		},
-		Issued: util.NewTimeWithTrailingZeroMsec(time.Now(), 0),
+		Issued: util.NewTime(time.Now()),
 		Subject: &verifiable.Subject{
 			ID: "did:peer:user",
 			CustomFields: map[string]interface{}{

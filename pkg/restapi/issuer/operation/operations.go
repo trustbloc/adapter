@@ -1091,7 +1091,10 @@ func (o *Operation) didCommActionListener(ch <-chan service.DIDCommAction) {
 		switch msg.Message.Type() {
 		case issuecredsvc.RequestCredentialMsgType:
 			args, err = o.handleRequestCredential(msg)
-		case presentproofsvc.RequestPresentationMsgType:
+		case presentproofsvc.RequestPresentationMsgTypeV2:
+			args, err = o.handleRequestPresentation(msg)
+		case presentproofsvc.RequestPresentationMsgTypeV3:
+			// TODO handle presentproofsvc.RequestPresentationMsgTypeV3 properly, for now it's the same as V2.
 			args, err = o.handleRequestPresentation(msg)
 		default:
 			err = fmt.Errorf("unsupported message type : %s", msg.Message.Type())
