@@ -310,7 +310,7 @@ func (s *Steps) newTrustBlocDID(agentID string) (*did.Doc, error) {
 	docResolution, err := orbClient.Create(&didDoc,
 		vdrapi.WithOption(orb.RecoveryPublicKeyOpt, ed25519.PublicKey(keys[1].bits)),
 		vdrapi.WithOption(orb.UpdatePublicKeyOpt, ed25519.PublicKey(keys[2].bits)),
-		vdrapi.WithOption(orb.AnchorOriginOpt, "origin"),
+		vdrapi.WithOption(orb.AnchorOriginOpt, "https://testnet.orb.local"),
 	)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create new trustbloc did: %w", err)

@@ -118,7 +118,7 @@ services:
       - VC_REST_TLS_CACERTS=/etc/tls/ec-cacert.pem
       - VC_REST_TLS_SYSTEMCERTPOOL=true
       - VC_REST_GOVERNANCE_CLAIMS_FILE=/etc/governance_claims.json
-      - VC_REST_DID_ANCHOR_ORIGIN=origin
+      - VC_REST_DID_ANCHOR_ORIGIN=https://testnet.orb.local
     ports:
       - 8066:8066
     entrypoint: ""

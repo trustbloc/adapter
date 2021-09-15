@@ -11,7 +11,7 @@ require (
 	github.com/google/uuid v1.2.0
 	github.com/gorilla/mux v1.8.0
 	github.com/hyperledger/aries-framework-go v0.1.7
-	github.com/hyperledger/aries-framework-go-ext/component/vdr/orb v0.0.0-20210816155124-45ab1ecd4762
+	github.com/hyperledger/aries-framework-go-ext/component/vdr/orb v0.1.3
 	github.com/hyperledger/aries-framework-go/component/storageutil v0.0.0-20210914204856-8b82016f473c
 	github.com/hyperledger/aries-framework-go/spi v0.0.0-20210914204856-8b82016f473c
 	github.com/ory/hydra-client-go v1.4.10
