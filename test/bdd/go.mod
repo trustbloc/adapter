@@ -12,16 +12,16 @@ require (
 	github.com/cucumber/godog v0.9.0
 	github.com/fsouza/go-dockerclient v1.7.4
 	github.com/google/uuid v1.2.0
-	github.com/hyperledger/aries-framework-go v0.1.7
+	github.com/hyperledger/aries-framework-go v0.1.8-0.20210916154931-0196c3a2d102
 	github.com/hyperledger/aries-framework-go-ext/component/vdr/orb v0.1.3
-	github.com/hyperledger/aries-framework-go/component/storageutil v0.0.0-20210914204856-8b82016f473c
+	github.com/hyperledger/aries-framework-go/component/storageutil v0.0.0-20210916154931-0196c3a2d102
 	github.com/ory/hydra-client-go v1.4.10
 	github.com/piprate/json-gold v0.4.1-0.20210813112359-33b90c4ca86c
 	github.com/sirupsen/logrus v1.8.1
 	github.com/tidwall/gjson v1.6.7
 	github.com/trustbloc/edge-adapter v0.0.0
 	github.com/trustbloc/edge-core v0.1.7
-	github.com/trustbloc/hub-router v0.1.7-0.20210915113615-2e552b642ae8
+	github.com/trustbloc/hub-router v0.1.7-0.20210916163414-5ed617fc6113
 	golang.org/x/oauth2 v0.0.0-20210427180440-81ed05c6b58c
 )
 
