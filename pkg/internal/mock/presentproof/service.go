@@ -79,11 +79,11 @@ func (m *MockPresentProofSvc) Actions() ([]presentproof.Action, error) {
 }
 
 // ActionContinue continues action.
-func (m *MockPresentProofSvc) ActionContinue(piID string, opt presentproof.Opt) error {
+func (m *MockPresentProofSvc) ActionContinue(piID string, opt ...presentproof.Opt) error {
 	return nil
 }
 
 // ActionStop stops action.
-func (m *MockPresentProofSvc) ActionStop(piID string, err error) error {
+func (m *MockPresentProofSvc) ActionStop(piID string, err error, opt ...presentproof.Opt) error {
 	return nil
 }

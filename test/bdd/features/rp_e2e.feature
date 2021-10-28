@@ -33,13 +33,14 @@ Feature: RP Adapter
 
   @rp_waci
   Scenario: WACI flow between Verifier and Wallet
-    Given a registered rp tenant with label "waci_demo" and scopes "driver_license:local" with WACI support
+    Given a registered rp tenant with label "waci_demo" and scopes "driver_license:local" and linked wallet "https://example.wallet.com/waci" with WACI support
     When the rp tenant "waci_demo" redirects the user to the rp adapter with scope "driver_license:local"
     And the rp adapter "waci_demo" submits a CHAPI request to "Mock Wallet" with out-of-band invitation
     # TODO remove connections once AFG supports DIDComm v2
     And "Mock Wallet" accepts the didcomm invitation from "waci_demo"
     Then "Mock Wallet" connects with the RP adapter "waci_demo"
     Then "Mock Wallet" submits the presentation to the RP adapter "waci_demo"
+    Then "Mock Wallet" receives acknowledgement from "waci_demo" containing redirect with status "OK"
     Then the user is redirected to the rp tenant "waci_demo"
     Then the rp tenant "waci_demo" retrieves the user data from the rp adapter
 

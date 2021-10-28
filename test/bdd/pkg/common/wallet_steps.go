@@ -15,7 +15,6 @@ import (
 	"github.com/cucumber/godog"
 	"github.com/google/uuid"
 	"github.com/hyperledger/aries-framework-go/pkg/controller/command/messaging"
-	"github.com/hyperledger/aries-framework-go/pkg/didcomm/common/service"
 
 	walletops "github.com/trustbloc/edge-adapter/pkg/restapi/wallet/operation"
 	"github.com/trustbloc/edge-adapter/test/bdd/pkg/agent"
@@ -288,18 +287,9 @@ func (e *WalletSteps) sendCHAPIRequestToRemoteWalletUser(adapterURL, userID, wal
 
 func (e *WalletSteps) handleCHAPIStoreRequest(controllerURL, webhookURL, msgHandle,
 	expectedResponse string) error {
-	msg, err := agent.PullMsgFromWebhookURL(webhookURL, msgHandle)
+	incoming, err := agent.PullMsgFromWebhookURL(webhookURL, msgHandle, nil)
 	if err != nil {
 		return fmt.Errorf("failed to pull msg from webhook: %w", err)
-	}
-
-	incoming := struct {
-		Message service.DIDCommMsgMap `json:"message"`
-	}{}
-
-	err = msg.Decode(&incoming)
-	if err != nil {
-		return fmt.Errorf("failed to read message: %w", err)
 	}
 
 	msgDataBytes, err := json.Marshal(map[string]interface{}{
@@ -312,7 +302,7 @@ func (e *WalletSteps) handleCHAPIStoreRequest(controllerURL, webhookURL, msgHand
 	}
 
 	request := &messaging.SendReplyMessageArgs{
-		MessageID:   incoming.Message.ID(),
+		MessageID:   incoming.ID(),
 		MessageBody: msgDataBytes,
 	}
 

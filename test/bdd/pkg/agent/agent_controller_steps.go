@@ -137,6 +137,22 @@ func (a *Steps) RegisterSteps(s *godog.Suite) {
 	s.Step(`^Remote wallet "([^"]*)" supports CHAPI request/response through DIDComm$`, a.RegisterCHAPIMsgHandler)
 }
 
+// WebhookIncoming is incoming message model from webhook notifier.
+type WebhookIncoming struct {
+	ID         string         `json:"id"`
+	Topic      string         `json:"topic"`
+	WebhookMsg WebhookMessage `json:"message"`
+}
+
+// WebhookMessage model to hold webhook message model.
+type WebhookMessage struct {
+	ProtocolName string
+	Message      *service.DIDCommMsgMap
+	StateID      string
+	Properties   map[string]interface{}
+	Type         string
+}
+
 // ValidateAgentConnection checks if the controller agent is running.
 func (a *Steps) ValidateAgentConnection(agentID, inboundHost, inboundPort, controllerURL string) error {
 	if err := a.checkAgentIsRunning(agentID, controllerURL); err != nil {
@@ -1208,8 +1224,6 @@ func (a *Steps) SubmitWACIPresentation(walletID, connID string) error { // nolin
 		return fmt.Errorf("failed to send presentation: %w", err)
 	}
 
-	// TODO verify present-proof ack message
-
 	return nil
 }
 
@@ -1606,16 +1620,17 @@ func validateConnection(controllerURL, connID, state string) error {
 	)
 }
 
-// PullMsgFromWebhookURL pulls incoming message from webhook URL
-func PullMsgFromWebhookURL(webhookURL, topic string) (*service.DIDCommMsgMap, error) {
-	var incoming struct {
-		ID      string                `json:"id"`
-		Topic   string                `json:"topic"`
-		Message service.DIDCommMsgMap `json:"message"`
+// PullMsgFromWebhookURL pulls incoming message from webhook URL.
+func PullMsgFromWebhookURL(webhookURL, topic string, match func(message WebhookMessage) bool) (*service.DIDCommMsgMap, error) { //nolint:lll
+	if match == nil {
+		match = func(WebhookMessage) bool {
+			return true
+		}
 	}
-
 	// try to pull recently pushed topics from webhook
 	for i := 0; i < pullTopicsAttemptsBeforeFail; {
+		var incoming WebhookIncoming
+
 		err := bddutil.SendHTTP(http.MethodGet, webhookURL+checkForTopics,
 			nil, &incoming)
 		if err != nil {
@@ -1626,8 +1641,13 @@ func PullMsgFromWebhookURL(webhookURL, topic string) (*service.DIDCommMsgMap, er
 			continue
 		}
 
-		if len(incoming.Message) > 0 {
-			return &incoming.Message, nil
+		if incoming.WebhookMsg.Message != nil {
+			// keep trying till match is found.
+			if !match(incoming.WebhookMsg) {
+				continue
+			}
+
+			return incoming.WebhookMsg.Message, nil
 		}
 
 		i++
