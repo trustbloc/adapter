@@ -88,7 +88,6 @@ func adapterDIDDocReq(controllerURL, webhookURL, connectionID string) (string, *
 		return "", nil, fmt.Errorf("failed to send message : %w", err)
 	}
 
-	// get the response
 	return getDIDDocResp(webhookURL, msgSvcName)
 }
 
@@ -173,6 +172,7 @@ func authZDIDDocReq(controllerURL, webhookURL, connectionID string) (string, *di
 		return "", nil, fmt.Errorf("failed to send message : %w", err)
 	}
 
+	// get the response
 	return getDIDDocResp(webhookURL, msgSvcName)
 }
 
@@ -269,70 +269,65 @@ func sendReply(controllerURL, msgID string, msg interface{}) error {
 }
 
 func getDIDDocResp(controllerURL, msgSvcName string) (string, *did.Doc, error) {
-	webhookMsg, err := PullMsgFromWebhookURL(controllerURL, msgSvcName)
+	webhookMsg, err := PullMsgFromWebhookURL(controllerURL, msgSvcName, nil)
 	if err != nil {
 		return "", nil, fmt.Errorf("failed to pull incoming message from webhook : %w", err)
 	}
 
-	// validate the response
-	var message struct {
-		Message routesvc.DIDDocResp `json:"message"`
-	}
+	var message routesvc.DIDDocResp
 
 	err = webhookMsg.Decode(&message)
 	if err != nil {
 		return "", nil, fmt.Errorf("failed to read message: %w", err)
 	}
 
-	if message.Message.Data == nil {
+	if message.Data == nil {
 		return "", nil, errors.New("no data received from the adapter")
 	}
 
-	if message.Message.Data.ErrorMsg != "" {
-		return "", nil, fmt.Errorf("error received from the route : %s", message.Message.Data.ErrorMsg)
+	if message.Data.ErrorMsg != "" {
+		return "", nil, fmt.Errorf("error received from the route : %s", message.Data.ErrorMsg)
 	}
 
-	if message.Message.Data.DIDDoc == nil {
+	if message.Data.DIDDoc == nil {
 		return "", nil, errors.New("no did document received from the adapter")
 	}
 
-	doc, err := did.ParseDocument(message.Message.Data.DIDDoc)
+	doc, err := did.ParseDocument(message.Data.DIDDoc)
 	if err != nil {
 		return "", nil, fmt.Errorf("parse adapter did document: %w", err)
 	}
 
-	return message.Message.ID, doc, nil
+	return message.ID, doc, nil
 }
 
 func getRouterCreateConnResp(controllerURL, msgSvcName string) (*did.Doc, error) {
-	webhookMsg, err := PullMsgFromWebhookURL(controllerURL, msgSvcName)
+	webhookMsg, err := PullMsgFromWebhookURL(controllerURL, msgSvcName, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to pull incoming message from webhook : %w", err)
 	}
 
 	// validate the response
-	var message struct {
-		Message routerops.CreateConnResp `json:"message"`
-	}
+	var message routerops.CreateConnResp
 
 	err = webhookMsg.Decode(&message)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read message: %w", err)
 	}
 
-	if message.Message.Data == nil {
+	if message.Data == nil {
 		return nil, errors.New("no data received from the router")
 	}
 
-	if message.Message.Data.ErrorMsg != "" {
-		return nil, fmt.Errorf("error received from the router : %s", message.Message.Data.ErrorMsg)
+	if message.Data.ErrorMsg != "" {
+		return nil, fmt.Errorf("error received from the router : %s", message.Data.ErrorMsg)
 	}
 
-	if message.Message.Data.DIDDoc == nil {
+	if message.Data.DIDDoc == nil {
 		return nil, errors.New("no did document received from the router")
 	}
 
-	doc, err := did.ParseDocument(message.Message.Data.DIDDoc)
+	doc, err := did.ParseDocument(message.Data.DIDDoc)
 	if err != nil {
 		return nil, fmt.Errorf("parse router did document: %w", err)
 	}
@@ -341,23 +336,21 @@ func getRouterCreateConnResp(controllerURL, msgSvcName string) (*did.Doc, error)
 }
 
 func getAdapterConnResp(controllerURL, msgSvcName string) error {
-	webhookMsg, err := PullMsgFromWebhookURL(controllerURL, msgSvcName)
+	webhookMsg, err := PullMsgFromWebhookURL(controllerURL, msgSvcName, nil)
 	if err != nil {
 		return fmt.Errorf("failed to pull incoming message from webhook : %w", err)
 	}
 
 	// validate the response
-	var message struct {
-		Message routesvc.ErrorResp `json:"message"`
-	}
+	var message routesvc.ErrorResp
 
 	err = webhookMsg.Decode(&message)
 	if err != nil {
 		return fmt.Errorf("failed to read message: %w", err)
 	}
 
-	if message.Message.Data != nil && message.Message.Data.ErrorMsg != "" {
-		return fmt.Errorf("adapter create connection failed : errMsg=%s", message.Message.Data.ErrorMsg)
+	if message.Data != nil && message.Data.ErrorMsg != "" {
+		return fmt.Errorf("adapter create connection failed : errMsg=%s", message.Data.ErrorMsg)
 	}
 
 	return nil
@@ -365,7 +358,7 @@ func getAdapterConnResp(controllerURL, msgSvcName string) error {
 
 // GetDIDExStateCompResp get didex state complete message.
 func GetDIDExStateCompResp(controllerURL, msgSvcName string) error {
-	_, err := PullMsgFromWebhookURL(controllerURL, msgSvcName)
+	_, err := PullMsgFromWebhookURL(controllerURL, msgSvcName, nil)
 	if err != nil {
 		return fmt.Errorf("failed to pull incoming message from webhook : %w", err)
 	}

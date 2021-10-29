@@ -767,8 +767,6 @@ func (o *Operation) getPresentationsRequest(w http.ResponseWriter, r *http.Reque
 		var walletRedirect string
 
 		if cr.LinkedWalletURL != "" {
-			callback := fmt.Sprintf("%s%s?h=%s", o.externalURL, getPresentationResultEndpoint, invitation.ID)
-
 			invBytes, err := json.Marshal(invitation)
 			if err != nil {
 				handleError(w, http.StatusInternalServerError,
@@ -777,9 +775,7 @@ func (o *Operation) getPresentationsRequest(w http.ResponseWriter, r *http.Reque
 				return
 			}
 
-			walletRedirect = fmt.Sprintf("%s?oob=%s&redirect=%s", cr.LinkedWalletURL,
-				base64.URLEncoding.EncodeToString(invBytes),
-				base64.URLEncoding.EncodeToString([]byte(callback)))
+			walletRedirect = fmt.Sprintf("%s?oob=%s", cr.LinkedWalletURL, base64.URLEncoding.EncodeToString(invBytes))
 		}
 
 		commhttp.WriteResponse(w, &GetPresentationRequestResponse{
@@ -1299,6 +1295,7 @@ func (o *Operation) listenForConnectionCompleteEvents() { // nolint: gocyclo,cyc
 	}
 }
 
+//nolint:funlen,cyclop
 func (o *Operation) presentProofListener(ppActions chan service.DIDCommAction) {
 	for action := range ppActions {
 		var err error
@@ -1314,8 +1311,9 @@ func (o *Operation) presentProofListener(ppActions chan service.DIDCommAction) {
 				break
 			}
 
+			var redirect string
 			if supportsWACI {
-				err = o.handleWACIPresentation(action)
+				redirect, err = o.handleWACIPresentation(action)
 			} else {
 				err = o.handleIssuerPresentationMsg(action.Message)
 			}
@@ -1324,7 +1322,22 @@ func (o *Operation) presentProofListener(ppActions chan service.DIDCommAction) {
 				break
 			}
 
-			continueArg = presentproof.WithFriendlyNames(uuid.New().String())
+			if redirect != "" {
+				continueArg = presentproofsvc.WithMultiOptions(
+					presentproofsvc.WithFriendlyNames(uuid.New().String()),
+					presentproofsvc.WithProperties(
+						map[string]interface{}{
+							"~web-redirect": &decorator.WebRedirect{
+								Status: "OK",
+								URL:    redirect,
+							},
+						},
+					),
+				)
+			} else {
+				continueArg = presentproofsvc.WithFriendlyNames(uuid.New().String())
+			}
+
 		case presentproofsvc.ProposePresentationMsgTypeV2, presentproofsvc.ProposePresentationMsgTypeV3:
 			ctx, waciErr := o.getWACIPresDef(action)
 			if waciErr != nil {
@@ -1345,6 +1358,7 @@ func (o *Operation) presentProofListener(ppActions chan service.DIDCommAction) {
 						}{PD: ctx.PD}},
 					},
 				},
+				WillConfirm: true,
 			})
 		default:
 			err = fmt.Errorf("unsupported present-proof message : %s", action.Message.Type())
@@ -1484,27 +1498,27 @@ func (o *Operation) supportsWACIFlagUsingConnection(msg service.DIDCommAction) (
 	return rpTenant.SupportsWACI, nil
 }
 
-func (o *Operation) handleWACIPresentation(action service.DIDCommAction) error {
+func (o *Operation) handleWACIPresentation(action service.DIDCommAction) (string, error) {
 	ctx, err := o.getWACIPresDef(action)
 	if err != nil {
-		return fmt.Errorf("waci - get presentation definition : %w", err)
+		return "", fmt.Errorf("waci - get presentation definition : %w", err)
 	}
 
 	presentation := &presentproof.Presentation{}
 
 	err = action.Message.Decode(presentation)
 	if err != nil {
-		return fmt.Errorf("waci - decode present-proof presentation message: %w", err)
+		return "", fmt.Errorf("waci - decode present-proof presentation message: %w", err)
 	}
 
 	creds, err := getPresentationSubmissionCredentials(presentation, ctx.PD, o.vdrReg, o.docLoader)
 	if err != nil {
-		return fmt.Errorf("waci - validate presentation submission against presentation definition : %w", err)
+		return "", fmt.Errorf("waci - validate presentation submission against presentation definition : %w", err)
 	}
 
 	localMarshalled, err := marshalCreds(creds)
 	if err != nil {
-		return fmt.Errorf("waci - marshal credentials : %w", err)
+		return "", fmt.Errorf("waci - marshal credentials : %w", err)
 	}
 
 	ctx.UserData = &userDataCollection{
@@ -1513,12 +1527,12 @@ func (o *Operation) handleWACIPresentation(action service.DIDCommAction) error {
 
 	err = newTransientStorage(o.transientStore).Put(ctx.InvitationID, ctx)
 	if err != nil {
-		return fmt.Errorf("waci - marshal credentials : %w", err)
+		return "", fmt.Errorf("waci - marshal credentials : %w", err)
 	}
 
 	logger.Infof("waci credentials : %s", creds)
 
-	return nil
+	return fmt.Sprintf("%s%s?h=%s", o.externalURL, getPresentationResultEndpoint, ctx.InvitationID), nil
 }
 
 func (o *Operation) handleIssuerPresentationMsg(msg service.DIDCommMsg) error {

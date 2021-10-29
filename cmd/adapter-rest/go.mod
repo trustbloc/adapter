@@ -10,11 +10,11 @@ require (
 	github.com/cenkalti/backoff v2.2.1+incompatible
 	github.com/google/uuid v1.2.0
 	github.com/gorilla/mux v1.8.0
-	github.com/hyperledger/aries-framework-go v0.1.8-0.20210916154931-0196c3a2d102
+	github.com/hyperledger/aries-framework-go v0.1.8-0.20211026175505-52f559aeeb86
 	github.com/hyperledger/aries-framework-go-ext/component/storage/mongodb v0.0.0-20210915134807-3e19121646a4
 	github.com/hyperledger/aries-framework-go-ext/component/storage/mysql v0.0.0-20210909220549-ce3a2ee13e22
-	github.com/hyperledger/aries-framework-go/component/storageutil v0.0.0-20210916154931-0196c3a2d102
-	github.com/hyperledger/aries-framework-go/spi v0.0.0-20210916154931-0196c3a2d102
+	github.com/hyperledger/aries-framework-go/component/storageutil v0.0.0-20211026175505-52f559aeeb86
+	github.com/hyperledger/aries-framework-go/spi v0.0.0-20211026175505-52f559aeeb86
 	github.com/piprate/json-gold v0.4.1-0.20210813112359-33b90c4ca86c
 	github.com/rs/cors v1.7.0
 	github.com/spf13/cobra v1.1.3

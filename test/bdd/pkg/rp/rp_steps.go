@@ -31,6 +31,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/hyperledger/aries-framework-go-ext/component/vdr/orb"
 	"github.com/hyperledger/aries-framework-go/pkg/client/outofband"
+	"github.com/hyperledger/aries-framework-go/pkg/didcomm/protocol/decorator"
 	"github.com/hyperledger/aries-framework-go/pkg/doc/did"
 	"github.com/hyperledger/aries-framework-go/pkg/doc/jose/jwk/jwksupport"
 	"github.com/hyperledger/aries-framework-go/pkg/doc/presexch"
@@ -112,6 +113,7 @@ func NewSteps(ctx *bddctx.BDDContext) *Steps {
 }
 
 // RegisterSteps registers agent steps.
+//nolint:lll
 func (s *Steps) RegisterSteps(g *godog.Suite) {
 	g.Step(`^the "([^"]*)" is running on "([^"]*)" port "([^"]*)" with controller "([^"]*)"$`, s.registerAgentController)
 	g.Step(`^the "([^"]*)" is running on "([^"]*)" port "([^"]*)" with webhook "([^"]*)" and controller "([^"]*)"$`, s.registerAgentControllerWithWebhook) //nolint:lll
@@ -121,7 +123,7 @@ func (s *Steps) RegisterSteps(g *godog.Suite) {
 	g.Step(`^the client ID of the tenant with label "([^"]*)" and scopes "([^"]*)" is registered at hydra$`, s.lookupClientID) //nolint:lll
 	g.Step(`^a request is sent to create an RP tenant with label "([^"]*)" and scopes "([^"]*)"$`, s.registerTenantFlow)
 	g.Step(`^a registered rp tenant with label "([^"]*)" and scopes "([^"]*)"$`, s.registerTenantFlow)
-	g.Step(`^a registered rp tenant with label "([^"]*)" and scopes "([^"]*)" with WACI support$`, s.registerTenantFlowWithWACI) //nolint:lll
+	g.Step(`^a registered rp tenant with label "([^"]*)" and scopes "([^"]*)" and linked wallet "([^"]*)" with WACI support$`, s.registerTenantFlowWithWACI) //nolint:lll
 	g.Step(`^the rp tenant "([^"]*)" redirects the user to the rp adapter with scope "([^"]*)"$`, s.redirectUserToAdapter)
 	g.Step(`the rp adapter "([^"]*)" submits a CHAPI request to "([^"]*)" with presentation-definitions and a didcomm invitation to connect`, s.sendCHAPIRequestToWallet) //nolint:lll
 	g.Step(`^the rp adapter "([^"]*)" submits a CHAPI request to "([^"]*)" with out-of-band invitation$`, s.sendWACIInvitationToWallet)                                   //nolint:lll
@@ -137,6 +139,7 @@ func (s *Steps) RegisterSteps(g *godog.Suite) {
 	g.Step(`^remote wallet "([^"]*)" supports credential handler request/response through DIDComm$`, s.registerCHAPIMsgHandler) //nolint:lll
 	g.Step(`^"([^"]*)" loads remote wallet app "([^"]*)" and accepts rp tenant's invitation$`, s.connectToWalletBridge)
 	g.Step(`^"([^"]*)" submits the presentation to the RP adapter "([^"]*)"$`, s.submitWACIPresentation)
+	g.Step(`^"([^"]*)" receives acknowledgement from "([^"]*)" containing redirect with status "([^"]*)"$`, s.checkPresentProofStatus)
 }
 
 func (s *Steps) registerAgentController(agentID, inboundHost, inboundPort, controllerURL string) error {
@@ -406,8 +409,8 @@ func (s *Steps) registerTenantFlow(label, scopesStr string) error {
 	return s.lookupClientID(label, scopesStr)
 }
 
-func (s *Steps) registerTenantFlowWithWACI(label, scopesStr string) error {
-	err := s.createTenant(label, scopesStr, "false", "https://example.wallet.com/waci", true)
+func (s *Steps) registerTenantFlowWithWACI(label, scopesStr, linkedWallet string) error {
+	err := s.createTenant(label, scopesStr, "false", linkedWallet, true)
 	if err != nil {
 		return fmt.Errorf("failed to create tenant: %w", err)
 	}
@@ -941,6 +944,41 @@ func (s *Steps) submitWACIPresentation(walletID, tenantID string) error {
 	err := s.controller.SubmitWACIPresentation(walletID, s.tenantCtx[tenantID].walletConnID)
 	if err != nil {
 		return fmt.Errorf("send propose presentation: %w", err)
+	}
+
+	return nil
+}
+
+func (s *Steps) checkPresentProofStatus(walletID, tenantID, status string) error {
+	webhookURL, ok := s.controller.WebhookURLs[walletID]
+	if !ok {
+		return fmt.Errorf("webhook not configured for wallet '%s' to receive notifications", walletID)
+	}
+
+	msg, err := agent.PullMsgFromWebhookURL(webhookURL, "present-proof_states", func(message agent.WebhookMessage) bool {
+		return message.StateID == "done" &&
+			message.Type == "post_state" &&
+			message.Message.Type() == "https://didcomm.org/present-proof/2.0/ack"
+	})
+	if err != nil {
+		return fmt.Errorf("failed while waiting for present proof ack status done: %w", err)
+	}
+
+	var webRedirect struct {
+		Payload decorator.WebRedirect `json:"~web-redirect,omitempty"`
+	}
+
+	err = msg.Decode(&webRedirect)
+	if err != nil {
+		return fmt.Errorf("failed to decode webredirect info: %w", err)
+	}
+
+	if webRedirect.Payload.Status != status {
+		return fmt.Errorf("unexpected redirect status, expected [%s], got [%s] instead", status, webRedirect.Payload.Status)
+	}
+
+	if webRedirect.Payload.URL == "" {
+		return errors.New("expected valid web redirect URL")
 	}
 
 	return nil
