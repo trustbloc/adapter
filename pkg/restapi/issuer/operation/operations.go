@@ -1737,6 +1737,7 @@ func mapProfileReqToData(data *ProfileDataRequest, didDoc *did.Doc) (*issuer.Pro
 		RequiresBlindedRoute:        data.RequiresBlindedRoute,
 		CredentialSigningKey:        assertionMethod,
 		PresentationSigningKey:      authMethod,
+		SupportsWACI:                data.SupportsWACI,
 		OIDCProviderURL:             data.OIDCProviderURL,
 		CreatedAt:                   &created,
 		OIDCClientParams:            clientParams,

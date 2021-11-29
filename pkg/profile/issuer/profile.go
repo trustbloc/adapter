@@ -40,6 +40,7 @@ type ProfileData struct {
 	CredentialSigningKey        string            `json:"credentialSigningKey"`
 	PresentationSigningKey      string            `json:"presentationSigningKey"`
 	CreatedAt                   *time.Time        `json:"createdAt"`
+	SupportsWACI                bool              `json:"supportsWACI"`
 	OIDCProviderURL             string            `json:"oidcProvider"`
 	OIDCClientParams            *OIDCClientParams `json:"oidcParams,omitempty"`
 	CredentialScopes            []string          `json:"credScopes,omitempty"`

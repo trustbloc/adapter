@@ -511,6 +511,7 @@ func TestCreateProfile(t *testing.T) {
 		require.Equal(t, vReq.Name, profileRes.Name)
 		require.Equal(t, vReq.URL, profileRes.URL)
 		require.Equal(t, vReq.SupportsAssuranceCredential, profileRes.SupportsAssuranceCredential)
+		require.Equal(t, vReq.SupportsWACI, profileRes.SupportsWACI)
 	})
 
 	t.Run("create profile - success with default oidc", func(t *testing.T) {
@@ -715,6 +716,7 @@ func TestGetProfile(t *testing.T) {
 		err = json.Unmarshal(rr.Body.Bytes(), &profileRes)
 		require.NoError(t, err)
 		require.Equal(t, vReq.ID, profileRes.ID)
+		require.Equal(t, vReq.SupportsWACI, profileRes.SupportsWACI)
 	})
 
 	t.Run("get profile - no data found", func(t *testing.T) {

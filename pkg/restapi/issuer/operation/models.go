@@ -22,6 +22,7 @@ type ProfileDataRequest struct {
 	SupportsAssuranceCredential bool              `json:"supportsAssuranceCredential"`
 	RequiresBlindedRoute        bool              `json:"requiresBlindedRoute"`
 	URL                         string            `json:"url"`
+	SupportsWACI                bool              `json:"supportsWACI"`
 	OIDCProviderURL             string            `json:"oidcProvider"`
 	OIDCClientParams            *OIDCClientParams `json:"oidcParams,omitempty"`
 	CredentialScopes            []string          `json:"scopes,omitempty"`
