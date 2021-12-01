@@ -569,7 +569,7 @@ func (o *Operation) requestOIDCAuthHandler(rw http.ResponseWriter, req *http.Req
 	client, err := o.getOIDCClientFunc(profile.ID)
 	if err != nil {
 		commhttp.WriteErrorResponseWithLog(rw, http.StatusInternalServerError,
-			"server error", oidcAuthRequestEndpoint, logger)
+			fmt.Sprintf("get oidc client: %s", err.Error()), oidcAuthRequestEndpoint, logger)
 
 		return
 	}
@@ -581,7 +581,7 @@ func (o *Operation) requestOIDCAuthHandler(rw http.ResponseWriter, req *http.Req
 	_, err = rand.Read(stateBytes)
 	if err != nil {
 		commhttp.WriteErrorResponseWithLog(rw, http.StatusInternalServerError,
-			"server error", oidcAuthRequestEndpoint, logger)
+			fmt.Sprintf("create oidc state : %s", err.Error()), oidcAuthRequestEndpoint, logger)
 
 		return
 	}
