@@ -1089,7 +1089,7 @@ func (o *Operation) didCommActionListener(ch <-chan service.DIDCommAction) {
 		var args interface{}
 
 		switch msg.Message.Type() {
-		case issuecredsvc.RequestCredentialMsgType:
+		case issuecredsvc.RequestCredentialMsgTypeV2:
 			args, err = o.handleRequestCredential(msg)
 		case presentproofsvc.RequestPresentationMsgTypeV2:
 			args, err = o.handleRequestPresentation(msg)

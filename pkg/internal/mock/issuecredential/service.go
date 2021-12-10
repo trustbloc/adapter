@@ -79,7 +79,7 @@ func (m *MockIssueCredentialSvc) Actions() ([]issuecredential.Action, error) {
 }
 
 // ActionContinue continues action.
-func (m *MockIssueCredentialSvc) ActionContinue(piID string, opt issuecredential.Opt) error {
+func (m *MockIssueCredentialSvc) ActionContinue(piID string, opt ...issuecredential.Opt) error {
 	return nil
 }
 

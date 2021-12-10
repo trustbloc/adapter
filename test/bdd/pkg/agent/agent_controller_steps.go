@@ -689,7 +689,7 @@ func (a *Steps) fetchCredential(agentID, issuerID string) error { // nolint: fun
 		MyDID:    conn.MyDID,
 		TheirDID: conn.TheirDID,
 		RequestCredential: &issuecredclient.RequestCredential{
-			Type: issuecredsvc.RequestCredentialMsgType,
+			Type: issuecredsvc.RequestCredentialMsgTypeV2,
 			RequestsAttach: []decorator.Attachment{
 				{
 					Data: decorator.AttachmentData{
