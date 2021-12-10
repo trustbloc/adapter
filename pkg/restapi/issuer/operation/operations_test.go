@@ -2296,7 +2296,7 @@ func TestIssueCredentialHandler(t *testing.T) {
 
 			actionCh <- service.DIDCommAction{
 				Message: service.NewDIDCommMsgMap(issuecredsvc.RequestCredential{
-					Type: issuecredsvc.RequestCredentialMsgType,
+					Type: issuecredsvc.RequestCredentialMsgTypeV2,
 					RequestsAttach: []decorator.Attachment{
 						{Data: decorator.AttachmentData{
 							JSON: createAuthorizationCredReq(t, mockdiddoc.GetMockDIDDoc("did:example:xyz123"),
@@ -2495,7 +2495,7 @@ func TestIssueCredentialHandler(t *testing.T) {
 
 			// no attachment
 			actionCh <- createCredentialReqMsg(t, issuecredsvc.RequestCredential{
-				Type: issuecredsvc.RequestCredentialMsgType,
+				Type: issuecredsvc.RequestCredentialMsgTypeV2,
 			}, nil, func(err error) {
 				require.NotNil(t, err)
 				require.Contains(t, err.Error(),
@@ -2509,7 +2509,7 @@ func TestIssueCredentialHandler(t *testing.T) {
 
 			cc, err := fetchAuthorizationCreReq(service.DIDCommAction{
 				Message: service.NewDIDCommMsgMap(issuecredsvc.RequestCredential{
-					Type: issuecredsvc.RequestCredentialMsgType,
+					Type: issuecredsvc.RequestCredentialMsgTypeV2,
 				}),
 			})
 			require.Error(t, err)
@@ -2518,7 +2518,7 @@ func TestIssueCredentialHandler(t *testing.T) {
 
 			cc, err = fetchAuthorizationCreReq(service.DIDCommAction{
 				Message: service.NewDIDCommMsgMap(issuecredsvc.RequestCredential{
-					Type: issuecredsvc.RequestCredentialMsgType,
+					Type: issuecredsvc.RequestCredentialMsgTypeV2,
 					RequestsAttach: []decorator.Attachment{
 						{Data: decorator.AttachmentData{}},
 					},
@@ -2530,7 +2530,7 @@ func TestIssueCredentialHandler(t *testing.T) {
 
 			cc, err = fetchAuthorizationCreReq(service.DIDCommAction{
 				Message: service.NewDIDCommMsgMap(issuecredsvc.RequestCredential{
-					Type: issuecredsvc.RequestCredentialMsgType,
+					Type: issuecredsvc.RequestCredentialMsgTypeV2,
 					RequestsAttach: []decorator.Attachment{
 						{Data: decorator.AttachmentData{
 							JSON: []byte("invalid json"),
@@ -2545,7 +2545,7 @@ func TestIssueCredentialHandler(t *testing.T) {
 			// authorization cred does't contain subjectDID
 			cc, err = fetchAuthorizationCreReq(service.DIDCommAction{
 				Message: service.NewDIDCommMsgMap(issuecredsvc.RequestCredential{
-					Type: issuecredsvc.RequestCredentialMsgType,
+					Type: issuecredsvc.RequestCredentialMsgTypeV2,
 					RequestsAttach: []decorator.Attachment{
 						{Data: decorator.AttachmentData{
 							JSON: createAuthorizationCredReq(t, mockdiddoc.GetMockDIDDoc(""),
@@ -2561,7 +2561,7 @@ func TestIssueCredentialHandler(t *testing.T) {
 			// authorization cred does't contain rpDIDDoc
 			cc, err = fetchAuthorizationCreReq(service.DIDCommAction{
 				Message: service.NewDIDCommMsgMap(issuecredsvc.RequestCredential{
-					Type: issuecredsvc.RequestCredentialMsgType,
+					Type: issuecredsvc.RequestCredentialMsgTypeV2,
 					RequestsAttach: []decorator.Attachment{
 						{Data: decorator.AttachmentData{
 							JSON: createAuthorizationCredReq(t, mockdiddoc.GetMockDIDDoc("did:example:xyz123"), nil),
@@ -2611,7 +2611,7 @@ func TestIssueCredentialHandler(t *testing.T) {
 
 			actionCh <- service.DIDCommAction{
 				Message: service.NewDIDCommMsgMap(issuecredsvc.RequestCredential{
-					Type: issuecredsvc.RequestCredentialMsgType,
+					Type: issuecredsvc.RequestCredentialMsgTypeV2,
 					RequestsAttach: []decorator.Attachment{
 						{Data: decorator.AttachmentData{
 							JSON: createAuthorizationCredReq(t, mockdiddoc.GetMockDIDDoc("did:example:xyz123"),

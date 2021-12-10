@@ -249,7 +249,7 @@ func createCredentialReqMsg(t *testing.T, msg interface{}, continueFn func(args 
 
 	if msg == nil {
 		msg = issuecredsvc.RequestCredential{
-			Type: issuecredsvc.RequestCredentialMsgType,
+			Type: issuecredsvc.RequestCredentialMsgTypeV2,
 			RequestsAttach: []decorator.Attachment{
 				{Data: decorator.AttachmentData{
 					JSON: createAuthorizationCredReq(t, mockdiddoc.GetMockDIDDoc("did:example:xyz123"),

@@ -12,7 +12,7 @@ require (
 	github.com/cucumber/godog v0.9.0
 	github.com/fsouza/go-dockerclient v1.7.4
 	github.com/google/uuid v1.2.0
-	github.com/hyperledger/aries-framework-go v0.1.8-0.20211026175505-52f559aeeb86
+	github.com/hyperledger/aries-framework-go v0.1.8-0.20211203093644-b7d189cc06f4
 	github.com/hyperledger/aries-framework-go-ext/component/vdr/orb v0.1.3
 	github.com/hyperledger/aries-framework-go/component/storageutil v0.0.0-20211026175505-52f559aeeb86
 	github.com/ory/hydra-client-go v1.4.10
