@@ -329,7 +329,7 @@ type Operation struct {
 	oidcClientStoreKey   []byte
 	refreshTokenStore    storage.Store
 	createOIDCClientFunc func(profileData *issuer.ProfileData) (oidcClient, error)
-	getOIDCClientFunc    func(string) (oidcClient, error)
+	getOIDCClientFunc    func(string, string) (oidcClient, error)
 	didDomain            string
 	jsonldDocLoader      ld.DocumentLoader
 }
@@ -566,7 +566,7 @@ func (o *Operation) requestOIDCAuthHandler(rw http.ResponseWriter, req *http.Req
 		return
 	}
 
-	client, err := o.getOIDCClientFunc(profile.ID)
+	client, err := o.getOIDCClientFunc(profile.ID, profile.OIDCProviderURL)
 	if err != nil {
 		commhttp.WriteErrorResponseWithLog(rw, http.StatusInternalServerError,
 			fmt.Sprintf("get oidc client: %s", err.Error()), oidcAuthRequestEndpoint, logger)
@@ -656,7 +656,15 @@ func (o *Operation) oidcAuthCallback(rw http.ResponseWriter, req *http.Request) 
 
 	authCode := req.FormValue("code")
 
-	client, err := o.getOIDCClientFunc(txn.IssuerID)
+	profile, err := o.profileStore.GetProfile(txn.IssuerID)
+	if err != nil {
+		commhttp.WriteErrorResponseWithLog(rw, http.StatusInternalServerError,
+			"invalid request, issuer ID was not registered with adapter", oidcAuthRequestEndpoint, logger)
+
+		return
+	}
+
+	client, err := o.getOIDCClientFunc(txn.IssuerID, profile.OIDCProviderURL)
 	if err != nil {
 		commhttp.WriteErrorResponseWithLog(rw, http.StatusInternalServerError,
 			fmt.Sprintf("failed to initialize oidc client: %v", err), oidcCallbackEndpoint, logger)
@@ -676,14 +684,6 @@ func (o *Operation) oidcAuthCallback(rw http.ResponseWriter, req *http.Request) 
 	if err != nil {
 		commhttp.WriteErrorResponseWithLog(rw, http.StatusInternalServerError,
 			fmt.Sprintf("failed to save refresh token: %v", err), oidcCallbackEndpoint, logger)
-
-		return
-	}
-
-	profile, err := o.profileStore.GetProfile(txn.IssuerID)
-	if err != nil {
-		commhttp.WriteErrorResponseWithLog(rw, http.StatusInternalServerError,
-			"invalid request, issuer ID was not registered with adapter", oidcAuthRequestEndpoint, logger)
 
 		return
 	}
@@ -741,7 +741,7 @@ func (o *Operation) getOIDCAccessToken(txnID string, profile *issuer.ProfileData
 		tok = &oauth2.Token{RefreshToken: string(refresh)}
 	}
 
-	client, err := o.getOIDCClientFunc(profile.ID)
+	client, err := o.getOIDCClientFunc(profile.ID, profile.OIDCProviderURL)
 	if err != nil {
 		return "", fmt.Errorf("failed to fetch oidc client: %w", err)
 	}

@@ -13,6 +13,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/hyperledger/aries-framework-go/component/storageutil/mock"
 	"github.com/hyperledger/aries-framework-go/spi/storage"
 	"github.com/stretchr/testify/require"
@@ -38,14 +39,16 @@ func Test_GetOIDCClient(t *testing.T) {
 
 		defer mockOIDCServer.Close()
 
-		err = op.saveOIDCClientData(mockOIDCServer.URL, &oidcClientData{
+		clientID := uuid.NewString()
+
+		err = op.saveOIDCClientData(clientID, &oidcClientData{
 			ID:     "client-id",
 			Secret: "client-secret",
 			Expiry: 0,
 		})
 		require.NoError(t, err)
 
-		_, err = op.getOIDCClient(mockOIDCServer.URL)
+		_, err = op.getOIDCClient(clientID, mockOIDCServer.URL)
 		require.NoError(t, err)
 	})
 
@@ -57,9 +60,11 @@ func Test_GetOIDCClient(t *testing.T) {
 		op, err := New(conf)
 		require.NoError(t, err)
 
-		op.cachedOIDCClients["provider.url"] = &oidc.Client{}
+		clientID := uuid.NewString()
 
-		_, err = op.getOIDCClient("provider.url")
+		op.cachedOIDCClients[clientID] = &oidc.Client{}
+
+		_, err = op.getOIDCClient(clientID, "provider.url")
 		require.NoError(t, err)
 	})
 
@@ -77,7 +82,7 @@ func Test_GetOIDCClient(t *testing.T) {
 
 		defer mockOIDCServer.Close()
 
-		_, err = op.getOIDCClient(mockOIDCServer.URL)
+		_, err = op.getOIDCClient(uuid.NewString(), mockOIDCServer.URL)
 		require.Error(t, err)
 		require.ErrorIs(t, err, storage.ErrDataNotFound)
 	})
@@ -90,14 +95,16 @@ func Test_GetOIDCClient(t *testing.T) {
 		op, err := New(conf)
 		require.NoError(t, err)
 
-		err = op.saveOIDCClientData("~~~~", &oidcClientData{
-			ID:     "client-id",
+		clientID := uuid.NewString()
+
+		err = op.saveOIDCClientData(clientID, &oidcClientData{
+			ID:     clientID,
 			Secret: "client-secret",
 			Expiry: 0,
 		})
 		require.NoError(t, err)
 
-		_, err = op.getOIDCClient("~~~~")
+		_, err = op.getOIDCClient(clientID, "~~~~")
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "constructing oidc client")
 	})
