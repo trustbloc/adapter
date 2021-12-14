@@ -480,7 +480,7 @@ func TestCreateProfile(t *testing.T) {
 		return &mockOIDC, nil
 	}
 
-	op.getOIDCClientFunc = func(string) (oidcClient, error) {
+	op.getOIDCClientFunc = func(string, string) (oidcClient, error) {
 		return &mockOIDC, nil
 	}
 
@@ -557,7 +557,7 @@ func TestCreateProfile(t *testing.T) {
 			return &mockOIDC, nil
 		}
 
-		op2.getOIDCClientFunc = func(string) (oidcClient, error) {
+		op2.getOIDCClientFunc = func(string, string) (oidcClient, error) {
 			return &mockOIDC, nil
 		}
 
@@ -599,7 +599,7 @@ func TestCreateProfile(t *testing.T) {
 			return &mockOIDC, nil
 		}
 
-		op.getOIDCClientFunc = func(string) (oidcClient, error) {
+		op.getOIDCClientFunc = func(string, string) (oidcClient, error) {
 			return &mockOIDC, nil
 		}
 
@@ -690,7 +690,7 @@ func TestGetProfile(t *testing.T) {
 		return &mockOIDC, nil
 	}
 
-	op.getOIDCClientFunc = func(string) (oidcClient, error) {
+	op.getOIDCClientFunc = func(string, string) (oidcClient, error) {
 		return &mockOIDC, nil
 	}
 
@@ -758,7 +758,7 @@ func TestConnectWallet(t *testing.T) { // nolint:tparallel // data race
 			return &mockOIDC, nil
 		}
 
-		c.getOIDCClientFunc = func(string) (oidcClient, error) {
+		c.getOIDCClientFunc = func(string, string) (oidcClient, error) {
 			return &mockOIDC, nil
 		}
 
@@ -791,7 +791,7 @@ func TestConnectWallet(t *testing.T) { // nolint:tparallel // data race
 			return &mockOIDC, nil
 		}
 
-		c.getOIDCClientFunc = func(string) (oidcClient, error) {
+		c.getOIDCClientFunc = func(string, string) (oidcClient, error) {
 			return &mockOIDC, nil
 		}
 
@@ -826,7 +826,7 @@ func TestConnectWallet(t *testing.T) { // nolint:tparallel // data race
 			return &mockOIDC, nil
 		}
 
-		c.getOIDCClientFunc = func(string) (oidcClient, error) {
+		c.getOIDCClientFunc = func(string, string) (oidcClient, error) {
 			return &mockOIDC, nil
 		}
 
@@ -854,7 +854,7 @@ func TestConnectWallet(t *testing.T) { // nolint:tparallel // data race
 			return &mockOIDC, nil
 		}
 
-		c.getOIDCClientFunc = func(string) (oidcClient, error) {
+		c.getOIDCClientFunc = func(string, string) (oidcClient, error) {
 			return &mockOIDC, nil
 		}
 
@@ -903,7 +903,7 @@ func TestConnectWallet(t *testing.T) { // nolint:tparallel // data race
 			return &mockOIDC, nil
 		}
 
-		c.getOIDCClientFunc = func(string) (oidcClient, error) {
+		c.getOIDCClientFunc = func(string, string) (oidcClient, error) {
 			return &mockOIDC, nil
 		}
 
@@ -935,7 +935,7 @@ func TestConnectWallet(t *testing.T) { // nolint:tparallel // data race
 			return &mockOIDC, nil
 		}
 
-		c.getOIDCClientFunc = func(string) (oidcClient, error) {
+		c.getOIDCClientFunc = func(string, string) (oidcClient, error) {
 			return &mockOIDC, nil
 		}
 
@@ -1052,7 +1052,7 @@ func TestCredScopeHandler(t *testing.T) { // nolint:tparallel // data race
 			return &mockOIDC, nil
 		}
 
-		c.getOIDCClientFunc = func(string) (oidcClient, error) {
+		c.getOIDCClientFunc = func(string, string) (oidcClient, error) {
 			return &mockOIDC, nil
 		}
 
@@ -1086,7 +1086,7 @@ func TestCredScopeHandler(t *testing.T) { // nolint:tparallel // data race
 			return &mockOIDC, nil
 		}
 
-		c.getOIDCClientFunc = func(string) (oidcClient, error) {
+		c.getOIDCClientFunc = func(string, string) (oidcClient, error) {
 			return &mockOIDC, nil
 		}
 
@@ -1120,7 +1120,7 @@ func TestCredScopeHandler(t *testing.T) { // nolint:tparallel // data race
 			return &mockOIDC, nil
 		}
 
-		c.getOIDCClientFunc = func(string) (oidcClient, error) {
+		c.getOIDCClientFunc = func(string, string) (oidcClient, error) {
 			return &mockOIDC, nil
 		}
 
@@ -1433,7 +1433,7 @@ func TestRequestOIDCAuthHandler(t *testing.T) {
 		return &mockOIDC, nil
 	}
 
-	c.getOIDCClientFunc = func(string) (oidcClient, error) {
+	c.getOIDCClientFunc = func(string, string) (oidcClient, error) {
 		return &mockOIDC, nil
 	}
 
@@ -1559,7 +1559,7 @@ func TestRequestOIDCAuthHandler(t *testing.T) {
 
 		prevClientFunc := c.getOIDCClientFunc
 
-		c.getOIDCClientFunc = func(string) (oidcClient, error) {
+		c.getOIDCClientFunc = func(string, string) (oidcClient, error) {
 			return nil, fmt.Errorf("test error")
 		}
 
@@ -1605,7 +1605,7 @@ func TestOIDCCallback(t *testing.T) { // nolint:tparallel // data race
 		return &mockOIDC, nil
 	}
 
-	c.getOIDCClientFunc = func(string) (oidcClient, error) {
+	c.getOIDCClientFunc = func(string, string) (oidcClient, error) {
 		return &mockOIDC, nil
 	}
 
@@ -1720,7 +1720,7 @@ func TestOIDCCallback(t *testing.T) { // nolint:tparallel // data race
 	t.Run("failure - initializing oidc client", func(t *testing.T) { // nolint:paralleltest // data race
 		prevClientFunc := c.getOIDCClientFunc
 
-		c.getOIDCClientFunc = func(string) (oidcClient, error) {
+		c.getOIDCClientFunc = func(string, string) (oidcClient, error) {
 			return nil, fmt.Errorf("client create error")
 		}
 
@@ -1748,7 +1748,7 @@ func TestOIDCCallback(t *testing.T) { // nolint:tparallel // data race
 	t.Run("failure - handling oauth callback", func(t *testing.T) { // nolint:paralleltest // data race
 		prevClientFunc := c.getOIDCClientFunc
 
-		c.getOIDCClientFunc = func(string) (oidcClient, error) {
+		c.getOIDCClientFunc = func(string, string) (oidcClient, error) {
 			return &mockOIDCClient{HandleOIDCCallbackErr: fmt.Errorf("handle error")}, nil
 		}
 
@@ -1851,7 +1851,7 @@ func TestGetOIDCAccessToken(t *testing.T) {
 		return &mockOIDC, nil
 	}
 
-	c.getOIDCClientFunc = func(string) (oidcClient, error) {
+	c.getOIDCClientFunc = func(string, string) (oidcClient, error) {
 		return &mockOIDC, nil
 	}
 
@@ -1893,7 +1893,7 @@ func TestGetOIDCAccessToken(t *testing.T) {
 
 		prevClientFunc := c.getOIDCClientFunc
 
-		c.getOIDCClientFunc = func(string) (oidcClient, error) {
+		c.getOIDCClientFunc = func(string, string) (oidcClient, error) {
 			return nil, fmt.Errorf("client create error")
 		}
 
@@ -1913,7 +1913,7 @@ func TestGetOIDCAccessToken(t *testing.T) {
 
 		prevClientFunc := c.getOIDCClientFunc
 
-		c.getOIDCClientFunc = func(string) (oidcClient, error) {
+		c.getOIDCClientFunc = func(string, string) (oidcClient, error) {
 			return &mockOIDCClient{CheckRefreshErr: fmt.Errorf("refresh error")}, nil
 		}
 
@@ -2041,7 +2041,7 @@ func TestCHAPIRequest(t *testing.T) {
 
 			mockToken := oauth2.Token{RefreshToken: "refresh-token", AccessToken: "access-token"}
 
-			c.getOIDCClientFunc = func(string) (oidcClient, error) {
+			c.getOIDCClientFunc = func(string, string) (oidcClient, error) {
 				return &mockOIDCClient{
 					CheckRefreshTok: &mockToken,
 				}, nil
@@ -2667,7 +2667,7 @@ func TestPresentProofHandler(t *testing.T) {
 
 			mockToken := oauth2.Token{RefreshToken: "refresh-token", AccessToken: "access-token"}
 
-			c.getOIDCClientFunc = func(string) (oidcClient, error) {
+			c.getOIDCClientFunc = func(string, string) (oidcClient, error) {
 				return &mockOIDCClient{
 					CheckRefreshTok: &mockToken,
 				}, nil

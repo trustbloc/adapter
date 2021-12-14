@@ -25,7 +25,7 @@ import (
 	"github.com/trustbloc/edge-adapter/pkg/restapi/internal/common/oidc"
 )
 
-func (o *Operation) getOIDCClient(issuerID string) (oidcClient, error) {
+func (o *Operation) getOIDCClient(issuerID, providerURL string) (oidcClient, error) {
 	if client, present := o.cachedOIDCClients[issuerID]; present {
 		return client, nil
 	}
@@ -37,7 +37,7 @@ func (o *Operation) getOIDCClient(issuerID string) (oidcClient, error) {
 
 	client, err := oidc.New(&oidc.Config{
 		TLSConfig:              o.tlsConfig,
-		OIDCProviderURL:        issuerID,
+		OIDCProviderURL:        providerURL,
 		OIDCClientID:           clientData.ID,
 		OIDCClientSecret:       clientData.Secret,
 		OIDCClientSecretExpiry: clientData.Expiry,
