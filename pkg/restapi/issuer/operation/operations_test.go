@@ -2242,7 +2242,7 @@ func TestIssueCredentialHandler(t *testing.T) {
 		done := make(chan struct{})
 
 		actionCh <- service.DIDCommAction{
-			Message: service.NewDIDCommMsgMap(issuecredsvc.RequestCredential{
+			Message: service.NewDIDCommMsgMap(issuecredsvc.RequestCredentialV2{
 				Type: "unsupported-message-type",
 			}),
 			Stop: func(err error) {
@@ -2295,7 +2295,7 @@ func TestIssueCredentialHandler(t *testing.T) {
 			done := make(chan struct{})
 
 			actionCh <- service.DIDCommAction{
-				Message: service.NewDIDCommMsgMap(issuecredsvc.RequestCredential{
+				Message: service.NewDIDCommMsgMap(issuecredsvc.RequestCredentialV2{
 					Type: issuecredsvc.RequestCredentialMsgTypeV2,
 					RequestsAttach: []decorator.Attachment{
 						{Data: decorator.AttachmentData{
@@ -2494,7 +2494,7 @@ func TestIssueCredentialHandler(t *testing.T) {
 			}
 
 			// no attachment
-			actionCh <- createCredentialReqMsg(t, issuecredsvc.RequestCredential{
+			actionCh <- createCredentialReqMsg(t, issuecredsvc.RequestCredentialV2{
 				Type: issuecredsvc.RequestCredentialMsgTypeV2,
 			}, nil, func(err error) {
 				require.NotNil(t, err)
@@ -2508,7 +2508,7 @@ func TestIssueCredentialHandler(t *testing.T) {
 			t.Parallel()
 
 			cc, err := fetchAuthorizationCreReq(service.DIDCommAction{
-				Message: service.NewDIDCommMsgMap(issuecredsvc.RequestCredential{
+				Message: service.NewDIDCommMsgMap(issuecredsvc.RequestCredentialV2{
 					Type: issuecredsvc.RequestCredentialMsgTypeV2,
 				}),
 			})
@@ -2517,7 +2517,7 @@ func TestIssueCredentialHandler(t *testing.T) {
 			require.Nil(t, cc)
 
 			cc, err = fetchAuthorizationCreReq(service.DIDCommAction{
-				Message: service.NewDIDCommMsgMap(issuecredsvc.RequestCredential{
+				Message: service.NewDIDCommMsgMap(issuecredsvc.RequestCredentialV2{
 					Type: issuecredsvc.RequestCredentialMsgTypeV2,
 					RequestsAttach: []decorator.Attachment{
 						{Data: decorator.AttachmentData{}},
@@ -2529,7 +2529,7 @@ func TestIssueCredentialHandler(t *testing.T) {
 			require.Nil(t, cc)
 
 			cc, err = fetchAuthorizationCreReq(service.DIDCommAction{
-				Message: service.NewDIDCommMsgMap(issuecredsvc.RequestCredential{
+				Message: service.NewDIDCommMsgMap(issuecredsvc.RequestCredentialV2{
 					Type: issuecredsvc.RequestCredentialMsgTypeV2,
 					RequestsAttach: []decorator.Attachment{
 						{Data: decorator.AttachmentData{
@@ -2544,7 +2544,7 @@ func TestIssueCredentialHandler(t *testing.T) {
 
 			// authorization cred does't contain subjectDID
 			cc, err = fetchAuthorizationCreReq(service.DIDCommAction{
-				Message: service.NewDIDCommMsgMap(issuecredsvc.RequestCredential{
+				Message: service.NewDIDCommMsgMap(issuecredsvc.RequestCredentialV2{
 					Type: issuecredsvc.RequestCredentialMsgTypeV2,
 					RequestsAttach: []decorator.Attachment{
 						{Data: decorator.AttachmentData{
@@ -2560,7 +2560,7 @@ func TestIssueCredentialHandler(t *testing.T) {
 
 			// authorization cred does't contain rpDIDDoc
 			cc, err = fetchAuthorizationCreReq(service.DIDCommAction{
-				Message: service.NewDIDCommMsgMap(issuecredsvc.RequestCredential{
+				Message: service.NewDIDCommMsgMap(issuecredsvc.RequestCredentialV2{
 					Type: issuecredsvc.RequestCredentialMsgTypeV2,
 					RequestsAttach: []decorator.Attachment{
 						{Data: decorator.AttachmentData{
@@ -2610,7 +2610,7 @@ func TestIssueCredentialHandler(t *testing.T) {
 			done := make(chan struct{})
 
 			actionCh <- service.DIDCommAction{
-				Message: service.NewDIDCommMsgMap(issuecredsvc.RequestCredential{
+				Message: service.NewDIDCommMsgMap(issuecredsvc.RequestCredentialV2{
 					Type: issuecredsvc.RequestCredentialMsgTypeV2,
 					RequestsAttach: []decorator.Attachment{
 						{Data: decorator.AttachmentData{
@@ -2714,7 +2714,7 @@ func TestPresentProofHandler(t *testing.T) {
 
 			done := make(chan struct{})
 
-			actionCh <- createProofReqMsgV2(t, presentproofsvc.RequestPresentation{
+			actionCh <- createProofReqMsgV2(t, presentproofsvc.RequestPresentationV2{
 				Type: presentproofsvc.RequestPresentationMsgTypeV2,
 				RequestPresentationsAttach: []decorator.Attachment{
 					{Data: decorator.AttachmentData{
@@ -2799,7 +2799,7 @@ func TestPresentProofHandler(t *testing.T) {
 
 			done := make(chan struct{})
 
-			actionCh <- createProofReqMsgV2(t, presentproofsvc.RequestPresentation{
+			actionCh <- createProofReqMsgV2(t, presentproofsvc.RequestPresentationV2{
 				Type: presentproofsvc.RequestPresentationMsgTypeV2,
 				RequestPresentationsAttach: []decorator.Attachment{
 					{Data: decorator.AttachmentData{
@@ -2830,7 +2830,7 @@ func TestPresentProofHandler(t *testing.T) {
 			done := make(chan struct{})
 
 			// request doesn't have attachment
-			actionCh <- createProofReqMsgV2(t, presentproofsvc.RequestPresentation{
+			actionCh <- createProofReqMsgV2(t, presentproofsvc.RequestPresentationV2{
 				Type: presentproofsvc.RequestPresentationMsgTypeV2,
 			}, nil, func(err error) {
 				require.NotNil(t, err)
@@ -2846,7 +2846,7 @@ func TestPresentProofHandler(t *testing.T) {
 			}
 
 			// request doesn't have authorization cred
-			actionCh <- createProofReqMsgV2(t, presentproofsvc.RequestPresentation{
+			actionCh <- createProofReqMsgV2(t, presentproofsvc.RequestPresentationV2{
 				Type: presentproofsvc.RequestPresentationMsgTypeV2,
 				RequestPresentationsAttach: []decorator.Attachment{
 					{Data: decorator.AttachmentData{}},
@@ -2865,7 +2865,7 @@ func TestPresentProofHandler(t *testing.T) {
 			}
 
 			// invalid authorization cred
-			actionCh <- createProofReqMsgV2(t, presentproofsvc.RequestPresentation{
+			actionCh <- createProofReqMsgV2(t, presentproofsvc.RequestPresentationV2{
 				Type: presentproofsvc.RequestPresentationMsgTypeV2,
 				RequestPresentationsAttach: []decorator.Attachment{
 					{Data: decorator.AttachmentData{
@@ -2918,7 +2918,7 @@ func TestPresentProofHandler(t *testing.T) {
 			err = c.txnStore.Put(vc.ID, []byte("invalid data"))
 			require.NoError(t, err)
 
-			actionCh <- createProofReqMsgV2(t, presentproofsvc.RequestPresentation{
+			actionCh <- createProofReqMsgV2(t, presentproofsvc.RequestPresentationV2{
 				Type: presentproofsvc.RequestPresentationMsgTypeV2,
 				RequestPresentationsAttach: []decorator.Attachment{
 					{Data: decorator.AttachmentData{
@@ -2950,7 +2950,7 @@ func TestPresentProofHandler(t *testing.T) {
 			err = c.storeAuthorizationCredHandle(handle)
 			require.NoError(t, err)
 
-			actionCh <- createProofReqMsgV2(t, presentproofsvc.RequestPresentation{
+			actionCh <- createProofReqMsgV2(t, presentproofsvc.RequestPresentationV2{
 				Type: presentproofsvc.RequestPresentationMsgTypeV2,
 				RequestPresentationsAttach: []decorator.Attachment{
 					{Data: decorator.AttachmentData{
@@ -2985,7 +2985,7 @@ func TestPresentProofHandler(t *testing.T) {
 				Type:    []string{"VerifiablePresentation"},
 			}
 
-			actionCh <- createProofReqMsgV2(t, presentproofsvc.RequestPresentation{
+			actionCh <- createProofReqMsgV2(t, presentproofsvc.RequestPresentationV2{
 				Type: presentproofsvc.RequestPresentationMsgTypeV2,
 				RequestPresentationsAttach: []decorator.Attachment{
 					{Data: decorator.AttachmentData{
@@ -3013,7 +3013,7 @@ func TestPresentProofHandler(t *testing.T) {
 
 			c.vccrypto = &mockVCCrypto{signVPErr: errors.New("sign error")}
 
-			actionCh <- createProofReqMsgV2(t, presentproofsvc.RequestPresentation{
+			actionCh <- createProofReqMsgV2(t, presentproofsvc.RequestPresentationV2{
 				Type: presentproofsvc.RequestPresentationMsgTypeV2,
 				RequestPresentationsAttach: []decorator.Attachment{
 					{Data: decorator.AttachmentData{
@@ -3039,7 +3039,7 @@ func TestPresentProofHandler(t *testing.T) {
 				ResolveValue: didDocument,
 			}
 
-			actionCh <- createProofReqMsgV2(t, presentproofsvc.RequestPresentation{
+			actionCh <- createProofReqMsgV2(t, presentproofsvc.RequestPresentationV2{
 				Type: presentproofsvc.RequestPresentationMsgTypeV2,
 				RequestPresentationsAttach: []decorator.Attachment{
 					{Data: decorator.AttachmentData{
@@ -3072,7 +3072,7 @@ func TestPresentProofHandler(t *testing.T) {
 				},
 			}
 
-			actionCh <- createProofReqMsgV2(t, presentproofsvc.RequestPresentation{
+			actionCh <- createProofReqMsgV2(t, presentproofsvc.RequestPresentationV2{
 				Type: presentproofsvc.RequestPresentationMsgTypeV2,
 				RequestPresentationsAttach: []decorator.Attachment{
 					{Data: decorator.AttachmentData{
@@ -3102,7 +3102,7 @@ func TestPresentProofHandler(t *testing.T) {
 				},
 			}
 
-			actionCh <- createProofReqMsgV2(t, presentproofsvc.RequestPresentation{
+			actionCh <- createProofReqMsgV2(t, presentproofsvc.RequestPresentationV2{
 				Type: presentproofsvc.RequestPresentationMsgTypeV2,
 				RequestPresentationsAttach: []decorator.Attachment{
 					{Data: decorator.AttachmentData{
@@ -3151,7 +3151,7 @@ func TestPresentProofHandler(t *testing.T) {
 			require.NoError(t, err)
 
 			// http request fails
-			actionCh <- createProofReqMsgV2(t, presentproofsvc.RequestPresentation{
+			actionCh <- createProofReqMsgV2(t, presentproofsvc.RequestPresentationV2{
 				Type: presentproofsvc.RequestPresentationMsgTypeV2,
 				RequestPresentationsAttach: []decorator.Attachment{
 					{Data: decorator.AttachmentData{
@@ -3177,7 +3177,7 @@ func TestPresentProofHandler(t *testing.T) {
 				},
 			}
 
-			actionCh <- createProofReqMsgV2(t, presentproofsvc.RequestPresentation{
+			actionCh <- createProofReqMsgV2(t, presentproofsvc.RequestPresentationV2{
 				Type: presentproofsvc.RequestPresentationMsgTypeV2,
 				RequestPresentationsAttach: []decorator.Attachment{
 					{Data: decorator.AttachmentData{
@@ -3205,7 +3205,7 @@ func TestPresentProofHandler(t *testing.T) {
 				},
 			}
 
-			actionCh <- createProofReqMsgV2(t, presentproofsvc.RequestPresentation{
+			actionCh <- createProofReqMsgV2(t, presentproofsvc.RequestPresentationV2{
 				Type: presentproofsvc.RequestPresentationMsgTypeV2,
 				RequestPresentationsAttach: []decorator.Attachment{
 					{Data: decorator.AttachmentData{
@@ -3232,7 +3232,7 @@ func TestPresentProofHandler(t *testing.T) {
 			}
 			c.vccrypto = &mockVCCrypto{signVCErr: errors.New("sign error")}
 
-			actionCh <- createProofReqMsgV2(t, presentproofsvc.RequestPresentation{
+			actionCh <- createProofReqMsgV2(t, presentproofsvc.RequestPresentationV2{
 				Type: presentproofsvc.RequestPresentationMsgTypeV2,
 				RequestPresentationsAttach: []decorator.Attachment{
 					{Data: decorator.AttachmentData{
@@ -3309,7 +3309,7 @@ func TestPresentProofHandler(t *testing.T) {
 
 			done := make(chan struct{})
 
-			actionCh <- createProofReqMsgV2(t, presentproofsvc.RequestPresentation{
+			actionCh <- createProofReqMsgV2(t, presentproofsvc.RequestPresentationV2{
 				Type: presentproofsvc.RequestPresentationMsgTypeV2,
 				RequestPresentationsAttach: []decorator.Attachment{
 					{Data: decorator.AttachmentData{

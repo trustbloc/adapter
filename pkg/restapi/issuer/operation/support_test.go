@@ -248,7 +248,7 @@ func createCredentialReqMsg(t *testing.T, msg interface{}, continueFn func(args 
 	t.Helper()
 
 	if msg == nil {
-		msg = issuecredsvc.RequestCredential{
+		msg = issuecredsvc.RequestCredentialV2{
 			Type: issuecredsvc.RequestCredentialMsgTypeV2,
 			RequestsAttach: []decorator.Attachment{
 				{Data: decorator.AttachmentData{
@@ -277,7 +277,7 @@ func createProofReqMsgV2(t *testing.T, msg interface{}, continueFn func(args int
 	require.NoError(t, err)
 
 	if msg == nil {
-		msg = presentproofsvc.RequestPresentation{
+		msg = presentproofsvc.RequestPresentationV2{
 			Type: presentproofsvc.RequestPresentationMsgTypeV2,
 			RequestPresentationsAttach: []decorator.Attachment{
 				{Data: decorator.AttachmentData{

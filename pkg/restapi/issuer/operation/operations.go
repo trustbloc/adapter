@@ -1197,7 +1197,8 @@ func (o *Operation) handleRequestCredential(msg service.DIDCommAction) (interfac
 	}
 
 	return issuecredential.WithIssueCredential(&issuecredential.IssueCredential{
-		CredentialsAttach: []decorator.Attachment{
+		Type: issuecredsvc.IssueCredentialMsgTypeV2,
+		Attachments: []decorator.GenericAttachment{
 			{Data: decorator.AttachmentData{JSON: vc}},
 		},
 	}), nil
@@ -1249,7 +1250,7 @@ func (o *Operation) handleRequestPresentation(msg service.DIDCommAction) (interf
 	}
 
 	return presentproof.WithPresentation(&presentproof.Presentation{
-		PresentationsAttach: []decorator.Attachment{{
+		Attachments: []decorator.GenericAttachment{{
 			Data: decorator.AttachmentData{
 				JSON: vp,
 			},
@@ -1540,7 +1541,8 @@ func presentProofClient(prov presentproof.Provider, actionCh chan service.DIDCom
 
 // nolint: gocyclo,cyclop
 func fetchAuthorizationCreReq(msg service.DIDCommAction) (*AuthorizationCredentialReq, error) {
-	credReq := &issuecredsvc.RequestCredential{}
+	// TODO should be generic `issuecredsvc.RequestCredentialParams`.
+	credReq := &issuecredsvc.RequestCredentialV2{}
 
 	err := msg.Message.Decode(credReq)
 	if err != nil {
@@ -1579,7 +1581,7 @@ func fetchAuthorizationCreReq(msg service.DIDCommAction) (*AuthorizationCredenti
 
 func fetchAuthorizationCred(msg service.DIDCommAction,
 	vdriRegistry vdr.Registry, docLoader ld.DocumentLoader) (*verifiable.Credential, error) {
-	credReq := &presentproofsvc.RequestPresentation{}
+	credReq := &presentproofsvc.RequestPresentationV2{}
 
 	err := msg.Message.Decode(credReq)
 	if err != nil {

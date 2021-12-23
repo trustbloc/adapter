@@ -9,12 +9,13 @@ package presentproof
 import (
 	"github.com/hyperledger/aries-framework-go/pkg/client/presentproof"
 	"github.com/hyperledger/aries-framework-go/pkg/didcomm/common/service"
+	"github.com/hyperledger/aries-framework-go/pkg/store/connection"
 )
 
 // MockClient is a mock presentproof.MockClient used in tests.
 type MockClient struct {
 	RegisterActionFunc      func(chan<- service.DIDCommAction) error
-	RequestPresentationFunc func(*presentproof.RequestPresentation, string, string) (string, error)
+	RequestPresentationFunc func(*presentproof.RequestPresentation, *connection.Record) (string, error)
 }
 
 // RegisterActionEvent registers the action event channel.
@@ -43,9 +44,9 @@ func (s *MockClient) UnregisterMsgEvent(ch chan<- service.StateMsg) error {
 
 // SendRequestPresentation simulates the action of sending a request presentation to theirDID.
 func (s *MockClient) SendRequestPresentation(
-	presentation *presentproof.RequestPresentation, myDID, theirDID string) (string, error) {
+	presentation *presentproof.RequestPresentation, connRec *connection.Record) (string, error) {
 	if s.RequestPresentationFunc != nil {
-		return s.RequestPresentationFunc(presentation, myDID, theirDID)
+		return s.RequestPresentationFunc(presentation, connRec)
 	}
 
 	return "", nil

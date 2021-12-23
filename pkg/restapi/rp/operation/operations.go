@@ -131,7 +131,7 @@ type DIDClient interface {
 // PresentProofClient is the aries framework's presentproof.Client.
 type PresentProofClient interface {
 	service.Event
-	SendRequestPresentation(*presentproof.RequestPresentation, string, string) (string, error)
+	SendRequestPresentation(*presentproof.RequestPresentation, *connection.Record) (string, error)
 }
 
 // PublicDIDCreator creates public DIDs.
@@ -967,14 +967,14 @@ func (o *Operation) requestRemoteCredential(authz *verifiable.Credential,
 			AttachID: attachID,
 			Format:   consentVCAttachmentFormat,
 		}},
-		RequestPresentationsAttach: []decorator.Attachment{{
-			ID:       attachID,
-			MimeType: "application/ld+json",
+		Attachments: []decorator.GenericAttachment{{
+			ID:        attachID,
+			MediaType: "application/ld+json",
 			Data: decorator.AttachmentData{
 				Base64: base64.StdEncoding.EncodeToString(vpBytes),
 			},
 		}},
-	}, rpAuthZDID, issuerDID.ID)
+	}, &connection.Record{MyDID: rpAuthZDID, TheirDID: issuerDID.ID})
 	if err != nil {
 		return "", fmt.Errorf("failed to send request-presentation: %w", err)
 	}
@@ -1347,10 +1347,10 @@ func (o *Operation) presentProofListener(ppActions chan service.DIDCommAction) {
 
 			continueArg = presentproof.WithRequestPresentation(&presentproof.RequestPresentation{
 				Comment: "Request Presentation",
-				RequestPresentationsAttach: []decorator.Attachment{
+				Attachments: []decorator.GenericAttachment{
 					{
-						ID:       uuid.NewString(),
-						MimeType: "application/json",
+						ID:        uuid.NewString(),
+						MediaType: "application/json",
 						Data: decorator.AttachmentData{JSON: struct {
 							Challenge string                           `json:"challenge"`
 							Domain    string                           `json:"domain"`
@@ -1504,7 +1504,7 @@ func (o *Operation) handleWACIPresentation(action service.DIDCommAction) (string
 		return "", fmt.Errorf("waci - get presentation definition : %w", err)
 	}
 
-	presentation := &presentproof.Presentation{}
+	presentation := &presentproof.PresentationV2{}
 
 	err = action.Message.Decode(presentation)
 	if err != nil {
@@ -1543,7 +1543,8 @@ func (o *Operation) handleIssuerPresentationMsg(msg service.DIDCommMsg) error {
 		return fmt.Errorf("failed to extract threadID from didcomm msg : %w", err)
 	}
 
-	presentation := &presentproof.Presentation{}
+	// TODO Should be generic `presentproof.Presentation`,
+	presentation := &presentproof.PresentationV2{}
 
 	err = msg.Decode(presentation)
 	if err != nil {
