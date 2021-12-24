@@ -1959,10 +1959,10 @@ func TestCHAPIResponseHandler(t *testing.T) {
 				RegisterActionFunc: func(c chan<- service.DIDCommAction) error {
 					return nil
 				},
-				RequestPresentationFunc: func(request *presentproof.RequestPresentation, myDID, theirDID string) (string, error) {
-					require.Equal(t, rpAuthZDID.ID, myDID)
-					require.Equal(t, issuerDID.ID, theirDID)
-					require.Len(t, request.RequestPresentationsAttach, 1)
+				RequestPresentationFunc: func(request *presentproof.RequestPresentation, connRec *connection.Record) (string, error) { // nolint:lll
+					require.Equal(t, rpAuthZDID.ID, connRec.MyDID)
+					require.Equal(t, issuerDID.ID, connRec.TheirDID)
+					require.Len(t, request.Attachments, 1)
 					checkPresentationDefinitionAttachment(t, authz, request)
 
 					go func() { requestPresentationSent <- struct{}{} }()
@@ -2214,10 +2214,10 @@ func TestCHAPIResponseHandler(t *testing.T) {
 				RegisterActionFunc: func(c chan<- service.DIDCommAction) error {
 					return nil
 				},
-				RequestPresentationFunc: func(request *presentproof.RequestPresentation, myDID, theirDID string) (string, error) {
-					require.Equal(t, rpAuthZDID.ID, myDID)
-					require.Equal(t, issuerDID.ID, theirDID)
-					require.Len(t, request.RequestPresentationsAttach, 1)
+				RequestPresentationFunc: func(request *presentproof.RequestPresentation, connRec *connection.Record) (string, error) { // nolint:lll
+					require.Equal(t, rpAuthZDID.ID, connRec.MyDID)
+					require.Equal(t, issuerDID.ID, connRec.TheirDID)
+					require.Len(t, request.Attachments, 1)
 					checkPresentationDefinitionAttachment(t, authz, request)
 
 					go func() { requestPresentationSent <- struct{}{} }()
@@ -2295,7 +2295,7 @@ func TestCHAPIResponseHandler(t *testing.T) {
 			Storage:              memStorage(),
 			AriesContextProvider: relyingParty,
 			PresentProofClient: &mockpresentproof.MockClient{
-				RequestPresentationFunc: func(*presentproof.RequestPresentation, string, string) (string, error) {
+				RequestPresentationFunc: func(*presentproof.RequestPresentation, *connection.Record) (string, error) {
 					return "", errors.New("test")
 				},
 			},
@@ -2386,7 +2386,7 @@ func TestCHAPIResponseHandler(t *testing.T) {
 			Storage:              mockStorage,
 			AriesContextProvider: relyingParty,
 			PresentProofClient: &mockpresentproof.MockClient{
-				RequestPresentationFunc: func(request *presentproof.RequestPresentation, myDID, theirDID string) (string, error) {
+				RequestPresentationFunc: func(*presentproof.RequestPresentation, *connection.Record) (string, error) {
 					return thid, nil
 				},
 			},
@@ -2913,7 +2913,7 @@ func TestHandleIssuerPresentationMsg(t *testing.T) {
 		require.NoError(t, err)
 		thid := uuid.New().String()
 		msg := service.NewDIDCommMsgMap(&presentproof.Presentation{
-			PresentationsAttach: []decorator.Attachment{},
+			Attachments: []decorator.GenericAttachment{},
 		})
 		msg.SetID(thid)
 
@@ -2928,7 +2928,7 @@ func TestHandleIssuerPresentationMsg(t *testing.T) {
 		require.NoError(t, err)
 		attachID := uuid.New().String()
 		msg := service.NewDIDCommMsgMap(&presentproof.Presentation{
-			PresentationsAttach: []decorator.Attachment{{
+			Attachments: []decorator.GenericAttachment{{
 				ID: attachID,
 				Data: decorator.AttachmentData{
 					Base64: "invalid",
@@ -3544,9 +3544,7 @@ func TestHandlePresentProofMsg(t *testing.T) { // nolint: gocyclo,cyclop
 		go c.presentProofListener(actionCh)
 
 		actionCh <- service.DIDCommAction{
-			Message: service.NewDIDCommMsgMap(&presentproof.Presentation{
-				Type: presentproofsvc.PresentationMsgTypeV2,
-			}),
+			Message: service.NewDIDCommMsgMap(&presentproof.Presentation{}),
 			Stop: func(err error) {
 				done <- struct{}{}
 			},
@@ -4272,9 +4270,9 @@ func checkPresentationDefinitionAttachment(
 	t *testing.T, authz *verifiable.Credential, request *presentproof.RequestPresentation) {
 	t.Helper()
 
-	require.Len(t, request.RequestPresentationsAttach, 1)
+	require.Len(t, request.Attachments, 1)
 
-	bits, err := request.RequestPresentationsAttach[0].Data.Fetch()
+	bits, err := request.Attachments[0].Data.Fetch()
 	require.NoError(t, err)
 
 	vp, err := verifiable.ParsePresentation(
@@ -4304,7 +4302,7 @@ func checkPresentationDefinitionAttachment(
 func newIssuerResponse(t *testing.T, thid string, payload interface{}) service.DIDCommMsg {
 	t.Helper()
 
-	response := service.NewDIDCommMsgMap(&presentproof.Presentation{
+	response := service.NewDIDCommMsgMap(&presentproof.PresentationV2{
 		Type: presentproofsvc.PresentationMsgTypeV2,
 		PresentationsAttach: []decorator.Attachment{{
 			ID:       "123",

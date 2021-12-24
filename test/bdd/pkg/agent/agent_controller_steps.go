@@ -685,10 +685,10 @@ func (a *Steps) fetchCredential(agentID, issuerID string) error { // nolint: fun
 		},
 	}
 
-	req := &issuecredcmd.SendRequestArgs{
+	req := &issuecredcmd.SendRequestArgsV2{
 		MyDID:    conn.MyDID,
 		TheirDID: conn.TheirDID,
-		RequestCredential: &issuecredclient.RequestCredential{
+		RequestCredential: &issuecredclient.RequestCredentialV2{
 			Type: issuecredsvc.RequestCredentialMsgTypeV2,
 			RequestsAttach: []decorator.Attachment{
 				{
@@ -894,9 +894,9 @@ func (a *Steps) AcceptRequestPresentation(agent string, presentation *verifiable
 		return fmt.Errorf("failed to marshal verifiable presentation : %w", err)
 	}
 
-	request, err := json.Marshal(presentproofcmd.AcceptRequestPresentationArgs{
+	request, err := json.Marshal(presentproofcmd.AcceptRequestPresentationV2Args{
 		PIID: action.PIID,
-		Presentation: &presentproof.Presentation{
+		Presentation: &presentproof.PresentationV2{
 			Type: presentproofsvc.PresentationMsgTypeV2,
 			PresentationsAttach: []decorator.Attachment{{
 				ID:       uuid.New().String(),
@@ -1072,11 +1072,10 @@ func sendPresentationProposal(conn *didexchange.Connection, controllerURL string
 }
 
 func sendPresentationRequest(conn *didexchange.Connection, vp *verifiable.Presentation, controllerURL string) error {
-	req := &presentproofcmd.SendRequestPresentationArgs{
+	req := &presentproofcmd.SendRequestPresentationV2Args{
 		MyDID:    conn.MyDID,
 		TheirDID: conn.TheirDID,
-		RequestPresentation: &presentproof.RequestPresentation{
-			Type: presentproofsvc.RequestPresentationMsgTypeV2,
+		RequestPresentation: &presentproof.RequestPresentationV2{
 			RequestPresentationsAttach: []decorator.Attachment{
 				{Data: decorator.AttachmentData{
 					JSON: vp,
@@ -1099,10 +1098,9 @@ func sendPresentationRequest(conn *didexchange.Connection, vp *verifiable.Presen
 }
 
 func sendPresentation(vp *verifiable.Presentation, controllerURL, id string) error {
-	req := &presentproofcmd.AcceptRequestPresentationArgs{
+	req := &presentproofcmd.AcceptRequestPresentationV2Args{
 		PIID: id,
-		Presentation: &presentproof.Presentation{
-			Type: presentproofsvc.PresentationMsgTypeV2,
+		Presentation: &presentproof.PresentationV2{
 			PresentationsAttach: []decorator.Attachment{{
 				ID:       uuid.New().String(),
 				MimeType: "application/ld+json",
@@ -1152,7 +1150,7 @@ func (a *Steps) SubmitWACIPresentation(walletID, connID string) error { // nolin
 			presentproofsvc.RequestPresentationMsgTypeV2, action.Msg.Type())
 	}
 
-	reqMsg := &presentproof.RequestPresentation{}
+	reqMsg := &presentproof.RequestPresentationV2{}
 
 	err = action.Msg.Decode(reqMsg)
 	if err != nil {

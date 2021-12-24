@@ -206,7 +206,7 @@ func TestParseIssuerResponse(t *testing.T) {
 
 		expectedVC := newCreditCardStatementVC(t, issuer, issuerDID)
 		expectedVP := newPresentationSubmissionVP(t, issuer, issuerDID, nil, expectedVC)
-		actualVC, err := parseIssuerResponse(&presentproof.Presentation{
+		actualVC, err := parseIssuerResponse(&presentproof.PresentationV2{
 			PresentationsAttach: []decorator.Attachment{{
 				ID: uuid.New().String(),
 				Data: decorator.AttachmentData{
@@ -221,14 +221,14 @@ func TestParseIssuerResponse(t *testing.T) {
 	t.Run("error if no attachments were provided", func(t *testing.T) {
 		t.Parallel()
 
-		_, err := parseIssuerResponse(&presentproof.Presentation{}, nil, testutil.DocumentLoader(t))
+		_, err := parseIssuerResponse(&presentproof.PresentationV2{}, nil, testutil.DocumentLoader(t))
 		require.Error(t, err)
 	})
 
 	t.Run("error if attachment's contents are malformed", func(t *testing.T) {
 		t.Parallel()
 
-		_, err := parseIssuerResponse(&presentproof.Presentation{
+		_, err := parseIssuerResponse(&presentproof.PresentationV2{
 			PresentationsAttach: []decorator.Attachment{{
 				ID: uuid.New().String(),
 				Data: decorator.AttachmentData{
@@ -242,7 +242,7 @@ func TestParseIssuerResponse(t *testing.T) {
 	t.Run("errInvalidCredential if VP cannot be parsed", func(t *testing.T) {
 		t.Parallel()
 
-		_, err := parseIssuerResponse(&presentproof.Presentation{
+		_, err := parseIssuerResponse(&presentproof.PresentationV2{
 			PresentationsAttach: []decorator.Attachment{{
 				ID: uuid.New().String(),
 				Data: decorator.AttachmentData{
@@ -262,7 +262,7 @@ func TestParseIssuerResponse(t *testing.T) {
 
 		simulateDIDExchange(t, relyingParty, rpDID, issuer, issuerDID)
 
-		_, err := parseIssuerResponse(&presentproof.Presentation{
+		_, err := parseIssuerResponse(&presentproof.PresentationV2{
 			PresentationsAttach: []decorator.Attachment{{
 				ID: uuid.New().String(),
 				Data: decorator.AttachmentData{
@@ -304,7 +304,7 @@ func TestGetPresentationSubmissionCredentials(t *testing.T) {
 			expectedVC,
 		)
 
-		pres := &presentproof.Presentation{
+		pres := &presentproof.PresentationV2{
 			Type: presentproofsvc.PresentationMsgTypeV2,
 			PresentationsAttach: []decorator.Attachment{{
 				ID:       "123",
@@ -331,7 +331,7 @@ func TestGetPresentationSubmissionCredentials(t *testing.T) {
 		t.Parallel()
 
 		_, err := getPresentationSubmissionCredentials(
-			&presentproof.Presentation{
+			&presentproof.PresentationV2{
 				Type: presentproofsvc.PresentationMsgTypeV2,
 			}, nil, nil, nil,
 		)

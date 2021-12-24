@@ -1021,7 +1021,13 @@ func createAriesAgent(parameters *adapterRestParameters, tlsConfig *tls.Config, 
 
 	if parameters.universalResolverURL != "" {
 		universalResolverVDRI, resErr := httpbinding.New(parameters.universalResolverURL,
-			httpbinding.WithAccept(acceptsDID), httpbinding.WithTLSConfig(tlsConfig))
+			httpbinding.WithAccept(acceptsDID), httpbinding.WithHTTPClient(
+				&http.Client{
+					Transport: &http.Transport{
+						TLSClientConfig: tlsConfig,
+					},
+				},
+			))
 		if resErr != nil {
 			return nil, fmt.Errorf("failed to create new universal resolver vdri: %w", resErr)
 		}

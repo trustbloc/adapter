@@ -74,7 +74,8 @@ func parseWalletResponse(definitions *presexch.PresentationDefinition, vdriReg v
 
 // TODO validate issuer's response against presentation_definitions
 //  https://github.com/trustbloc/edge-adapter/issues/108
-func parseIssuerResponse(pres *presentproof.Presentation,
+// TODO Should accept generic `presentproof.Presentation`
+func parseIssuerResponse(pres *presentproof.PresentationV2,
 	vdriReg vdrapi.Registry, docLoader ld.DocumentLoader) (*verifiable.Credential, error) {
 	if len(pres.PresentationsAttach) == 0 {
 		return nil, fmt.Errorf("%w: expected at least 1 attachment but got 0", errInvalidCredential)
@@ -119,7 +120,8 @@ func parseIssuerResponse(pres *presentproof.Presentation,
 	return data, nil
 }
 
-func getPresentationSubmissionCredentials(pres *presentproof.Presentation, definitions *presexch.PresentationDefinition,
+// nolint:lll
+func getPresentationSubmissionCredentials(pres *presentproof.PresentationV2, definitions *presexch.PresentationDefinition,
 	vdriReg vdrapi.Registry, docLoader ld.DocumentLoader) (map[string]*verifiable.Credential, error) {
 	if len(pres.PresentationsAttach) == 0 {
 		return nil, fmt.Errorf("no presentation attachments")
