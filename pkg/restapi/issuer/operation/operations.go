@@ -35,6 +35,7 @@ import (
 	issuecredsvc "github.com/hyperledger/aries-framework-go/pkg/didcomm/protocol/issuecredential"
 	mediatorsvc "github.com/hyperledger/aries-framework-go/pkg/didcomm/protocol/mediator"
 	presentproofsvc "github.com/hyperledger/aries-framework-go/pkg/didcomm/protocol/presentproof"
+	"github.com/hyperledger/aries-framework-go/pkg/doc/cm"
 	"github.com/hyperledger/aries-framework-go/pkg/doc/did"
 	"github.com/hyperledger/aries-framework-go/pkg/doc/util"
 	"github.com/hyperledger/aries-framework-go/pkg/doc/verifiable"
@@ -64,11 +65,11 @@ const (
 	issuerBasePath  = "/issuer"
 	didCommBasePath = issuerBasePath + "/didcomm"
 
-	profileEndpoint                 = "/profile"
-	getProfileEndpoint              = profileEndpoint + "/{id}"
-	walletConnectEndpoint           = "/{id}/connect/wallet"
-	getCHAPIRequestEndpoint         = didCommBasePath + "/chapi/request"
-	validateConnectResponseEndpoint = "/connect/validate"
+	profileEndpoint                         = "/profile"
+	getProfileEndpoint                      = profileEndpoint + "/{id}"
+	walletConnectEndpoint                   = "/{id}/connect/wallet"
+	getCredentialInteractionRequestEndpoint = didCommBasePath + "/interaction/request"
+	validateConnectResponseEndpoint         = "/connect/validate"
 
 	oidcAuthRequestEndpoint = "/oidc/request"
 	oidcCallbackEndpoint    = "/oidc/cb"
@@ -86,6 +87,9 @@ const (
 	oidcClientStoreName   = "issuer_oidc_client"
 	refreshTokenStoreName = "issuer_refresh_token"
 
+	// oob invitation constants
+	oobGoalCode = "streamlined-vc"
+
 	// protocol
 	didExCompletedState = "completed"
 
@@ -97,6 +101,12 @@ const (
 	vcFieldDescription = "description"
 
 	issuerWalletBridgeLabel = "issuer_wallet_bridge"
+
+	// WACI interaction constants
+	credentialManifestFormat       = "dif/credential-manifest/manifest@v1.0"
+	credentialFulfillmentFormat    = "dif/credential-manifest/fulfillment@v1.0"
+	offerCredentialAttachMediaType = "application/json"
+	redirectStatusOK               = "OK"
 )
 
 type connections interface {
@@ -344,7 +354,7 @@ func (o *Operation) GetRESTHandlers() []restapi.Handler {
 		// didcomm
 		support.NewHTTPHandler(walletConnectEndpoint, http.MethodGet, o.walletConnectHandler),
 		support.NewHTTPHandler(validateConnectResponseEndpoint, http.MethodPost, o.validateWalletResponseHandler),
-		support.NewHTTPHandler(getCHAPIRequestEndpoint, http.MethodGet, o.getCHAPIRequestHandler),
+		support.NewHTTPHandler(getCredentialInteractionRequestEndpoint, http.MethodGet, o.getCredentialInteractionRequestHandler), // nolint:lll
 		support.NewHTTPHandler(oidcAuthRequestEndpoint, http.MethodGet, o.requestOIDCAuthHandler),
 		support.NewHTTPHandler(oidcCallbackEndpoint, http.MethodGet, o.oidcAuthCallback),
 	}, o.walletBridge.GetRESTHandlers()...)
@@ -841,13 +851,13 @@ func (o *Operation) validateWalletResponseHandler(rw http.ResponseWriter, req *h
 		&ValidateConnectResp{RedirectURL: redirectURL}, validateConnectResponseEndpoint, logger)
 }
 
-func (o *Operation) getCHAPIRequestHandler(rw http.ResponseWriter, req *http.Request) { // nolint:funlen,gocyclo,cyclop
+func (o *Operation) getCredentialInteractionRequestHandler(rw http.ResponseWriter, req *http.Request) { // nolint:funlen,gocyclo,cyclop,lll
 	// get the txnID
 	txnID := req.URL.Query().Get(txnIDQueryParam)
 
 	if txnID == "" {
 		commhttp.WriteErrorResponseWithLog(rw, http.StatusBadRequest, "failed to get txnID from the url",
-			getCHAPIRequestEndpoint, logger)
+			getCredentialInteractionRequestEndpoint, logger)
 
 		return
 	}
@@ -856,7 +866,7 @@ func (o *Operation) getCHAPIRequestHandler(rw http.ResponseWriter, req *http.Req
 	txnData, err := o.getTxn(txnID)
 	if err != nil {
 		commhttp.WriteErrorResponseWithLog(rw, http.StatusBadRequest,
-			fmt.Sprintf("txn data not found: %s", err.Error()), getCHAPIRequestEndpoint, logger)
+			fmt.Sprintf("txn data not found: %s", err.Error()), getCredentialInteractionRequestEndpoint, logger)
 
 		return
 	}
@@ -864,7 +874,7 @@ func (o *Operation) getCHAPIRequestHandler(rw http.ResponseWriter, req *http.Req
 	profile, err := o.profileStore.GetProfile(txnData.IssuerID)
 	if err != nil {
 		commhttp.WriteErrorResponseWithLog(rw, http.StatusInternalServerError,
-			fmt.Sprintf("issuer not found: %s", err.Error()), getCHAPIRequestEndpoint, logger)
+			fmt.Sprintf("issuer not found: %s", err.Error()), getCredentialInteractionRequestEndpoint, logger)
 
 		return
 	}
@@ -872,7 +882,8 @@ func (o *Operation) getCHAPIRequestHandler(rw http.ResponseWriter, req *http.Req
 	manifestVC, err := issuervc.CreateManifestCredential(profile.Name, profile.SupportedVCContexts)
 	if err != nil {
 		commhttp.WriteErrorResponseWithLog(rw, http.StatusInternalServerError,
-			fmt.Sprintf("error creating manifest vc : %s", err.Error()), getCHAPIRequestEndpoint, logger)
+			fmt.Sprintf("error creating manifest vc : %s", err.Error()),
+			getCredentialInteractionRequestEndpoint, logger)
 
 		return
 	}
@@ -887,6 +898,50 @@ func (o *Operation) getCHAPIRequestHandler(rw http.ResponseWriter, req *http.Req
 		}
 	}
 
+	// if WACI enabled
+	if profile.SupportsWACI {
+		var walletRedirect string
+
+		if profile.LinkedWalletURL != "" {
+			invBytes, e := json.Marshal(txnData.DIDCommInvitation)
+			if e != nil {
+				commhttp.WriteErrorResponseWithLog(rw, http.StatusInternalServerError,
+					fmt.Sprintf("failed to unmarshal invitation : %s", err),
+					getCredentialInteractionRequestEndpoint, logger)
+
+				return
+			}
+
+			walletRedirect = fmt.Sprintf("%s?oob=%s", profile.LinkedWalletURL,
+				base64.URLEncoding.EncodeToString(invBytes))
+		}
+
+		err = o.storeUserInvitationMapping(&UserInvitationMapping{
+			InvitationID: txnData.DIDCommInvitation.ID,
+			IssuerID:     txnData.IssuerID,
+			TxID:         txnID,
+			TxToken:      txnData.Token,
+			State:        txnData.State,
+		})
+		if err != nil {
+			commhttp.WriteErrorResponseWithLog(rw, http.StatusInternalServerError,
+				fmt.Sprintf("failed to save user invitation mapping : %s", err),
+				getCredentialInteractionRequestEndpoint, logger)
+
+			return
+		}
+
+		commhttp.WriteResponseWithLog(rw, &CredentialHandlerRequest{
+			WACI:              true,
+			WalletRedirect:    walletRedirect,
+			DIDCommInvitation: txnData.DIDCommInvitation,
+		}, getCredentialInteractionRequestEndpoint, logger)
+
+		logger.Debugf("[waci] wallet redirect: %+v", walletRedirect)
+
+		return
+	}
+
 	// prepare credentials to be sent and append manifest credential
 	credentials := append([]json.RawMessage{}, manifestVC)
 
@@ -894,7 +949,8 @@ func (o *Operation) getCHAPIRequestHandler(rw http.ResponseWriter, req *http.Req
 		vcBytes, err := o.createReferenceCredential(txnData.Token, oauthToken, profile)
 		if err != nil {
 			commhttp.WriteErrorResponseWithLog(rw, http.StatusInternalServerError,
-				fmt.Sprintf("error creating reference credential : %s", err.Error()), getCHAPIRequestEndpoint, logger)
+				fmt.Sprintf("error creating reference credential : %s", err.Error()),
+				getCredentialInteractionRequestEndpoint, logger)
 
 			return
 		}
@@ -906,7 +962,8 @@ func (o *Operation) getCHAPIRequestHandler(rw http.ResponseWriter, req *http.Req
 		governanceVC, err := o.governanceProvider.GetCredential(profile.ID)
 		if err != nil {
 			commhttp.WriteErrorResponseWithLog(rw, http.StatusInternalServerError,
-				fmt.Sprintf("error retrieving governance vc : %s", err.Error()), getCHAPIRequestEndpoint, logger)
+				fmt.Sprintf("error retrieving governance vc : %s", err.Error()),
+				getCredentialInteractionRequestEndpoint, logger)
 
 			return
 		}
@@ -915,11 +972,11 @@ func (o *Operation) getCHAPIRequestHandler(rw http.ResponseWriter, req *http.Req
 		credentials = append(credentials, governanceVC)
 	}
 
-	commhttp.WriteResponseWithLog(rw, &CHAPIRequest{
+	commhttp.WriteResponseWithLog(rw, &CredentialHandlerRequest{
 		Query:             &CHAPIQuery{Type: DIDConnectCHAPIQueryType},
 		DIDCommInvitation: txnData.DIDCommInvitation,
 		Credentials:       credentials,
-	}, getCHAPIRequestEndpoint, logger)
+	}, getCredentialInteractionRequestEndpoint, logger)
 }
 
 func (o *Operation) createReferenceCredential(token, oauthToken string, profile *issuer.ProfileData) ([]byte, error) {
@@ -977,7 +1034,8 @@ func (o *Operation) validateAndGetConnection(connectData *issuervc.DIDConnectCre
 }
 
 func (o *Operation) createTxn(profile *issuer.ProfileData, state, token string) (string, error) {
-	invitation, err := o.oobClient.CreateInvitation(nil, outofband.WithLabel("issuer"))
+	invitation, err := o.oobClient.CreateInvitation(nil, outofband.WithLabel("issuer"),
+		outofband.WithGoal("", oobGoalCode))
 	if err != nil {
 		return "", fmt.Errorf("failed to create invitation : %w", err)
 	}
@@ -1006,7 +1064,8 @@ func (o *Operation) createTxn(profile *issuer.ProfileData, state, token string) 
 }
 
 func (o *Operation) createTxnWithCredScope(profile *issuer.ProfileData, credScope string) (string, error) {
-	invitation, err := o.oobClient.CreateInvitation(nil, outofband.WithLabel("issuer"))
+	invitation, err := o.oobClient.CreateInvitation(nil, outofband.WithLabel("issuer"),
+		outofband.WithGoal("", oobGoalCode))
 	if err != nil {
 		return "", fmt.Errorf("failed to create invitation : %w", err)
 	}
@@ -1082,6 +1141,73 @@ func (o *Operation) getUserConnectionMapping(connID string) (*UserConnectionMapp
 	return userConnMap, nil
 }
 
+func (o *Operation) storeUserInvitationMapping(mapping *UserInvitationMapping) error {
+	userInvMapBytes, err := json.Marshal(mapping)
+	if err != nil {
+		return fmt.Errorf("failed to marshal user invitation mapping: %w", err)
+	}
+
+	err = o.tokenStore.Put(mapping.InvitationID, userInvMapBytes)
+	if err != nil {
+		return fmt.Errorf("failed to save user invitation mapping: %w", err)
+	}
+
+	return nil
+}
+
+// TODO fulfillment shouldn't be saved, need re-design [Issue#560]
+func (o *Operation) saveCredentialFulfillment(thID string, fulfillment *verifiable.Presentation) error {
+	fbytes, err := fulfillment.MarshalJSON()
+	if err != nil {
+		return fmt.Errorf("failed to marshal credential fulfillment: %w", err)
+	}
+
+	err = o.txnStore.Put(thID, fbytes)
+	if err != nil {
+		return fmt.Errorf("failed to save credential fulfillment in store: %w", err)
+	}
+
+	return nil
+}
+
+func (o *Operation) readCredentialFulfillment(thID string) (*verifiable.Presentation, error) {
+	fbytes, err := o.txnStore.Get(thID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get credential fulfillment from store: %w", err)
+	}
+
+	vp, err := verifiable.ParsePresentation(
+		fbytes,
+		verifiable.WithPresPublicKeyFetcher(verifiable.NewVDRKeyResolver(o.vdriRegistry).PublicKeyFetcher()),
+		verifiable.WithPresJSONLDDocumentLoader(o.jsonldDocLoader),
+	)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read credential fulfillment from store : %w", err)
+	}
+
+	return vp, nil
+}
+
+func (o *Operation) deleteCredentialFulfillment(thID string) error {
+	return o.txnStore.Delete(thID) // nolint:wrapcheck
+}
+
+func (o *Operation) getUserInvitationMapping(connID string) (*UserInvitationMapping, error) {
+	userInvMapBytes, err := o.tokenStore.Get(connID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to fetch user invitation mapping: %w", err)
+	}
+
+	userInvMap := &UserInvitationMapping{}
+
+	err = json.Unmarshal(userInvMapBytes, userInvMap)
+	if err != nil {
+		return nil, fmt.Errorf("failed to unmarshal : %w", err)
+	}
+
+	return userInvMap, nil
+}
+
 func (o *Operation) didCommActionListener(ch <-chan service.DIDCommAction) {
 	for msg := range ch {
 		var err error
@@ -1096,6 +1222,8 @@ func (o *Operation) didCommActionListener(ch <-chan service.DIDCommAction) {
 		case presentproofsvc.RequestPresentationMsgTypeV3:
 			// TODO handle presentproofsvc.RequestPresentationMsgTypeV3 properly, for now it's the same as V2.
 			args, err = o.handleRequestPresentation(msg)
+		case issuecredsvc.ProposeCredentialMsgTypeV2:
+			args, err = o.handleProposeCredential(msg)
 		default:
 			err = fmt.Errorf("unsupported message type : %s", msg.Message.Type())
 		}
@@ -1127,6 +1255,96 @@ func (o *Operation) didCommStateMsgListener(stateMsgCh <-chan service.StateMsg) 
 }
 
 // nolint:funlen,gocyclo,cyclop
+func (o *Operation) handleProposeCredential(msg service.DIDCommAction) (issuecredsvc.Opt, error) {
+	var proposal issuecredential.ProposeCredentialV2
+
+	err := msg.Message.Decode(&proposal)
+	if err != nil {
+		return nil, fmt.Errorf("failed to decode propose credential message: %w", err)
+	}
+
+	if proposal.InvitationID == "" {
+		return nil, errors.New("invalid invitation ID, failed to correlate incoming propose credential message")
+	}
+
+	userInvMap, err := o.getUserInvitationMapping(proposal.InvitationID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get user invitation mapping : %w", err)
+	}
+
+	profile, err := o.profileStore.GetProfile(userInvMap.IssuerID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to fetch issuer profile : %w", err)
+	}
+
+	if !profile.SupportsWACI {
+		return nil, errors.New("unsupported protocol, propose credential message handled for WACI only")
+	}
+
+	oauthToken := ""
+
+	if profile.OIDCProviderURL != "" {
+		oauthToken, err = o.getOIDCAccessToken(userInvMap.TxID, profile)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get OIDC access token for WACI transaction: %w", err)
+		}
+	}
+
+	// get manifest
+	manifest := o.readCredentialManifest()
+
+	// get unsigned credential
+	vc, err := o.createCredential(getUserDataURL(profile.URL), userInvMap.TxToken, oauthToken,
+		"", false, profile)
+	if err != nil {
+		return nil, fmt.Errorf("failed to fetch credential data : %w", err)
+	}
+
+	// prepare fulfillment
+	presentation, err := verifiable.NewPresentation(verifiable.WithCredentials(vc))
+	if err != nil {
+		return nil, fmt.Errorf("failed to prepare presentation : %w", err)
+	}
+
+	fulfillment, err := cm.PresentCredentialFulfillment(manifest,
+		cm.WithExistingPresentationForPresentCredentialFulfillment(presentation))
+	if err != nil {
+		return nil, fmt.Errorf("failed to prepare credential fulfillment : %w", err)
+	}
+
+	// prepare offer credential
+	offerCred := prepareOfferCredentialMessage(manifest, fulfillment)
+
+	// save fulfillment for subsequent WACI steps.
+	err = o.saveCredentialFulfillment(msg.Message.ID(), fulfillment)
+	if err != nil {
+		return nil, fmt.Errorf("failed to persist credential fulfillment : %w", err)
+	}
+
+	// save user connection mapping for subsequent WACI steps.
+	connID, err := o.getConnectionIDFromEvent(msg)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get connection ID from event : %w", err)
+	}
+
+	err = o.storeUserConnectionMapping(&UserConnectionMapping{
+		ConnectionID: connID,
+		IssuerID:     userInvMap.IssuerID,
+		Token:        userInvMap.TxToken,
+		OauthID:      userInvMap.TxID,
+		State:        userInvMap.State,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to save user connection mapping : %w", err)
+	}
+
+	// TODO for now not removing entry for user invitation mapping,
+	//  practically one invitation/connection can be used for multiple WACI interactions [Issue#560].
+
+	return issuecredential.WithOfferCredential(offerCred), nil
+}
+
+// nolint:funlen,gocyclo,cyclop
 func (o *Operation) handleRequestCredential(msg service.DIDCommAction) (interface{}, error) {
 	connID, err := o.getConnectionIDFromEvent(msg)
 	if err != nil {
@@ -1141,6 +1359,10 @@ func (o *Operation) handleRequestCredential(msg service.DIDCommAction) (interfac
 	profile, err := o.profileStore.GetProfile(userConnMap.IssuerID)
 	if err != nil {
 		return nil, fmt.Errorf("fetch issuer profile : %w", err)
+	}
+
+	if profile.SupportsWACI {
+		return o.handleWACIRequestCredential(msg, profile, userConnMap)
 	}
 
 	authorizationCreReq, err := fetchAuthorizationCreReq(msg)
@@ -1202,6 +1424,39 @@ func (o *Operation) handleRequestCredential(msg service.DIDCommAction) (interfac
 			{Data: decorator.AttachmentData{JSON: vc}},
 		},
 	}), nil
+}
+
+// TODO read credential application from msg nd validate if found [Issue#564]
+func (o *Operation) handleWACIRequestCredential(msg service.DIDCommAction, profile *issuer.ProfileData, userConnMap *UserConnectionMapping) (issuecredsvc.Opt, error) { // nolint:lll
+	thID, err := msg.Message.ThreadID()
+	if err != nil {
+		return nil, fmt.Errorf("failed to read threadID from request credential message: %w", err)
+	}
+
+	if thID == "" {
+		return nil, errors.New("failed to correlate WACI interaction, missing thread ID")
+	}
+
+	fulfillment, err := o.readCredentialFulfillment(thID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read credential fulfillment: %w", err)
+	}
+
+	err = o.deleteCredentialFulfillment(thID)
+	if err != nil {
+		logger.Warnf("failed to delete credential fulfillment: %s", err)
+	}
+
+	vp, err := o.vccrypto.SignPresentation(fulfillment, profile.PresentationSigningKey)
+	if err != nil {
+		return nil, fmt.Errorf("failed to sign credential fulfillment: %w", err)
+	}
+
+	redirectURL := fmt.Sprintf(redirectURLFmt, getCallBackURL(profile.URL), userConnMap.State)
+
+	issueCredMsg := prepareIssueCredentialMessage(vp, redirectURL)
+
+	return issuecredential.WithIssueCredential(issueCredMsg), nil
 }
 
 func (o *Operation) handleRequestPresentation(msg service.DIDCommAction) (interface{}, error) {
@@ -1344,6 +1599,10 @@ func (o *Operation) createCredential(url, token, oauthToken, signingKey string, 
 		cred.CustomFields["referenceVCID"] = refCredData.ID
 	}
 
+	if signingKey == "" {
+		return cred, nil
+	}
+
 	vc, err := o.vccrypto.SignCredential(cred, signingKey)
 	if err != nil {
 		return nil, fmt.Errorf("sign user data vc : %w", err)
@@ -1467,6 +1726,70 @@ func (o *Operation) hanlDIDExStateMsg(msg service.StateMsg) error {
 	}
 
 	return nil
+}
+
+// read credential manifest from profile URL endpoints
+// TODO for now returning empty manifest, TO BE IMPLEMENTED [issue##561 & issue#563]
+func (o *Operation) readCredentialManifest() *cm.CredentialManifest {
+	return &cm.CredentialManifest{
+		ID: uuid.NewString(),
+	}
+}
+
+func prepareOfferCredentialMessage(manifest *cm.CredentialManifest, fulfillment *verifiable.Presentation) *issuecredsvc.OfferCredentialParams { // nolint:lll
+	manifestAttachID, fulfillmentAttachID := uuid.New().String(), uuid.New().String()
+
+	return &issuecredsvc.OfferCredentialParams{
+		Type: issuecredsvc.OfferCredentialMsgTypeV2,
+		Formats: []issuecredsvc.Format{{
+			AttachID: manifestAttachID,
+			Format:   credentialManifestFormat,
+		}, {
+			AttachID: fulfillmentAttachID,
+			Format:   credentialFulfillmentFormat,
+		}},
+		Attachments: []decorator.GenericAttachment{
+			{
+				ID:        manifestAttachID,
+				MediaType: offerCredentialAttachMediaType,
+				Data: decorator.AttachmentData{
+					JSON: manifest,
+				},
+			},
+			{
+				ID:        fulfillmentAttachID,
+				MediaType: offerCredentialAttachMediaType,
+				Data: decorator.AttachmentData{
+					JSON: fulfillment,
+				},
+			},
+		},
+	}
+}
+
+func prepareIssueCredentialMessage(fulfillment *verifiable.Presentation, redirectURL string) *issuecredsvc.IssueCredentialParams { // nolint:lll
+	fulfillmentAttachID := uuid.New().String()
+
+	return &issuecredsvc.IssueCredentialParams{
+		Type: issuecredsvc.IssueCredentialMsgTypeV2,
+		Formats: []issuecredsvc.Format{{
+			AttachID: fulfillmentAttachID,
+			Format:   credentialFulfillmentFormat,
+		}},
+		Attachments: []decorator.GenericAttachment{
+			{
+				ID:        fulfillmentAttachID,
+				MediaType: offerCredentialAttachMediaType,
+				Data: decorator.AttachmentData{
+					JSON: fulfillment,
+				},
+			},
+		},
+		WebRedirect: &decorator.WebRedirect{
+			Status: redirectStatusOK,
+			URL:    redirectURL,
+		},
+	}
 }
 
 func outofbandClient(ariesCtx outofband.Provider) (*outofband.Client, error) {
@@ -1744,5 +2067,6 @@ func mapProfileReqToData(data *ProfileDataRequest, didDoc *did.Doc) (*issuer.Pro
 		CreatedAt:                   &created,
 		OIDCClientParams:            clientParams,
 		CredentialScopes:            data.CredentialScopes,
+		LinkedWalletURL:             data.LinkedWalletURL,
 	}, nil
 }

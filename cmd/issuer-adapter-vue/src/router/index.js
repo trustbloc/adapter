@@ -11,7 +11,7 @@ import NotFound from '@/pages/PageNotFound'
 const routes = [
     {
         path: "/ui",
-        component: Landing,
+        component: WalletConnect,
         name: "main",
         redirect: "ui/walletConnect",
         children: [

@@ -44,6 +44,7 @@ type ProfileData struct {
 	OIDCProviderURL             string            `json:"oidcProvider"`
 	OIDCClientParams            *OIDCClientParams `json:"oidcParams,omitempty"`
 	CredentialScopes            []string          `json:"credScopes,omitempty"`
+	LinkedWalletURL             string            `json:"linkedWallet,omitempty"`
 }
 
 // OIDCClientParams optional set of oidc client parameters that the issuer may set, for static client registration.

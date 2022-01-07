@@ -30,6 +30,7 @@ import (
 	"github.com/hyperledger/aries-framework-go/pkg/didcomm/protocol/mediator"
 	outofbandsvc "github.com/hyperledger/aries-framework-go/pkg/didcomm/protocol/outofband"
 	presentproofsvc "github.com/hyperledger/aries-framework-go/pkg/didcomm/protocol/presentproof"
+	"github.com/hyperledger/aries-framework-go/pkg/doc/cm"
 	"github.com/hyperledger/aries-framework-go/pkg/doc/verifiable"
 	mocksvc "github.com/hyperledger/aries-framework-go/pkg/mock/didcomm/protocol/didexchange"
 	mockroute "github.com/hyperledger/aries-framework-go/pkg/mock/didcomm/protocol/mediator"
@@ -57,8 +58,9 @@ import (
 )
 
 const (
-	inviteeDID = "did:example:0d76fa4e1386"
-	inviterDID = "did:example:e6025bfdbb8f"
+	inviteeDID       = "did:example:0d76fa4e1386"
+	inviterDID       = "did:example:e6025bfdbb8f"
+	mockOIDCProvider = "mock.provider.local"
 )
 
 func TestNew(t *testing.T) {
@@ -1951,7 +1953,7 @@ func TestGetOIDCAccessToken(t *testing.T) {
 	})
 }
 
-func TestCHAPIRequest(t *testing.T) {
+func TestCredentialInteractionRequest(t *testing.T) {
 	t.Parallel()
 
 	t.Run("test fetch chapi request - success", func(t *testing.T) {
@@ -1975,14 +1977,14 @@ func TestCHAPIRequest(t *testing.T) {
 			txnID, txnErr := c.createTxn(profile, uuid.New().String(), uuid.New().String())
 			require.NoError(t, txnErr)
 
-			getCHAPIRequestHandler := getHandler(t, c, getCHAPIRequestEndpoint)
+			getCHAPIRequestHandler := getHandler(t, c, getCredentialInteractionRequestEndpoint)
 
 			rr := serveHTTP(t, getCHAPIRequestHandler.Handle(), http.MethodGet,
-				getCHAPIRequestEndpoint+"?"+txnIDQueryParam+"="+txnID, nil)
+				getCredentialInteractionRequestEndpoint+"?"+txnIDQueryParam+"="+txnID, nil)
 
 			require.Equal(t, http.StatusOK, rr.Code)
 
-			chapiReq := &CHAPIRequest{}
+			chapiReq := &CredentialHandlerRequest{}
 			err = json.Unmarshal(rr.Body.Bytes(), &chapiReq)
 			require.NoError(t, err)
 			require.Equal(t, DIDConnectCHAPIQueryType, chapiReq.Query.Type)
@@ -2008,14 +2010,14 @@ func TestCHAPIRequest(t *testing.T) {
 			txnID, err := c.createTxn(profile, uuid.New().String(), uuid.New().String())
 			require.NoError(t, err)
 
-			getCHAPIRequestHandler := getHandler(t, c, getCHAPIRequestEndpoint)
+			getCHAPIRequestHandler := getHandler(t, c, getCredentialInteractionRequestEndpoint)
 
 			rr := serveHTTP(t, getCHAPIRequestHandler.Handle(), http.MethodGet,
-				getCHAPIRequestEndpoint+"?"+txnIDQueryParam+"="+txnID, nil)
+				getCredentialInteractionRequestEndpoint+"?"+txnIDQueryParam+"="+txnID, nil)
 
 			require.Equal(t, http.StatusOK, rr.Code)
 
-			chapiReq := &CHAPIRequest{}
+			chapiReq := &CredentialHandlerRequest{}
 			err = json.Unmarshal(rr.Body.Bytes(), &chapiReq)
 			require.NoError(t, err)
 			require.Equal(t, DIDConnectCHAPIQueryType, chapiReq.Query.Type)
@@ -2037,7 +2039,7 @@ func TestCHAPIRequest(t *testing.T) {
 			profile.SupportsAssuranceCredential = true
 			profile.CredentialSigningKey = mockdiddoc.GetMockDIDDoc("did:example:def567").VerificationMethod[0].ID
 
-			profile.OIDCProviderURL = "mock.provider.local"
+			profile.OIDCProviderURL = mockOIDCProvider
 
 			mockToken := oauth2.Token{RefreshToken: "refresh-token", AccessToken: "access-token"}
 
@@ -2055,20 +2057,90 @@ func TestCHAPIRequest(t *testing.T) {
 
 			c.userTokens[txnID] = &mockToken
 
-			getCHAPIRequestHandler := getHandler(t, c, getCHAPIRequestEndpoint)
+			getCHAPIRequestHandler := getHandler(t, c, getCredentialInteractionRequestEndpoint)
 
 			rr := serveHTTP(t, getCHAPIRequestHandler.Handle(), http.MethodGet,
-				getCHAPIRequestEndpoint+"?"+txnIDQueryParam+"="+txnID, nil)
+				getCredentialInteractionRequestEndpoint+"?"+txnIDQueryParam+"="+txnID, nil)
 
 			require.Equal(t, http.StatusOK, rr.Code)
 
-			chapiReq := &CHAPIRequest{}
+			chapiReq := &CredentialHandlerRequest{}
 			err = json.Unmarshal(rr.Body.Bytes(), &chapiReq)
 			require.NoError(t, err)
 			require.Equal(t, DIDConnectCHAPIQueryType, chapiReq.Query.Type)
 			require.Equal(t, "https://didcomm.org/out-of-band/1.0/invitation", chapiReq.DIDCommInvitation.Type)
 			require.Equal(t, `{"key":"value"}`, string(chapiReq.Credentials[2]))
 			require.Equal(t, 3, len(chapiReq.Credentials))
+		})
+	})
+
+	t.Run("test fetch waci request - success", func(t *testing.T) {
+		t.Parallel()
+
+		c, e := New(config(t))
+		require.NoError(t, e)
+
+		c.governanceProvider = &mockgovernance.MockProvider{GetCredentialFunc: func(profileID string) ([]byte, error) {
+			return []byte(`{"key":"value"}`), nil
+		}}
+
+		t.Run("without linked wallet", func(t *testing.T) {
+			t.Parallel()
+
+			profile := createProfileData("profile_waci_1")
+			profile.SupportsWACI = true
+
+			err := c.profileStore.SaveProfile(profile)
+			require.NoError(t, err)
+
+			txnID, txnErr := c.createTxn(profile, uuid.New().String(), uuid.New().String())
+			require.NoError(t, txnErr)
+
+			getCHAPIRequestHandler := getHandler(t, c, getCredentialInteractionRequestEndpoint)
+
+			rr := serveHTTP(t, getCHAPIRequestHandler.Handle(), http.MethodGet,
+				getCredentialInteractionRequestEndpoint+"?"+txnIDQueryParam+"="+txnID, nil)
+
+			require.Equal(t, http.StatusOK, rr.Code)
+
+			waciReq := &CredentialHandlerRequest{}
+			err = json.Unmarshal(rr.Body.Bytes(), &waciReq)
+			require.NoError(t, err)
+			require.Empty(t, waciReq.Query)
+			require.Empty(t, waciReq.Credentials)
+			require.Equal(t, "https://didcomm.org/out-of-band/1.0/invitation", waciReq.DIDCommInvitation.Type)
+			require.Empty(t, waciReq.WalletRedirect)
+			require.True(t, waciReq.WACI)
+		})
+
+		t.Run("with linked wallet", func(t *testing.T) {
+			t.Parallel()
+
+			profile := createProfileData("profile_waci_2")
+			profile.SupportsWACI = true
+			profile.LinkedWalletURL = "https://example/com"
+
+			err := c.profileStore.SaveProfile(profile)
+			require.NoError(t, err)
+
+			txnID, txnErr := c.createTxn(profile, uuid.New().String(), uuid.New().String())
+			require.NoError(t, txnErr)
+
+			getCHAPIRequestHandler := getHandler(t, c, getCredentialInteractionRequestEndpoint)
+
+			rr := serveHTTP(t, getCHAPIRequestHandler.Handle(), http.MethodGet,
+				getCredentialInteractionRequestEndpoint+"?"+txnIDQueryParam+"="+txnID, nil)
+
+			require.Equal(t, http.StatusOK, rr.Code)
+
+			waciReq := &CredentialHandlerRequest{}
+			err = json.Unmarshal(rr.Body.Bytes(), &waciReq)
+			require.NoError(t, err)
+			require.Empty(t, waciReq.Query)
+			require.Empty(t, waciReq.Credentials)
+			require.Equal(t, "https://didcomm.org/out-of-band/1.0/invitation", waciReq.DIDCommInvitation.Type)
+			require.NotEmpty(t, waciReq.WalletRedirect)
+			require.True(t, waciReq.WACI)
 		})
 	})
 
@@ -2090,10 +2162,10 @@ func TestCHAPIRequest(t *testing.T) {
 		txnID, err := c.createTxn(profile, uuid.New().String(), uuid.New().String())
 		require.NoError(t, err)
 
-		getCHAPIRequestHandler := getHandler(t, c, getCHAPIRequestEndpoint)
+		getCHAPIRequestHandler := getHandler(t, c, getCredentialInteractionRequestEndpoint)
 
 		rr := serveHTTP(t, getCHAPIRequestHandler.Handle(), http.MethodGet,
-			getCHAPIRequestEndpoint+"?"+txnIDQueryParam+"="+txnID, nil)
+			getCredentialInteractionRequestEndpoint+"?"+txnIDQueryParam+"="+txnID, nil)
 
 		require.Equal(t, http.StatusInternalServerError, rr.Code)
 		require.Contains(t, rr.Body.String(), "error retrieving governance vc : failed to get vc")
@@ -2105,9 +2177,9 @@ func TestCHAPIRequest(t *testing.T) {
 		c, err := New(config(t))
 		require.NoError(t, err)
 
-		getCHAPIRequestHandler := getHandler(t, c, getCHAPIRequestEndpoint)
+		getCHAPIRequestHandler := getHandler(t, c, getCredentialInteractionRequestEndpoint)
 
-		rr := serveHTTP(t, getCHAPIRequestHandler.Handle(), http.MethodGet, getCHAPIRequestEndpoint, nil)
+		rr := serveHTTP(t, getCHAPIRequestHandler.Handle(), http.MethodGet, getCredentialInteractionRequestEndpoint, nil)
 
 		require.Equal(t, http.StatusBadRequest, rr.Code)
 		require.Contains(t, rr.Body.String(), "failed to get txnID from the url")
@@ -2119,10 +2191,10 @@ func TestCHAPIRequest(t *testing.T) {
 		c, err := New(config(t))
 		require.NoError(t, err)
 
-		getCHAPIRequestHandler := getHandler(t, c, getCHAPIRequestEndpoint)
+		getCHAPIRequestHandler := getHandler(t, c, getCredentialInteractionRequestEndpoint)
 
 		rr := serveHTTP(t, getCHAPIRequestHandler.Handle(), http.MethodGet,
-			getCHAPIRequestEndpoint+"?"+txnIDQueryParam+"=invalid-txnID", nil)
+			getCredentialInteractionRequestEndpoint+"?"+txnIDQueryParam+"=invalid-txnID", nil)
 
 		require.Equal(t, http.StatusBadRequest, rr.Code)
 		require.Contains(t, rr.Body.String(), "txn data not found")
@@ -2139,10 +2211,10 @@ func TestCHAPIRequest(t *testing.T) {
 		txnID, err := c.createTxn(profile, uuid.New().String(), uuid.New().String())
 		require.NoError(t, err)
 
-		getCHAPIRequestHandler := getHandler(t, c, getCHAPIRequestEndpoint)
+		getCHAPIRequestHandler := getHandler(t, c, getCredentialInteractionRequestEndpoint)
 
 		rr := serveHTTP(t, getCHAPIRequestHandler.Handle(), http.MethodGet,
-			getCHAPIRequestEndpoint+"?"+txnIDQueryParam+"="+txnID, nil)
+			getCredentialInteractionRequestEndpoint+"?"+txnIDQueryParam+"="+txnID, nil)
 		require.Equal(t, http.StatusInternalServerError, rr.Code)
 		require.Contains(t, rr.Body.String(), "issuer not found")
 	})
@@ -2162,10 +2234,10 @@ func TestCHAPIRequest(t *testing.T) {
 		txnID, err := c.createTxn(profile, uuid.New().String(), uuid.New().String())
 		require.NoError(t, err)
 
-		getCHAPIRequestHandler := getHandler(t, c, getCHAPIRequestEndpoint)
+		getCHAPIRequestHandler := getHandler(t, c, getCredentialInteractionRequestEndpoint)
 
 		rr := serveHTTP(t, getCHAPIRequestHandler.Handle(), http.MethodGet,
-			getCHAPIRequestEndpoint+"?"+txnIDQueryParam+"="+txnID, nil)
+			getCredentialInteractionRequestEndpoint+"?"+txnIDQueryParam+"="+txnID, nil)
 		require.Equal(t, http.StatusInternalServerError, rr.Code)
 		require.Contains(t, rr.Body.String(), "error creating reference credential")
 	})
@@ -2663,7 +2735,7 @@ func TestPresentProofHandler(t *testing.T) {
 			profile.PresentationSigningKey = mockdiddoc.GetMockDIDDoc("did:example:def567").VerificationMethod[0].ID
 			profile.CredentialSigningKey = mockdiddoc.GetMockDIDDoc("did:example:def567").VerificationMethod[0].ID
 
-			profile.OIDCProviderURL = "mock.provider.local"
+			profile.OIDCProviderURL = mockOIDCProvider
 
 			mockToken := oauth2.Token{RefreshToken: "refresh-token", AccessToken: "access-token"}
 
@@ -3331,6 +3403,421 @@ func TestPresentProofHandler(t *testing.T) {
 	})
 }
 
+func TestWACIIssuanceHandler(t *testing.T) {
+	t.Parallel()
+
+	testFailure := func(actionCh chan service.DIDCommAction, msg service.DIDCommMsg, errMatch string) {
+		done := make(chan struct{})
+		stop := make(chan error)
+
+		actionCh <- service.DIDCommAction{
+			Message: msg,
+			Continue: func(args interface{}) {
+				done <- struct{}{}
+			},
+			Properties: &actionEventEvent{},
+			Stop: func(err error) {
+				stop <- err
+			},
+		}
+
+		select {
+		case <-done:
+			require.Fail(t, "this test supposed to fail")
+		case e := <-stop:
+			require.Error(t, e)
+			require.Contains(t, e.Error(), errMatch)
+		case <-time.After(65 * time.Second):
+			require.Fail(t, "tests are not validated due to timeout")
+		}
+	}
+
+	t.Run("test WACI Credential interaction - propose credential", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("test propose credential success", func(t *testing.T) {
+			t.Parallel()
+
+			actionCh := make(chan service.DIDCommAction, 1)
+
+			c, err := New(config(t))
+			require.NoError(t, err)
+
+			c.httpClient = &mockHTTPClient{
+				respValue: &http.Response{
+					StatusCode: http.StatusOK, Body: ioutil.NopCloser(bytes.NewReader([]byte(prCardData))),
+				},
+			}
+
+			connID := uuid.New().String()
+			c.connectionLookup = &mockconn.MockConnectionsLookup{
+				ConnIDByDIDs: connID,
+			}
+
+			invitationID := uuid.New().String()
+			issuerID := uuid.New().String()
+
+			profile := createProfileData(issuerID)
+			profile.SupportsWACI = true
+
+			err = c.profileStore.SaveProfile(profile)
+			require.NoError(t, err)
+
+			err = c.storeUserInvitationMapping(&UserInvitationMapping{
+				InvitationID: invitationID,
+				IssuerID:     issuerID,
+				TxToken:      uuid.New().String(),
+			})
+			require.NoError(t, err)
+
+			go c.didCommActionListener(actionCh)
+
+			done := make(chan struct{})
+
+			actionCh <- service.DIDCommAction{
+				Message: service.NewDIDCommMsgMap(issuecredsvc.ProposeCredentialV2{
+					Type:         issuecredsvc.ProposeCredentialMsgTypeV2,
+					InvitationID: invitationID,
+				}),
+				Continue: func(args interface{}) {
+					done <- struct{}{}
+				},
+				Properties: &actionEventEvent{},
+			}
+
+			select {
+			case <-done:
+			case <-time.After(65 * time.Second):
+				require.Fail(t, "tests are not validated due to timeout")
+			}
+		})
+
+		t.Run("test propose credential failures", func(t *testing.T) {
+			t.Parallel()
+
+			actionCh := make(chan service.DIDCommAction, 1)
+
+			c, err := New(config(t))
+			require.NoError(t, err)
+
+			invitationID := uuid.New().String()
+			issuerID := uuid.New().String()
+
+			profile := createProfileData(issuerID)
+			profile.SupportsWACI = true
+
+			err = c.profileStore.SaveProfile(profile)
+			require.NoError(t, err)
+
+			err = c.storeUserInvitationMapping(&UserInvitationMapping{
+				InvitationID: invitationID,
+				IssuerID:     issuerID,
+				TxToken:      uuid.New().String(),
+			})
+			require.NoError(t, err)
+
+			go c.didCommActionListener(actionCh)
+
+			// credential data error
+			c.httpClient = &mockHTTPClient{
+				respValue: &http.Response{
+					StatusCode: http.StatusInternalServerError,
+					Body:       ioutil.NopCloser(bytes.NewBufferString("{}")),
+				},
+			}
+
+			testFailure(actionCh, service.NewDIDCommMsgMap(issuecredsvc.ProposeCredentialV2{
+				Type:         issuecredsvc.ProposeCredentialMsgTypeV2,
+				InvitationID: invitationID,
+			}), "failed to fetch credential data")
+
+			// get connection ID from event error
+			c.httpClient = &mockHTTPClient{
+				respValue: &http.Response{
+					StatusCode: http.StatusOK,
+					Body:       ioutil.NopCloser(bytes.NewReader([]byte(prCardData))),
+				},
+			}
+
+			testFailure(actionCh, service.NewDIDCommMsgMap(issuecredsvc.ProposeCredentialV2{
+				Type:         issuecredsvc.ProposeCredentialMsgTypeV2,
+				InvitationID: invitationID,
+			}), "failed to get connection ID from event")
+
+			// test missing invitation ID
+			testFailure(actionCh, service.NewDIDCommMsgMap(issuecredsvc.ProposeCredentialV2{
+				Type: issuecredsvc.ProposeCredentialMsgTypeV2,
+			}), "invalid invitation ID")
+
+			// test user invitation mapping not found
+			testFailure(actionCh, service.NewDIDCommMsgMap(issuecredsvc.ProposeCredentialV2{
+				Type:         issuecredsvc.ProposeCredentialMsgTypeV2,
+				InvitationID: "invalid",
+			}), "failed to get user invitation mapping")
+
+			// test incorrect issuerID
+			newInvitationID := uuid.New().String()
+			issuerID = uuid.New().String()
+			err = c.storeUserInvitationMapping(&UserInvitationMapping{
+				InvitationID: newInvitationID,
+				IssuerID:     issuerID,
+				TxToken:      uuid.New().String(),
+			})
+			require.NoError(t, err)
+
+			testFailure(actionCh, service.NewDIDCommMsgMap(issuecredsvc.ProposeCredentialV2{
+				Type:         issuecredsvc.ProposeCredentialMsgTypeV2,
+				InvitationID: newInvitationID,
+			}), "failed to fetch issuer profile")
+
+			// no WACI support
+			profile = createProfileData(issuerID)
+
+			err = c.profileStore.SaveProfile(profile)
+			require.NoError(t, err)
+
+			testFailure(actionCh, service.NewDIDCommMsgMap(issuecredsvc.ProposeCredentialV2{
+				Type:         issuecredsvc.ProposeCredentialMsgTypeV2,
+				InvitationID: newInvitationID,
+			}), "unsupported protocol")
+
+			// OIDC auth token error
+			newInvitationID = uuid.New().String()
+			issuerID = uuid.New().String()
+			err = c.storeUserInvitationMapping(&UserInvitationMapping{
+				InvitationID: newInvitationID,
+				IssuerID:     issuerID,
+				TxToken:      uuid.New().String(),
+			})
+			require.NoError(t, err)
+
+			profile = createProfileData(issuerID)
+			profile.SupportsWACI = true
+			profile.OIDCProviderURL = mockOIDCProvider
+
+			err = c.profileStore.SaveProfile(profile)
+			require.NoError(t, err)
+
+			testFailure(actionCh, service.NewDIDCommMsgMap(issuecredsvc.ProposeCredentialV2{
+				Type:         issuecredsvc.ProposeCredentialMsgTypeV2,
+				InvitationID: newInvitationID,
+			}), "failed to get OIDC access token for WACI transaction")
+
+			// token store put error
+			newInvitationID = uuid.New().String()
+			issuerID = uuid.New().String()
+			err = c.storeUserInvitationMapping(&UserInvitationMapping{
+				InvitationID: newInvitationID,
+				IssuerID:     issuerID,
+				TxToken:      uuid.New().String(),
+			})
+			require.NoError(t, err)
+
+			profile = createProfileData(issuerID)
+			profile.SupportsWACI = true
+
+			err = c.profileStore.SaveProfile(profile)
+			require.NoError(t, err)
+
+			connID := uuid.New().String()
+			c.connectionLookup = &mockconn.MockConnectionsLookup{
+				ConnIDByDIDs: connID,
+			}
+
+			c.tokenStore = &mockStoreWrapper{
+				Store:  c.tokenStore,
+				errPut: errors.New("error inserting data"),
+			}
+
+			c.httpClient = &mockHTTPClient{
+				respValue: &http.Response{
+					StatusCode: http.StatusOK,
+					Body:       ioutil.NopCloser(bytes.NewReader([]byte(prCardData))),
+				},
+			}
+
+			testFailure(actionCh, service.NewDIDCommMsgMap(issuecredsvc.ProposeCredentialV2{
+				Type:         issuecredsvc.ProposeCredentialMsgTypeV2,
+				InvitationID: newInvitationID,
+			}), "failed to save user connection mapping")
+
+			// txnStore put error
+			c.txnStore = &mockStoreWrapper{
+				Store:  c.txnStore,
+				errPut: errors.New("error inserting data"),
+			}
+
+			c.httpClient = &mockHTTPClient{
+				respValue: &http.Response{
+					StatusCode: http.StatusOK,
+					Body:       ioutil.NopCloser(bytes.NewReader([]byte(prCardData))),
+				},
+			}
+
+			testFailure(actionCh, service.NewDIDCommMsgMap(issuecredsvc.ProposeCredentialV2{
+				Type:         issuecredsvc.ProposeCredentialMsgTypeV2,
+				InvitationID: newInvitationID,
+			}), "failed to persist credential fulfillment")
+		})
+	})
+
+	t.Run("test WACI Credential interaction - request credential", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("test request credential success", func(t *testing.T) {
+			t.Parallel()
+
+			actionCh := make(chan service.DIDCommAction, 1)
+
+			c, err := New(config(t))
+			require.NoError(t, err)
+
+			connectionID := uuid.New().String()
+			c.connectionLookup = &mockconn.MockConnectionsLookup{
+				ConnIDByDIDs: connectionID,
+			}
+
+			issuerID := uuid.New().String()
+
+			profile := createProfileData(issuerID)
+			profile.SupportsWACI = true
+			profile.PresentationSigningKey = mockdiddoc.GetMockDIDDoc("did:example:def567").VerificationMethod[0].ID
+
+			err = c.profileStore.SaveProfile(profile)
+			require.NoError(t, err)
+
+			err = c.storeUserConnectionMapping(&UserConnectionMapping{
+				ConnectionID: connectionID,
+				IssuerID:     issuerID,
+				Token:        uuid.NewString(),
+				State:        uuid.NewString(),
+			})
+			require.NoError(t, err)
+
+			thID := uuid.NewString()
+			fulfillment := createCredentialFulFillment(t, c, profile)
+			require.NoError(t, c.saveCredentialFulfillment(thID, fulfillment))
+
+			go c.didCommActionListener(actionCh)
+
+			done := make(chan struct{})
+
+			msg := service.NewDIDCommMsgMap(issuecredsvc.RequestCredentialV2{
+				Type: issuecredsvc.RequestCredentialMsgTypeV2,
+			})
+			msg.SetThread(thID, "")
+
+			actionCh <- service.DIDCommAction{
+				Message: msg,
+				Continue: func(args interface{}) {
+					done <- struct{}{}
+				},
+				Properties: &actionEventEvent{},
+			}
+
+			select {
+			case <-done:
+			case <-time.After(65 * time.Second):
+				require.Fail(t, "tests are not validated due to timeout")
+			}
+		})
+
+		t.Run("test request credential failure", func(t *testing.T) {
+			t.Parallel()
+
+			actionCh := make(chan service.DIDCommAction, 1)
+
+			c, err := New(config(t))
+			require.NoError(t, err)
+
+			connectionID := uuid.New().String()
+			c.connectionLookup = &mockconn.MockConnectionsLookup{
+				ConnIDByDIDs: connectionID,
+			}
+
+			issuerID := uuid.New().String()
+
+			profile := createProfileData(issuerID)
+			profile.SupportsWACI = true
+
+			err = c.profileStore.SaveProfile(profile)
+			require.NoError(t, err)
+
+			err = c.storeUserConnectionMapping(&UserConnectionMapping{
+				ConnectionID: connectionID,
+				IssuerID:     issuerID,
+				Token:        uuid.NewString(),
+				State:        uuid.NewString(),
+			})
+			require.NoError(t, err)
+
+			thID := uuid.NewString()
+			fulfillment := createCredentialFulFillment(t, c, profile)
+			require.NoError(t, c.saveCredentialFulfillment(thID, fulfillment))
+
+			go c.didCommActionListener(actionCh)
+
+			msg := service.NewDIDCommMsgMap(issuecredsvc.RequestCredentialV2{
+				Type: issuecredsvc.RequestCredentialMsgTypeV2,
+			})
+			msg.SetThread(thID, "")
+
+			// test credential fulfillment signing failure
+			testFailure(actionCh, msg, "failed to sign credential fulfillment")
+
+			// test delete credential fulfillment error(JUST WARNING)
+			c.txnStore = &mockStoreWrapper{
+				Store:     c.txnStore,
+				errDelete: errors.New("delete error"),
+			}
+			require.NoError(t, c.saveCredentialFulfillment(thID, fulfillment))
+			testFailure(actionCh, msg, "failed to sign credential fulfillment")
+
+			// test read credential fulfillment error
+			c.txnStore = &mockStoreWrapper{
+				Store:  c.txnStore,
+				errGet: errors.New("get error"),
+			}
+			testFailure(actionCh, msg, "failed to read credential fulfillment")
+
+			// test missing threadID
+			mockMsg := &mockMsgWrapper{
+				DIDCommMsgMap: &msg,
+			}
+
+			testFailure(actionCh, mockMsg, "failed to correlate WACI interaction, missing thread ID")
+
+			// test error getting threadID
+			mockMsg.thIDerr = errors.New("thid error")
+			testFailure(actionCh, mockMsg, "failed to read threadID from request credential message")
+		})
+	})
+}
+
+func createCredentialFulFillment(t *testing.T, o *Operation, profile *issuer.ProfileData) *verifiable.Presentation {
+	t.Helper()
+
+	o.httpClient = &mockHTTPClient{
+		respValue: &http.Response{
+			StatusCode: http.StatusOK,
+			Body:       ioutil.NopCloser(bytes.NewReader([]byte(prCardData))),
+		},
+	}
+
+	vc, err := o.createCredential(profile.URL, "", "", "", false, profile)
+	require.NoError(t, err)
+
+	// prepare fulfillment
+	presentation, err := verifiable.NewPresentation(verifiable.WithCredentials(vc))
+	require.NoError(t, err)
+
+	fulfillment, err := cm.PresentCredentialFulfillment(&cm.CredentialManifest{ID: uuid.NewString()},
+		cm.WithExistingPresentationForPresentCredentialFulfillment(presentation))
+	require.NoError(t, err)
+
+	return fulfillment
+}
+
 func TestGetConnectionIDFromEvent(t *testing.T) {
 	t.Parallel()
 
@@ -3580,4 +4067,49 @@ func TestDIDCommStateMsgListener(t *testing.T) {
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "get connection for id=")
 	})
+}
+
+type mockStoreWrapper struct {
+	storage.Store
+	errPut    error
+	errGet    error
+	errDelete error
+}
+
+// Put returns mocked results.
+func (s *mockStoreWrapper) Put(k string, v []byte, t ...storage.Tag) error {
+	if s.errPut != nil {
+		return s.errPut
+	}
+
+	return s.Store.Put(k, v, t...) // nolint:wrapcheck
+}
+
+// Get returns mocked results.
+func (s *mockStoreWrapper) Get(k string) ([]byte, error) {
+	if s.errGet != nil {
+		return nil, s.errGet
+	}
+
+	return s.Store.Get(k) // nolint:wrapcheck
+}
+
+// Delete returns mocked results.
+func (s *mockStoreWrapper) Delete(k string) error {
+	if s.errDelete != nil {
+		return s.errDelete
+	}
+
+	return s.Store.Delete(k) // nolint:wrapcheck
+}
+
+// mockMsgWrapper containing custom thread IDs.
+type mockMsgWrapper struct {
+	*service.DIDCommMsgMap
+	thID    string
+	thIDerr error
+}
+
+func (m *mockMsgWrapper) ThreadID() (string, error) {
+	return m.thID, m.thIDerr
 }

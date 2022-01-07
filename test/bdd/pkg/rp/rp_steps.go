@@ -955,11 +955,13 @@ func (s *Steps) checkPresentProofStatus(walletID, tenantID, status string) error
 		return fmt.Errorf("webhook not configured for wallet '%s' to receive notifications", walletID)
 	}
 
-	msg, err := agent.PullMsgFromWebhookURL(webhookURL, "present-proof_states", func(message agent.WebhookMessage) bool {
-		return message.StateID == "done" &&
-			message.Type == "post_state" &&
-			message.Message.Type() == "https://didcomm.org/present-proof/2.0/ack"
-	})
+	msg, _, err := agent.PullMsgFromWebhookURL(webhookURL,
+		"present-proof_states",
+		func(message agent.WebhookMessage) bool {
+			return message.StateID == "done" &&
+				message.Type == "post_state" &&
+				message.Message.Type() == "https://didcomm.org/present-proof/2.0/ack"
+		})
 	if err != nil {
 		return fmt.Errorf("failed while waiting for present proof ack status done: %w", err)
 	}
