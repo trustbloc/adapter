@@ -106,35 +106,43 @@ type Steps struct {
 	adapterConnections map[string]*didexchange.Connection
 	credentials        map[string]*verifiable.Credential
 	refCredentials     map[string]*verifiable.Credential
+	wallet             *walletSteps
 }
 
 // NewSteps returns new agent steps.
 func NewSteps(ctx *context.BDDContext) *Steps {
+	controllers := make(map[string]string)
+	webhooks := make(map[string]string)
+
 	return &Steps{
 		bddContext:         ctx,
-		ControllerURLs:     make(map[string]string),
-		WebhookURLs:        make(map[string]string),
+		ControllerURLs:     controllers,
+		WebhookURLs:        webhooks,
 		adapterConnections: make(map[string]*didexchange.Connection),
 		credentials:        make(map[string]*verifiable.Credential),
 		refCredentials:     make(map[string]*verifiable.Credential),
+		wallet:             newWalletSteps(ctx, controllers, webhooks),
 	}
 }
 
 // RegisterSteps registers agent steps.
+// nolint: lll
 func (a *Steps) RegisterSteps(s *godog.Suite) {
 	s.Step(`^"([^"]*)" agent is running on "([^"]*)" port "([^"]*)" with controller "([^"]*)"$`,
 		a.ValidateAgentConnection)
 	s.Step(`^"([^"]*)" agent is running on "([^"]*)" port "([^"]*)" with webhook "([^"]*)" and controller "([^"]*)"$`,
 		a.ValidateAgentConnectionWithWebhook)
-	s.Step(`^"([^"]*)" validates the supportedVCContexts "([^"]*)" in connect request from Issuer adapter \("([^"]*)"\) along with primary credential type "([^"]*)" in case of supportsAssuranceCred "([^"]*)" and responds within "([^"]*)" seconds$`, // nolint: lll
+	s.Step(`^"([^"]*)" validates the supportedVCContexts "([^"]*)" in connect request from Issuer adapter \("([^"]*)"\) along with primary credential type "([^"]*)" in case of supportsAssuranceCred "([^"]*)" and responds within "([^"]*)" seconds$`,
 		a.handleDIDCommConnectRequest)
 	s.Step(`^"([^"]*)" sends request credential message and receives credential from the issuer \("([^"]*)"\)$`,
 		a.fetchCredential)
-	s.Step(`^"([^"]*)" sends present proof request message to the the issuer \("([^"]*)"\) and validates that the vc inside vp contains type "([^"]*)" along with supportsAssuranceCred "([^"]*)" validation$`, // nolint: lll
+	s.Step(`^"([^"]*)" sends present proof request message to the the issuer \("([^"]*)"\) and validates that the vc inside vp contains type "([^"]*)" along with supportsAssuranceCred "([^"]*)" validation$`,
 		a.fetchPresentation)
-	s.Step(`^"([^"]*)" with blinded routing support\("([^"]*)"\) receives the DIDConnect request from Issuer adapter \("([^"]*)"\)$`, a.didConnectReqWithRouting) // nolint: lll
+	s.Step(`^"([^"]*)" with blinded routing support\("([^"]*)"\) receives the DIDConnect request from Issuer adapter \("([^"]*)"\)$`, a.didConnectReqWithRouting)
 	s.Step(`^"([^"]*)" loads remote wallet app "([^"]*)" and accepts invitation$`, a.ConnectToWalletBridge)
 	s.Step(`^Remote wallet "([^"]*)" supports CHAPI request/response through DIDComm$`, a.RegisterCHAPIMsgHandler)
+
+	a.wallet.RegisterSteps(s)
 }
 
 // WebhookIncoming is incoming message model from webhook notifier.
@@ -250,7 +258,7 @@ func (a *Steps) handleDIDCommConnectRequest(agentID, supportedVCContexts, issuer
 		return fmt.Errorf("did connect request not found")
 	}
 
-	request := &issuerops.CHAPIRequest{}
+	request := &issuerops.CredentialHandlerRequest{}
 
 	err := json.Unmarshal([]byte(didConnReq), request)
 	if err != nil {
@@ -359,7 +367,7 @@ func (a *Steps) didConnectReqWithRouting(agentID, routerURL, issuerID string) er
 		return fmt.Errorf("didconnect request not found")
 	}
 
-	request := &issuerops.CHAPIRequest{}
+	request := &issuerops.CredentialHandlerRequest{}
 
 	err := json.Unmarshal([]byte(didConnReq), request)
 	if err != nil {
@@ -717,7 +725,7 @@ func (a *Steps) fetchCredential(agentID, issuerID string) error { // nolint: fun
 
 	credentialName := uuid.New().String()
 
-	err = acceptCredential(action.PIID, credentialName, controllerURL)
+	err = acceptCredential(action.PIID, credentialName, controllerURL, false)
 	if err != nil {
 		return fmt.Errorf("[issue-credential] failed to accept credential : %w", err)
 	}
@@ -1225,9 +1233,10 @@ func (a *Steps) SubmitWACIPresentation(walletID, connID string) error { // nolin
 	return nil
 }
 
-func acceptCredential(piid, credentialName, controllerURL string) error {
+func acceptCredential(piid, credentialName, controllerURL string, skipStore bool) error {
 	req := issuecredcmd.AcceptCredentialArgs{
-		Names: []string{credentialName},
+		Names:     []string{credentialName},
+		SkipStore: skipStore,
 	}
 
 	reqBytes, err := json.Marshal(req)
@@ -1619,7 +1628,7 @@ func validateConnection(controllerURL, connID, state string) error {
 }
 
 // PullMsgFromWebhookURL pulls incoming message from webhook URL.
-func PullMsgFromWebhookURL(webhookURL, topic string, match func(message WebhookMessage) bool) (*service.DIDCommMsgMap, error) { //nolint:lll
+func PullMsgFromWebhookURL(webhookURL, topic string, match func(message WebhookMessage) bool) (*service.DIDCommMsgMap, map[string]interface{}, error) { //nolint:lll
 	if match == nil {
 		match = func(WebhookMessage) bool {
 			return true
@@ -1632,7 +1641,7 @@ func PullMsgFromWebhookURL(webhookURL, topic string, match func(message WebhookM
 		err := bddutil.SendHTTP(http.MethodGet, webhookURL+checkForTopics,
 			nil, &incoming)
 		if err != nil {
-			return nil, fmt.Errorf("failed pull topics from webhook, cause : %w", err)
+			return nil, nil, fmt.Errorf("failed pull topics from webhook, cause : %w", err)
 		}
 
 		if incoming.Topic != topic {
@@ -1645,7 +1654,7 @@ func PullMsgFromWebhookURL(webhookURL, topic string, match func(message WebhookM
 				continue
 			}
 
-			return incoming.WebhookMsg.Message, nil
+			return incoming.WebhookMsg.Message, incoming.WebhookMsg.Properties, nil
 		}
 
 		i++
@@ -1653,7 +1662,7 @@ func PullMsgFromWebhookURL(webhookURL, topic string, match func(message WebhookM
 		time.Sleep(pullTopicsWaitInMilliSec * time.Millisecond)
 	}
 
-	return nil, fmt.Errorf("exhausted all [%d] attempts to pull topic from webhook", pullTopicsAttemptsBeforeFail)
+	return nil, nil, fmt.Errorf("exhausted all [%d] attempts to pull topic from webhook", pullTopicsAttemptsBeforeFail)
 }
 
 func (a *Steps) connectWithRouter(agentID, routerURL string) (string, error) {

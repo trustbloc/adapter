@@ -26,6 +26,7 @@ type ProfileDataRequest struct {
 	OIDCProviderURL             string            `json:"oidcProvider"`
 	OIDCClientParams            *OIDCClientParams `json:"oidcParams,omitempty"`
 	CredentialScopes            []string          `json:"scopes,omitempty"`
+	LinkedWalletURL             string            `json:"linkedWallet,omitempty"`
 }
 
 // OIDCClientParams optional parameters for setting the adapter's oidc client parameters statically.
@@ -49,11 +50,13 @@ type txnData struct {
 	CredScope         string                `json:"cred,omitempty"`
 }
 
-// CHAPIRequest wallet chapi request.
-type CHAPIRequest struct {
+// CredentialHandlerRequest wallet chapi request.
+type CredentialHandlerRequest struct {
 	Query             *CHAPIQuery           `json:"query,omitempty"`
 	DIDCommInvitation *outofband.Invitation `json:"invitation,omitempty"`
 	Credentials       []json.RawMessage     `json:"credentials,omitempty"`
+	WACI              bool                  `json:"waci,omitempty"`
+	WalletRedirect    string                `json:"walletRedirect,omitempty"`
 }
 
 // CHAPIQuery chapi query type data.
@@ -91,6 +94,16 @@ type UserConnectionMapping struct {
 	IssuerID     string `json:"issuerID,omitempty"`
 	Token        string `json:"token,omitempty"`
 	OauthID      string `json:"oauthid,omitempty"`
+	State        string `json:"state,omitempty"`
+}
+
+// UserInvitationMapping stores mapping between the inviationID and issuer.
+type UserInvitationMapping struct {
+	InvitationID string `json:"invitationID,omitempty"`
+	IssuerID     string `json:"issuerID,omitempty"`
+	TxID         string `json:"txID,omitempty"`
+	TxToken      string `json:"txtoken,omitempty"`
+	State        string `json:"state,omitempty"`
 }
 
 // UserDataReq request to issuer for the user data.

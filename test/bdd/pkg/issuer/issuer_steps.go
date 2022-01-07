@@ -50,6 +50,7 @@ func NewSteps(ctx *context.BDDContext) *Steps {
 }
 
 // RegisterSteps registers agent steps.
+// nolint: lll
 func (e *Steps) RegisterSteps(s *godog.Suite) {
 	s.Step(`^Issuer Profile with id "([^"]*)", name "([^"]*)", issuerURL "([^"]*)", supportedVCContexts "([^"]*)", requiresBlindedRoute "([^"]*)" and supportsAssuranceCred "([^"]*)"$`, // nolint: lll
 		e.createBasicProfile)
@@ -67,28 +68,28 @@ func (e *Steps) RegisterSteps(s *godog.Suite) {
 		e.didcommConnectionInvitation)
 	s.Step(`^Issuer adapter \("([^"]*)"\) validates response from "([^"]*)" and redirects to "([^"]*)"$`,
 		e.validateConnectResp)
-	s.Step(`^Issuer has a profile with name "([^"]*)", issuerURL "([^"]*)" and supportedVCContexts "([^"]*)"$`, e.createAndValidateProfile)                                  // nolint: lll
-	s.Step(`^Issuer has a profile with name "([^"]*)", issuerURL "([^"]*)", oidc provider "([^"]*)" and supportedVCContexts "([^"]*)"$`, e.createAndValidateProfileWithOIDC) // nolint: lll
+	s.Step(`^Issuer has a profile with name "([^"]*)", issuerURL "([^"]*)" and supportedVCContexts "([^"]*)"$`, e.createAndValidateProfile)
+	s.Step(`^Issuer has a profile with name "([^"]*)", issuerURL "([^"]*)", oidc provider "([^"]*)" and supportedVCContexts "([^"]*)"$`, e.createAndValidateProfileWithOIDC)
 
 	// waci steps
-	s.Step(`^Issuer Profile with id "([^"]*)", name "([^"]*)", issuerURL "([^"]*)", supportedVCContexts "([^"]*)" and oidc provider "([^"]*)" with WACI support$`, e.createProfileWithWACI)              // nolint: lll
-	s.Step(`^Retrieved profile with id "([^"]*)" contains name "([^"]*)", issuerURL "([^"]*)", supportedVCContexts "([^"]*)" and oidc provider "([^"]*)" with WACI support$`, e.retrieveProfileWithWACI) // nolint: lll
+	s.Step(`^Issuer Profile with id "([^"]*)", name "([^"]*)", issuerURL "([^"]*)", supportedVCContexts "([^"]*)", linked wallet "([^"]*)" and oidc provider "([^"]*)" with WACI support$`, e.createProfileWithWACI)
+	s.Step(`^Retrieved profile with id "([^"]*)" contains name "([^"]*)", issuerURL "([^"]*)", supportedVCContexts "([^"]*)", linked wallet "([^"]*)" and oidc provider "([^"]*)" with WACI support$`, e.retrieveProfileWithWACI)
 }
 
 func (e *Steps) createBasicProfile(id, name, issuerURL, supportedVCContexts,
 	requiresBlindedRouteStr, supportsAssuranceCredStr string) error {
 	return e.createProfile(id, name, issuerURL, supportedVCContexts,
-		requiresBlindedRouteStr, supportsAssuranceCredStr, "", false)
+		requiresBlindedRouteStr, supportsAssuranceCredStr, "", "", false)
 }
 
 func (e *Steps) createProfileWithOIDC(id, name, issuerURL, supportedVCContexts,
 	requiresBlindedRouteStr, supportsAssuranceCredStr, oidcProvider string) error {
 	return e.createProfile(id, name, issuerURL, supportedVCContexts,
-		requiresBlindedRouteStr, supportsAssuranceCredStr, oidcProvider, false)
+		requiresBlindedRouteStr, supportsAssuranceCredStr, oidcProvider, "", false)
 }
 
 func (e *Steps) createProfile(id, name, issuerURL, supportedVCContexts,
-	requiresBlindedRouteStr, supportsAssuranceCredStr, oidcProvider string, supportsWACI bool) error {
+	requiresBlindedRouteStr, supportsAssuranceCredStr, oidcProvider, linkedWallet string, supportsWACI bool) error {
 	supportsAssuranceCred, err := strconv.ParseBool(supportsAssuranceCredStr)
 	if err != nil {
 		return fmt.Errorf("parse failure: %w", err)
@@ -108,6 +109,7 @@ func (e *Steps) createProfile(id, name, issuerURL, supportedVCContexts,
 		RequiresBlindedRoute:        requiresBlindedRoute,
 		SupportsWACI:                supportsWACI,
 		OIDCProviderURL:             oidcProvider,
+		LinkedWalletURL:             linkedWallet,
 	}
 
 	requestBytes, err := json.Marshal(profileReq)
@@ -140,18 +142,18 @@ func (e *Steps) createProfile(id, name, issuerURL, supportedVCContexts,
 func (e *Steps) retrieveBasicProfile(id, name, issuerURL, supportedVCContexts,
 	requiresBlindedRouteStr, supportsAssuranceCredStr string) error {
 	return e.retrieveProfile(id, name, issuerURL, supportedVCContexts,
-		requiresBlindedRouteStr, supportsAssuranceCredStr, "", false)
+		requiresBlindedRouteStr, supportsAssuranceCredStr, "", "", false)
 }
 
 func (e *Steps) retrieveProfileWithOIDC(id, name, issuerURL, supportedVCContexts,
 	requiresBlindedRouteStr, supportsAssuranceCredStr, oidcProvider string) error {
 	return e.retrieveProfile(id, name, issuerURL, supportedVCContexts,
-		requiresBlindedRouteStr, supportsAssuranceCredStr, oidcProvider, false)
+		requiresBlindedRouteStr, supportsAssuranceCredStr, oidcProvider, "", false)
 }
 
 // nolint:funlen,gomnd,gocyclo,cyclop
 func (e *Steps) retrieveProfile(id, name, issuerURL, supportedVCContexts,
-	requiresBlindedRouteStr, supportsAssuranceCredStr, oidcProvider string, supportsWACI bool) error {
+	requiresBlindedRouteStr, supportsAssuranceCredStr, oidcProvider, linkedWallet string, supportsWACI bool) error {
 	resp, err := bddutil.HTTPDo(http.MethodGet, //nolint: bodyclose
 		fmt.Sprintf(AdapterURL+"/profile/%s", id), "", "", nil, e.bddContext.TLSConfig())
 	if err != nil {
@@ -219,6 +221,11 @@ func (e *Steps) retrieveProfile(id, name, issuerURL, supportedVCContexts,
 	if profileResponse.SupportsWACI != supportsWACI {
 		return fmt.Errorf("profile supportsWACI doesn't match : expected=%t actual=%t",
 			supportsWACI, profileResponse.SupportsWACI)
+	}
+
+	if profileResponse.LinkedWalletURL != linkedWallet {
+		return fmt.Errorf("profile linked wallet url doesn't match : expected=%s actual=%s",
+			linkedWallet, profileResponse.LinkedWalletURL)
 	}
 
 	if profileResponse.CredentialSigningKey == "" {
@@ -300,7 +307,7 @@ func (e *Steps) oidcLogin(issuerID string) error {
 
 func (e *Steps) didcommConnectionInvitation(issuerID, agentID string) error {
 	resp, err := bddutil.HTTPDo(http.MethodGet, //nolint: bodyclose
-		AdapterURL+"/issuer/didcomm/chapi/request?txnID="+e.txnIDs[issuerID], "", "", nil,
+		AdapterURL+"/issuer/didcomm/interaction/request?txnID="+e.txnIDs[issuerID], "", "", nil,
 		e.bddContext.TLSConfig())
 	if err != nil {
 		return fmt.Errorf("failed to execute chapi request: %w", err)
@@ -407,12 +414,12 @@ func (e *Steps) createAndValidateProfile(name, issuerURL, supportedVCContexts st
 func (e *Steps) createAndValidateProfileWithOIDC(name, issuerURL, oidcProvider, supportedVCContexts string) error {
 	id := uuid.New().String()
 
-	err := e.createProfile(id, name, issuerURL, supportedVCContexts, "false", "false", oidcProvider, false)
+	err := e.createProfile(id, name, issuerURL, supportedVCContexts, "false", "false", oidcProvider, "", false)
 	if err != nil {
 		return fmt.Errorf("failed to create profile for id='%s', err:%w", id, err)
 	}
 
-	err = e.retrieveProfile(id, name, issuerURL, supportedVCContexts, "false", "false", oidcProvider, false)
+	err = e.retrieveProfile(id, name, issuerURL, supportedVCContexts, "false", "false", oidcProvider, "", false)
 	if err != nil {
 		return fmt.Errorf("failed to retrieve profile for id='%s', err:%w", id, err)
 	}
@@ -420,8 +427,8 @@ func (e *Steps) createAndValidateProfileWithOIDC(name, issuerURL, oidcProvider, 
 	return nil
 }
 
-func (e *Steps) createProfileWithWACI(id, name, issuerURL, supportedVCContexts, oidcProvider string) error {
-	err := e.createProfile(id, name, issuerURL, supportedVCContexts, "false", "false", oidcProvider, true)
+func (e *Steps) createProfileWithWACI(id, name, issuerURL, supportedVCContexts, linkedWallet, oidcProvider string) error { //nolint:lll
+	err := e.createProfile(id, name, issuerURL, supportedVCContexts, "false", "false", oidcProvider, linkedWallet, true)
 	if err != nil {
 		return fmt.Errorf("failed to create profile for id='%s', err:%w", id, err)
 	}
@@ -429,8 +436,8 @@ func (e *Steps) createProfileWithWACI(id, name, issuerURL, supportedVCContexts, 
 	return nil
 }
 
-func (e *Steps) retrieveProfileWithWACI(id, name, issuerURL, supportedVCContexts, oidcProvider string) error {
-	err := e.retrieveProfile(id, name, issuerURL, supportedVCContexts, "false", "false", oidcProvider, true)
+func (e *Steps) retrieveProfileWithWACI(id, name, issuerURL, supportedVCContexts, linkedWallet, oidcProvider string) error { //nolint:lll
+	err := e.retrieveProfile(id, name, issuerURL, supportedVCContexts, "false", "false", oidcProvider, linkedWallet, true)
 	if err != nil {
 		return fmt.Errorf("failed to retrieve profile for id='%s', err:%w", id, err)
 	}

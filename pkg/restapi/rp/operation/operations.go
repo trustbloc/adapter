@@ -744,6 +744,7 @@ func (o *Operation) getPresentationsRequest(w http.ResponseWriter, r *http.Reque
 		[]interface{}{cr.RPPublicDID},
 		outofband.WithLabel(cr.RPLabel),
 		outofband.WithHandshakeProtocols(didexchangesvc.PIURI),
+		outofband.WithGoal("", "streamlined-vp"),
 	)
 	if err != nil {
 		handleError(w, http.StatusInternalServerError,

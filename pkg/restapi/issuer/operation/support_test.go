@@ -187,7 +187,7 @@ func createProfileData(profileID string) *issuer.ProfileData {
 		SupportsAssuranceCredential: false,
 		URL:                         "http://issuer.example.com",
 		PresentationSigningKey:      "did:example:123xyz#key-1",
-		SupportsWACI:                true,
+		SupportsWACI:                false,
 	}
 }
 

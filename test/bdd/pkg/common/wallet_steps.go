@@ -287,7 +287,7 @@ func (e *WalletSteps) sendCHAPIRequestToRemoteWalletUser(adapterURL, userID, wal
 
 func (e *WalletSteps) handleCHAPIStoreRequest(controllerURL, webhookURL, msgHandle,
 	expectedResponse string) error {
-	incoming, err := agent.PullMsgFromWebhookURL(webhookURL, msgHandle, nil)
+	incoming, _, err := agent.PullMsgFromWebhookURL(webhookURL, msgHandle, nil)
 	if err != nil {
 		return fmt.Errorf("failed to pull msg from webhook: %w", err)
 	}
