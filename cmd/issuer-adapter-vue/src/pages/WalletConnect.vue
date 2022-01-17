@@ -109,44 +109,21 @@ SPDX-License-Identifier: Apache-2.0
             }
         },
         created: async function () {
-            this.walletClient = new WalletClient({
-                user: this.$route.query.uID,
-                preferenceGETURL: `/wallet-bridge/get-preferences/${this.$route.query.uID}`,
-                remoteBridge: '/wallet-bridge/send-chapi-request'
-            })
-
             try {
-                await this.walletClient.init()
-            } catch (e) {
-                if (e instanceof LoadPreferenceError) {
-                    console.debug('failed to initialize wallet selection, presenting user preference selection dialog.')
-                    this.showDialog = true
+                const invitationUrl = `/issuer/didcomm/interaction/request?txnID=${this.$route.query.txnID}`
+                const {data} = await this.$http.get(invitationUrl)
+
+                if (data.waci) {
+                    this.renderCredentialIssuanceOptions(data)
+                } else {
+                    await this.prepareCHAPIRequest(data)
                 }
-
+            } catch (e) {
                 console.error(e)
-                this.connectWalletErr = e.message
-                return
+                this.connectWalletErr = 'Failed to Connect Wallet'
             }
-
-            console.log('wallet client initialized successfully !')
-            await this.prepareRequest()
         },
         methods: {
-            async prepareRequest() {
-                try {
-                    const invitationUrl = `/issuer/didcomm/interaction/request?txnID=${this.$route.query.txnID}`
-                    const {data} = await this.$http.get(invitationUrl)
-
-                    if (data.waci) {
-                        this.renderCredentialIssuanceOptions(data)
-                    } else {
-                        await this.sendCHAPIRequest(data)
-                    }
-                } catch (e) {
-                    console.error(e)
-                    this.connectWalletErr = 'Failed to Connect Wallet'
-                }
-            },
             renderCredentialIssuanceOptions(data) {
                 console.log('rendering credential issuance options here !!', data)
 
@@ -159,6 +136,30 @@ SPDX-License-Identifier: Apache-2.0
                     let canvas = document.getElementById('qr-result')
                     canvas.src = url
                 })
+            },
+            async prepareCHAPIRequest(data) {
+                this.waci = false
+                this.data = data
+
+                this.walletClient = new WalletClient({
+                    user: this.$route.query.uID,
+                    preferenceGETURL: `/wallet-bridge/get-preferences/${this.$route.query.uID}`,
+                    remoteBridge: '/wallet-bridge/send-chapi-request'
+                })
+
+                try {
+                    await this.walletClient.init()
+                    await this.sendCHAPIRequest()
+                } catch (e) {
+                    if (e instanceof LoadPreferenceError) {
+                        console.debug('failed to initialize wallet selection, presenting user preference selection dialog.')
+                        this.showDialog = true
+                    }
+
+                    console.error(e)
+                    this.connectWalletErr = e.message
+                    return
+                }
             },
             async onPreferenceUpdate(preference) {
                 this.showDialog = false
@@ -177,13 +178,12 @@ SPDX-License-Identifier: Apache-2.0
                     return
                 }
 
-                await this.connect()
+                await this.sendCHAPIRequest()
             },
-            async sendCHAPIRequest(data) {
-                this.waci = false
+            async sendCHAPIRequest() {
                 const connectionRequest = {
                     web: {
-                        VerifiablePresentation: data
+                        VerifiablePresentation: this.data
                     }
                 };
 
