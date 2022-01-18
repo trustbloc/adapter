@@ -343,6 +343,7 @@ func TestStartCmdDIDComm(t *testing.T) { // nolint:paralleltest // shared enviro
 			"--" + datasourceNameFlagName, "mem://test",
 			"--" + datasourceTimeoutFlagName, "30",
 			"--" + issuerOIDCClientStoreKeyFlagName, file.Name(),
+			"--" + cmOutputDescriptorsFilePathFlagName, "./testdata/outputdescriptors.json",
 		}
 		startCmd.SetArgs(args)
 
@@ -419,6 +420,7 @@ func TestAdapterModes(t *testing.T) { // nolint:paralleltest // shared environme
 			"--" + datasourceTimeoutFlagName, "30",
 			"--" + governanceVCSURLFlagName, "http://example.vcs.com",
 			"--" + issuerOIDCClientStoreKeyFlagName, file.Name(),
+			"--" + cmOutputDescriptorsFilePathFlagName, "./testdata/outputdescriptors.json",
 		}
 		startCmd.SetArgs(args)
 
@@ -506,12 +508,39 @@ func TestAdapterModes(t *testing.T) { // nolint:paralleltest // shared environme
 			"--" + datasourceTimeoutFlagName, "30",
 			"--" + governanceVCSURLFlagName, "http://example.vcs.com",
 			"--" + issuerOIDCClientStoreKeyFlagName, file.Name() + "-nonexistent",
+			"--" + cmOutputDescriptorsFilePathFlagName, "./testdata/outputdescriptors.json",
 		}
 		startCmd.SetArgs(args)
 
 		err = startCmd.Execute()
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "failed to read key")
+	})
+
+	t.Run("test adapter mode - failed to read the cm output descriptor file", func(t *testing.T) { // nolint:paralleltest,lll // shared environment variables
+		startCmd := GetStartCmd(&mockServer{})
+
+		testInboundHostURL := randomURL()
+
+		file, err := ioutil.TempFile("", "*.key")
+		require.NoError(t, err)
+
+		defer func() { require.NoError(t, os.Remove(file.Name())) }()
+
+		args := []string{
+			"--" + modeFlagName, issuerMode,
+			"--" + hostURLFlagName, "localhost:8080",
+			"--" + didCommInboundHostFlagName, testInboundHostURL,
+			"--" + datasourceNameFlagName, "mem://test",
+			"--" + datasourceTimeoutFlagName, "30",
+			"--" + governanceVCSURLFlagName, "http://example.vcs.com",
+			"--" + issuerOIDCClientStoreKeyFlagName, file.Name() + "-nonexistent",
+		}
+		startCmd.SetArgs(args)
+
+		err = startCmd.Execute()
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "failed to read and validate manifest output descriptors")
 	})
 
 	t.Run("test adapter mode - wallet handler errors", func(t *testing.T) { // nolint:paralleltest,lll // shared environment variables
@@ -531,8 +560,9 @@ func TestAdapterModes(t *testing.T) { // nolint:paralleltest // shared environme
 			dsnParams: &dsnParams{
 				dsn: "mem://test",
 			},
-			didCommParameters:   &didCommParameters{},
-			oidcClientDBKeyPath: file.Name(),
+			didCommParameters:           &didCommParameters{},
+			oidcClientDBKeyPath:         file.Name(),
+			cmOutputDescriptorsFilePath: "./testdata/outputdescriptors.json",
 		}
 
 		issuerAries, err := aries.New(aries.WithStoreProvider(&storage.MockStoreProvider{
@@ -567,7 +597,27 @@ func TestAdapterModes(t *testing.T) { // nolint:paralleltest // shared environme
 		require.Contains(t, err.Error(), "failed to initialize wallet bridge")
 	})
 }
-
+func TestReadOutputDescriptorFile(t *testing.T) { // nolint:paralleltest
+	t.Run("read output descriptor file success", // nolint:paralleltest
+		func(t *testing.T) {
+			cmOutputdesc, err := readCMOutputDescriptorFile("./testdata/outputdescriptors.json")
+			require.NoError(t, err)
+			require.NotNil(t, cmOutputdesc)
+			for k, v := range cmOutputdesc {
+				require.Equal(t, "udc-scope-1", k)
+				require.Equal(t, 1, len(cmOutputdesc))
+				require.NotNil(t, v)
+			}
+		})
+	t.Run("no such output descriptor file", // nolint:paralleltest
+		func(t *testing.T) {
+			cmOutputdesc, err := readCMOutputDescriptorFile("./testingWrongFile")
+			require.Error(t, err)
+			require.Equal(t, "read output descriptors file : open testingWrongFile: no such file or directory",
+				err.Error())
+			require.Nil(t, cmOutputdesc)
+		})
+}
 func TestTLSSystemCertPoolInvalidArgsEnvVar(t *testing.T) { // nolint:paralleltest // shared environment variables
 	startCmd := GetStartCmd(&mockServer{})
 
