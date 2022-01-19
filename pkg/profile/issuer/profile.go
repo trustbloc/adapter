@@ -45,6 +45,7 @@ type ProfileData struct {
 	OIDCClientParams            *OIDCClientParams `json:"oidcParams,omitempty"`
 	CredentialScopes            []string          `json:"credScopes,omitempty"`
 	LinkedWalletURL             string            `json:"linkedWallet,omitempty"`
+	// Todo #issue Add credential manifest issuer object
 }
 
 // OIDCClientParams optional set of oidc client parameters that the issuer may set, for static client registration.

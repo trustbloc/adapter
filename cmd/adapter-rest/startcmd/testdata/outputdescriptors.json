@@ -1,0 +1,72 @@
+{
+    "udc-scope-1": [
+        {
+            "id": "udc_output",
+            "schema": "https://www.w3.org/2018/credentials/examples/v1",
+            "display": {
+                "title": {
+                    "path": [
+                        "$.title",
+                        "$.vc.title"
+                    ],
+                    "schema": {
+                        "type": "string"
+                    },
+                    "fallback": "Bachelor's Degree"
+                },
+                "subtitle": {
+                    "path": [
+                        "$.minor",
+                        "$.vc.minor"
+                    ],
+                    "schema": {
+                        "type": "string"
+                    },
+                    "fallback": ""
+                },
+                "description": {
+                    "text": "Awarded for completing a four year program at Example University."
+                },
+                "properties": [
+                    {
+                        "path": [
+                            "$.name",
+                            "$.credentialSubject.name"
+                        ],
+                        "schema": {
+                            "type": "string"
+                        },
+                        "fallback": "Not Applicable",
+                        "label": "Degree Holder's name"
+                    },
+                    {
+                        "path": [
+                            "$.credentialSubject.degree.type"
+                        ],
+                        "schema": {
+                            "type": "string"
+                        },
+                        "fallback": "Unknown",
+                        "label": "Degree"
+                    }
+                ]
+            },
+            "styles": {
+                "thumbnail": {
+                    "uri": "http://example-university.org/logo.png",
+                    "alt": "Example University logo"
+                },
+                "hero": {
+                    "uri": "http://example-university.org/hero.png",
+                    "alt": "Example University students in graduation ceremony"
+                },
+                "background": {
+                    "color": "#ff0000"
+                },
+                "text": {
+                    "color": "#d4d400"
+                }
+            }
+        }
+    ]
+}

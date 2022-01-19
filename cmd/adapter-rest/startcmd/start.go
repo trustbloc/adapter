@@ -9,6 +9,7 @@ package startcmd
 import (
 	"crypto/tls"
 	"crypto/x509"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io/ioutil"
@@ -33,6 +34,7 @@ import (
 	ldrest "github.com/hyperledger/aries-framework-go/pkg/controller/rest/ld"
 	"github.com/hyperledger/aries-framework-go/pkg/didcomm/messaging/msghandler"
 	arieshttp "github.com/hyperledger/aries-framework-go/pkg/didcomm/transport/http"
+	"github.com/hyperledger/aries-framework-go/pkg/doc/cm"
 	ariesld "github.com/hyperledger/aries-framework-go/pkg/doc/ld"
 	"github.com/hyperledger/aries-framework-go/pkg/doc/ldcontext/remote"
 	"github.com/hyperledger/aries-framework-go/pkg/framework/aries"
@@ -97,6 +99,12 @@ const (
 	staticFilesPathFlagUsage = "Path to the folder where the static files are to be hosted under " + uiEndpoint + "." +
 		"Alternatively, this can be set with the following environment variable: " + staticFilesPathEnvKey
 	staticFilesPathEnvKey = "ADAPTER_REST_STATIC_FILES"
+
+	cmOutputDescriptorsFilePathFlagName  = "output-descriptors-path"
+	cmOutputDescriptorsFilePathFlagUsage = "Path to the output descriptors file of credential manifests " +
+		"supported by the adapter'" + "Alternatively, this can be set with the following " +
+		"environment variable: " + cmOutputDescriptorsFilePathEnvKey
+	cmOutputDescriptorsFilePathEnvKey = "ADAPTER_REST_OUTPUT_DESCRIPTORS_FILE"
 
 	tlsSystemCertPoolFlagName  = "tls-systemcertpool"
 	tlsSystemCertPoolFlagUsage = "Use system certificate pool." +
@@ -265,18 +273,19 @@ type adapterRestParameters struct {
 	staticFiles                 string
 	presentationDefinitionsFile string
 	// TODO assuming same base path for all hydra endpoints for now
-	hydraURL             string
-	mode                 string
-	didCommParameters    *didCommParameters // didcomm
-	trustblocDomain      string
-	universalResolverURL string
-	governanceVCSURL     string
-	requestTokens        map[string]string
-	walletAppURL         string
-	oidcClientDBKeyPath  string
-	externalURL          string
-	didAnchorOrigin      string
-	contextProviderURLs  []string
+	hydraURL                    string
+	mode                        string
+	didCommParameters           *didCommParameters // didcomm
+	trustblocDomain             string
+	universalResolverURL        string
+	governanceVCSURL            string
+	requestTokens               map[string]string
+	walletAppURL                string
+	oidcClientDBKeyPath         string
+	externalURL                 string
+	didAnchorOrigin             string
+	contextProviderURLs         []string
+	cmOutputDescriptorsFilePath string
 }
 
 // governanceProvider governance provider.
@@ -354,6 +363,12 @@ func getAdapterRestParameters(cmd *cobra.Command) (*adapterRestParameters, error
 	}
 
 	staticFiles, err := cmdutils.GetUserSetVarFromString(cmd, staticFilesPathFlagName, staticFilesPathEnvKey, true)
+	if err != nil {
+		return nil, fmt.Errorf(confErrMsg, err)
+	}
+
+	outputDescriptorsFilePath, err := cmdutils.GetUserSetVarFromString(cmd, cmOutputDescriptorsFilePathFlagName,
+		cmOutputDescriptorsFilePathEnvKey, true)
 	if err != nil {
 		return nil, fmt.Errorf(confErrMsg, err)
 	}
@@ -452,6 +467,7 @@ func getAdapterRestParameters(cmd *cobra.Command) (*adapterRestParameters, error
 		externalURL:                 externalURL,
 		didAnchorOrigin:             didAnchorOrigin,
 		contextProviderURLs:         contextProviderURLs,
+		cmOutputDescriptorsFilePath: outputDescriptorsFilePath,
 	}, nil
 }
 
@@ -609,6 +625,7 @@ func createFlags(startCmd *cobra.Command) {
 	startCmd.Flags().StringP(datasourceNameFlagName, "", "", datasourceNameFlagUsage)
 	startCmd.Flags().StringP(datasourceTimeoutFlagName, "", "", datasourceTimeoutFlagUsage)
 	startCmd.Flags().StringP(staticFilesPathFlagName, "", "", staticFilesPathFlagUsage)
+	startCmd.Flags().StringP(cmOutputDescriptorsFilePathFlagName, "", "", cmOutputDescriptorsFilePathFlagUsage)
 	startCmd.Flags().StringP(presentationDefinitionsFlagName, "", "", presentationDefinitionsFlagUsage)
 	startCmd.Flags().StringP(hydraURLFlagName, "", "", hydraURLFlagUsage)
 	startCmd.Flags().StringP(modeFlagName, "", "", modeFlagUsage)
@@ -794,7 +811,7 @@ func addRPHandlers(parameters *adapterRestParameters, framework *aries.Aries, ro
 	return nil
 }
 
-// nolint:funlen
+// nolint:funlen,gocyclo,cyclop
 func addIssuerHandlers(parameters *adapterRestParameters, framework *aries.Aries, router *mux.Router,
 	rootCAs *x509.CertPool, msgRegistrar *msghandler.Registrar) error {
 	store, err := initStore(parameters.dsnParams.dsn, parameters.dsnParams.timeout, issuerAdapterStorePrefix)
@@ -818,6 +835,11 @@ func addIssuerHandlers(parameters *adapterRestParameters, framework *aries.Aries
 	if err != nil {
 		return fmt.Errorf("aries-framework - failed to get aries context : %w", err)
 	}
+	// TODO #572 Pass the output descriptors to issuer
+	_, err = readCMOutputDescriptorFile(parameters.cmOutputDescriptorsFilePath)
+	if err != nil {
+		return fmt.Errorf("failed to read and validate manifest output descriptors : %w", err)
+	}
 
 	clientStoreKey, err := getIssuerOIDCClientStoreKey(parameters.oidcClientDBKeyPath)
 	if err != nil {
@@ -835,7 +857,7 @@ func addIssuerHandlers(parameters *adapterRestParameters, framework *aries.Aries
 	if err != nil {
 		return fmt.Errorf("failed to init trustbloc did creator: %w", err)
 	}
-
+	// TODO #572 Pass the output descriptors to issuer
 	// add issuer endpoints
 	issuerService, err := issuer.New(&issuerops.Config{
 		AriesCtx:             ariesCtx,
@@ -1115,4 +1137,26 @@ func getPresentationExchangeProvider(configFile string) (*presentationex.Provide
 	}
 
 	return p, nil
+}
+
+func readCMOutputDescriptorFile(outputDescriptorsFile string) (cmOutputDescriptors map[string][]*cm.OutputDescriptor,
+	err error) {
+	credentialManifestBytes, err := ioutil.ReadFile(filepath.Clean(outputDescriptorsFile))
+	if err != nil {
+		return nil, fmt.Errorf("read output descriptors file : %w", err)
+	}
+
+	err = json.Unmarshal(credentialManifestBytes, &cmOutputDescriptors)
+	if err != nil {
+		return nil, fmt.Errorf("failed to unmarshal output descriptor file: %w", err)
+	}
+
+	for _, outputDescriptorsValues := range cmOutputDescriptors {
+		err = cm.Validate(outputDescriptorsValues)
+		if err != nil {
+			return nil, fmt.Errorf("aries-framework - failed to validate output descriptors: %w", err)
+		}
+	}
+
+	return cmOutputDescriptors, nil
 }
