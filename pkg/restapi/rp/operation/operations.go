@@ -24,6 +24,7 @@ import (
 	"github.com/hyperledger/aries-framework-go/pkg/client/didexchange"
 	"github.com/hyperledger/aries-framework-go/pkg/client/mediator"
 	"github.com/hyperledger/aries-framework-go/pkg/client/outofband"
+	"github.com/hyperledger/aries-framework-go/pkg/client/outofbandv2"
 	"github.com/hyperledger/aries-framework-go/pkg/client/presentproof"
 	ariescrypto "github.com/hyperledger/aries-framework-go/pkg/crypto"
 	"github.com/hyperledger/aries-framework-go/pkg/didcomm/common/service"
@@ -31,6 +32,7 @@ import (
 	"github.com/hyperledger/aries-framework-go/pkg/didcomm/protocol/decorator"
 	didexchangesvc "github.com/hyperledger/aries-framework-go/pkg/didcomm/protocol/didexchange"
 	mediatorsvc "github.com/hyperledger/aries-framework-go/pkg/didcomm/protocol/mediator"
+	oobv2svc "github.com/hyperledger/aries-framework-go/pkg/didcomm/protocol/outofbandv2"
 	presentproofsvc "github.com/hyperledger/aries-framework-go/pkg/didcomm/protocol/presentproof"
 	"github.com/hyperledger/aries-framework-go/pkg/doc/did"
 	"github.com/hyperledger/aries-framework-go/pkg/doc/presexch"
@@ -121,6 +123,11 @@ type OOBClient interface {
 	CreateInvitation([]interface{}, ...outofband.MessageOption) (*outofband.Invitation, error)
 }
 
+// OOBV2Client is the aries framework OutOfBand V2 client.
+type OOBV2Client interface {
+	CreateInvitation(opts ...outofbandv2.MessageOption) (*oobv2svc.Invitation, error)
+}
+
 // DIDClient is the didexchange Client.
 type DIDClient interface {
 	RegisterActionEvent(chan<- service.DIDCommAction) error
@@ -137,6 +144,7 @@ type PresentProofClient interface {
 // PublicDIDCreator creates public DIDs.
 type PublicDIDCreator interface {
 	Create() (*did.Doc, error)
+	CreateV2() (*did.Doc, error)
 }
 
 type routeService interface {
@@ -146,6 +154,7 @@ type routeService interface {
 type connectionRecorder interface {
 	GetConnectionIDByDIDs(string, string) (string, error)
 	GetConnectionRecord(id string) (*connection.Record, error)
+	GetConnectionRecordByDIDs(myDID, theirDID string) (*connection.Record, error)
 }
 
 // GovernanceProvider governance provider.
@@ -189,6 +198,7 @@ type consentRequestCtx struct {
 	UserData        *userDataCollection
 	SupportsWACI    bool
 	LinkedWalletURL string
+	IsDIDCommV2     bool
 }
 
 type userDataCollection struct {
@@ -206,6 +216,7 @@ func New(config *Config) (*Operation, error) { // nolint:funlen,gocyclo,cyclop
 		oidcStates:             make(map[string]*models.LoginRequest),
 		uiEndpoint:             config.UIEndpoint,
 		oobClient:              config.OOBClient,
+		oobv2Client:            config.OOBV2Client,
 		didClient:              config.DIDExchClient,
 		didActions:             make(chan service.DIDCommAction),
 		didStateMsgs:           make(chan service.StateMsg),
@@ -303,6 +314,7 @@ type Config struct {
 	OAuth2Config           OAuth2Config
 	UIEndpoint             string
 	OOBClient              OOBClient
+	OOBV2Client            OOBV2Client
 	DIDExchClient          DIDClient
 	PublicDIDCreator       PublicDIDCreator
 	AriesContextProvider   AriesContextProvider
@@ -330,6 +342,7 @@ type Operation struct {
 	oidcStateLock          sync.Mutex
 	uiEndpoint             string
 	oobClient              OOBClient
+	oobv2Client            OOBV2Client
 	didClient              DIDClient
 	didActions             chan service.DIDCommAction
 	didStateMsgs           chan service.StateMsg
@@ -429,6 +442,7 @@ func (o *Operation) hydraLoginHandlerIterOne(w http.ResponseWriter, r *http.Requ
 				Label:           tenant.Label,
 				SupportsWACI:    tenant.SupportsWACI,
 				LinkedWalletURL: tenant.LinkedWalletURL,
+				IsDIDCommV2:     tenant.IsDIDCommV2,
 			},
 			Request: &rp.DataRequest{
 				Scope: login.GetPayload().RequestedScope,
@@ -678,6 +692,7 @@ func (o *Operation) hydraConsentHandler(w http.ResponseWriter, r *http.Request) 
 		RPLabel:         conn.RP.Label,
 		SupportsWACI:    conn.RP.SupportsWACI,
 		LinkedWalletURL: conn.RP.LinkedWalletURL,
+		IsDIDCommV2:     conn.RP.IsDIDCommV2,
 		UserData:        &userDataCollection{},
 	})
 	if err != nil {
@@ -740,23 +755,56 @@ func (o *Operation) getPresentationsRequest(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
-	invitation, err := o.oobClient.CreateInvitation(
-		[]interface{}{cr.RPPublicDID},
-		outofband.WithLabel(cr.RPLabel),
-		outofband.WithHandshakeProtocols(didexchangesvc.PIURI),
-		outofband.WithGoal("", "streamlined-vp"),
-	)
-	if err != nil {
-		handleError(w, http.StatusInternalServerError,
-			fmt.Sprintf("failed to create didcomm invitation with DID : %s", err))
+	var invBytes []byte
 
-		return
+	if cr.IsDIDCommV2 { // nolint:nestif
+		invitationV2, e := o.oobv2Client.CreateInvitation(
+			outofbandv2.WithFrom(cr.RPPublicDID),
+			outofbandv2.WithLabel(cr.RPLabel),
+		)
+		if e != nil {
+			handleError(w, http.StatusInternalServerError,
+				fmt.Sprintf("failed to create didcomm V2 invitation with DID : %s", e))
+
+			return
+		}
+
+		invBytes, e = json.Marshal(invitationV2)
+		if e != nil {
+			handleError(w, http.StatusInternalServerError,
+				fmt.Sprintf("failed to marshal invitation V2 : %s", e))
+
+			return
+		}
+
+		cr.InvitationID = invitationV2.ID
+	} else {
+		invitation, e := o.oobClient.CreateInvitation(
+			[]interface{}{cr.RPPublicDID},
+			outofband.WithLabel(cr.RPLabel),
+			outofband.WithHandshakeProtocols(didexchangesvc.PIURI),
+			outofband.WithGoal("", "streamlined-vp"),
+		)
+		if e != nil {
+			handleError(w, http.StatusInternalServerError,
+				fmt.Sprintf("failed to create didcomm invitation with DID : %s", e))
+
+			return
+		}
+
+		invBytes, e = json.Marshal(invitation)
+		if e != nil {
+			handleError(w, http.StatusInternalServerError,
+				fmt.Sprintf("failed to marshal invitation : %s", e))
+
+			return
+		}
+
+		cr.InvitationID = invitation.ID
 	}
 
-	cr.InvitationID = invitation.ID
-
 	// TODO delete transient data: https://github.com/trustbloc/edge-adapter/issues/255
-	err = newTransientStorage(o.transientStore).Put(invitation.ID, cr)
+	err = newTransientStorage(o.transientStore).Put(cr.InvitationID, cr)
 	if err != nil {
 		handleError(w, http.StatusInternalServerError,
 			fmt.Sprintf("failed to update consentRequestCtx in transient store : %s", err))
@@ -768,25 +816,17 @@ func (o *Operation) getPresentationsRequest(w http.ResponseWriter, r *http.Reque
 		var walletRedirect string
 
 		if cr.LinkedWalletURL != "" {
-			invBytes, err := json.Marshal(invitation)
-			if err != nil {
-				handleError(w, http.StatusInternalServerError,
-					fmt.Sprintf("failed to unmarshal invitation : %s", err))
-
-				return
-			}
-
 			walletRedirect = fmt.Sprintf("%s?oob=%s", cr.LinkedWalletURL, base64.URLEncoding.EncodeToString(invBytes))
 		}
 
-		commhttp.WriteResponse(w, &GetPresentationRequestResponse{
-			Inv:            invitation,
+		commhttp.WriteResponse(w, &gprrPartialMarshal{
+			Inv:            invBytes,
 			WACI:           true,
 			WalletRedirect: walletRedirect,
 		})
 		w.WriteHeader(http.StatusOK)
 
-		logger.Debugf("[waci] walletRequest: %+v", invitation)
+		logger.Debugf("[waci] walletRequest: %s", string(invBytes))
 
 		return
 	}
@@ -805,9 +845,9 @@ func (o *Operation) getPresentationsRequest(w http.ResponseWriter, r *http.Reque
 		}
 	}
 
-	response := &GetPresentationRequestResponse{
+	response := &gprrPartialMarshal{
 		PD:          cr.PD,
-		Inv:         invitation,
+		Inv:         invBytes,
 		Credentials: []json.RawMessage{governanceVC},
 	}
 
@@ -1224,7 +1264,7 @@ func (o *Operation) handleIncomingDIDExchangeRequestAction(action service.DIDCom
 	action.Continue(nil)
 }
 
-func (o *Operation) listenForConnectionCompleteEvents() { // nolint: gocyclo,cyclop,funlen
+func (o *Operation) listenForConnectionCompleteEvents() {
 	for msg := range o.didStateMsgs {
 		if msg.Type != service.PostState || msg.StateID != didexchangesvc.StateIDCompleted {
 			continue
@@ -1245,13 +1285,6 @@ func (o *Operation) listenForConnectionCompleteEvents() { // nolint: gocyclo,cyc
 			"received connection complete event for invitationID=%s connectionID=%s",
 			event.InvitationID(), event.ConnectionID())
 
-		crCtx, err := newTransientStorage(o.transientStore).GetConsentRequest(event.InvitationID())
-		if err != nil {
-			logger.Warnf("unable to fetch consentRquestCtx data transient storage: %s", err)
-
-			continue
-		}
-
 		record, err := o.connections.GetConnectionRecord(event.ConnectionID())
 		if err != nil {
 			logger.Errorf("failed to fetch connection record for id=%s : %s", event.ConnectionID(), err)
@@ -1259,31 +1292,11 @@ func (o *Operation) listenForConnectionCompleteEvents() { // nolint: gocyclo,cyc
 			continue
 		}
 
-		crCtx.RPPairwiseDID = record.MyDID
-		crCtx.UserDID = record.TheirDID
-		crCtx.ConnectionID = record.ConnectionID
-
-		err = newTransientStorage(o.transientStore).Put(crCtx.InvitationID, crCtx)
+		err = o.updateCRContext(event.InvitationID(), record)
 		if err != nil {
-			logger.Errorf("failed to update invitation data in transient storage : %s", err)
-		}
+			logger.Warnf("%s", err.Error())
 
-		if crCtx.SupportsWACI {
-			// TODO remove this once AFG implements https://github.com/hyperledger/aries-framework-go/issues/2860
-			err = o.persistenceStore.Put(getConnToCtxMappingDBKey(event.ConnectionID()),
-				[]byte(crCtx.InvitationID))
-			if err != nil {
-				logger.Errorf("failed to update connectionID to ctx id : %s", err)
-			}
-		}
-
-		// consent request doesn't always apply, ex: remote wallet app connection through deep link invitation.
-		if crCtx.CR != nil {
-			err = o.persistenceStore.Put(getConnToTenantMappingDBKey(event.ConnectionID()),
-				[]byte(crCtx.CR.Payload.Client.ClientID))
-			if err != nil {
-				logger.Errorf("failed to update connectionID to rp client id : %s", err)
-			}
+			continue
 		}
 
 		err = o.messenger.Send(service.NewDIDCommMsgMap(&aries.DIDCommMsg{
@@ -1296,8 +1309,44 @@ func (o *Operation) listenForConnectionCompleteEvents() { // nolint: gocyclo,cyc
 	}
 }
 
+func (o *Operation) updateCRContext(invitationID string, record *connection.Record) error {
+	crCtx, err := newTransientStorage(o.transientStore).GetConsentRequest(invitationID)
+	if err != nil {
+		return fmt.Errorf("unable to fetch consentRquestCtx data transient storage: %w", err)
+	}
+
+	crCtx.RPPairwiseDID = record.MyDID
+	crCtx.UserDID = record.TheirDID
+	crCtx.ConnectionID = record.ConnectionID
+
+	err = newTransientStorage(o.transientStore).Put(crCtx.InvitationID, crCtx)
+	if err != nil {
+		logger.Errorf("failed to update invitation data in transient storage : %s", err)
+	}
+
+	if crCtx.SupportsWACI {
+		// TODO remove this once AFG implements https://github.com/hyperledger/aries-framework-go/issues/2860
+		err = o.persistenceStore.Put(getConnToCtxMappingDBKey(record.ConnectionID),
+			[]byte(crCtx.InvitationID))
+		if err != nil {
+			logger.Errorf("failed to update connectionID to ctx id : %s", err)
+		}
+	}
+
+	// consent request doesn't always apply, ex: remote wallet app connection through deep link invitation.
+	if crCtx.CR != nil {
+		err = o.persistenceStore.Put(getConnToTenantMappingDBKey(record.ConnectionID),
+			[]byte(crCtx.CR.Payload.Client.ClientID))
+		if err != nil {
+			logger.Errorf("failed to update connectionID to rp client id : %s", err)
+		}
+	}
+
+	return nil
+}
+
 //nolint:funlen,cyclop
-func (o *Operation) presentProofListener(ppActions chan service.DIDCommAction) {
+func (o *Operation) presentProofListener(ppActions chan service.DIDCommAction) { // nolint:gocyclo
 	for action := range ppActions {
 		var err error
 
@@ -1340,6 +1389,11 @@ func (o *Operation) presentProofListener(ppActions chan service.DIDCommAction) {
 			}
 
 		case presentproofsvc.ProposePresentationMsgTypeV2, presentproofsvc.ProposePresentationMsgTypeV3:
+			waciErr := o.updateCRContextDIDCommV2(action.Message, action.Properties)
+			if waciErr != nil {
+				logger.Warnf("failed to update CR context with inbound didcomm v2 message: %s", waciErr.Error())
+			}
+
 			ctx, waciErr := o.getWACIPresDef(action)
 			if waciErr != nil {
 				err = waciErr
@@ -1375,6 +1429,34 @@ func (o *Operation) presentProofListener(ppActions chan service.DIDCommAction) {
 			logger.Infof("msgType=[%s] id=[%s] msg=[%s]", action.Message.Type(), action.Message.ID(), "success")
 		}
 	}
+}
+
+func (o *Operation) updateCRContextDIDCommV2(msg service.DIDCommMsg, eventProps service.EventProperties) error {
+	pthid := msg.ParentThreadID()
+	if pthid == "" {
+		return nil
+	}
+
+	props := eventProps.All()
+
+	myDID, ok1 := props["myDID"].(string)
+	theirDID, ok2 := props["theirDID"].(string)
+
+	if !ok1 || !ok2 {
+		return fmt.Errorf("missing myDID or theirDID in eventProps")
+	}
+
+	record, e := o.connections.GetConnectionRecordByDIDs(myDID, theirDID)
+	if e != nil {
+		return fmt.Errorf("failed to get connection record by action DIDs: %w", e)
+	}
+
+	e = o.updateCRContext(pthid, record)
+	if e != nil {
+		return fmt.Errorf("failed to update context on inbound presentation proposal: %w", e)
+	}
+
+	return nil
 }
 
 func (o *Operation) didCommMsgListener(ch <-chan message.Msg) {
@@ -1505,7 +1587,7 @@ func (o *Operation) handleWACIPresentation(action service.DIDCommAction) (string
 		return "", fmt.Errorf("waci - get presentation definition : %w", err)
 	}
 
-	presentation := &presentproof.PresentationV2{}
+	presentation := &presentproof.Presentation{}
 
 	err = action.Message.Decode(presentation)
 	if err != nil {
@@ -1622,7 +1704,14 @@ func (o *Operation) createRPTenant(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	publicDID, err := o.publicDIDCreator.Create()
+	var publicDID *did.Doc
+
+	if request.IsDIDCommV2 {
+		publicDID, err = o.publicDIDCreator.CreateV2()
+	} else {
+		publicDID, err = o.publicDIDCreator.Create()
+	}
+
 	if err != nil {
 		msg := fmt.Sprintf("failed to create public did : %s", err)
 		logger.Errorf(msg)
@@ -1653,6 +1742,7 @@ func (o *Operation) createRPTenant(w http.ResponseWriter, r *http.Request) {
 		RequiresBlindedRoute: request.RequiresBlindedRoute,
 		SupportsWACI:         request.SupportsWACI,
 		LinkedWalletURL:      request.LinkedWalletURL,
+		IsDIDCommV2:          request.IsDIDCommV2,
 	})
 	if err != nil {
 		msg := fmt.Sprintf("failed to save relying party : %s", err)
@@ -1671,6 +1761,7 @@ func (o *Operation) createRPTenant(w http.ResponseWriter, r *http.Request) {
 		RequiresBlindedRoute: request.RequiresBlindedRoute,
 		SupportsWACI:         request.SupportsWACI,
 		LinkedWalletURL:      request.LinkedWalletURL,
+		IsDIDCommV2:          request.IsDIDCommV2,
 	})
 }
 

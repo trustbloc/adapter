@@ -29,6 +29,7 @@ import (
 	"github.com/hyperledger/aries-framework-go/component/storageutil/mem"
 	"github.com/hyperledger/aries-framework-go/pkg/client/didexchange"
 	"github.com/hyperledger/aries-framework-go/pkg/client/outofband"
+	"github.com/hyperledger/aries-framework-go/pkg/client/outofbandv2"
 	"github.com/hyperledger/aries-framework-go/pkg/client/presentproof"
 	arieslog "github.com/hyperledger/aries-framework-go/pkg/common/log"
 	ldrest "github.com/hyperledger/aries-framework-go/pkg/controller/rest/ld"
@@ -40,6 +41,7 @@ import (
 	"github.com/hyperledger/aries-framework-go/pkg/framework/aries"
 	"github.com/hyperledger/aries-framework-go/pkg/framework/aries/api"
 	"github.com/hyperledger/aries-framework-go/pkg/framework/aries/defaults"
+	"github.com/hyperledger/aries-framework-go/pkg/kms"
 	ldsvc "github.com/hyperledger/aries-framework-go/pkg/ld"
 	"github.com/hyperledger/aries-framework-go/pkg/vdr/httpbinding"
 	"github.com/hyperledger/aries-framework-go/spi/storage"
@@ -183,7 +185,7 @@ const (
 	governanceVCSURLEnvKey    = "ADAPTER_REST_GOVERNANCE_VCS_URL"
 
 	requestTokensFlagName  = "request-tokens"
-	requestTokensEnvKey    = "ADAPTER_REST_REQUEST_TOKENS" //nolint: gosec
+	requestTokensEnvKey    = "ADAPTER_REST_REQUEST_TOKENS" // nolint: gosec
 	requestTokensFlagUsage = "Tokens used for http request " +
 		" Alternatively, this can be set with the following environment variable: " + requestTokensEnvKey
 
@@ -205,6 +207,29 @@ const (
 		" This flag can be repeated, allowing setting up multiple context providers." +
 		" Alternatively, this can be set with the following environment variable (in CSV format): " +
 		contextProviderEnvKey
+
+	// default verification key type flag.
+	keyTypeFlagName  = "key-type"
+	keyTypeEnvKey    = "ADAPTER_REST_KEY_TYPE"
+	keyTypeFlagUsage = "Default key type for adapter." +
+		" This flag sets the verification (and for DIDComm V1 encryption as well) key type used for key creation " +
+		"in the adapter. Alternatively, this can be set with the following environment variable: " +
+		keyTypeEnvKey
+
+	// default key agreement type flag.
+	keyAgreementTypeFlagName  = "key-agreement-type"
+	keyAgreementTypeEnvKey    = "ADAPTER_REST_KEY_AGREEMENT_TYPE"
+	keyAgreementTypeFlagUsage = "Default key agreement type for adapter." +
+		" Default encryption (used in DIDComm V2) key type used for key agreement creation in the adapter." +
+		" Alternatively, this can be set with the following environment variable: " +
+		keyAgreementTypeEnvKey
+
+	// default key agreement type flag.
+	mediaTypeProfileFlagName  = "media-type-profiles"
+	mediaTypeProfileEnvKey    = "ADAPTER_REST_MEDIA_TYPE_PROFILES"
+	mediaTypeProfileFlagUsage = "Media type profiles for adapter." +
+		" Alternatively, this can be set with the following environment variable: " +
+		mediaTypeProfileEnvKey
 )
 
 // Database types
@@ -258,6 +283,9 @@ type tlsParameters struct {
 type didCommParameters struct {
 	inboundHostInternal string
 	inboundHostExternal string
+	keyType             string
+	keyAgreementType    string
+	mediaTypeProfiles   []string
 }
 
 type dsnParams struct {
@@ -396,10 +424,7 @@ func getAdapterRestParameters(cmd *cobra.Command) (*adapterRestParameters, error
 	}
 
 	// didcomm
-	didCommParameters, err := getDIDCommParams(cmd)
-	if err != nil {
-		return nil, fmt.Errorf(confErrMsg, err)
-	}
+	didCommParameters := getDIDCommParams(cmd)
 
 	trustblocDomain, err := cmdutils.GetUserSetVarFromString(cmd, trustblocDomainFlagName, trustblocDomainEnvKey, true)
 	if err != nil {
@@ -558,23 +583,28 @@ func getDsnParams(cmd *cobra.Command) (*dsnParams, error) {
 	return params, nil
 }
 
-func getDIDCommParams(cmd *cobra.Command) (*didCommParameters, error) {
-	inboundHostInternal, err := cmdutils.GetUserSetVarFromString(cmd, didCommInboundHostFlagName,
-		didCommInboundHostEnvKey, true)
-	if err != nil {
-		return nil, fmt.Errorf(confErrMsg, err)
-	}
+func getDIDCommParams(cmd *cobra.Command) *didCommParameters {
+	inboundHostInternal := cmdutils.GetUserSetOptionalVarFromString(cmd, didCommInboundHostFlagName,
+		didCommInboundHostEnvKey)
 
-	inboundHostExternal, err := cmdutils.GetUserSetVarFromString(cmd, didCommInboundHostExternalFlagName,
-		didCommInboundHostExternalEnvKey, true)
-	if err != nil {
-		return nil, fmt.Errorf(confErrMsg, err)
-	}
+	inboundHostExternal := cmdutils.GetUserSetOptionalVarFromString(cmd, didCommInboundHostExternalFlagName,
+		didCommInboundHostExternalEnvKey)
+
+	keyType := cmdutils.GetUserSetOptionalVarFromString(cmd, keyTypeFlagName, keyTypeEnvKey)
+
+	keyAgreementType := cmdutils.GetUserSetOptionalVarFromString(cmd, keyAgreementTypeFlagName,
+		keyAgreementTypeEnvKey)
+
+	mediaTypeProfiles := cmdutils.GetUserSetOptionalVarFromArrayString(cmd,
+		mediaTypeProfileFlagName, mediaTypeProfileEnvKey)
 
 	return &didCommParameters{
 		inboundHostInternal: inboundHostInternal,
 		inboundHostExternal: inboundHostExternal,
-	}, nil
+		keyType:             keyType,
+		keyAgreementType:    keyAgreementType,
+		mediaTypeProfiles:   mediaTypeProfiles,
+	}
 }
 
 func getTLS(cmd *cobra.Command) (*tlsParameters, error) {
@@ -592,20 +622,11 @@ func getTLS(cmd *cobra.Command) (*tlsParameters, error) {
 		}
 	}
 
-	tlsCACerts, err := cmdutils.GetUserSetVarFromArrayString(cmd, tlsCACertsFlagName, tlsCACertsEnvKey, true)
-	if err != nil {
-		return nil, fmt.Errorf(confErrMsg, err)
-	}
+	tlsCACerts := cmdutils.GetUserSetOptionalVarFromArrayString(cmd, tlsCACertsFlagName, tlsCACertsEnvKey)
 
-	tlsServeCertPath, err := cmdutils.GetUserSetVarFromString(cmd, tlsServeCertPathFlagName, tlsServeCertPathEnvKey, true)
-	if err != nil {
-		return nil, fmt.Errorf(confErrMsg, err)
-	}
+	tlsServeCertPath := cmdutils.GetUserSetOptionalVarFromString(cmd, tlsServeCertPathFlagName, tlsServeCertPathEnvKey)
 
-	tlsServeKeyPath, err := cmdutils.GetUserSetVarFromString(cmd, tlsServeKeyPathFlagName, tlsServeKeyPathFlagEnvKey, true)
-	if err != nil {
-		return nil, fmt.Errorf(confErrMsg, err)
-	}
+	tlsServeKeyPath := cmdutils.GetUserSetOptionalVarFromString(cmd, tlsServeKeyPathFlagName, tlsServeKeyPathFlagEnvKey)
 
 	return &tlsParameters{
 		systemCertPool: tlsSystemCertPool,
@@ -635,6 +656,9 @@ func createFlags(startCmd *cobra.Command) {
 	// didcomm
 	startCmd.Flags().StringP(didCommInboundHostFlagName, "", "", didCommInboundHostFlagUsage)
 	startCmd.Flags().StringP(didCommInboundHostExternalFlagName, "", "", didCommInboundHostExternalFlagUsage)
+	startCmd.Flags().StringP(keyTypeFlagName, "", "", keyTypeFlagUsage)
+	startCmd.Flags().StringP(keyAgreementTypeFlagName, "", "", keyAgreementTypeFlagUsage)
+	startCmd.Flags().StringSliceP(mediaTypeProfileFlagName, "", []string{}, mediaTypeProfileFlagUsage)
 
 	startCmd.Flags().StringP(trustblocDomainFlagName, "", "", trustblocDomainFlagUsage)
 	startCmd.Flags().StringP(universalResolverURLFlagName, universalResolverURLFlagShorthand, "",
@@ -728,6 +752,11 @@ func addRPHandlers(parameters *adapterRestParameters, framework *aries.Aries, ro
 		return fmt.Errorf("failed to initialize outofband client : %w", err)
 	}
 
+	oobV2Client, err := outofbandv2.New(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to initialize outofband v2 client: %w", err)
+	}
+
 	didClient, err := didexchange.New(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to initialized didexchange client : %w", err)
@@ -764,7 +793,10 @@ func addRPHandlers(parameters *adapterRestParameters, framework *aries.Aries, ro
 		parameters.didCommParameters.inboundHostExternal,
 		ctx.KMS(),
 		rootCAs,
-		parameters.requestTokens["sidetreeToken"])
+		parameters.requestTokens["sidetreeToken"],
+		ctx.KeyType(),
+		ctx.KeyAgreementType(),
+	)
 	if err != nil {
 		return fmt.Errorf("failed to create trustbloc did creator: %w", err)
 	}
@@ -775,6 +807,7 @@ func addRPHandlers(parameters *adapterRestParameters, framework *aries.Aries, ro
 		Hydra:                  hydra.NewClient(hydraURL, rootCAs),
 		UIEndpoint:             uiEndpoint,
 		OOBClient:              oobClient,
+		OOBV2Client:            oobV2Client,
 		DIDExchClient:          didClient,
 		Storage:                &rpops.Storage{Persistent: store, Transient: tStore},
 		PublicDIDCreator:       didCreator,
@@ -853,6 +886,8 @@ func addIssuerHandlers(parameters *adapterRestParameters, framework *aries.Aries
 		ariesCtx.KMS(),
 		rootCAs,
 		parameters.requestTokens["sidetreeToken"],
+		ariesCtx.KeyType(),
+		ariesCtx.KeyAgreementType(),
 	)
 	if err != nil {
 		return fmt.Errorf("failed to init trustbloc did creator: %w", err)
@@ -1019,9 +1054,34 @@ func acceptsDID(method string) bool {
 	return method == "orb"
 }
 
+var (
+	//nolint:gochecknoglobals
+	keyTypes = map[string]kms.KeyType{
+		"ed25519":           kms.ED25519Type,
+		"ecdsap256ieee1363": kms.ECDSAP256TypeIEEEP1363,
+		"ecdsap256der":      kms.ECDSAP256TypeDER,
+		"ecdsap384ieee1363": kms.ECDSAP384TypeIEEEP1363,
+		"ecdsap384der":      kms.ECDSAP384TypeDER,
+		"ecdsap521ieee1363": kms.ECDSAP521TypeIEEEP1363,
+		"ecdsap521der":      kms.ECDSAP521TypeDER,
+	}
+
+	//nolint:gochecknoglobals
+	keyAgreementTypes = map[string]kms.KeyType{
+		"x25519kw": kms.X25519ECDHKWType,
+		"p256kw":   kms.NISTP256ECDHKWType,
+		"p384kw":   kms.NISTP384ECDHKWType,
+		"p521kw":   kms.NISTP521ECDHKWType,
+	}
+)
+
 //nolint:funlen
-func createAriesAgent(parameters *adapterRestParameters, tlsConfig *tls.Config, dbPrefix string,
-	msgRegistrar api.MessageServiceProvider) (*aries.Aries, error) {
+func createAriesAgent( // nolint:gocyclo,cyclop
+	parameters *adapterRestParameters,
+	tlsConfig *tls.Config,
+	dbPrefix string,
+	msgRegistrar api.MessageServiceProvider,
+) (*aries.Aries, error) {
 	var opts []aries.Option
 
 	if parameters.didCommParameters.inboundHostInternal == "" {
@@ -1071,6 +1131,18 @@ func createAriesAgent(parameters *adapterRestParameters, tlsConfig *tls.Config, 
 	loader, err := createJSONLDDocumentLoader(ldStore, tlsConfig, parameters.contextProviderURLs)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create document loader: %w", err)
+	}
+
+	if kt, ok := keyTypes[parameters.didCommParameters.keyType]; ok {
+		opts = append(opts, aries.WithKeyType(kt))
+	}
+
+	if kat, ok := keyAgreementTypes[parameters.didCommParameters.keyAgreementType]; ok {
+		opts = append(opts, aries.WithKeyAgreementType(kat))
+	}
+
+	if len(parameters.didCommParameters.mediaTypeProfiles) != 0 {
+		opts = append(opts, aries.WithMediaTypeProfiles(parameters.didCommParameters.mediaTypeProfiles))
 	}
 
 	opts = append(opts,

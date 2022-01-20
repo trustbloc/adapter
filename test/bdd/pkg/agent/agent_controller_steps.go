@@ -35,6 +35,7 @@ import (
 	"github.com/hyperledger/aries-framework-go/pkg/didcomm/common/service"
 	"github.com/hyperledger/aries-framework-go/pkg/didcomm/protocol/decorator"
 	issuecredsvc "github.com/hyperledger/aries-framework-go/pkg/didcomm/protocol/issuecredential"
+	"github.com/hyperledger/aries-framework-go/pkg/didcomm/protocol/outofbandv2"
 	presentproofsvc "github.com/hyperledger/aries-framework-go/pkg/didcomm/protocol/presentproof"
 	"github.com/hyperledger/aries-framework-go/pkg/doc/did"
 	"github.com/hyperledger/aries-framework-go/pkg/doc/presexch"
@@ -60,6 +61,9 @@ const (
 	oobOperationID   = "/outofband"
 	acceptOOBInvPath = oobOperationID + "/accept-invitation"
 	createOOBInvPath = oobOperationID + "/create-invitation"
+
+	oobV2OperationID   = "/outofband/2.0"
+	acceptOOBV2InvPath = oobV2OperationID + "/accept-invitation"
 
 	connOperationID      = "/connections"
 	connectionsByIDPath  = connOperationID + "/%s"
@@ -233,7 +237,7 @@ func (a *Steps) checkWebhookIsRunning(agentID, webhookURL string) error {
 
 func (a *Steps) healthCheck(endpoint string) error {
 	if strings.HasPrefix(endpoint, "http") {
-		resp, err := http.Get(endpoint) //nolint: gosec
+		resp, err := http.Get(endpoint) // nolint: gosec
 		if err != nil {
 			return fmt.Errorf("failed to get endpoint %s: %w", endpoint, err)
 		}
@@ -558,28 +562,59 @@ func (a *Steps) createInvitation(agent string) (*outofband.Invitation, error) {
 
 // AcceptOOBInvitation makes agentID accept the invitation, returning the connection ID.
 func (a *Steps) AcceptOOBInvitation(agentID string, invitation *outofband.Invitation, label string) (string, error) {
+	connID, err := a.acceptAnyInvitation(agentID, acceptOOBInvPath, invitation, label)
+	if err != nil {
+		return "", fmt.Errorf("accept oob invitation: %w", err)
+	}
+
+	return connID, nil
+}
+
+// AcceptOOBInvitationV2 makes agentID accept the oob v2 invitation, returning the connection ID.
+func (a *Steps) AcceptOOBInvitationV2(agentID string, invitation *outofbandv2.Invitation, label string,
+) (string, error) {
+	connID, err := a.acceptAnyInvitation(agentID, acceptOOBV2InvPath, invitation, label)
+	if err != nil {
+		return "", fmt.Errorf("accept oob v2 invitation: %w", err)
+	}
+
+	return connID, nil
+}
+
+type acceptArgs struct {
+	Invitation interface{} `json:"invitation"`
+	MyLabel    string      `json:"my_label"`
+}
+
+type acceptResponse struct {
+	ConnectionID string `json:"connection_id"`
+}
+
+func (a *Steps) acceptAnyInvitation(agentID, commandPath string, invitation interface{}, label string) (string, error) {
 	destination, ok := a.ControllerURLs[agentID]
 	if !ok {
 		return "", fmt.Errorf("unable to find controller URL registered for agent [%s]", agentID)
 	}
 
-	request, err := json.Marshal(&oobcmd.AcceptInvitationArgs{
+	request, err := json.Marshal(&acceptArgs{
 		Invitation: invitation,
 		MyLabel:    label,
 	})
 	if err != nil {
-		return "", fmt.Errorf("'%s' failed to marshal oob accept invitation args : %w", agentID, err)
+		return "", fmt.Errorf("'%s' failed to marshal args : %w", agentID, err)
 	}
 
-	var result oobcmd.AcceptInvitationResponse
+	logger.Warnf("invitation request: %s", string(request))
 
-	err = bddutil.SendHTTP(http.MethodPost, destination+acceptOOBInvPath, request, &result)
+	var result acceptResponse
+
+	err = bddutil.SendHTTP(http.MethodPost, destination+commandPath, request, &result)
 	if err != nil {
-		return "", fmt.Errorf("'%s' failed to accept oob invitation : %w", agentID, err)
+		return "", fmt.Errorf("'%s' failed to accept : %w", agentID, err)
 	}
 
 	if result.ConnectionID == "" {
-		return "", fmt.Errorf("'%s' failed to get valid payload from accept oob invitation", agentID)
+		return "", fmt.Errorf("'%s' failed to get valid payload", agentID)
 	}
 
 	return result.ConnectionID, nil
@@ -1153,24 +1188,27 @@ func (a *Steps) SubmitWACIPresentation(walletID, connID string) error { // nolin
 		return fmt.Errorf("failed to fetch action PIID: %w", err)
 	}
 
-	if action.Msg.Type() != presentproofsvc.RequestPresentationMsgTypeV2 {
+	switch action.Msg.Type() {
+	case presentproofsvc.RequestPresentationMsgTypeV2, presentproofsvc.RequestPresentationMsgTypeV3:
+		// good
+	default:
 		return fmt.Errorf("invalid present-proof message: expected=%s actual=%s",
 			presentproofsvc.RequestPresentationMsgTypeV2, action.Msg.Type())
 	}
 
-	reqMsg := &presentproof.RequestPresentationV2{}
+	reqMsg := &presentproof.RequestPresentation{}
 
 	err = action.Msg.Decode(reqMsg)
 	if err != nil {
 		return fmt.Errorf("decode req message: %w", err)
 	}
 
-	if len(reqMsg.RequestPresentationsAttach) != 1 {
+	if len(reqMsg.Attachments) != 1 {
 		return fmt.Errorf("request presentation attchement count mismatch: expected=%d actual=%d",
-			1, len(reqMsg.RequestPresentationsAttach))
+			1, len(reqMsg.Attachments))
 	}
 
-	presDefBytes, err := reqMsg.RequestPresentationsAttach[0].Data.Fetch()
+	presDefBytes, err := reqMsg.Attachments[0].Data.Fetch()
 	if err != nil {
 		return fmt.Errorf("presentation definition from request attachment : %w", err)
 	}

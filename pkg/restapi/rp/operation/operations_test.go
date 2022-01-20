@@ -31,6 +31,7 @@ import (
 	didexchangesvc "github.com/hyperledger/aries-framework-go/pkg/didcomm/protocol/didexchange"
 	"github.com/hyperledger/aries-framework-go/pkg/didcomm/protocol/mediator"
 	outofbandsvc "github.com/hyperledger/aries-framework-go/pkg/didcomm/protocol/outofband"
+	"github.com/hyperledger/aries-framework-go/pkg/didcomm/protocol/outofbandv2"
 	presentproofsvc "github.com/hyperledger/aries-framework-go/pkg/didcomm/protocol/presentproof"
 	"github.com/hyperledger/aries-framework-go/pkg/doc/did"
 	"github.com/hyperledger/aries-framework-go/pkg/doc/presexch"
@@ -57,6 +58,7 @@ import (
 	mockgovernance "github.com/trustbloc/edge-adapter/pkg/internal/mock/governance"
 	"github.com/trustbloc/edge-adapter/pkg/internal/mock/messenger"
 	mockoutofband "github.com/trustbloc/edge-adapter/pkg/internal/mock/outofband"
+	mockoutofbandv2 "github.com/trustbloc/edge-adapter/pkg/internal/mock/outofbandv2"
 	mockpresentproof "github.com/trustbloc/edge-adapter/pkg/internal/mock/presentproof"
 	"github.com/trustbloc/edge-adapter/pkg/internal/testutil"
 	mockprovider "github.com/trustbloc/edge-adapter/pkg/restapi/internal/mocks/provider"
@@ -1476,6 +1478,14 @@ func TestGetPresentationsRequest(t *testing.T) {
 					Protocols: []string{didexchangesvc.PIURI},
 				},
 			},
+			OOBV2Client: &mockoutofbandv2.MockClient{
+				CreateInvVal: &outofbandv2.Invitation{
+					ID:    uuid.NewString(),
+					Type:  outofbandv2.InvitationMsgType,
+					Label: "test-label",
+					From:  rpPublicDID.String(),
+				},
+			},
 			DIDExchClient: &mockdidexchange.MockClient{
 				CreateInvWithDIDFunc: func(label, didID string) (*didexchange.Invitation, error) {
 					return &didexchange.Invitation{Invitation: &didexchangesvc.Invitation{
@@ -1554,6 +1564,14 @@ func TestGetPresentationsRequest(t *testing.T) {
 					Protocols: []string{didexchangesvc.PIURI},
 				},
 			},
+			OOBV2Client: &mockoutofbandv2.MockClient{
+				CreateInvVal: &outofbandv2.Invitation{
+					ID:    uuid.NewString(),
+					Type:  outofbandv2.InvitationMsgType,
+					Label: "test-label",
+					From:  rpPublicDID.String(),
+				},
+			},
 			DIDExchClient: &mockdidexchange.MockClient{
 				CreateInvWithDIDFunc: func(label, didID string) (*didexchange.Invitation, error) {
 					return &didexchange.Invitation{Invitation: &didexchangesvc.Invitation{
@@ -1607,6 +1625,94 @@ func TestGetPresentationsRequest(t *testing.T) {
 		require.Equal(t, rpPublicDID.String(), res.Inv.Services[0])
 	})
 
+	t.Run("test waci v2 success", func(t *testing.T) {
+		t.Parallel()
+		userSubject := uuid.New().String()
+		rpClientID := uuid.New().String()
+		rpPublicDID := newDID(t)
+		handle := uuid.New().String()
+		presDefs := &presexch.PresentationDefinition{
+			InputDescriptors: []*presexch.InputDescriptor{{ID: uuid.New().String()}},
+		}
+		provider := mem.NewProvider()
+		saveUserConn(t, provider, &rp.UserConnection{
+			User:    &rp.User{Subject: userSubject},
+			RP:      &rp.Tenant{ClientID: rpClientID, SupportsWACI: true, LinkedWalletURL: "example.com"},
+			Request: &rp.DataRequest{},
+		})
+
+		c, err := New(&Config{
+			PresentationExProvider: &mockPresentationExProvider{createValue: presDefs},
+			OOBClient: &mockoutofband.MockClient{
+				CreateInvVal: &outofband.Invitation{
+					ID:        uuid.New().String(),
+					Type:      outofband.InvitationMsgType,
+					Label:     "test-label",
+					Services:  []interface{}{rpPublicDID.String()},
+					Protocols: []string{didexchangesvc.PIURI},
+				},
+			},
+			OOBV2Client: &mockoutofbandv2.MockClient{
+				CreateInvVal: &outofbandv2.Invitation{
+					ID:    uuid.NewString(),
+					Type:  outofbandv2.InvitationMsgType,
+					Label: "test-label",
+					From:  rpPublicDID.String(),
+				},
+			},
+			DIDExchClient: &mockdidexchange.MockClient{
+				CreateInvWithDIDFunc: func(label, didID string) (*didexchange.Invitation, error) {
+					return &didexchange.Invitation{Invitation: &didexchangesvc.Invitation{
+						ID:    uuid.New().String(),
+						Type:  didexchange.InvitationMsgType,
+						Label: "test-label",
+						DID:   rpPublicDID.String(),
+					}}, nil
+				},
+			},
+			Storage: &Storage{
+				Persistent: provider,
+				Transient:  mem.NewProvider(),
+			},
+			AriesContextProvider: agent(t),
+			PresentProofClient:   &mockpresentproof.MockClient{},
+			GovernanceProvider: &mockgovernance.MockProvider{GetCredentialFunc: func(profileID string) ([]byte, error) {
+				return []byte(`{"key":"value"}`), nil
+			}},
+			MsgRegistrar:   msghandler.NewRegistrar(),
+			AriesMessenger: &messenger.MockMessenger{},
+		})
+		require.NoError(t, err)
+
+		storePut(t, c.transientStore, handle, &consentRequestCtx{
+			PD: presDefs,
+			CR: &admin.GetConsentRequestOK{
+				Payload: &models.ConsentRequest{
+					Subject: userSubject,
+					Client:  &models.OAuth2Client{ClientID: rpClientID},
+				},
+			},
+			RPPublicDID:     rpPublicDID.String(),
+			SupportsWACI:    true,
+			LinkedWalletURL: "example.com",
+			IsDIDCommV2:     true,
+		})
+
+		r := httptest.NewRecorder()
+		c.getPresentationsRequest(r, newCreatePresentationDefinitionRequest(t, handle))
+
+		require.Equal(t, http.StatusOK, r.Code)
+
+		var res GetPresentationRequestResponse
+		require.NoError(t, json.Unmarshal(r.Body.Bytes(), &res))
+
+		require.True(t, res.WACI)
+		require.NotNil(t, res.Inv)
+		require.NotEmpty(t, res.Inv.ID)
+		require.NotEmpty(t, res.WalletRedirect)
+		require.Equal(t, rpPublicDID.String(), res.Inv.From)
+	})
+
 	t.Run("test get governance - failed", func(t *testing.T) {
 		t.Parallel()
 		userSubject := uuid.New().String()
@@ -1632,6 +1738,14 @@ func TestGetPresentationsRequest(t *testing.T) {
 					Label:     "test-label",
 					Services:  []interface{}{rpPublicDID.String()},
 					Protocols: []string{didexchangesvc.PIURI},
+				},
+			},
+			OOBV2Client: &mockoutofbandv2.MockClient{
+				CreateInvVal: &outofbandv2.Invitation{
+					ID:    uuid.NewString(),
+					Type:  outofbandv2.InvitationMsgType,
+					Label: "test-label",
+					From:  rpPublicDID.String(),
 				},
 			},
 			DIDExchClient: &mockdidexchange.MockClient{
@@ -1740,6 +1854,57 @@ func TestGetPresentationsRequest(t *testing.T) {
 				},
 			},
 			RPPublicDID: rpPublicDID.String(),
+		})
+
+		r := httptest.NewRecorder()
+		c.getPresentationsRequest(r, newCreatePresentationDefinitionRequest(t, handle))
+
+		require.Equal(t, http.StatusInternalServerError, r.Code)
+	})
+
+	t.Run("internal server error if failed to create oobv2 invitation", func(t *testing.T) {
+		t.Parallel()
+		userSubject := uuid.New().String()
+		rpClientID := uuid.New().String()
+		rpPublicDID := newDID(t)
+		handle := uuid.New().String()
+		presDefs := &presexch.PresentationDefinition{
+			InputDescriptors: []*presexch.InputDescriptor{{ID: uuid.New().String()}},
+		}
+		store := mem.NewProvider()
+		saveUserConn(t, store, &rp.UserConnection{
+			User:    &rp.User{Subject: userSubject},
+			RP:      &rp.Tenant{ClientID: rpClientID},
+			Request: &rp.DataRequest{},
+		})
+
+		c, err := New(&Config{
+			PresentationExProvider: &mockPresentationExProvider{createValue: presDefs},
+			OOBV2Client: &mockoutofbandv2.MockClient{
+				CreateInvErr: errors.New("test"),
+			},
+			Storage: &Storage{
+				Persistent: store,
+				Transient:  mem.NewProvider(),
+			},
+			DIDExchClient:        &mockdidexchange.MockClient{},
+			AriesContextProvider: agent(t),
+			PresentProofClient:   &mockpresentproof.MockClient{},
+			MsgRegistrar:         msghandler.NewRegistrar(),
+			AriesMessenger:       &messenger.MockMessenger{},
+		})
+		require.NoError(t, err)
+
+		storePut(t, c.transientStore, handle, &consentRequestCtx{
+			PD: presDefs,
+			CR: &admin.GetConsentRequestOK{
+				Payload: &models.ConsentRequest{
+					Subject: userSubject,
+					Client:  &models.OAuth2Client{ClientID: rpClientID},
+				},
+			},
+			RPPublicDID: rpPublicDID.String(),
+			IsDIDCommV2: true,
 		})
 
 		r := httptest.NewRecorder()
@@ -1879,6 +2044,7 @@ func TestGetPresentationsRequest(t *testing.T) {
 		c, err := New(&Config{
 			PresentationExProvider: &mockPresentationExProvider{},
 			OOBClient:              &mockoutofband.MockClient{CreateInvVal: &outofband.Invitation{}},
+			OOBV2Client:            &mockoutofbandv2.MockClient{CreateInvVal: &outofbandv2.Invitation{}},
 			DIDExchClient:          &mockdidexchange.MockClient{},
 			Storage: &Storage{
 				Persistent: store,
@@ -3581,9 +3747,10 @@ func TestHandlePresentProofMsg(t *testing.T) { // nolint: gocyclo,cyclop
 		go c.presentProofListener(actionCh)
 
 		actionCh <- service.DIDCommAction{
-			Message: service.NewDIDCommMsgMap(struct {
-				Type string `json:"@type,omitempty"`
-			}{Type: presentproofsvc.ProposePresentationMsgTypeV2}),
+			Message: service.DIDCommMsgMap{
+				"@type": presentproofsvc.ProposePresentationMsgTypeV2,
+				"pthid": "foo",
+			},
 			Continue: func(args interface{}) {
 				done <- struct{}{}
 			},
@@ -3624,6 +3791,80 @@ func TestHandlePresentProofMsg(t *testing.T) { // nolint: gocyclo,cyclop
 		case <-time.After(5 * time.Second):
 			require.Fail(t, "tests are not validated due to timeout")
 		}
+	})
+}
+
+type eventProps map[string]interface{}
+
+func (ep *eventProps) All() map[string]interface{} {
+	return *ep
+}
+
+func Test_updateCRContextDIDCommV2(t *testing.T) {
+	t.Parallel()
+
+	t.Run("skip: no pthid", func(t *testing.T) {
+		t.Parallel()
+
+		o := &Operation{}
+
+		err := o.updateCRContextDIDCommV2(service.DIDCommMsgMap{}, &eventProps{})
+		require.NoError(t, err)
+	})
+
+	t.Run("missing DIDs in eventProps", func(t *testing.T) {
+		t.Parallel()
+
+		conf := config(t)
+
+		o, err := New(conf)
+		require.NoError(t, err)
+
+		err = o.updateCRContextDIDCommV2(service.DIDCommMsgMap{
+			"pthid": "123",
+		}, &eventProps{})
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "missing myDID or theirDID in eventProps")
+	})
+
+	t.Run("fail to get connection", func(t *testing.T) {
+		t.Parallel()
+
+		conf := config(t)
+
+		o, err := New(conf)
+		require.NoError(t, err)
+
+		err = o.updateCRContextDIDCommV2(service.DIDCommMsgMap{
+			"pthid": "123",
+		}, &eventProps{
+			"myDID":    "foo",
+			"theirDID": "bar",
+		})
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "get connection record")
+	})
+
+	t.Run("fail to update context", func(t *testing.T) {
+		t.Parallel()
+
+		conf := config(t)
+
+		o, err := New(conf)
+		require.NoError(t, err)
+
+		o.connections = &mockconn.MockConnectionsLookup{
+			ConnRecord: &connection.Record{},
+		}
+
+		err = o.updateCRContextDIDCommV2(service.DIDCommMsgMap{
+			"pthid": "123",
+		}, &eventProps{
+			"myDID":    "foo",
+			"theirDID": "bar",
+		})
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "update context")
 	})
 }
 
@@ -4232,6 +4473,10 @@ type stubPublicDIDCreator struct {
 }
 
 func (s *stubPublicDIDCreator) Create() (*did.Doc, error) {
+	return s.createValue, s.createErr
+}
+
+func (s *stubPublicDIDCreator) CreateV2() (*did.Doc, error) {
 	return s.createValue, s.createErr
 }
 

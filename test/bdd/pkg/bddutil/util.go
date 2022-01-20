@@ -148,6 +148,11 @@ func GetDIDConnectRequestKey(issuerID, agentID string) string {
 	return issuerID + agentID + "-didconnect-request"
 }
 
+// GetDIDConnectV2RequestKey key for storing DID Connect request.
+func GetDIDConnectV2RequestKey(issuerID, agentID string) string {
+	return issuerID + agentID + "-didconnect-request-v2"
+}
+
 // GetDIDConnectResponseKey key for storing DID Connect response.
 func GetDIDConnectResponseKey(issuerID, agentID string) string {
 	return issuerID + agentID + "-didconnect-response"

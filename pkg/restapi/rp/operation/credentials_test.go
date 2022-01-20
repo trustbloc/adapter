@@ -16,7 +16,6 @@ import (
 	"github.com/google/uuid"
 	"github.com/hyperledger/aries-framework-go/pkg/client/presentproof"
 	"github.com/hyperledger/aries-framework-go/pkg/didcomm/protocol/decorator"
-	presentproofsvc "github.com/hyperledger/aries-framework-go/pkg/didcomm/protocol/presentproof"
 	"github.com/hyperledger/aries-framework-go/pkg/doc/did"
 	"github.com/hyperledger/aries-framework-go/pkg/doc/presexch"
 	"github.com/hyperledger/aries-framework-go/pkg/doc/util"
@@ -304,11 +303,10 @@ func TestGetPresentationSubmissionCredentials(t *testing.T) {
 			expectedVC,
 		)
 
-		pres := &presentproof.PresentationV2{
-			Type: presentproofsvc.PresentationMsgTypeV2,
-			PresentationsAttach: []decorator.Attachment{{
-				ID:       "123",
-				MimeType: "application/ld+json",
+		pres := &presentproof.Presentation{
+			Attachments: []decorator.GenericAttachment{{
+				ID:        "123",
+				MediaType: "application/ld+json",
 				Data: decorator.AttachmentData{
 					JSON: expectedVP,
 				},
@@ -330,11 +328,7 @@ func TestGetPresentationSubmissionCredentials(t *testing.T) {
 	t.Run("no presentation attachment", func(t *testing.T) {
 		t.Parallel()
 
-		_, err := getPresentationSubmissionCredentials(
-			&presentproof.PresentationV2{
-				Type: presentproofsvc.PresentationMsgTypeV2,
-			}, nil, nil, nil,
-		)
+		_, err := getPresentationSubmissionCredentials(&presentproof.Presentation{}, nil, nil, nil)
 
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "no presentation attachments")
