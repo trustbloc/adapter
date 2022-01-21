@@ -10,6 +10,7 @@ import (
 	"encoding/json"
 
 	"github.com/hyperledger/aries-framework-go/pkg/client/outofband"
+	"github.com/hyperledger/aries-framework-go/pkg/doc/cm"
 
 	adaptervc "github.com/trustbloc/edge-adapter/pkg/vc"
 )
@@ -27,6 +28,8 @@ type ProfileDataRequest struct {
 	OIDCClientParams            *OIDCClientParams `json:"oidcParams,omitempty"`
 	CredentialScopes            []string          `json:"scopes,omitempty"`
 	LinkedWalletURL             string            `json:"linkedWallet,omitempty"`
+	IssuerID                    string            `json:"issuerID,omitempty"`
+	CMStyle                     cm.Styles         `json:"styles,omitempty"`
 }
 
 // OIDCClientParams optional parameters for setting the adapter's oidc client parameters statically.

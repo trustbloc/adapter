@@ -868,8 +868,8 @@ func addIssuerHandlers(parameters *adapterRestParameters, framework *aries.Aries
 	if err != nil {
 		return fmt.Errorf("aries-framework - failed to get aries context : %w", err)
 	}
-	// TODO #572 Pass the output descriptors to issuer
-	_, err = readCMOutputDescriptorFile(parameters.cmOutputDescriptorsFilePath)
+
+	cmOutputDescriptor, err := readCMOutputDescriptorFile(parameters.cmOutputDescriptorsFilePath)
 	if err != nil {
 		return fmt.Errorf("failed to read and validate manifest output descriptors : %w", err)
 	}
@@ -892,7 +892,7 @@ func addIssuerHandlers(parameters *adapterRestParameters, framework *aries.Aries
 	if err != nil {
 		return fmt.Errorf("failed to init trustbloc did creator: %w", err)
 	}
-	// TODO #572 Pass the output descriptors to issuer
+	// TODO #579 Persist the manifest output descriptor in local file based or in-memory cache.
 	// add issuer endpoints
 	issuerService, err := issuer.New(&issuerops.Config{
 		AriesCtx:             ariesCtx,
@@ -907,6 +907,7 @@ func addIssuerHandlers(parameters *adapterRestParameters, framework *aries.Aries
 		ExternalURL:          parameters.externalURL,
 		DidDomain:            parameters.trustblocDomain,
 		JSONLDDocumentLoader: ariesCtx.JSONLDDocumentLoader(),
+		CmOutputDescriptor:   cmOutputDescriptor,
 	})
 	if err != nil {
 		return fmt.Errorf("failed to init issuer ops: %w", err)

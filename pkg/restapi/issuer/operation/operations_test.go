@@ -61,6 +61,7 @@ const (
 	inviteeDID       = "did:example:0d76fa4e1386"
 	inviterDID       = "did:example:e6025bfdbb8f"
 	mockOIDCProvider = "mock.provider.local"
+	mockCredScope    = "prc"
 )
 
 func TestNew(t *testing.T) {
@@ -513,6 +514,7 @@ func TestCreateProfile(t *testing.T) {
 		require.Equal(t, vReq.Name, profileRes.Name)
 		require.Equal(t, vReq.URL, profileRes.URL)
 		require.Equal(t, vReq.SupportsAssuranceCredential, profileRes.SupportsAssuranceCredential)
+		require.Equal(t, vReq.IssuerID, profileRes.IssuerID)
 		require.Equal(t, vReq.SupportsWACI, profileRes.SupportsWACI)
 	})
 
@@ -3454,6 +3456,15 @@ func TestWACIIssuanceHandler(t *testing.T) {
 				ConnIDByDIDs: connID,
 			}
 
+			c.cmOutputDescriptor = map[string][]*cm.OutputDescriptor{
+				mockCredScope: {
+					&cm.OutputDescriptor{
+						ID:     uuid.New().String(),
+						Schema: "https://www.w3.org/2018/credentials/examples/v1",
+					},
+				},
+			}
+
 			invitationID := uuid.New().String()
 			issuerID := uuid.New().String()
 
@@ -3463,11 +3474,25 @@ func TestWACIIssuanceHandler(t *testing.T) {
 			err = c.profileStore.SaveProfile(profile)
 			require.NoError(t, err)
 
-			err = c.storeUserInvitationMapping(&UserInvitationMapping{
+			usrInvitationMapping := &UserInvitationMapping{
 				InvitationID: invitationID,
 				IssuerID:     issuerID,
+				TxID:         uuid.New().String(),
 				TxToken:      uuid.New().String(),
-			})
+			}
+
+			err = c.storeUserInvitationMapping(usrInvitationMapping)
+			require.NoError(t, err)
+
+			txDataSample := &txnData{
+				IssuerID:  profile.ID,
+				CredScope: mockCredScope,
+			}
+
+			tdByte, err := json.Marshal(txDataSample)
+			require.NoError(t, err)
+
+			err = c.txnStore.Put(usrInvitationMapping.TxID, tdByte)
 			require.NoError(t, err)
 
 			go c.didCommActionListener(actionCh)
@@ -3502,23 +3527,48 @@ func TestWACIIssuanceHandler(t *testing.T) {
 
 			invitationID := uuid.New().String()
 			issuerID := uuid.New().String()
-
+			c.cmOutputDescriptor = map[string][]*cm.OutputDescriptor{
+				mockCredScope: {
+					&cm.OutputDescriptor{
+						ID:     uuid.New().String(),
+						Schema: "https://www.w3.org/2018/credentials/examples/v1",
+					},
+				},
+			}
 			profile := createProfileData(issuerID)
 			profile.SupportsWACI = true
 
 			err = c.profileStore.SaveProfile(profile)
 			require.NoError(t, err)
 
-			err = c.storeUserInvitationMapping(&UserInvitationMapping{
+			usrInvitationMapping := &UserInvitationMapping{
 				InvitationID: invitationID,
 				IssuerID:     issuerID,
+				TxID:         uuid.New().String(),
 				TxToken:      uuid.New().String(),
-			})
+			}
+
+			err = c.storeUserInvitationMapping(usrInvitationMapping)
 			require.NoError(t, err)
 
 			go c.didCommActionListener(actionCh)
 
+			testFailure(actionCh, service.NewDIDCommMsgMap(issuecredsvc.ProposeCredentialV2{
+				Type:         issuecredsvc.ProposeCredentialMsgTypeV2,
+				InvitationID: invitationID,
+			}), "failed to fetch txn data")
+
+			// validate manifest data error
+			txDataSample := &txnData{
+				IssuerID: profile.ID,
+			}
 			// credential data error
+			txDataSample.CredScope = mockCredScope
+			tdCredByte, err := json.Marshal(txDataSample)
+			require.NoError(t, err)
+
+			err = c.txnStore.Put(usrInvitationMapping.TxID, tdCredByte)
+			require.NoError(t, err)
 			c.httpClient = &mockHTTPClient{
 				respValue: &http.Response{
 					StatusCode: http.StatusInternalServerError,
@@ -3603,14 +3653,15 @@ func TestWACIIssuanceHandler(t *testing.T) {
 				InvitationID: newInvitationID,
 			}), "failed to get OIDC access token for WACI transaction")
 
-			// token store put error
 			newInvitationID = uuid.New().String()
 			issuerID = uuid.New().String()
-			err = c.storeUserInvitationMapping(&UserInvitationMapping{
+			usrInvitationMapping = &UserInvitationMapping{
 				InvitationID: newInvitationID,
 				IssuerID:     issuerID,
+				TxID:         usrInvitationMapping.TxID,
 				TxToken:      uuid.New().String(),
-			})
+			}
+			err = c.storeUserInvitationMapping(usrInvitationMapping)
 			require.NoError(t, err)
 
 			profile = createProfileData(issuerID)

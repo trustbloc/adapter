@@ -12,6 +12,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/hyperledger/aries-framework-go/pkg/doc/cm"
 	"github.com/hyperledger/aries-framework-go/spi/storage"
 
 	"github.com/trustbloc/edge-adapter/pkg/internal/common/adapterutil"
@@ -30,6 +31,8 @@ type Profile struct {
 }
 
 // ProfileData struct for profile.
+// Issuer ID identifies who is the issuer of the credential manifests being issued.
+// CMStyle represents an entity styles object as defined in credential manifest spec.
 type ProfileData struct {
 	ID                          string            `json:"id,omitempty"`
 	Name                        string            `json:"name"`
@@ -45,7 +48,8 @@ type ProfileData struct {
 	OIDCClientParams            *OIDCClientParams `json:"oidcParams,omitempty"`
 	CredentialScopes            []string          `json:"credScopes,omitempty"`
 	LinkedWalletURL             string            `json:"linkedWallet,omitempty"`
-	// Todo #issue Add credential manifest issuer object
+	IssuerID                    string            `json:"issuerID,omitempty"`
+	CMStyle                     cm.Styles         `json:"styles,omitempty"`
 }
 
 // OIDCClientParams optional set of oidc client parameters that the issuer may set, for static client registration.

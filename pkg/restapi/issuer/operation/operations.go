@@ -104,6 +104,7 @@ const (
 
 	// WACI interaction constants
 	credentialManifestFormat       = "dif/credential-manifest/manifest@v1.0"
+	credentialManifestVersion      = "0.1.0"
 	credentialFulfillmentFormat    = "dif/credential-manifest/fulfillment@v1.0"
 	offerCredentialAttachMediaType = "application/json"
 	redirectStatusOK               = "OK"
@@ -141,6 +142,7 @@ type didExClient interface {
 }
 
 // Config defines configuration for issuer operations.
+// TODO #580 Create helper function for cmOutputDescriptor
 type Config struct {
 	AriesCtx             aries.CtxProvider
 	AriesMessenger       service.Messenger
@@ -155,6 +157,7 @@ type Config struct {
 	ExternalURL          string
 	DidDomain            string
 	JSONLDDocumentLoader ld.DocumentLoader
+	CmOutputDescriptor   map[string][]*cm.OutputDescriptor
 }
 
 // New returns issuer rest instance.
@@ -342,6 +345,7 @@ type Operation struct {
 	getOIDCClientFunc    func(string, string) (oidcClient, error)
 	didDomain            string
 	jsonldDocLoader      ld.DocumentLoader
+	cmOutputDescriptor   map[string][]*cm.OutputDescriptor
 }
 
 // GetRESTHandlers get all controller API handler available for this service.
@@ -360,6 +364,7 @@ func (o *Operation) GetRESTHandlers() []restapi.Handler {
 	}, o.walletBridge.GetRESTHandlers()...)
 }
 
+// TODO #581 Validate and check Waci profile creation that each scope has output descriptors configured.
 func (o *Operation) createIssuerProfileHandler(rw http.ResponseWriter, req *http.Request) {
 	data := &ProfileDataRequest{}
 
@@ -1290,8 +1295,15 @@ func (o *Operation) handleProposeCredential(msg service.DIDCommAction) (issuecre
 		}
 	}
 
-	// get manifest
-	manifest := o.readCredentialManifest()
+	txn, err := o.getTxn(userInvMap.TxID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get trasaction data: %w", err)
+	}
+
+	// read credential manifest
+	manifest := o.readCredentialManifest(profile, txn.CredScope)
+
+	// TODO #581 validate read credential manifest object
 
 	// get unsigned credential
 	vc, err := o.createCredential(getUserDataURL(profile.URL), userInvMap.TxToken, oauthToken,
@@ -1728,11 +1740,30 @@ func (o *Operation) hanlDIDExStateMsg(msg service.StateMsg) error {
 	return nil
 }
 
-// read credential manifest from profile URL endpoints
-// TODO for now returning empty manifest, TO BE IMPLEMENTED [issue##561 & issue#563]
-func (o *Operation) readCredentialManifest() *cm.CredentialManifest {
+// Read credential manifest issuer detail from persisted profile data and scope from persisted transaction cred scope.
+// cm.Issuer's ID will be used as issuer ID which identifies who the issuer of the credential(s) will be.
+// Credential Manifest Styles represents an Entity Styles object as defined in credential manifest spec.
+// TODO issue#561 Add credential manifest presentation definition
+func (o *Operation) readCredentialManifest(profileData *issuer.ProfileData,
+	txnCredScope string) *cm.CredentialManifest {
+	if cmDescriptor, ok := o.cmOutputDescriptor[txnCredScope]; ok {
+		return &cm.CredentialManifest{
+			ID:      uuid.NewString(),
+			Version: credentialManifestVersion,
+			Issuer: cm.Issuer{
+				ID:     profileData.IssuerID,
+				Name:   profileData.Name,
+				Styles: profileData.CMStyle,
+			},
+			OutputDescriptors: cmDescriptor,
+		}
+	}
+
 	return &cm.CredentialManifest{
 		ID: uuid.NewString(),
+		Issuer: cm.Issuer{
+			ID: profileData.IssuerID,
+		},
 	}
 }
 
@@ -2068,5 +2099,7 @@ func mapProfileReqToData(data *ProfileDataRequest, didDoc *did.Doc) (*issuer.Pro
 		OIDCClientParams:            clientParams,
 		CredentialScopes:            data.CredentialScopes,
 		LinkedWalletURL:             data.LinkedWalletURL,
+		IssuerID:                    data.IssuerID,
+		CMStyle:                     data.CMStyle,
 	}, nil
 }
