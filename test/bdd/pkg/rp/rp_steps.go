@@ -32,6 +32,7 @@ import (
 	"github.com/hyperledger/aries-framework-go-ext/component/vdr/orb"
 	"github.com/hyperledger/aries-framework-go/pkg/client/outofband"
 	"github.com/hyperledger/aries-framework-go/pkg/didcomm/protocol/decorator"
+	"github.com/hyperledger/aries-framework-go/pkg/didcomm/protocol/outofbandv2"
 	"github.com/hyperledger/aries-framework-go/pkg/doc/did"
 	"github.com/hyperledger/aries-framework-go/pkg/doc/jose/jwk/jwksupport"
 	"github.com/hyperledger/aries-framework-go/pkg/doc/presexch"
@@ -123,11 +124,13 @@ func (s *Steps) RegisterSteps(g *godog.Suite) {
 	g.Step(`^the client ID of the tenant with label "([^"]*)" and scopes "([^"]*)" is registered at hydra$`, s.lookupClientID) //nolint:lll
 	g.Step(`^a request is sent to create an RP tenant with label "([^"]*)" and scopes "([^"]*)"$`, s.registerTenantFlow)
 	g.Step(`^a registered rp tenant with label "([^"]*)" and scopes "([^"]*)"$`, s.registerTenantFlow)
-	g.Step(`^a registered rp tenant with label "([^"]*)" and scopes "([^"]*)" and linked wallet "([^"]*)" with WACI support$`, s.registerTenantFlowWithWACI) //nolint:lll
+	g.Step(`^a registered rp tenant with label "([^"]*)" and scopes "([^"]*)" and linked wallet "([^"]*)" with WACI support$`, s.registerTenantFlowWithWACI)                              //nolint:lll
+	g.Step(`^a registered rp tenant with label "([^"]*)" and scopes "([^"]*)" and linked wallet "([^"]*)" with WACI support using DIDComm V2$`, s.registerTenantFlowWithWACIAndDIDCommV2) //nolint:lll
 	g.Step(`^the rp tenant "([^"]*)" redirects the user to the rp adapter with scope "([^"]*)"$`, s.redirectUserToAdapter)
 	g.Step(`the rp adapter "([^"]*)" submits a CHAPI request to "([^"]*)" with presentation-definitions and a didcomm invitation to connect`, s.sendCHAPIRequestToWallet) //nolint:lll
 	g.Step(`^the rp adapter "([^"]*)" submits a CHAPI request to "([^"]*)" with out-of-band invitation$`, s.sendWACIInvitationToWallet)                                   //nolint:lll
 	g.Step(`^"([^"]*)" accepts the didcomm invitation from "([^"]*)"$`, s.walletAcceptsDIDCommInvitation)
+	g.Step(`^"([^"]*)" accepts the didcomm v2 invitation from "([^"]*)"$`, s.walletAcceptsDIDCommV2Invitation)
 	g.Step(`^"([^"]*)" connects with the RP adapter "([^"]*)"$`, s.validateConnection)
 	g.Step(`^"([^"]*)" and "([^"]*)" have a didcomm connection$`, s.connectAgents)
 	g.Step(`^an rp tenant with label "([^"]*)" and scopes "([^"]*)" that requests the "([^"]*)" scope from the "([^"]*)"`, s.didexchangeFlow)                                                                                   //nolint:lll
@@ -163,7 +166,7 @@ func (s *Steps) connectToWalletBridge(userID, agentID string) error {
 	return s.controller.ConnectToWalletBridge(userID, agentID)
 }
 
-func (s *Steps) createTenant(label, scopesStr, blindedRouteStr, linkedWallet string, supportsWACI bool) error { // nolint:funlen,lll
+func (s *Steps) createTenant(label, scopesStr, blindedRouteStr, linkedWallet string, supportsWACI, isDIDCommV2 bool) error { // nolint:funlen,lll
 	callbackServer := httptest.NewServer(s)
 	callbackURL := callbackServer.URL + "/" + label
 	scopes := strings.Split(scopesStr, ",")
@@ -180,6 +183,7 @@ func (s *Steps) createTenant(label, scopesStr, blindedRouteStr, linkedWallet str
 		RequiresBlindedRoute: blindedRoute,
 		SupportsWACI:         supportsWACI,
 		LinkedWalletURL:      linkedWallet,
+		IsDIDCommV2:          isDIDCommV2,
 	})
 	if err != nil {
 		return fmt.Errorf("failed to marshal request: %w", err)
@@ -396,7 +400,7 @@ func validateTenantRegistration(expected *tenantContext, result *models.OAuth2Cl
 }
 
 func (s *Steps) registerTenantFlow(label, scopesStr string) error {
-	err := s.createTenant(label, scopesStr, "false", "", false)
+	err := s.createTenant(label, scopesStr, "false", "", false, false)
 	if err != nil {
 		return fmt.Errorf("failed to create tenant: %w", err)
 	}
@@ -410,7 +414,21 @@ func (s *Steps) registerTenantFlow(label, scopesStr string) error {
 }
 
 func (s *Steps) registerTenantFlowWithWACI(label, scopesStr, linkedWallet string) error {
-	err := s.createTenant(label, scopesStr, "false", linkedWallet, true)
+	err := s.createTenant(label, scopesStr, "false", linkedWallet, true, false)
+	if err != nil {
+		return fmt.Errorf("failed to create tenant: %w", err)
+	}
+
+	err = s.resolveDID(label)
+	if err != nil {
+		return fmt.Errorf("failed to resolve DID: %w", err)
+	}
+
+	return s.lookupClientID(label, scopesStr)
+}
+
+func (s *Steps) registerTenantFlowWithWACIAndDIDCommV2(label, scopesStr, linkedWallet string) error {
+	err := s.createTenant(label, scopesStr, "false", linkedWallet, true, true)
 	if err != nil {
 		return fmt.Errorf("failed to create tenant: %w", err)
 	}
@@ -547,7 +565,7 @@ func (s *Steps) sendWACIInvitationToWallet(tenantID, walletID string) error {
 	}
 
 	if result.Inv == nil || result.Inv.ID == "" {
-		return errors.New("waci flow - out-of-band inviatation id can't be empty")
+		return errors.New("waci flow - out-of-band invitation id can't be empty")
 	}
 
 	invitationBytes, err := json.Marshal(result.Inv)
@@ -689,6 +707,31 @@ func (s *Steps) walletAcceptsDIDCommInvitation(walletID, tenantID string) error 
 	err = agent.GetDIDExStateCompResp(s.controller.WebhookURLs[walletID], msgSvcName)
 	if err != nil {
 		return fmt.Errorf("failed to get didexchange state: %w", err)
+	}
+
+	s.tenantCtx[tenantID].walletConnID = connID
+
+	return nil
+}
+
+func (s *Steps) walletAcceptsDIDCommV2Invitation(walletID, tenantID string) error {
+	marshalled, found := s.context.GetString(bddutil.GetDIDConnectRequestKey(tenantID, walletID))
+	if !found {
+		return fmt.Errorf("DID connect request not found")
+	}
+
+	inv := &outofbandv2.Invitation{}
+
+	err := json.Unmarshal([]byte(marshalled), inv)
+	if err != nil {
+		return fmt.Errorf("failed to unmarshal oob invitation from bdd test store : %w", err)
+	}
+
+	logger.Warnf("oobv2 invitation obj: %#v", inv)
+
+	connID, err := s.controller.AcceptOOBInvitationV2(walletID, inv, walletID)
+	if err != nil {
+		return fmt.Errorf("%s failed to accept invitation from %s : %w", walletID, tenantID, err)
 	}
 
 	s.tenantCtx[tenantID].walletConnID = connID
@@ -960,14 +1003,16 @@ func (s *Steps) checkPresentProofStatus(walletID, tenantID, status string) error
 		func(message agent.WebhookMessage) bool {
 			return message.StateID == "done" &&
 				message.Type == "post_state" &&
-				message.Message.Type() == "https://didcomm.org/present-proof/2.0/ack"
+				(message.Message.Type() == "https://didcomm.org/present-proof/2.0/ack" ||
+					message.Message.Type() == "https://didcomm.org/present-proof/3.0/ack")
 		})
 	if err != nil {
 		return fmt.Errorf("failed while waiting for present proof ack status done: %w", err)
 	}
 
 	var webRedirect struct {
-		Payload decorator.WebRedirect `json:"~web-redirect,omitempty"`
+		PayloadV1 decorator.WebRedirect `json:"~web-redirect,omitempty"`
+		PayloadV2 decorator.WebRedirect `json:"web-redirect,omitempty"`
 	}
 
 	err = msg.Decode(&webRedirect)
@@ -975,11 +1020,22 @@ func (s *Steps) checkPresentProofStatus(walletID, tenantID, status string) error
 		return fmt.Errorf("failed to decode webredirect info: %w", err)
 	}
 
-	if webRedirect.Payload.Status != status {
-		return fmt.Errorf("unexpected redirect status, expected [%s], got [%s] instead", status, webRedirect.Payload.Status)
+	errV1 := validateWebRedirect(webRedirect.PayloadV1, status)
+	errV2 := validateWebRedirect(webRedirect.PayloadV2, status)
+
+	if errV1 != nil && errV2 != nil {
+		return errV1
 	}
 
-	if webRedirect.Payload.URL == "" {
+	return nil
+}
+
+func validateWebRedirect(webRedirect decorator.WebRedirect, expectedStatus string) error {
+	if webRedirect.Status != expectedStatus {
+		return fmt.Errorf("unexpected redirect status, expected [%s], got [%s] instead", expectedStatus, webRedirect.Status)
+	}
+
+	if webRedirect.URL == "" {
 		return errors.New("expected valid web redirect URL")
 	}
 

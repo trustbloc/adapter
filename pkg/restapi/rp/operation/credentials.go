@@ -120,14 +120,13 @@ func parseIssuerResponse(pres *presentproof.PresentationV2,
 	return data, nil
 }
 
-// nolint:lll
-func getPresentationSubmissionCredentials(pres *presentproof.PresentationV2, definitions *presexch.PresentationDefinition,
+func getPresentationSubmissionCredentials(pres *presentproof.Presentation, definitions *presexch.PresentationDefinition,
 	vdriReg vdrapi.Registry, docLoader ld.DocumentLoader) (map[string]*verifiable.Credential, error) {
-	if len(pres.PresentationsAttach) == 0 {
+	if len(pres.Attachments) == 0 {
 		return nil, fmt.Errorf("no presentation attachments")
 	}
 
-	attachment := pres.PresentationsAttach[0]
+	attachment := pres.Attachments[0]
 
 	vpBytes, err := attachment.Data.Fetch()
 	if err != nil {

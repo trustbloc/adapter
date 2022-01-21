@@ -209,6 +209,9 @@ func TestStartCmdValidArgs(t *testing.T) { // nolint:paralleltest // shared envi
 		"--" + requestTokensFlagName, "token1=tk1",
 		"--" + requestTokensFlagName, "token2=tk2=tk2",
 		"--" + walletAppURLFlagName, "http://demoapp",
+		"--" + keyTypeFlagName, "ed25519",
+		"--" + keyAgreementTypeFlagName, "x25519kw",
+		"--" + mediaTypeProfileFlagName, "didcomm/v2",
 	}
 	startCmd.SetArgs(args)
 

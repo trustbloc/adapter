@@ -43,3 +43,15 @@ func (c *MockConnectionsLookup) GetConnectionRecord(id string) (*connection.Reco
 
 	return nil, errors.New("invalid test setup - need either connRecord or error")
 }
+
+// GetConnectionRecordByDIDs returns the connection record based on the connection ID.
+func (c *MockConnectionsLookup) GetConnectionRecordByDIDs(myDID, theirDID string) (*connection.Record, error) {
+	switch {
+	case c.ConnRecordErr != nil:
+		return nil, c.ConnRecordErr
+	case c.ConnRecord != nil:
+		return c.ConnRecord, nil
+	}
+
+	return nil, errors.New("invalid test setup - need either connRecord or error")
+}

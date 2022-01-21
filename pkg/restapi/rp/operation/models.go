@@ -9,14 +9,25 @@ package operation
 import (
 	"encoding/json"
 
-	"github.com/hyperledger/aries-framework-go/pkg/client/outofband"
 	"github.com/hyperledger/aries-framework-go/pkg/doc/presexch"
+	"github.com/hyperledger/aries-framework-go/pkg/wallet"
 )
+
+// gprrPartialMarshal is a GetPresentationRequestResponse, but with the invitation marshalled already,
+// for more efficient sending logic.
+type gprrPartialMarshal struct {
+	PD                   *presexch.PresentationDefinition `json:"pd,omitempty"`
+	Inv                  json.RawMessage                  `json:"invitation"`
+	Credentials          []json.RawMessage                `json:"credentials,omitempty"`
+	CredentialGovernance json.RawMessage                  `json:"credentialGovernance,omitempty"`
+	WACI                 bool                             `json:"waci,omitempty"`
+	WalletRedirect       string                           `json:"walletRedirect,omitempty"`
+}
 
 // GetPresentationRequestResponse API response of getPresentationRequest.
 type GetPresentationRequestResponse struct {
 	PD                   *presexch.PresentationDefinition `json:"pd,omitempty"`
-	Inv                  *outofband.Invitation            `json:"invitation"`
+	Inv                  *wallet.GenericInvitation        `json:"invitation"`
 	Credentials          []json.RawMessage                `json:"credentials,omitempty"`
 	CredentialGovernance json.RawMessage                  `json:"credentialGovernance,omitempty"`
 	WACI                 bool                             `json:"waci,omitempty"`
@@ -31,6 +42,7 @@ type CreateRPTenantRequest struct {
 	RequiresBlindedRoute bool     `json:"requiresBlindedRoute"`
 	SupportsWACI         bool     `json:"supportsWACI"`
 	LinkedWalletURL      string   `json:"linkedWalletURL"`
+	IsDIDCommV2          bool     `json:"isDIDCommV2"`
 }
 
 // CreateRPTenantResponse API response body to register an RP tenant.
@@ -42,6 +54,7 @@ type CreateRPTenantResponse struct {
 	RequiresBlindedRoute bool     `json:"requiresBlindedRoute"`
 	SupportsWACI         bool     `json:"supportsWACI"`
 	LinkedWalletURL      string   `json:"linkedWalletURL"`
+	IsDIDCommV2          bool     `json:"isDIDCommV2"`
 }
 
 // HandleCHAPIResponse is the input message to the chapiResponseHandler handler.
