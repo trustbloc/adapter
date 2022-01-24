@@ -42,6 +42,7 @@ func (o *Operation) getOIDCClient(issuerID, providerURL string) (oidcClient, err
 		OIDCClientSecret:       clientData.Secret,
 		OIDCClientSecretExpiry: clientData.Expiry,
 		OIDCCallbackURL:        o.oidcCallbackURL,
+		Scopes:                 clientData.Scopes,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("constructing oidc client: %w", err)
