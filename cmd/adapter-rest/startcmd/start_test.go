@@ -538,6 +538,7 @@ func TestAdapterModes(t *testing.T) { // nolint:paralleltest // shared environme
 			"--" + datasourceTimeoutFlagName, "30",
 			"--" + governanceVCSURLFlagName, "http://example.vcs.com",
 			"--" + issuerOIDCClientStoreKeyFlagName, file.Name() + "-nonexistent",
+			"--" + cmOutputDescriptorsFilePathFlagName, file.Name(),
 		}
 		startCmd.SetArgs(args)
 

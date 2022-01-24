@@ -1213,6 +1213,10 @@ func getPresentationExchangeProvider(configFile string) (*presentationex.Provide
 
 func readCMOutputDescriptorFile(outputDescriptorsFile string) (cmOutputDescriptors map[string][]*cm.OutputDescriptor,
 	err error) {
+	if outputDescriptorsFile == "" {
+		return make(map[string][]*cm.OutputDescriptor), nil
+	}
+
 	credentialManifestBytes, err := ioutil.ReadFile(filepath.Clean(outputDescriptorsFile))
 	if err != nil {
 		return nil, fmt.Errorf("read output descriptors file : %w", err)
