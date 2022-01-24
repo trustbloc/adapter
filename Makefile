@@ -14,8 +14,8 @@ MOCK_ISSUER_LOGIN_CONSENT_IMAGE_NAME ?= trustbloc/edge-adapter/mock-issuer-login
 MOCK_WEBHOOK_IMAGE_NAME ?= trustbloc/edge-adapter/mock-webhook
 
 # Tool commands (overridable)
-ALPINE_VER ?= 3.12
-GO_VER ?= 1.16
+ALPINE_VER ?= 3.15
+GO_VER ?= 1.17
 GOBIN_PATH=$(abspath .)/.build/bin
 
 .PHONY: all
