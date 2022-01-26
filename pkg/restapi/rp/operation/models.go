@@ -16,22 +16,20 @@ import (
 // gprrPartialMarshal is a GetPresentationRequestResponse, but with the invitation marshalled already,
 // for more efficient sending logic.
 type gprrPartialMarshal struct {
-	PD                   *presexch.PresentationDefinition `json:"pd,omitempty"`
-	Inv                  json.RawMessage                  `json:"invitation"`
-	Credentials          []json.RawMessage                `json:"credentials,omitempty"`
-	CredentialGovernance json.RawMessage                  `json:"credentialGovernance,omitempty"`
-	WACI                 bool                             `json:"waci,omitempty"`
-	WalletRedirect       string                           `json:"walletRedirect,omitempty"`
+	PD             *presexch.PresentationDefinition `json:"pd,omitempty"`
+	Inv            json.RawMessage                  `json:"invitation"`
+	Credentials    []json.RawMessage                `json:"credentials,omitempty"`
+	WACI           bool                             `json:"waci,omitempty"`
+	WalletRedirect string                           `json:"walletRedirect,omitempty"`
 }
 
 // GetPresentationRequestResponse API response of getPresentationRequest.
 type GetPresentationRequestResponse struct {
-	PD                   *presexch.PresentationDefinition `json:"pd,omitempty"`
-	Inv                  *wallet.GenericInvitation        `json:"invitation"`
-	Credentials          []json.RawMessage                `json:"credentials,omitempty"`
-	CredentialGovernance json.RawMessage                  `json:"credentialGovernance,omitempty"`
-	WACI                 bool                             `json:"waci,omitempty"`
-	WalletRedirect       string                           `json:"walletRedirect,omitempty"`
+	PD             *presexch.PresentationDefinition `json:"pd,omitempty"`
+	Inv            *wallet.GenericInvitation        `json:"invitation"`
+	Credentials    []json.RawMessage                `json:"credentials,omitempty"`
+	WACI           bool                             `json:"waci,omitempty"`
+	WalletRedirect string                           `json:"walletRedirect,omitempty"`
 }
 
 // CreateRPTenantRequest API request body to register an RP tenant.

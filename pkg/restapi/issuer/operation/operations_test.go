@@ -47,7 +47,6 @@ import (
 	mockconn "github.com/trustbloc/edge-adapter/pkg/internal/mock/connection"
 	mockdiddoc "github.com/trustbloc/edge-adapter/pkg/internal/mock/diddoc"
 	mockdidexchange "github.com/trustbloc/edge-adapter/pkg/internal/mock/didexchange"
-	mockgovernance "github.com/trustbloc/edge-adapter/pkg/internal/mock/governance"
 	"github.com/trustbloc/edge-adapter/pkg/internal/mock/issuecredential"
 	"github.com/trustbloc/edge-adapter/pkg/internal/mock/messenger"
 	mockoutofband "github.com/trustbloc/edge-adapter/pkg/internal/mock/outofband"
@@ -549,39 +548,6 @@ func TestCreateProfile(t *testing.T) {
 		require.Equal(t, vReq.Name, profileRes.Name)
 		require.Equal(t, vReq.URL, profileRes.URL)
 		require.Equal(t, vReq.SupportsAssuranceCredential, profileRes.SupportsAssuranceCredential)
-	})
-
-	t.Run("create profile - failed to issue governance vc", func(t *testing.T) {
-		t.Parallel()
-
-		op2, err := New(config(t))
-		require.NoError(t, err)
-
-		op2.createOIDCClientFunc = func(*issuer.ProfileData) (oidcClient, error) {
-			return &mockOIDC, nil
-		}
-
-		op2.getOIDCClientFunc = func(string, string) (oidcClient, error) {
-			return &mockOIDC, nil
-		}
-
-		op2.governanceProvider = &mockgovernance.MockProvider{
-			IssueCredentialFunc: func(didID, profileID string) ([]byte, error) {
-				return nil, fmt.Errorf("failed to issue governance vc")
-			},
-		}
-
-		h := getHandler(t, op2, endpoint)
-
-		vReq := createProfileData(uuid.New().String())
-
-		vReqBytes, err := json.Marshal(vReq)
-		require.NoError(t, err)
-
-		rr := serveHTTP(t, h.Handle(), http.MethodPost, endpoint, vReqBytes)
-
-		require.Equal(t, http.StatusInternalServerError, rr.Code)
-		require.Contains(t, rr.Body.String(), "failed to issue governance vc")
 	})
 
 	t.Run("create profile - invalid request", func(t *testing.T) {
@@ -1964,10 +1930,6 @@ func TestCredentialInteractionRequest(t *testing.T) {
 		c, e := New(config(t))
 		require.NoError(t, e)
 
-		c.governanceProvider = &mockgovernance.MockProvider{GetCredentialFunc: func(profileID string) ([]byte, error) {
-			return []byte(`{"key":"value"}`), nil
-		}}
-
 		t.Run("without assurance support", func(t *testing.T) {
 			t.Parallel()
 
@@ -1991,8 +1953,7 @@ func TestCredentialInteractionRequest(t *testing.T) {
 			require.NoError(t, err)
 			require.Equal(t, DIDConnectCHAPIQueryType, chapiReq.Query.Type)
 			require.Equal(t, "https://didcomm.org/out-of-band/1.0/invitation", chapiReq.DIDCommInvitation.Type)
-			require.Equal(t, `{"key":"value"}`, string(chapiReq.Credentials[1]))
-			require.Equal(t, 2, len(chapiReq.Credentials))
+			require.Equal(t, 1, len(chapiReq.Credentials))
 		})
 
 		t.Run("with assurance support", func(t *testing.T) {
@@ -2024,8 +1985,7 @@ func TestCredentialInteractionRequest(t *testing.T) {
 			require.NoError(t, err)
 			require.Equal(t, DIDConnectCHAPIQueryType, chapiReq.Query.Type)
 			require.Equal(t, "https://didcomm.org/out-of-band/1.0/invitation", chapiReq.DIDCommInvitation.Type)
-			require.Equal(t, `{"key":"value"}`, string(chapiReq.Credentials[2]))
-			require.Equal(t, 3, len(chapiReq.Credentials))
+			require.Equal(t, 2, len(chapiReq.Credentials))
 		})
 
 		t.Run("with assurance credential using oidc", func(t *testing.T) {
@@ -2071,8 +2031,7 @@ func TestCredentialInteractionRequest(t *testing.T) {
 			require.NoError(t, err)
 			require.Equal(t, DIDConnectCHAPIQueryType, chapiReq.Query.Type)
 			require.Equal(t, "https://didcomm.org/out-of-band/1.0/invitation", chapiReq.DIDCommInvitation.Type)
-			require.Equal(t, `{"key":"value"}`, string(chapiReq.Credentials[2]))
-			require.Equal(t, 3, len(chapiReq.Credentials))
+			require.Equal(t, 2, len(chapiReq.Credentials))
 		})
 	})
 
@@ -2081,10 +2040,6 @@ func TestCredentialInteractionRequest(t *testing.T) {
 
 		c, e := New(config(t))
 		require.NoError(t, e)
-
-		c.governanceProvider = &mockgovernance.MockProvider{GetCredentialFunc: func(profileID string) ([]byte, error) {
-			return []byte(`{"key":"value"}`), nil
-		}}
 
 		t.Run("without linked wallet", func(t *testing.T) {
 			t.Parallel()
@@ -2144,33 +2099,6 @@ func TestCredentialInteractionRequest(t *testing.T) {
 			require.NotEmpty(t, waciReq.WalletRedirect)
 			require.True(t, waciReq.WACI)
 		})
-	})
-
-	t.Run("test get governance - failed", func(t *testing.T) {
-		t.Parallel()
-
-		c, err := New(config(t))
-		require.NoError(t, err)
-
-		c.governanceProvider = &mockgovernance.MockProvider{GetCredentialFunc: func(profileID string) ([]byte, error) {
-			return nil, fmt.Errorf("failed to get vc")
-		}}
-
-		profile := createProfileData("profile1")
-
-		err = c.profileStore.SaveProfile(profile)
-		require.NoError(t, err)
-
-		txnID, err := c.createTxn(profile, uuid.New().String(), uuid.New().String())
-		require.NoError(t, err)
-
-		getCHAPIRequestHandler := getHandler(t, c, getCredentialInteractionRequestEndpoint)
-
-		rr := serveHTTP(t, getCHAPIRequestHandler.Handle(), http.MethodGet,
-			getCredentialInteractionRequestEndpoint+"?"+txnIDQueryParam+"="+txnID, nil)
-
-		require.Equal(t, http.StatusInternalServerError, rr.Code)
-		require.Contains(t, rr.Body.String(), "error retrieving governance vc : failed to get vc")
 	})
 
 	t.Run("test fetch invitation - no txnID in the url query", func(t *testing.T) {

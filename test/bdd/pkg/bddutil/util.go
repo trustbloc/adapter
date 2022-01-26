@@ -264,8 +264,6 @@ var (
 	creditCardV1Vocab []byte
 	//go:embed contexts/driver-license-evidence-v1.jsonld
 	driverLicenseEvidenceV1Vocab []byte
-	//go:embed contexts/governance.jsonld
-	governanceVocab []byte
 	//go:embed contexts/mdl-v1.jsonld
 	mdlV1Vocab []byte
 	//go:embed contexts/issuer-manifest-credential-v1.jsonld
@@ -286,10 +284,6 @@ var extraContexts = []ldcontext.Document{ //nolint:gochecknoglobals
 	{
 		URL:     "https://trustbloc.github.io/context/vc/issuer-manifest-credential-v1.jsonld",
 		Content: issuerManifestV1Vocab,
-	},
-	{
-		URL:     "https://trustbloc.github.io/context/governance/context.jsonld",
-		Content: governanceVocab,
 	},
 	{
 		URL:     "https://trustbloc.github.io/context/vc/examples/citizenship-v1.jsonld",

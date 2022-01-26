@@ -58,10 +58,8 @@ const (
 	// AdapterURL is RP adapter endpoint.
 	AdapterURL = "https://localhost:8070"
 
-	hydraAdminURL       = "https://localhost:4445/"
-	hydraPublicURL      = "https://localhost:4444/"
-	governanceCtx       = "https://trustbloc.github.io/context/governance/context.jsonld"
-	governanceVCCTXSize = 3
+	hydraAdminURL  = "https://localhost:4445/"
+	hydraPublicURL = "https://localhost:4444/"
 
 	trustblocDIDMethodDomain = "testnet.orb.local"
 )
@@ -534,11 +532,6 @@ func (s *Steps) sendCHAPIRequestToWallet(tenantID, walletID string) error {
 		return fmt.Errorf("failed to validate presentation definitions for '%s': %w", tenantID, err)
 	}
 
-	err = validateGovernance(result.Credentials[0])
-	if err != nil {
-		return fmt.Errorf("failed to parse governance credential : %w", err)
-	}
-
 	tenant.invitationID = result.Inv.ID
 	tenant.presDefs = result.PD
 	s.context.Store[bddutil.GetDIDConnectRequestKey(tenantID, walletID)] = string(bits)
@@ -634,40 +627,6 @@ func validatePresentationDefinitions(pd *presexch.PresentationDefinition, scope 
 				"presentation definition missing schema uri %s; expected=%+v, actual=%+v",
 				expected[i], expected, actual)
 		}
-	}
-
-	return nil
-}
-
-func validateGovernance(governanceVCBytes []byte) error {
-	l, err := bddutil.DocumentLoader()
-	if err != nil {
-		return fmt.Errorf("failed to init document loader: %w", err)
-	}
-
-	governanceVC, err := verifiable.ParseCredential(
-		governanceVCBytes,
-		verifiable.WithDisabledProofCheck(),
-		verifiable.WithJSONLDDocumentLoader(l),
-	)
-	if err != nil {
-		return fmt.Errorf("failed to parse VC: %w", err)
-	}
-
-	if len(governanceVC.Context) != governanceVCCTXSize {
-		return fmt.Errorf("governance vc context not equal 2")
-	}
-
-	exist := false
-
-	for _, v := range governanceVC.Context {
-		if v == governanceCtx {
-			exist = true
-		}
-	}
-
-	if !exist {
-		return fmt.Errorf("governance vc context %s not exist", governanceCtx)
 	}
 
 	return nil

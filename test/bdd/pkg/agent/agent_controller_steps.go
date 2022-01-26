@@ -94,9 +94,6 @@ const (
 	pullTopicsWaitInMilliSec     = 200
 	pullTopicsAttemptsBeforeFail = 500 / pullTopicsWaitInMilliSec
 
-	governanceCtx       = "https://trustbloc.github.io/context/governance/context.jsonld"
-	governanceVCCTXSize = 3
-
 	stateCompleteMsgType = "https://trustbloc.dev/didexchange/1.0/state-complete"
 )
 
@@ -274,12 +271,12 @@ func (a *Steps) handleDIDCommConnectRequest(agentID, supportedVCContexts, issuer
 		return fmt.Errorf("parse failure: %w", err)
 	}
 
-	if supportsAssuranceCred && len(request.Credentials) != 3 {
-		return fmt.Errorf("invalid number of credential in chapi request: "+
-			"expected=%d actual=%d", 3, len(request.Credentials))
-	} else if !supportsAssuranceCred && len(request.Credentials) != 2 {
+	if supportsAssuranceCred && len(request.Credentials) != 2 {
 		return fmt.Errorf("invalid number of credential in chapi request: "+
 			"expected=%d actual=%d", 2, len(request.Credentials))
+	} else if !supportsAssuranceCred && len(request.Credentials) != 1 {
+		return fmt.Errorf("invalid number of credential in chapi request: "+
+			"expected=%d actual=%d", 1, len(request.Credentials))
 	}
 
 	err = validateManifestCred(request.Credentials[0], supportedVCContexts)
@@ -294,16 +291,6 @@ func (a *Steps) handleDIDCommConnectRequest(agentID, supportedVCContexts, issuer
 		}
 
 		a.refCredentials[agentID] = vc
-	}
-
-	if supportsAssuranceCred {
-		err = validateGovernance(request.Credentials[2])
-	} else {
-		err = validateGovernance(request.Credentials[1])
-	}
-
-	if err != nil {
-		return fmt.Errorf("failed to parse governance credential : %w", err)
 	}
 
 	err = UnregisterAllMsgServices(a.ControllerURLs[agentID])
@@ -1566,40 +1553,6 @@ func validateManifestCred(manifestVCBytes []byte, supportedVCContexts string) er
 	if len(manifestCredSub.Subject.Contexts) != len(strings.Split(supportedVCContexts, ",")) {
 		return fmt.Errorf("supported vc count doesnt match : expected=%d actual=%d",
 			len(strings.Split(supportedVCContexts, ",")), len(manifestCredSub.Subject.Contexts))
-	}
-
-	return nil
-}
-
-func validateGovernance(governanceVCBytes json.RawMessage) error {
-	l, err := bddutil.DocumentLoader()
-	if err != nil {
-		return fmt.Errorf("failed to init document loader: %w", err)
-	}
-
-	governanceVC, err := verifiable.ParseCredential(
-		governanceVCBytes,
-		verifiable.WithDisabledProofCheck(),
-		verifiable.WithJSONLDDocumentLoader(l),
-	)
-	if err != nil {
-		return fmt.Errorf("failed to parse VC: %w", err)
-	}
-
-	if len(governanceVC.Context) != governanceVCCTXSize {
-		return fmt.Errorf("governance vc context not equal 3")
-	}
-
-	exist := false
-
-	for _, v := range governanceVC.Context {
-		if v == governanceCtx {
-			exist = true
-		}
-	}
-
-	if !exist {
-		return fmt.Errorf("governance vc context %s not exist", governanceCtx)
 	}
 
 	return nil

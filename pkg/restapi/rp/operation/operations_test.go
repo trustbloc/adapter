@@ -55,7 +55,6 @@ import (
 	"github.com/trustbloc/edge-adapter/pkg/db/rp"
 	mockconn "github.com/trustbloc/edge-adapter/pkg/internal/mock/connection"
 	mockdidexchange "github.com/trustbloc/edge-adapter/pkg/internal/mock/didexchange"
-	mockgovernance "github.com/trustbloc/edge-adapter/pkg/internal/mock/governance"
 	"github.com/trustbloc/edge-adapter/pkg/internal/mock/messenger"
 	mockoutofband "github.com/trustbloc/edge-adapter/pkg/internal/mock/outofband"
 	mockoutofbandv2 "github.com/trustbloc/edge-adapter/pkg/internal/mock/outofbandv2"
@@ -1502,11 +1501,8 @@ func TestGetPresentationsRequest(t *testing.T) {
 			},
 			AriesContextProvider: agent(t),
 			PresentProofClient:   &mockpresentproof.MockClient{},
-			GovernanceProvider: &mockgovernance.MockProvider{GetCredentialFunc: func(profileID string) ([]byte, error) {
-				return []byte(`{"key":"value"}`), nil
-			}},
-			MsgRegistrar:   msghandler.NewRegistrar(),
-			AriesMessenger: &messenger.MockMessenger{},
+			MsgRegistrar:         msghandler.NewRegistrar(),
+			AriesMessenger:       &messenger.MockMessenger{},
 		})
 		require.NoError(t, err)
 
@@ -1533,8 +1529,7 @@ func TestGetPresentationsRequest(t *testing.T) {
 		require.NotNil(t, resp.Inv)
 		require.Len(t, resp.Inv.Services, 1)
 		require.Equal(t, rpPublicDID.String(), resp.Inv.Services[0])
-		require.Len(t, resp.Credentials, 1)
-		require.Equal(t, `{"key":"value"}`, string(resp.Credentials[0]))
+		require.Len(t, resp.Credentials, 0)
 	})
 
 	t.Run("test waci success", func(t *testing.T) {
@@ -1588,9 +1583,7 @@ func TestGetPresentationsRequest(t *testing.T) {
 			},
 			AriesContextProvider: agent(t),
 			PresentProofClient:   &mockpresentproof.MockClient{},
-			GovernanceProvider: &mockgovernance.MockProvider{GetCredentialFunc: func(profileID string) ([]byte, error) {
-				return []byte(`{"key":"value"}`), nil
-			}},
+
 			MsgRegistrar:   msghandler.NewRegistrar(),
 			AriesMessenger: &messenger.MockMessenger{},
 		})
@@ -1676,9 +1669,7 @@ func TestGetPresentationsRequest(t *testing.T) {
 			},
 			AriesContextProvider: agent(t),
 			PresentProofClient:   &mockpresentproof.MockClient{},
-			GovernanceProvider: &mockgovernance.MockProvider{GetCredentialFunc: func(profileID string) ([]byte, error) {
-				return []byte(`{"key":"value"}`), nil
-			}},
+
 			MsgRegistrar:   msghandler.NewRegistrar(),
 			AriesMessenger: &messenger.MockMessenger{},
 		})
@@ -1711,83 +1702,6 @@ func TestGetPresentationsRequest(t *testing.T) {
 		require.NotEmpty(t, res.Inv.ID)
 		require.NotEmpty(t, res.WalletRedirect)
 		require.Equal(t, rpPublicDID.String(), res.Inv.From)
-	})
-
-	t.Run("test get governance - failed", func(t *testing.T) {
-		t.Parallel()
-		userSubject := uuid.New().String()
-		rpClientID := uuid.New().String()
-		rpPublicDID := newDID(t)
-		handle := uuid.New().String()
-		presDefs := &presexch.PresentationDefinition{
-			InputDescriptors: []*presexch.InputDescriptor{{ID: uuid.New().String()}},
-		}
-		store := mem.NewProvider()
-		saveUserConn(t, store, &rp.UserConnection{
-			User:    &rp.User{Subject: userSubject},
-			RP:      &rp.Tenant{ClientID: rpClientID},
-			Request: &rp.DataRequest{},
-		})
-
-		c, err := New(&Config{
-			PresentationExProvider: &mockPresentationExProvider{createValue: presDefs},
-			OOBClient: &mockoutofband.MockClient{
-				CreateInvVal: &outofband.Invitation{
-					ID:        uuid.New().String(),
-					Type:      outofband.InvitationMsgType,
-					Label:     "test-label",
-					Services:  []interface{}{rpPublicDID.String()},
-					Protocols: []string{didexchangesvc.PIURI},
-				},
-			},
-			OOBV2Client: &mockoutofbandv2.MockClient{
-				CreateInvVal: &outofbandv2.Invitation{
-					ID:    uuid.NewString(),
-					Type:  outofbandv2.InvitationMsgType,
-					Label: "test-label",
-					From:  rpPublicDID.String(),
-				},
-			},
-			DIDExchClient: &mockdidexchange.MockClient{
-				CreateInvWithDIDFunc: func(label, didID string) (*didexchange.Invitation, error) {
-					return &didexchange.Invitation{Invitation: &didexchangesvc.Invitation{
-						ID:    uuid.New().String(),
-						Type:  didexchange.InvitationMsgType,
-						Label: "test-label",
-						DID:   rpPublicDID.String(),
-					}}, nil
-				},
-			},
-			Storage: &Storage{
-				Persistent: store,
-				Transient:  mem.NewProvider(),
-			},
-			AriesContextProvider: agent(t),
-			PresentProofClient:   &mockpresentproof.MockClient{},
-			GovernanceProvider: &mockgovernance.MockProvider{GetCredentialFunc: func(profileID string) ([]byte, error) {
-				return nil, fmt.Errorf("failed to get vc")
-			}},
-			MsgRegistrar:   msghandler.NewRegistrar(),
-			AriesMessenger: &messenger.MockMessenger{},
-		})
-		require.NoError(t, err)
-
-		storePut(t, c.transientStore, handle, &consentRequestCtx{
-			PD: presDefs,
-			CR: &admin.GetConsentRequestOK{
-				Payload: &models.ConsentRequest{
-					Subject: userSubject,
-					Client:  &models.OAuth2Client{ClientID: rpClientID},
-				},
-			},
-			RPPublicDID: rpPublicDID.String(),
-		})
-
-		r := httptest.NewRecorder()
-		c.getPresentationsRequest(r, newCreatePresentationDefinitionRequest(t, handle))
-
-		require.Equal(t, http.StatusInternalServerError, r.Code)
-		require.Contains(t, r.Body.String(), "error retrieving governance vc : failed to get vc")
 	})
 
 	t.Run("bad request if handle is invalid", func(t *testing.T) {
@@ -3218,7 +3132,6 @@ func TestCreateRPTenant(t *testing.T) {
 			},
 			PublicDIDCreator:   &stubPublicDIDCreator{createValue: &did.Doc{ID: expected.PublicDID}},
 			PresentProofClient: &mockpresentproof.MockClient{},
-			GovernanceProvider: &mockgovernance.MockProvider{},
 			MsgRegistrar:       msghandler.NewRegistrar(),
 			AriesMessenger:     &messenger.MockMessenger{},
 		})
@@ -3467,63 +3380,6 @@ func TestCreateRPTenant(t *testing.T) {
 			Scopes:   []string{creditCardStatementScope},
 		}))
 		require.Equal(t, http.StatusInternalServerError, w.Code)
-	})
-
-	t.Run("failed to issue governance vc", func(t *testing.T) {
-		t.Parallel()
-
-		callback := "http://test.example.com"
-		expected := &rp.Tenant{
-			ClientID:  uuid.New().String(),
-			PublicDID: newDID(t).String(),
-			Label:     "test label",
-			Scopes:    []string{creditCardStatementScope},
-		}
-		clientSecret := uuid.New().String()
-
-		store := mem.NewProvider()
-		o, err := New(&Config{
-			DIDExchClient: &mockdidexchange.MockClient{},
-			Storage: &Storage{
-				Persistent: store,
-				Transient:  mem.NewProvider(),
-			},
-			AriesContextProvider: agent(t),
-			Hydra: &stubHydra{
-				createOauth2ClientFunc: func(params *admin.CreateOAuth2ClientParams) (*admin.CreateOAuth2ClientCreated, error) {
-					require.Contains(t, strings.Split(params.Body.Scope, " "), oidc.ScopeOpenID)
-					require.Contains(t, strings.Split(params.Body.Scope, " "), creditCardStatementScope)
-					require.Contains(t, params.Body.RedirectUris, callback)
-					return &admin.CreateOAuth2ClientCreated{
-						Payload: &models.OAuth2Client{
-							ClientID:     expected.ClientID,
-							ClientSecret: clientSecret,
-							RequestUris:  []string{callback},
-							Scope:        strings.Join([]string{oidc.ScopeOpenID, creditCardStatementScope}, " "),
-						},
-					}, nil
-				},
-			},
-			PublicDIDCreator:   &stubPublicDIDCreator{createValue: &did.Doc{ID: expected.PublicDID}},
-			PresentProofClient: &mockpresentproof.MockClient{},
-			GovernanceProvider: &mockgovernance.MockProvider{
-				IssueCredentialFunc: func(didID, profileID string) ([]byte, error) {
-					return nil, fmt.Errorf("failed to issue governance vc")
-				},
-			},
-			MsgRegistrar:   msghandler.NewRegistrar(),
-			AriesMessenger: &messenger.MockMessenger{},
-		})
-		require.NoError(t, err)
-
-		w := httptest.NewRecorder()
-		o.createRPTenant(w, newCreateRPRequest(t, &CreateRPTenantRequest{
-			Label:    expected.Label,
-			Callback: callback,
-			Scopes:   []string{creditCardStatementScope},
-		}))
-		require.Equal(t, http.StatusInternalServerError, w.Code)
-		require.Contains(t, w.Body.String(), "failed to issue governance vc")
 	})
 }
 
