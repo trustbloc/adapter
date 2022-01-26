@@ -33,7 +33,13 @@ import (
 	arieslog "github.com/hyperledger/aries-framework-go/pkg/common/log"
 	ldrest "github.com/hyperledger/aries-framework-go/pkg/controller/rest/ld"
 	"github.com/hyperledger/aries-framework-go/pkg/didcomm/messaging/msghandler"
+	"github.com/hyperledger/aries-framework-go/pkg/didcomm/packer"
+	"github.com/hyperledger/aries-framework-go/pkg/didcomm/packer/anoncrypt"
+	"github.com/hyperledger/aries-framework-go/pkg/didcomm/packer/authcrypt"
+	legacyauthcrypt "github.com/hyperledger/aries-framework-go/pkg/didcomm/packer/legacy/authcrypt"
+	"github.com/hyperledger/aries-framework-go/pkg/didcomm/transport"
 	arieshttp "github.com/hyperledger/aries-framework-go/pkg/didcomm/transport/http"
+	"github.com/hyperledger/aries-framework-go/pkg/doc/jose"
 	ariesld "github.com/hyperledger/aries-framework-go/pkg/doc/ld"
 	"github.com/hyperledger/aries-framework-go/pkg/doc/ldcontext/remote"
 	"github.com/hyperledger/aries-framework-go/pkg/framework/aries"
@@ -1082,14 +1088,37 @@ func createAriesAgent( // nolint:gocyclo,cyclop
 
 	if kt, ok := keyTypes[parameters.didCommParameters.keyType]; ok {
 		opts = append(opts, aries.WithKeyType(kt))
+	} else {
+		opts = append(opts, aries.WithKeyType(kms.ECDSAP256TypeIEEEP1363))
 	}
 
 	if kat, ok := keyAgreementTypes[parameters.didCommParameters.keyAgreementType]; ok {
 		opts = append(opts, aries.WithKeyAgreementType(kat))
+	} else {
+		opts = append(opts, aries.WithKeyAgreementType(kms.NISTP256ECDHKWType))
 	}
 
 	if len(parameters.didCommParameters.mediaTypeProfiles) != 0 {
 		opts = append(opts, aries.WithMediaTypeProfiles(parameters.didCommParameters.mediaTypeProfiles))
+	} else {
+		opts = append(opts, aries.WithMediaTypeProfiles([]string{
+			transport.MediaTypeDIDCommV2Profile,
+			transport.MediaTypeAIP2RFC0587Profile,
+		}),
+			aries.WithPacker(
+				func(provider packer.Provider) (packer.Packer, error) {
+					return authcrypt.New(provider, jose.A256CBCHS512) // nolint:wrapcheck // afgo initialization
+				},
+				func(provider packer.Provider) (packer.Packer, error) {
+					return authcrypt.New(provider, jose.A256CBCHS512) // nolint:wrapcheck // afgo initialization
+				},
+				func(provider packer.Provider) (packer.Packer, error) {
+					return anoncrypt.New(provider, jose.A256GCM) // nolint:wrapcheck // afgo initialization
+				},
+				func(provider packer.Provider) (packer.Packer, error) {
+					return legacyauthcrypt.New(provider), nil
+				},
+			))
 	}
 
 	opts = append(opts,
