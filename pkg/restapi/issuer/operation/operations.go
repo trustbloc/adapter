@@ -120,12 +120,6 @@ type PublicDIDCreator interface {
 	Create() (*did.Doc, error)
 }
 
-// GovernanceProvider governance provider.
-type GovernanceProvider interface {
-	IssueCredential(didID, profileID string) ([]byte, error)
-	GetCredential(profileID string) ([]byte, error)
-}
-
 type mediatorClientProvider interface {
 	Service(id string) (interface{}, error)
 }
@@ -151,7 +145,6 @@ type Config struct {
 	StoreProvider        storage.Provider
 	PublicDIDCreator     PublicDIDCreator
 	TLSConfig            *tls.Config
-	GovernanceProvider   GovernanceProvider
 	WalletBridgeAppURL   string
 	OIDCClientStoreKey   []byte
 	ExternalURL          string
@@ -278,7 +271,6 @@ func New(config *Config) (*Operation, error) { // nolint:funlen,gocyclo,cyclop
 		serviceEndpoint:    config.AriesCtx.ServiceEndpoint(),
 		vccrypto:           vccrypto,
 		publicDIDCreator:   config.PublicDIDCreator,
-		governanceProvider: config.GovernanceProvider,
 		httpClient:         &http.Client{Transport: &http.Transport{TLSClientConfig: config.TLSConfig}},
 		routeSvc:           routeSvc,
 		messenger:          config.AriesMessenger,
@@ -330,7 +322,6 @@ type Operation struct {
 	serviceEndpoint      string
 	publicDIDCreator     PublicDIDCreator
 	httpClient           httpClient
-	governanceProvider   GovernanceProvider
 	routeSvc             routeService
 	messenger            service.Messenger
 	walletBridge         *walletops.Operation
@@ -407,18 +398,6 @@ func (o *Operation) createIssuerProfileHandler(rw http.ResponseWriter, req *http
 			fmt.Sprintf("failed to create profile: %s", err.Error()), profileEndpoint, logger)
 
 		return
-	}
-
-	if o.governanceProvider != nil {
-		didID := newDidDoc.ID
-
-		_, err = o.governanceProvider.IssueCredential(didID, data.ID)
-		if err != nil {
-			commhttp.WriteErrorResponseWithLog(rw, http.StatusInternalServerError,
-				fmt.Sprintf("failed to issue governance vc: %s", err.Error()), profileEndpoint, logger)
-
-			return
-		}
 	}
 
 	rw.WriteHeader(http.StatusCreated)
@@ -961,20 +940,6 @@ func (o *Operation) getCredentialInteractionRequestHandler(rw http.ResponseWrite
 		}
 
 		credentials = append(credentials, vcBytes)
-	}
-
-	if o.governanceProvider != nil {
-		governanceVC, err := o.governanceProvider.GetCredential(profile.ID)
-		if err != nil {
-			commhttp.WriteErrorResponseWithLog(rw, http.StatusInternalServerError,
-				fmt.Sprintf("error retrieving governance vc : %s", err.Error()),
-				getCredentialInteractionRequestEndpoint, logger)
-
-			return
-		}
-
-		// append governance credential
-		credentials = append(credentials, governanceVC)
 	}
 
 	commhttp.WriteResponseWithLog(rw, &CredentialHandlerRequest{

@@ -53,7 +53,6 @@ import (
 	tlsutils "github.com/trustbloc/edge-core/pkg/utils/tls"
 
 	"github.com/trustbloc/edge-adapter/pkg/did"
-	"github.com/trustbloc/edge-adapter/pkg/governance"
 	"github.com/trustbloc/edge-adapter/pkg/hydra"
 	"github.com/trustbloc/edge-adapter/pkg/ld"
 	"github.com/trustbloc/edge-adapter/pkg/presentationex"
@@ -180,10 +179,6 @@ const (
 		" Alternatively, this can be set with the following environment variable: " + logLevelEnvKey
 	logLevelEnvKey = "ADAPTER_REST_LOGLEVEL"
 
-	governanceVCSURLFlagName  = "governance-vcs-url"
-	governanceVCSURLFlagUsage = "Governance VCS instance is running on. Format: HostName:Port."
-	governanceVCSURLEnvKey    = "ADAPTER_REST_GOVERNANCE_VCS_URL"
-
 	requestTokensFlagName  = "request-tokens"
 	requestTokensEnvKey    = "ADAPTER_REST_REQUEST_TOKENS" // nolint: gosec
 	requestTokensFlagUsage = "Tokens used for http request " +
@@ -306,7 +301,6 @@ type adapterRestParameters struct {
 	didCommParameters           *didCommParameters // didcomm
 	trustblocDomain             string
 	universalResolverURL        string
-	governanceVCSURL            string
 	requestTokens               map[string]string
 	walletAppURL                string
 	oidcClientDBKeyPath         string
@@ -314,12 +308,6 @@ type adapterRestParameters struct {
 	didAnchorOrigin             string
 	contextProviderURLs         []string
 	cmOutputDescriptorsFilePath string
-}
-
-// governanceProvider governance provider.
-type governanceProvider interface {
-	IssueCredential(didID, profileID string) ([]byte, error)
-	GetCredential(profileID string) ([]byte, error)
 }
 
 type server interface {
@@ -442,12 +430,6 @@ func getAdapterRestParameters(cmd *cobra.Command) (*adapterRestParameters, error
 		return nil, fmt.Errorf(confErrMsg, err)
 	}
 
-	governanceVCSURL, err := cmdutils.GetUserSetVarFromString(cmd, governanceVCSURLFlagName,
-		governanceVCSURLEnvKey, true)
-	if err != nil {
-		return nil, fmt.Errorf(confErrMsg, err)
-	}
-
 	requestTokens, err := getRequestTokens(cmd)
 	if err != nil {
 		return nil, fmt.Errorf(confErrMsg, err)
@@ -485,7 +467,6 @@ func getAdapterRestParameters(cmd *cobra.Command) (*adapterRestParameters, error
 		didCommParameters:           didCommParameters,
 		trustblocDomain:             trustblocDomain,
 		universalResolverURL:        universalResolverURL,
-		governanceVCSURL:            governanceVCSURL,
 		requestTokens:               requestTokens,
 		walletAppURL:                walletAppURL,
 		oidcClientDBKeyPath:         issuerOIDCKeyPath,
@@ -650,7 +631,6 @@ func createFlags(startCmd *cobra.Command) {
 	startCmd.Flags().StringP(presentationDefinitionsFlagName, "", "", presentationDefinitionsFlagUsage)
 	startCmd.Flags().StringP(hydraURLFlagName, "", "", hydraURLFlagUsage)
 	startCmd.Flags().StringP(modeFlagName, "", "", modeFlagUsage)
-	startCmd.Flags().StringP(governanceVCSURLFlagName, "", "", governanceVCSURLFlagUsage)
 	startCmd.Flags().StringArrayP(requestTokensFlagName, "", []string{}, requestTokensFlagUsage)
 
 	// didcomm
@@ -773,18 +753,6 @@ func addRPHandlers(parameters *adapterRestParameters, framework *aries.Aries, ro
 		return fmt.Errorf("failed to init edge storage: %w", err)
 	}
 
-	var governanceProv governanceProvider
-
-	if parameters.governanceVCSURL != "" {
-		var errNew error
-
-		governanceProv, errNew = newGovernanceProvider(parameters.governanceVCSURL, rootCAs, store,
-			parameters.requestTokens, parameters.trustblocDomain)
-		if errNew != nil {
-			return fmt.Errorf("failed to create governance provider: %w", errNew)
-		}
-	}
-
 	// TODO init OIDC stuff in iteration 2 - https://github.com/trustbloc/edge-adapter/issues/24
 
 	didCreator, err := did.NewTrustblocDIDCreator(
@@ -814,7 +782,6 @@ func addRPHandlers(parameters *adapterRestParameters, framework *aries.Aries, ro
 		AriesContextProvider:   ctx,
 		AriesMessenger:         framework.Messenger(),
 		MsgRegistrar:           msgRegistrar,
-		GovernanceProvider:     governanceProv,
 		PresentProofClient:     presentProofClient,
 		WalletBridgeAppURL:     parameters.walletAppURL,
 		JSONLDDocumentLoader:   ctx.JSONLDDocumentLoader(),
@@ -844,24 +811,12 @@ func addRPHandlers(parameters *adapterRestParameters, framework *aries.Aries, ro
 	return nil
 }
 
-// nolint:funlen,gocyclo,cyclop
+// nolint:funlen
 func addIssuerHandlers(parameters *adapterRestParameters, framework *aries.Aries, router *mux.Router,
 	rootCAs *x509.CertPool, msgRegistrar *msghandler.Registrar) error {
 	store, err := initStore(parameters.dsnParams.dsn, parameters.dsnParams.timeout, issuerAdapterStorePrefix)
 	if err != nil {
 		return fmt.Errorf("failed to init storage provider : %w", err)
-	}
-
-	var governanceProv governanceProvider
-
-	if parameters.governanceVCSURL != "" {
-		var errNew error
-
-		governanceProv, errNew = newGovernanceProvider(parameters.governanceVCSURL, rootCAs, store,
-			parameters.requestTokens, parameters.trustblocDomain)
-		if errNew != nil {
-			return fmt.Errorf("failed to init governance provider: %w", errNew)
-		}
 	}
 
 	ariesCtx, err := framework.Context()
@@ -902,7 +857,6 @@ func addIssuerHandlers(parameters *adapterRestParameters, framework *aries.Aries
 		StoreProvider:        store,
 		PublicDIDCreator:     didCreator,
 		TLSConfig:            &tls.Config{RootCAs: rootCAs, MinVersion: tls.VersionTLS12},
-		GovernanceProvider:   governanceProv,
 		OIDCClientStoreKey:   clientStoreKey,
 		ExternalURL:          parameters.externalURL,
 		DidDomain:            parameters.trustblocDomain,
@@ -939,12 +893,6 @@ func getIssuerOIDCClientStoreKey(keyPath string) ([]byte, error) {
 	}
 
 	return bytes, nil
-}
-
-func newGovernanceProvider(governanceVCSURL string, rootCAs *x509.CertPool,
-	store storage.Provider, requestTokens map[string]string, domain string) (*governance.Provider, error) {
-	return governance.New(governanceVCSURL, &tls.Config{RootCAs: rootCAs}, store, // nolint:gosec,wrapcheck
-		requestTokens, domain)
 }
 
 func uiHandler(

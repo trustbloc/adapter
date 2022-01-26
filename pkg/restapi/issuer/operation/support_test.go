@@ -43,7 +43,6 @@ import (
 
 	"github.com/trustbloc/edge-adapter/pkg/aries"
 	mockdiddoc "github.com/trustbloc/edge-adapter/pkg/internal/mock/diddoc"
-	mockgovernance "github.com/trustbloc/edge-adapter/pkg/internal/mock/governance"
 	"github.com/trustbloc/edge-adapter/pkg/internal/mock/issuecredential"
 	"github.com/trustbloc/edge-adapter/pkg/internal/mock/messenger"
 	mockoutofband "github.com/trustbloc/edge-adapter/pkg/internal/mock/outofband"
@@ -93,7 +92,6 @@ func config(t *testing.T) *Config {
 		MsgRegistrar:         msghandler.NewRegistrar(),
 		AriesMessenger:       &messenger.MockMessenger{},
 		PublicDIDCreator:     &stubPublicDIDCreator{createValue: mockdiddoc.GetMockDIDDoc("did:example:def567")},
-		GovernanceProvider:   &mockgovernance.MockProvider{},
 		OIDCClientStoreKey:   oidcClientStoreKey,
 		JSONLDDocumentLoader: testutil.DocumentLoader(t),
 	}

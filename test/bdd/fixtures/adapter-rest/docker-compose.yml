@@ -12,7 +12,6 @@ services:
     image: ${ISSUER_ADAPTER_REST_IMAGE}:latest
     environment:
       - ADAPTER_REST_HOST_URL=0.0.0.0:9070
-      - ADAPTER_REST_GOVERNANCE_VCS_URL=http://governance.vcs.example.com:8066
       - ADAPTER_REST_TLS_CACERTS=/etc/tls/ec-cacert.pem
       - ADAPTER_REST_TLS_SYSTEMCERTPOOL=true
       - ADAPTER_REST_TLS_SERVE_CERT=/etc/tls/ec-pubCert.pem
@@ -36,7 +35,7 @@ services:
       - 9070:9070
       - 9071:9071
     entrypoint: ""
-    command:  /bin/sh -c "adapter-rest start"
+    command: /bin/sh -c "adapter-rest start"
     volumes:
       - ../keys/tls:/etc/tls
       - ../keys/issuer-stores:/etc/store-keys
@@ -52,7 +51,6 @@ services:
     environment:
       - ADAPTER_REST_HOST_URL=0.0.0.0:8070
       - ADAPTER_REST_TLS_CACERTS=/etc/tls/ec-cacert.pem
-      - ADAPTER_REST_GOVERNANCE_VCS_URL=http://governance.vcs.example.com:8066
       - ADAPTER_REST_TLS_SYSTEMCERTPOOL=true
       - ADAPTER_REST_TLS_SERVE_CERT=/etc/tls/ec-pubCert.pem
       - ADAPTER_REST_TLS_SERVE_KEY=/etc/tls/ec-key.pem
@@ -75,7 +73,7 @@ services:
     ports:
       - 8070:8070
     entrypoint: ""
-    command:  /bin/sh -c "adapter-rest start"
+    command: /bin/sh -c "adapter-rest start"
     volumes:
       - ../keys/tls:/etc/tls
       - ../testdata:/etc/testdata
@@ -104,7 +102,7 @@ services:
     ports:
       - "4444:4444" # Public port
       - "4445:4445" # Admin port
-    command:  /bin/sh -c "hydra migrate sql --read-from-env --yes; hydra serve all"
+    command: /bin/sh -c "hydra migrate sql --read-from-env --yes; hydra serve all"
     entrypoint: ""
     environment:
       - DSN=mysql://rpadapterhydra:rpadapterhydra-secret-pw@tcp(mysql:3306)/rpadapterhydra?max_conns=20&max_idle_conns=4
@@ -130,7 +128,7 @@ services:
     ports:
       - "9044:9044" # Public port
       - "9045:9045" # Admin port
-    command:  /bin/sh -c "hydra migrate sql --read-from-env --yes; hydra serve all"
+    command: /bin/sh -c "hydra migrate sql --read-from-env --yes; hydra serve all"
     entrypoint: ""
     environment:
       - SERVE_PUBLIC_PORT=9044

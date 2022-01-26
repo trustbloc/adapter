@@ -390,7 +390,6 @@ func TestAdapterModes(t *testing.T) { // nolint:paralleltest // shared environme
 			"--" + didCommInboundHostFlagName, randomURL(),
 			"--" + datasourceNameFlagName, "mem://test",
 			"--" + datasourceTimeoutFlagName, "30",
-			"--" + governanceVCSURLFlagName, "http://example.vcs.com",
 		}
 		startCmd.SetArgs(args)
 
@@ -421,7 +420,6 @@ func TestAdapterModes(t *testing.T) { // nolint:paralleltest // shared environme
 			"--" + didCommInboundHostFlagName, testInboundHostURL,
 			"--" + datasourceNameFlagName, "mem://test",
 			"--" + datasourceTimeoutFlagName, "30",
-			"--" + governanceVCSURLFlagName, "http://example.vcs.com",
 			"--" + issuerOIDCClientStoreKeyFlagName, file.Name(),
 			"--" + cmOutputDescriptorsFilePathFlagName, "./testdata/outputdescriptors.json",
 		}
@@ -509,7 +507,6 @@ func TestAdapterModes(t *testing.T) { // nolint:paralleltest // shared environme
 			"--" + didCommInboundHostFlagName, testInboundHostURL,
 			"--" + datasourceNameFlagName, "mem://test",
 			"--" + datasourceTimeoutFlagName, "30",
-			"--" + governanceVCSURLFlagName, "http://example.vcs.com",
 			"--" + issuerOIDCClientStoreKeyFlagName, file.Name() + "-nonexistent",
 			"--" + cmOutputDescriptorsFilePathFlagName, "./testdata/outputdescriptors.json",
 		}
@@ -536,7 +533,6 @@ func TestAdapterModes(t *testing.T) { // nolint:paralleltest // shared environme
 			"--" + didCommInboundHostFlagName, testInboundHostURL,
 			"--" + datasourceNameFlagName, "mem://test",
 			"--" + datasourceTimeoutFlagName, "30",
-			"--" + governanceVCSURLFlagName, "http://example.vcs.com",
 			"--" + issuerOIDCClientStoreKeyFlagName, file.Name() + "-nonexistent",
 			"--" + cmOutputDescriptorsFilePathFlagName, file.Name(),
 		}

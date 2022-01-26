@@ -114,37 +114,6 @@ services:
         aliases:
           - mock-issuer.com
 
-  governance.vcs.example.com:
-    container_name: governance.vcs.example.com
-    image: ${VCS_IMAGE}:${VCS_IMAGE_TAG}
-    environment:
-      - VC_REST_HOST_URL=0.0.0.0:8066
-      - VC_REST_HOST_URL_EXTERNAL=http://governance.vcs.example.com:8066
-      - EDV_REST_HOST_URL=${EDV_HOST}:${EDV_PORT}${EDV_ROOT_ENDPOINT}
-      - UNIVERSAL_RESOLVER_HOST_URL=http://did.rest.example.com:8072/1.0/identifiers
-      - BLOC_DOMAIN=${BLOC_DOMAIN}
-      - VC_REST_MODE=governance
-      - DATABASE_TYPE=mem
-      - KMSSECRETS_DATABASE_TYPE=mem
-      - VC_REST_TLS_CACERTS=/etc/tls/ec-cacert.pem
-      - VC_REST_TLS_SYSTEMCERTPOOL=true
-      - VC_REST_GOVERNANCE_CLAIMS_FILE=/etc/governance_claims.json
-      - VC_REST_DID_ANCHOR_ORIGIN=https://testnet.orb.local
-    ports:
-      - 8066:8066
-    entrypoint: ""
-    command:  /bin/sh -c "/tmp/governance-vcs-profiles.sh& vc-rest start"
-    volumes:
-      - ./governance-vcs-profiles.sh/:/tmp/governance-vcs-profiles.sh
-      - ../keys/tls:/etc/tls
-      - ./governance_claims.json:/etc/governance_claims.json
-    depends_on:
-      - edv.rest.example.com
-    networks:
-      adapter-rest_bdd_net:
-        aliases:
-          - governance.vcs.example.com
-
   edv.rest.example.com:
     container_name: edv.rest.example.com
     image: ${EDV_REST_IMAGE}:${EDV_REST_IMAGE_TAG}

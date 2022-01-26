@@ -157,12 +157,6 @@ type connectionRecorder interface {
 	GetConnectionRecordByDIDs(myDID, theirDID string) (*connection.Record, error)
 }
 
-// GovernanceProvider governance provider.
-type GovernanceProvider interface {
-	IssueCredential(didID, profileID string) ([]byte, error)
-	GetCredential(profileID string) ([]byte, error)
-}
-
 // AriesContextProvider is the dependency interface for the connection.Recorder.
 type AriesContextProvider interface {
 	StorageProvider() storage.Provider
@@ -223,7 +217,6 @@ func New(config *Config) (*Operation, error) { // nolint:funlen,gocyclo,cyclop
 		publicDIDCreator:       config.PublicDIDCreator,
 		ppClient:               config.PresentProofClient,
 		vdrReg:                 config.AriesContextProvider.VDRegistry(),
-		governanceProvider:     config.GovernanceProvider,
 		km:                     config.AriesContextProvider.KMS(),
 		ariesCrypto:            config.AriesContextProvider.Crypto(),
 		messenger:              config.AriesMessenger,
@@ -320,7 +313,6 @@ type Config struct {
 	AriesContextProvider   AriesContextProvider
 	PresentProofClient     PresentProofClient
 	Storage                *Storage
-	GovernanceProvider     GovernanceProvider
 	AriesMessenger         service.Messenger
 	MsgRegistrar           *msghandler.Registrar
 	WalletBridgeAppURL     string
@@ -353,7 +345,6 @@ type Operation struct {
 	vdrReg                 vdrapi.Registry
 	transientStore         storage.Store
 	persistenceStore       storage.Store
-	governanceProvider     GovernanceProvider
 	km                     kms.KeyManager
 	ariesCrypto            ariescrypto.Crypto
 	routeSvc               routeService
@@ -831,24 +822,10 @@ func (o *Operation) getPresentationsRequest(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
-	var governanceVC []byte
-
-	if o.governanceProvider != nil {
-		var err error
-		governanceVC, err = o.governanceProvider.GetCredential(cr.CR.GetPayload().Client.ClientID)
-
-		if err != nil {
-			handleError(w, http.StatusInternalServerError,
-				fmt.Sprintf("error retrieving governance vc : %s", err))
-
-			return
-		}
-	}
-
 	response := &gprrPartialMarshal{
 		PD:          cr.PD,
 		Inv:         invBytes,
-		Credentials: []json.RawMessage{governanceVC},
+		Credentials: []json.RawMessage{},
 	}
 
 	w.WriteHeader(http.StatusOK)
@@ -1660,7 +1637,7 @@ func testResponse(w io.Writer) {
 	}
 }
 
-//nolint:funlen,gocyclo,cyclop
+//nolint:funlen
 func (o *Operation) createRPTenant(w http.ResponseWriter, r *http.Request) {
 	request := &CreateRPTenantRequest{}
 
@@ -1721,17 +1698,6 @@ func (o *Operation) createRPTenant(w http.ResponseWriter, r *http.Request) {
 	}
 
 	didID := publicDID.ID
-
-	if o.governanceProvider != nil {
-		_, err = o.governanceProvider.IssueCredential(didID, created.Payload.ClientID)
-		if err != nil {
-			msg := fmt.Sprintf("failed to issue governance vc : %s", err)
-			logger.Errorf(msg)
-			commhttp.WriteErrorResponse(w, http.StatusInternalServerError, msg)
-
-			return
-		}
-	}
 
 	// RP not found - we're good to go
 	err = o.rpStore.SaveRP(&rp.Tenant{
