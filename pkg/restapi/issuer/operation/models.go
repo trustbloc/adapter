@@ -26,10 +26,12 @@ type ProfileDataRequest struct {
 	SupportsWACI                bool              `json:"supportsWACI"`
 	OIDCProviderURL             string            `json:"oidcProvider"`
 	OIDCClientParams            *OIDCClientParams `json:"oidcParams,omitempty"`
-	CredentialScopes            []string          `json:"scopes,omitempty"`
+	CredentialScopes            []string          `json:"credScopes,omitempty"`
 	LinkedWalletURL             string            `json:"linkedWallet,omitempty"`
-	IssuerID                    string            `json:"issuerID,omitempty"`
-	CMStyle                     cm.Styles         `json:"styles,omitempty"`
+	// Issuer ID identifies who is the issuer of the credential manifests being issued.
+	IssuerID string `json:"issuerID,omitempty"`
+	// CMStyle represents an entity styles object as defined in credential manifest spec.
+	CMStyle cm.Styles `json:"styles,omitempty"`
 }
 
 // OIDCClientParams optional parameters for setting the adapter's oidc client parameters statically.
@@ -46,6 +48,7 @@ type WalletConnect struct {
 
 // txnData contains session data.
 type txnData struct {
+	// Todo #580 rename IssuerID to ProfileID
 	IssuerID          string                `json:"issuerID,omitempty"`
 	State             string                `json:"state,omitempty"`
 	DIDCommInvitation *outofband.Invitation `json:"didCommInvitation,omitempty"`

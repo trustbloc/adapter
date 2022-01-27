@@ -49,7 +49,7 @@ func main() {
 	router.HandleFunc("/{issuer}/token", tokenHandler).Methods(http.MethodPost)
 	router.HandleFunc("/{issuer}/data", createUserDataVCHandler).Methods(http.MethodPost)
 	router.HandleFunc("/{issuer}/assurance", createAssuranceDataVCHandler).Methods(http.MethodPost)
-	router.HandleFunc("/{issuer}/uid", userIDHandler).Methods(http.MethodPost)
+	router.HandleFunc("/{issuer}/uid", userIDHandler).Methods(http.MethodGet)
 
 	logger.Fatalf("issuer server start error %s", http.ListenAndServe(fmt.Sprintf(addressPattern, port), router))
 }

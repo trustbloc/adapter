@@ -91,6 +91,11 @@ func TestCredentialRecord_SaveProfile(t *testing.T) {
 		err = record.SaveProfile(value)
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "issuer url is invalid")
+
+		value.SupportsWACI = true
+		err = record.SaveProfile(value)
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "issuer id mandatory for waci profiles")
 	})
 
 	t.Run("test save profile - profile already exists", func(t *testing.T) {
