@@ -27,7 +27,7 @@ services:
       - ADAPTER_REST_EXTERNAL_URL=https://issuer-adapter-rest.trustbloc.local:9070
       - ADAPTER_REST_DID_ANCHOR_ORIGIN=https://testnet.orb.local
       - ADAPTER_REST_CONTEXT_PROVIDER_URL=${CONTEXT_PROVIDER_URL}
-      - ADAPTER_REST_OUTPUT_DESCRIPTORS_FILE=/etc/manifest-config/outputdescriptors.json
+      - ADAPTER_REST_OUTPUT_DESCRIPTORS_FILE=/etc/testdata/manifest-config/outputdescriptors.json
       - ADAPTER_REST_KEY_TYPE=${AGENT_KEY_TYPE}
       - ADAPTER_REST_KEY_AGREEMENT_TYPE=${AGENT_KEY_AGREEMENT_TYPE}
       - ADAPTER_REST_MEDIA_TYPE_PROFILES=${AGENT_MEDIA_TYPE_PROFILES}
@@ -39,7 +39,7 @@ services:
     volumes:
       - ../keys/tls:/etc/tls
       - ../keys/issuer-stores:/etc/store-keys
-      - ./manifest-config:/etc/manifest-config
+      - ../testdata:/etc/testdata
     networks:
       - bdd_net
     depends_on:

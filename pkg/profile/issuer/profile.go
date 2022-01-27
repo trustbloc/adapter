@@ -125,6 +125,10 @@ func validateProfileRequest(pr *ProfileData) error {
 		return fmt.Errorf("supported vc contexts mandatory")
 	}
 
+	if pr.SupportsWACI && pr.IssuerID == "" {
+		return fmt.Errorf("issuer id mandatory for waci profiles")
+	}
+
 	if !adapterutil.ValidHTTPURL(pr.URL) {
 		return fmt.Errorf("issuer url is invalid")
 	}

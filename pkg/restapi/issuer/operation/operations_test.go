@@ -549,6 +549,46 @@ func TestCreateProfile(t *testing.T) {
 		require.Equal(t, vReq.URL, profileRes.URL)
 		require.Equal(t, vReq.SupportsAssuranceCredential, profileRes.SupportsAssuranceCredential)
 	})
+	t.Run("create waci profile with cm output descriptors - success", func(t *testing.T) {
+		t.Parallel()
+
+		vReq := createProfileData(uuid.New().String())
+		vReq.SupportsWACI = true
+		vReq.CredentialScopes = []string{mockCredScope}
+		vReq.OIDCClientParams = &issuer.OIDCClientParams{
+			ClientID:     "client id",
+			ClientSecret: "client secret",
+			SecretExpiry: 0,
+		}
+
+		vReqBytes, err := json.Marshal(vReq)
+		require.NoError(t, err)
+
+		op.cmOutputDescriptor = map[string][]*cm.OutputDescriptor{
+			mockCredScope: {
+				&cm.OutputDescriptor{
+					ID:     uuid.New().String(),
+					Schema: "https://www.w3.org/2018/credentials/examples/v1",
+				},
+			},
+		}
+
+		h := getHandler(t, op, endpoint)
+		rr := serveHTTP(t, h.Handle(), http.MethodPost, endpoint, vReqBytes)
+
+		require.Equal(t, http.StatusCreated, rr.Code)
+
+		profileRes := &issuer.ProfileData{}
+		err = json.Unmarshal(rr.Body.Bytes(), &profileRes)
+		require.NoError(t, err)
+		require.Equal(t, vReq.ID, profileRes.ID)
+		require.Equal(t, vReq.Name, profileRes.Name)
+		require.Equal(t, vReq.URL, profileRes.URL)
+		require.Equal(t, vReq.SupportsAssuranceCredential, profileRes.SupportsAssuranceCredential)
+		require.Equal(t, vReq.CredentialScopes, profileRes.CredentialScopes)
+		require.Equal(t, vReq.IssuerID, profileRes.IssuerID)
+		require.Equal(t, vReq.SupportsWACI, profileRes.SupportsWACI)
+	})
 
 	t.Run("create profile - invalid request", func(t *testing.T) {
 		t.Parallel()
@@ -645,6 +685,33 @@ func TestCreateProfile(t *testing.T) {
 		require.NoError(t, err)
 
 		require.Contains(t, resErr.ErrMessage, "create oidc client")
+	})
+	t.Run("create profile - failed to find the allowed cred scope in credential manifest"+
+		" output descriptor for WACI profiles", func(t *testing.T) {
+		t.Parallel()
+
+		ops, err := New(config(t))
+		require.NoError(t, err)
+
+		vReq := createProfileData(uuid.New().String())
+		vReq.SupportsWACI = true
+		vReq.CredentialScopes = []string{mockCredScope}
+
+		vReqBytes, err := json.Marshal(vReq)
+		require.NoError(t, err)
+
+		rr := serveHTTP(t, getHandler(t, ops, endpoint).Handle(), http.MethodPost, endpoint, vReqBytes)
+
+		require.Equal(t, http.StatusBadRequest, rr.Code)
+
+		resErr := struct {
+			ErrMessage string `json:"errMessage"`
+		}{}
+		err = json.Unmarshal(rr.Body.Bytes(), &resErr)
+		require.NoError(t, err)
+
+		require.Contains(t, resErr.ErrMessage,
+			"failed to find the allowed cred scope in credential manifest output descriptor")
 	})
 }
 
@@ -3490,6 +3557,18 @@ func TestWACIIssuanceHandler(t *testing.T) {
 			txDataSample := &txnData{
 				IssuerID: profile.ID,
 			}
+
+			tdByte, err := json.Marshal(txDataSample)
+			require.NoError(t, err)
+
+			err = c.txnStore.Put(usrInvitationMapping.TxID, tdByte)
+			require.NoError(t, err)
+
+			testFailure(actionCh, service.NewDIDCommMsgMap(issuecredsvc.ProposeCredentialV2{
+				Type:         issuecredsvc.ProposeCredentialMsgTypeV2,
+				InvitationID: invitationID,
+			}), "failed to validate credential manifest object")
+
 			// credential data error
 			txDataSample.CredScope = mockCredScope
 			tdCredByte, err := json.Marshal(txDataSample)

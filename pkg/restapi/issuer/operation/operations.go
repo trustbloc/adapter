@@ -284,6 +284,7 @@ func New(config *Config) (*Operation, error) { // nolint:funlen,gocyclo,cyclop
 		refreshTokenStore:  refreshStore,
 		didDomain:          config.DidDomain,
 		jsonldDocLoader:    config.JSONLDDocumentLoader,
+		cmOutputDescriptor: config.CmOutputDescriptor,
 	}
 
 	op.createOIDCClientFunc = op.getOrCreateOIDCClient
@@ -381,6 +382,18 @@ func (o *Operation) createIssuerProfileHandler(rw http.ResponseWriter, req *http
 			profileEndpoint, logger)
 
 		return
+	}
+
+	if profileData.SupportsWACI {
+		for _, pCredScope := range profileData.CredentialScopes {
+			if _, ok := o.cmOutputDescriptor[pCredScope]; !ok {
+				commhttp.WriteErrorResponseWithLog(rw, http.StatusBadRequest,
+					fmt.Sprintf("failed to find the allowed cred scope in credential manifest output descriptor"+
+						"object %s", pCredScope), profileEndpoint, logger)
+
+				return
+			}
+		}
 	}
 
 	if profileData.OIDCProviderURL != "" {
@@ -1268,7 +1281,10 @@ func (o *Operation) handleProposeCredential(msg service.DIDCommAction) (issuecre
 	// read credential manifest
 	manifest := o.readCredentialManifest(profile, txn.CredScope)
 
-	// TODO #581 validate read credential manifest object
+	err = manifest.Validate()
+	if err != nil {
+		return nil, fmt.Errorf("failed to validate credential manifest object: %w", err)
+	}
 
 	// get unsigned credential
 	vc, err := o.createCredential(getUserDataURL(profile.URL), userInvMap.TxToken, oauthToken,
