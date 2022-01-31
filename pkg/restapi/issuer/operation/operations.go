@@ -38,6 +38,7 @@ import (
 	presentproofsvc "github.com/hyperledger/aries-framework-go/pkg/didcomm/protocol/presentproof"
 	"github.com/hyperledger/aries-framework-go/pkg/doc/cm"
 	"github.com/hyperledger/aries-framework-go/pkg/doc/did"
+	"github.com/hyperledger/aries-framework-go/pkg/doc/presexch"
 	"github.com/hyperledger/aries-framework-go/pkg/doc/util"
 	"github.com/hyperledger/aries-framework-go/pkg/doc/verifiable"
 	"github.com/hyperledger/aries-framework-go/pkg/framework/aries/api/vdr"
@@ -110,6 +111,10 @@ const (
 	credentialFulfillmentFormat    = "dif/credential-manifest/fulfillment@v1.0"
 	offerCredentialAttachMediaType = "application/json"
 	redirectStatusOK               = "OK"
+
+	manifestIDSuffix      = "_mID"
+	manifestDataPrefix    = "manifest_"
+	fulfillmentDataPrefix = "full_"
 )
 
 type connections interface {
@@ -138,8 +143,20 @@ type didExClient interface {
 	GetConnection(connectionID string) (*didexchange.Connection, error)
 }
 
+type credentialOffered struct {
+	FulFillment *verifiable.Presentation
+	ManifestID  string
+}
+
+// CMAttachmentDescriptors defines the part of properties of credential manifest
+type CMAttachmentDescriptors struct {
+	OutputDesc []*cm.OutputDescriptor      `json:"output_descriptor,omitempty"`
+	InputDesc  []*presexch.InputDescriptor `json:"input_descriptor,omitempty"`
+	Options    map[string]string           `json:"options,omitempty"`
+}
+
 // Config defines configuration for issuer operations.
-// TODO #580 Create helper function for cmOutputDescriptor
+// TODO #580 Create helper function for cmDescriptors
 type Config struct {
 	AriesCtx             aries.CtxProvider
 	AriesMessenger       service.Messenger
@@ -153,7 +170,7 @@ type Config struct {
 	ExternalURL          string
 	DidDomain            string
 	JSONLDDocumentLoader ld.DocumentLoader
-	CmOutputDescriptor   map[string][]*cm.OutputDescriptor
+	CMDescriptors        map[string]*CMAttachmentDescriptors
 }
 
 // New returns issuer rest instance.
@@ -293,7 +310,7 @@ func New(config *Config) (*Operation, error) { // nolint:funlen,gocyclo,cyclop
 		refreshTokenStore:  refreshStore,
 		didDomain:          config.DidDomain,
 		jsonldDocLoader:    config.JSONLDDocumentLoader,
-		cmOutputDescriptor: config.CmOutputDescriptor,
+		cmDescriptors:      config.CMDescriptors,
 	}
 
 	op.createOIDCClientFunc = op.getOrCreateOIDCClient
@@ -347,7 +364,7 @@ type Operation struct {
 	getOIDCClientFunc    func(string, string) (oidcClient, error)
 	didDomain            string
 	jsonldDocLoader      ld.DocumentLoader
-	cmOutputDescriptor   map[string][]*cm.OutputDescriptor
+	cmDescriptors        map[string]*CMAttachmentDescriptors
 }
 
 // GetRESTHandlers get all controller API handler available for this service.
@@ -406,7 +423,7 @@ func (o *Operation) createIssuerProfileHandler( // nolint:funlen,gocyclo,cyclop
 
 	if profileData.SupportsWACI {
 		for _, pCredScope := range profileData.CredentialScopes {
-			if _, ok := o.cmOutputDescriptor[pCredScope]; !ok {
+			if _, ok := o.cmDescriptors[pCredScope]; !ok {
 				commhttp.WriteErrorResponseWithLog(rw, http.StatusBadRequest,
 					fmt.Sprintf("failed to find the allowed cred scope in credential manifest output descriptor"+
 						"object %s", pCredScope), profileEndpoint, logger)
@@ -527,7 +544,7 @@ func (o *Operation) credScopeHandler(rw http.ResponseWriter, req *http.Request, 
 
 	if !has {
 		commhttp.WriteErrorResponseWithLog(rw, http.StatusBadRequest,
-			"issuer profile does not allow request of credential scope "+credScope, walletConnectEndpoint, logger)
+			"issuer profile does not allow request of credential scope here"+credScope, walletConnectEndpoint, logger)
 
 		return
 	}
@@ -851,7 +868,7 @@ func (o *Operation) validateWalletResponseHandler(rw http.ResponseWriter, req *h
 		ConnectionID: conn.ConnectionID,
 		IssuerID:     txnData.IssuerID,
 		Token:        txnData.Token,
-		OauthID:      txnID,
+		TxnID:        txnID,
 	}
 
 	err = o.storeUserConnectionMapping(userConnMap)
@@ -1176,22 +1193,63 @@ func (o *Operation) storeUserInvitationMapping(mapping *UserInvitationMapping) e
 }
 
 // TODO fulfillment shouldn't be saved, need re-design [Issue#560]
-func (o *Operation) saveCredentialFulfillment(thID string, fulfillment *verifiable.Presentation) error {
-	fbytes, err := fulfillment.MarshalJSON()
+func (o *Operation) saveCredentialAttachmentData(thID string, credOffered credentialOffered) error {
+	fulfilmentBytes, err := json.Marshal(credOffered.FulFillment)
 	if err != nil {
-		return fmt.Errorf("failed to marshal credential fulfillment: %w", err)
+		return fmt.Errorf("failed to marshal credential fulfilment: %w", err)
 	}
 
-	err = o.txnStore.Put(thID, fbytes)
+	err = o.txnStore.Batch([]storage.Operation{
+		{
+			Key:   manifestDataPrefix + thID,
+			Value: []byte(credOffered.ManifestID),
+		},
+		{
+			Key:   fulfillmentDataPrefix + thID,
+			Value: fulfilmentBytes,
+		},
+	})
 	if err != nil {
-		return fmt.Errorf("failed to save credential fulfillment in store: %w", err)
+		return fmt.Errorf("failed to save credential offered in store: %w", err)
+	}
+
+	return nil
+}
+
+func (o *Operation) readAndValidateCredentialApplication(msg service.DIDCommAction,
+	credManifest *cm.CredentialManifest) error {
+	// reading credential application if issuer have sent, out presentation_definition along with manifest
+	// TODO [Issue#563] validate signatures and proofs of credential application
+	if credManifest.PresentationDefinition != nil {
+		applicationAttachments, err := getAttachments(msg)
+		if err != nil {
+			return fmt.Errorf("failed to get request credential attachments: %w", err)
+		}
+
+		if len(applicationAttachments) != 1 {
+			return errors.New("invalid request credential message, expected valid credential application")
+		}
+
+		credentialApplicationBytes, err := getCredentialApplicationFromAttachment(&applicationAttachments[0])
+		if err != nil {
+			return fmt.Errorf("failed to get credential application from request "+
+				"credential attachments: %w", err)
+		}
+
+		_, err = cm.UnmarshalAndValidateAgainstCredentialManifest(credentialApplicationBytes, credManifest)
+		if err != nil {
+			return fmt.Errorf("failed to get unmarhsal and validate credential application against "+
+				"credential manifest: %w", err)
+		}
+
+		return nil
 	}
 
 	return nil
 }
 
 func (o *Operation) readCredentialFulfillment(thID string) (*verifiable.Presentation, error) {
-	fbytes, err := o.txnStore.Get(thID)
+	fbytes, err := o.txnStore.Get(fulfillmentDataPrefix + thID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get credential fulfillment from store: %w", err)
 	}
@@ -1209,7 +1267,7 @@ func (o *Operation) readCredentialFulfillment(thID string) (*verifiable.Presenta
 }
 
 func (o *Operation) deleteCredentialFulfillment(thID string) error {
-	return o.txnStore.Delete(thID) // nolint:wrapcheck
+	return o.txnStore.Delete(fulfillmentDataPrefix + thID) // nolint:wrapcheck
 }
 
 func (o *Operation) getUserInvitationMapping(connID string) (*UserInvitationMapping, error) {
@@ -1275,6 +1333,7 @@ func (o *Operation) didCommStateMsgListener(stateMsgCh <-chan service.StateMsg) 
 }
 
 // nolint:funlen,gocyclo,cyclop
+// TODO [Issue#563] Avoid adding manifest attachment in the msg if the cm output descriptor is not found.
 func (o *Operation) handleProposeCredential(msg service.DIDCommAction) (issuecredsvc.Opt, error) {
 	var invitationID string
 
@@ -1335,9 +1394,12 @@ func (o *Operation) handleProposeCredential(msg service.DIDCommAction) (issuecre
 	// read credential manifest
 	manifest := o.readCredentialManifest(profile, txn.CredScope)
 
-	err = manifest.Validate()
-	if err != nil {
-		return nil, fmt.Errorf("failed to validate credential manifest object: %w", err)
+	// validate only if manifest output descriptor is found.
+	if manifest.OutputDescriptors != nil {
+		err = manifest.Validate()
+		if err != nil {
+			return nil, fmt.Errorf("failed to validate credential manifest object: %w", err)
+		}
 	}
 
 	// get unsigned credential
@@ -1362,9 +1424,12 @@ func (o *Operation) handleProposeCredential(msg service.DIDCommAction) (issuecre
 	// prepare offer credential
 	offerCred := prepareOfferCredentialMessage(manifest, fulfillment)
 
-	// save fulfillment for subsequent WACI steps.
+	// save fulfillment and manifestID for subsequent WACI steps.
 	// TODO question: why is this saved under the message ID instead of thread ID?
-	err = o.saveCredentialFulfillment(msg.Message.ID(), fulfillment)
+	err = o.saveCredentialAttachmentData(msg.Message.ID(), credentialOffered{
+		FulFillment: fulfillment,
+		ManifestID:  manifest.ID,
+	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to persist credential fulfillment : %w", err)
 	}
@@ -1379,7 +1444,7 @@ func (o *Operation) handleProposeCredential(msg service.DIDCommAction) (issuecre
 		ConnectionID: connID,
 		IssuerID:     userInvMap.IssuerID,
 		Token:        userInvMap.TxToken,
-		OauthID:      userInvMap.TxID,
+		TxnID:        userInvMap.TxID,
 		State:        userInvMap.State,
 	})
 	if err != nil {
@@ -1458,7 +1523,7 @@ func (o *Operation) handleRequestCredential(msg service.DIDCommAction) (interfac
 		UserConnectionID: connID,
 		Token:            userConnMap.Token,
 		IssuerID:         userConnMap.IssuerID,
-		OauthID:          userConnMap.OauthID,
+		OauthID:          userConnMap.TxnID,
 	}
 
 	err = o.storeAuthorizationCredHandle(handle)
@@ -1474,8 +1539,8 @@ func (o *Operation) handleRequestCredential(msg service.DIDCommAction) (interfac
 	}), nil
 }
 
-// TODO read credential application from msg nd validate if found [Issue#564]
-func (o *Operation) handleWACIRequestCredential(msg service.DIDCommAction, profile *issuer.ProfileData, userConnMap *UserConnectionMapping) (issuecredsvc.Opt, error) { // nolint:lll
+func (o *Operation) handleWACIRequestCredential(msg service.DIDCommAction, profile *issuer.ProfileData,
+	userConnMap *UserConnectionMapping) (issuecredsvc.Opt, error) {
 	var thID string
 
 	var err error
@@ -1487,6 +1552,29 @@ func (o *Operation) handleWACIRequestCredential(msg service.DIDCommAction, profi
 
 	if thID == "" {
 		return nil, errors.New("failed to correlate WACI interaction, missing thread ID")
+	}
+
+	txn, err := o.getTxn(userConnMap.TxnID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get trasaction data: %w", err)
+	}
+
+	manifestID, err := o.txnStore.Get(manifestDataPrefix + thID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get credential manifestID from store: %w", err)
+	}
+
+	// read credential manifest for the specific scope
+	manifest := o.readCredentialManifest(profile, txn.CredScope)
+	// Resetting the manifest ID -> persisted Manifest ID in txnStore.
+	// Reason: To validate credential application against the credential manifest. Since persisting the whole object
+	// is heavy. Therefore, only persisting Manifest ID when we read the credential manifest on the fly
+	// it always creates the new manifest ID (We need this functionality of creating new ID for the wallet demo.)
+	manifest.ID = strings.Trim(string(manifestID), "\"")
+
+	err = o.readAndValidateCredentialApplication(msg, manifest)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read and validate credential application: %w", err)
 	}
 
 	fulfillment, err := o.readCredentialFulfillment(thID)
@@ -1509,6 +1597,58 @@ func (o *Operation) handleWACIRequestCredential(msg service.DIDCommAction, profi
 	issueCredMsg := prepareIssueCredentialMessage(vp, redirectURL)
 
 	return issuecredential.WithIssueCredential(issueCredMsg), nil
+}
+
+func getAttachments(action service.DIDCommAction) ([]decorator.GenericAttachment, error) {
+	var didCommMsgAsMap map[string]interface{}
+
+	err := action.Message.Decode(&didCommMsgAsMap)
+	if err != nil {
+		return nil, fmt.Errorf("failed to decode didComm action message: %w", err)
+	}
+
+	attachmentsRaw, ok := didCommMsgAsMap["requests~attach"]
+	if !ok {
+		return nil, errors.New("missing attachments from DIDComm message map")
+	}
+
+	attachmentsAsArrayOfInterfaces, ok := attachmentsRaw.([]interface{})
+	if !ok {
+		return nil, errors.New("failed to read attachment, invalid format")
+	}
+
+	attachmentsBytes, err := json.Marshal(attachmentsAsArrayOfInterfaces)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal attachments: %w", err)
+	}
+
+	var attachments []decorator.GenericAttachment
+
+	err = json.Unmarshal(attachmentsBytes, &attachments)
+	if err != nil {
+		return nil, fmt.Errorf("failed to unmarshal generic attachments: %w", err)
+	}
+
+	return attachments, nil
+}
+
+func getCredentialApplicationFromAttachment(attachment *decorator.GenericAttachment) ([]byte, error) {
+	attachmentAsMap, ok := attachment.Data.JSON.(map[string]interface{})
+	if !ok {
+		return nil, errors.New("couldn't assert attachment as a map")
+	}
+
+	credentialApplicationRaw, ok := attachmentAsMap["credential_application"]
+	if !ok {
+		return nil, errors.New("credential_application object missing from attachment")
+	}
+
+	credentialApplicationBytes, err := json.Marshal(credentialApplicationRaw)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal credential application: %w", err)
+	}
+
+	return credentialApplicationBytes, nil
 }
 
 func (o *Operation) handleRequestPresentation(msg service.DIDCommAction) (interface{}, error) {
@@ -1783,28 +1923,32 @@ func (o *Operation) hanlDIDExStateMsg(msg service.StateMsg) error {
 // Read credential manifest issuer detail from persisted profile data and scope from persisted transaction cred scope.
 // cm.Issuer's ID will be used as issuer ID which identifies who the issuer of the credential(s) will be.
 // Credential Manifest Styles represents an Entity Styles object as defined in credential manifest spec.
-// TODO issue#561 Add credential manifest presentation definition
 func (o *Operation) readCredentialManifest(profileData *issuer.ProfileData,
 	txnCredScope string) *cm.CredentialManifest {
-	if cmDescriptor, ok := o.cmOutputDescriptor[txnCredScope]; ok {
-		return &cm.CredentialManifest{
-			ID:      uuid.NewString(),
-			Version: credentialManifestVersion,
-			Issuer: cm.Issuer{
-				ID:     profileData.IssuerID,
-				Name:   profileData.Name,
-				Styles: profileData.CMStyle,
-			},
-			OutputDescriptors: cmDescriptor,
+	credentialManifest := &cm.CredentialManifest{
+		ID:      txnCredScope + manifestIDSuffix,
+		Version: credentialManifestVersion,
+		Issuer: cm.Issuer{
+			ID:     profileData.IssuerID,
+			Name:   profileData.Name,
+			Styles: profileData.CMStyle,
+		},
+	}
+
+	if attachmentDescriptors, ok := o.cmDescriptors[txnCredScope]; ok {
+		if attachmentDescriptors.OutputDesc != nil {
+			credentialManifest.OutputDescriptors = attachmentDescriptors.OutputDesc
+		}
+
+		if attachmentDescriptors.InputDesc != nil {
+			credentialManifest.PresentationDefinition = &presexch.PresentationDefinition{
+				ID:               uuid.NewString(),
+				InputDescriptors: attachmentDescriptors.InputDesc,
+			}
 		}
 	}
 
-	return &cm.CredentialManifest{
-		ID: uuid.NewString(),
-		Issuer: cm.Issuer{
-			ID: profileData.IssuerID,
-		},
-	}
+	return credentialManifest
 }
 
 func prepareOfferCredentialMessage(manifest *cm.CredentialManifest, fulfillment *verifiable.Presentation) *issuecredsvc.OfferCredentialParams { // nolint:lll
@@ -1862,7 +2006,6 @@ func prepareIssueCredentialMessage(fulfillment *verifiable.Presentation, redirec
 		},
 	}
 }
-
 func outofbandClient(ariesCtx outofband.Provider) (*outofband.Client, error) {
 	c, err := outofband.New(ariesCtx)
 	if err != nil {

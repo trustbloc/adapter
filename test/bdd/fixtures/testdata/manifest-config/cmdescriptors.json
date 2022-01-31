@@ -1,0 +1,77 @@
+{
+   "prc":{
+      "output_descriptor":[
+         {
+            "id":"prc_output",
+            "schema":"https://w3id.org/citizenship/v1",
+            "display":{
+               "title":{
+                  "path":[
+                     "$.name",
+                     "$.vc.name"
+                  ],
+                  "schema":{
+                     "type":"string"
+                  },
+                  "fallback":"Permanent Resident Card"
+               },
+               "subtitle":{
+                  "path":[
+                     "$.description",
+                     "$.vc.description"
+                  ],
+                  "schema":{
+                     "type":"string"
+                  },
+                  "fallback":""
+               },
+               "description":{
+                  "text":"PR card of John Smith."
+               },
+               "properties":[
+                  {
+                     "path":[
+                        "$.credentialSubject.givenName"
+                     ],
+                     "schema":{
+                        "type":"string"
+                     },
+                     "fallback":"Not Applicable",
+                     "label":"Card Holder's first name"
+                  },
+                  {
+                     "path":[
+                        "$.credentialSubject.familyName"
+                     ],
+                     "schema":{
+                        "type":"string"
+                     },
+                     "fallback":"Unknown",
+                     "label":"Card Holder's family name"
+                  }
+               ]
+            },
+            "styles":{
+               "thumbnail":{
+                  "uri":"http://example-university.org/logo.png",
+                  "alt":"Example University logo"
+               },
+               "hero":{
+                  "uri":"http://example-university.org/hero.png",
+                  "alt":"Example University students in graduation ceremony"
+               },
+               "background":{
+                  "color":"#ff0000"
+               },
+               "text":{
+                  "color":"#d4d400"
+               }
+            }
+         }
+      ],
+      "options":{
+         "challenge":"508adef4-b8e0-4edf-a53d-a260371c1423",
+         "domain":"9rf25a28rs96"
+      }
+   }
+}

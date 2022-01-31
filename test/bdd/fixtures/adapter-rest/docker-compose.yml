@@ -27,7 +27,7 @@ services:
       - ADAPTER_REST_EXTERNAL_URL=https://issuer-adapter-rest.trustbloc.local:9070
       - ADAPTER_REST_DID_ANCHOR_ORIGIN=https://testnet.orb.local
       - ADAPTER_REST_CONTEXT_PROVIDER_URL=${CONTEXT_PROVIDER_URL}
-      - ADAPTER_REST_OUTPUT_DESCRIPTORS_FILE=/etc/testdata/manifest-config/outputdescriptors.json
+      - ADAPTER_REST_CM_DESCRIPTORS_FILE=/etc/testdata/manifest-config/cmdescriptors.json
       - ADAPTER_REST_KEY_TYPE=${AGENT_KEY_TYPE}
       - ADAPTER_REST_KEY_AGREEMENT_TYPE=${AGENT_KEY_AGREEMENT_TYPE}
       - ADAPTER_REST_MEDIA_TYPE_PROFILES=${AGENT_MEDIA_TYPE_PROFILES}

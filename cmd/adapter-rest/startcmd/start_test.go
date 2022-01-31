@@ -613,7 +613,7 @@ func TestReadOutputDescriptorFile(t *testing.T) { // nolint:paralleltest
 		func(t *testing.T) {
 			cmOutputdesc, err := readCMOutputDescriptorFile("./testingWrongFile")
 			require.Error(t, err)
-			require.Equal(t, "read output descriptors file : open testingWrongFile: no such file or directory",
+			require.Equal(t, "read credential manifest descriptors file : open testingWrongFile: no such file or directory",
 				err.Error())
 			require.Nil(t, cmOutputdesc)
 		})

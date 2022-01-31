@@ -1,72 +1,126 @@
 {
-    "udc-scope-1": [
-        {
-            "id": "udc_output",
-            "schema": "https://www.w3.org/2018/credentials/examples/v1",
-            "display": {
-                "title": {
-                    "path": [
-                        "$.title",
-                        "$.vc.title"
-                    ],
-                    "schema": {
-                        "type": "string"
-                    },
-                    "fallback": "Bachelor's Degree"
-                },
-                "subtitle": {
-                    "path": [
-                        "$.minor",
-                        "$.vc.minor"
-                    ],
-                    "schema": {
-                        "type": "string"
-                    },
-                    "fallback": ""
-                },
-                "description": {
-                    "text": "Awarded for completing a four year program at Example University."
-                },
-                "properties": [
-                    {
-                        "path": [
-                            "$.name",
-                            "$.credentialSubject.name"
-                        ],
-                        "schema": {
-                            "type": "string"
-                        },
-                        "fallback": "Not Applicable",
-                        "label": "Degree Holder's name"
-                    },
-                    {
-                        "path": [
-                            "$.credentialSubject.degree.type"
-                        ],
-                        "schema": {
-                            "type": "string"
-                        },
-                        "fallback": "Unknown",
-                        "label": "Degree"
-                    }
-                ]
+   "udc-scope-1":{
+      "output_descriptor":[
+         {
+            "id":"udc_output",
+            "schema":"https://www.w3.org/2018/credentials/examples/v1",
+            "display":{
+               "title":{
+                  "path":[
+                     "$.title",
+                     "$.vc.title"
+                  ],
+                  "schema":{
+                     "type":"string"
+                  },
+                  "fallback":"Bachelor's Degree"
+               },
+               "subtitle":{
+                  "path":[
+                     "$.minor",
+                     "$.vc.minor"
+                  ],
+                  "schema":{
+                     "type":"string"
+                  },
+                  "fallback":""
+               },
+               "description":{
+                  "text":"Awarded for completing a four year program at Example University."
+               },
+               "properties":[
+                  {
+                     "path":[
+                        "$.name",
+                        "$.credentialSubject.name"
+                     ],
+                     "schema":{
+                        "type":"string"
+                     },
+                     "fallback":"Not Applicable",
+                     "label":"Degree Holder's name"
+                  },
+                  {
+                     "path":[
+                        "$.credentialSubject.degree.type"
+                     ],
+                     "schema":{
+                        "type":"string"
+                     },
+                     "fallback":"Unknown",
+                     "label":"Degree"
+                  }
+               ]
             },
-            "styles": {
-                "thumbnail": {
-                    "uri": "http://example-university.org/logo.png",
-                    "alt": "Example University logo"
-                },
-                "hero": {
-                    "uri": "http://example-university.org/hero.png",
-                    "alt": "Example University students in graduation ceremony"
-                },
-                "background": {
-                    "color": "#ff0000"
-                },
-                "text": {
-                    "color": "#d4d400"
-                }
+            "styles":{
+               "thumbnail":{
+                  "uri":"http://example-university.org/logo.png",
+                  "alt":"Example University logo"
+               },
+               "hero":{
+                  "uri":"http://example-university.org/hero.png",
+                  "alt":"Example University students in graduation ceremony"
+               },
+               "background":{
+                  "color":"#ff0000"
+               },
+               "text":{
+                  "color":"#d4d400"
+               }
             }
-        }
-    ]
+         }
+      ],
+      "input_descriptor":[
+         {
+            "id":"prc_input",
+            "name":"Permanent Resident Card",
+            "purpose":"We need PRC to verify your status.",
+            "schema":[
+               {
+                  "uri":"https://w3id.org/citizenship#PermanentResidentCard"
+               }
+            ],
+            "constraints":{
+               "fields":[
+                  {
+                     "path":[
+                        "$.credentialSubject.givenName"
+                     ],
+                     "filter":{
+                        "type":"string"
+                     }
+                  },
+                  {
+                     "path":[
+                        "$.credentialSubject.familyName"
+                     ],
+                     "filter":{
+                        "type":"string"
+                     }
+                  },
+                  {
+                     "path":[
+                        "$.credentialSubject.birthCountry"
+                     ],
+                     "filter":{
+                        "type":"string"
+                     }
+                  },
+                  {
+                     "path":[
+                        "$.credentialSubject.birthDate"
+                     ],
+                     "filter":{
+                        "type":"string"
+                     }
+                  }
+               ]
+            }
+         }
+      ],
+      "options":{
+         "challenge":"508adef4-b8e0-4edf-a53d-a260371c1423",
+         "domain":"9rf25a28rs96"
+      }
+   }
 }
