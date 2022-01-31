@@ -105,7 +105,7 @@ const (
 	cmOutputDescriptorsFilePathFlagUsage = "Path to the output descriptors file of credential manifests " +
 		"supported by the adapter'" + "Alternatively, this can be set with the following " +
 		"environment variable: " + cmOutputDescriptorsFilePathEnvKey
-	cmOutputDescriptorsFilePathEnvKey = "ADAPTER_REST_OUTPUT_DESCRIPTORS_FILE"
+	cmOutputDescriptorsFilePathEnvKey = "ADAPTER_REST_CM_DESCRIPTORS_FILE"
 
 	tlsSystemCertPoolFlagName  = "tls-systemcertpool"
 	tlsSystemCertPoolFlagUsage = "Use system certificate pool." +
@@ -824,7 +824,7 @@ func addIssuerHandlers(parameters *adapterRestParameters, framework *aries.Aries
 		return fmt.Errorf("aries-framework - failed to get aries context : %w", err)
 	}
 
-	cmOutputDescriptor, err := readCMOutputDescriptorFile(parameters.cmOutputDescriptorsFilePath)
+	cmDescriptors, err := readCMOutputDescriptorFile(parameters.cmOutputDescriptorsFilePath)
 	if err != nil {
 		return fmt.Errorf("failed to read and validate manifest output descriptors : %w", err)
 	}
@@ -861,7 +861,7 @@ func addIssuerHandlers(parameters *adapterRestParameters, framework *aries.Aries
 		ExternalURL:          parameters.externalURL,
 		DidDomain:            parameters.trustblocDomain,
 		JSONLDDocumentLoader: ariesCtx.JSONLDDocumentLoader(),
-		CmOutputDescriptor:   cmOutputDescriptor,
+		CMDescriptors:        cmDescriptors,
 	})
 	if err != nil {
 		return fmt.Errorf("failed to init issuer ops: %w", err)
@@ -1160,28 +1160,29 @@ func getPresentationExchangeProvider(configFile string) (*presentationex.Provide
 	return p, nil
 }
 
-func readCMOutputDescriptorFile(outputDescriptorsFile string) (cmOutputDescriptors map[string][]*cm.OutputDescriptor,
+func readCMOutputDescriptorFile(cmDescriptorsFile string) (cmDescriptor map[string]*issuerops.CMAttachmentDescriptors,
 	err error) {
-	if outputDescriptorsFile == "" {
-		return make(map[string][]*cm.OutputDescriptor), nil
+	if cmDescriptorsFile == "" {
+		return make(map[string]*issuerops.CMAttachmentDescriptors), nil
 	}
 
-	credentialManifestBytes, err := ioutil.ReadFile(filepath.Clean(outputDescriptorsFile))
+	credentialDescriptorsBytes, err := ioutil.ReadFile(filepath.Clean(cmDescriptorsFile))
 	if err != nil {
-		return nil, fmt.Errorf("read output descriptors file : %w", err)
+		return nil, fmt.Errorf("read credential manifest descriptors file : %w", err)
 	}
 
-	err = json.Unmarshal(credentialManifestBytes, &cmOutputDescriptors)
+	err = json.Unmarshal(credentialDescriptorsBytes, &cmDescriptor)
 	if err != nil {
-		return nil, fmt.Errorf("failed to unmarshal output descriptor file: %w", err)
+		return nil, fmt.Errorf("failed to unmarshal credential manifest descriptors file: %w", err)
 	}
 
-	for _, outputDescriptorsValues := range cmOutputDescriptors {
-		err = cm.ValidateOutputDescriptors(outputDescriptorsValues)
+	for _, descriptors := range cmDescriptor {
+		err := cm.ValidateOutputDescriptors(descriptors.OutputDesc)
 		if err != nil {
 			return nil, fmt.Errorf("aries-framework - failed to validate output descriptors: %w", err)
 		}
 	}
+	// TODO Issue#563 validate input descriptor if exists
 
-	return cmOutputDescriptors, nil
+	return cmDescriptor, nil
 }

@@ -100,7 +100,7 @@ type UserConnectionMapping struct {
 	ConnectionID string `json:"connectionID,omitempty"`
 	IssuerID     string `json:"issuerID,omitempty"`
 	Token        string `json:"token,omitempty"`
-	OauthID      string `json:"oauthid,omitempty"`
+	TxnID        string `json:"oauthid,omitempty"`
 	State        string `json:"state,omitempty"`
 }
 
