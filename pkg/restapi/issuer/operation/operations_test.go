@@ -554,6 +554,7 @@ func TestCreateProfile(t *testing.T) {
 
 		vReq := createProfileData(uuid.New().String())
 		vReq.SupportsWACI = true
+		vReq.IssuerID = ""
 		vReq.CredentialScopes = []string{mockCredScope}
 		vReq.OIDCClientParams = &issuer.OIDCClientParams{
 			ClientID:     "client id",
@@ -586,7 +587,7 @@ func TestCreateProfile(t *testing.T) {
 		require.Equal(t, vReq.URL, profileRes.URL)
 		require.Equal(t, vReq.SupportsAssuranceCredential, profileRes.SupportsAssuranceCredential)
 		require.Equal(t, vReq.CredentialScopes, profileRes.CredentialScopes)
-		require.Equal(t, vReq.IssuerID, profileRes.IssuerID)
+		require.NotNil(t, profileRes.IssuerID)
 		require.Equal(t, vReq.SupportsWACI, profileRes.SupportsWACI)
 	})
 
