@@ -186,7 +186,7 @@ func createProfileData(profileID string) *issuer.ProfileData {
 		URL:                         "http://issuer.example.com",
 		PresentationSigningKey:      "did:example:123xyz#key-1",
 		SupportsWACI:                false,
-		IssuerID:                    "did:example:123?linked-domains=3",
+		IssuerID:                    uuid.New().String(),
 	}
 }
 

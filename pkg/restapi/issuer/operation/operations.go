@@ -2065,6 +2065,10 @@ func mapProfileReqToData(data *ProfileDataRequest, didDoc *did.Doc) (*issuer.Pro
 		}
 	}
 
+	if data.SupportsWACI && data.IssuerID == "" {
+		data.IssuerID = uuid.New().String()
+	}
+
 	return &issuer.ProfileData{
 		ID:                          data.ID,
 		Name:                        data.Name,
