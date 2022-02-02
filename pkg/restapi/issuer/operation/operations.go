@@ -27,6 +27,7 @@ import (
 	"github.com/hyperledger/aries-framework-go/pkg/client/issuecredential"
 	"github.com/hyperledger/aries-framework-go/pkg/client/mediator"
 	"github.com/hyperledger/aries-framework-go/pkg/client/outofband"
+	"github.com/hyperledger/aries-framework-go/pkg/client/outofbandv2"
 	"github.com/hyperledger/aries-framework-go/pkg/client/presentproof"
 	"github.com/hyperledger/aries-framework-go/pkg/didcomm/common/service"
 	"github.com/hyperledger/aries-framework-go/pkg/didcomm/messaging/msghandler"
@@ -41,6 +42,7 @@ import (
 	"github.com/hyperledger/aries-framework-go/pkg/doc/verifiable"
 	"github.com/hyperledger/aries-framework-go/pkg/framework/aries/api/vdr"
 	"github.com/hyperledger/aries-framework-go/pkg/store/connection"
+	"github.com/hyperledger/aries-framework-go/pkg/wallet"
 	"github.com/hyperledger/aries-framework-go/spi/storage"
 	"github.com/piprate/json-gold/ld"
 	"github.com/trustbloc/edge-core/pkg/log"
@@ -118,6 +120,7 @@ type connections interface {
 // PublicDIDCreator creates public DIDs.
 type PublicDIDCreator interface {
 	Create() (*did.Doc, error)
+	CreateV2() (*did.Doc, error)
 }
 
 type mediatorClientProvider interface {
@@ -158,6 +161,11 @@ func New(config *Config) (*Operation, error) { // nolint:funlen,gocyclo,cyclop
 	oobClient, err := outofbandClient(config.AriesCtx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create aries outofband client : %w", err)
+	}
+
+	oobv2Client, err := outofbandV2Client(config.AriesCtx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create aries outofband v2 client : %w", err)
 	}
 
 	mediatorClient, err := mediatorClient(config.AriesCtx)
@@ -259,6 +267,7 @@ func New(config *Config) (*Operation, error) { // nolint:funlen,gocyclo,cyclop
 
 	op := &Operation{
 		oobClient:          oobClient,
+		oobV2Client:        oobv2Client,
 		didExClient:        didExClient,
 		issueCredClient:    issueCredClient,
 		presentProofClient: presentProofClient,
@@ -310,6 +319,7 @@ type oidcClient interface {
 // Operation defines handlers for rp operations.
 type Operation struct {
 	oobClient            *outofband.Client
+	oobV2Client          *outofbandv2.Client
 	didExClient          didExClient
 	issueCredClient      *issuecredential.Client
 	presentProofClient   *presentproof.Client
@@ -357,7 +367,8 @@ func (o *Operation) GetRESTHandlers() []restapi.Handler {
 }
 
 // TODO #581 Validate and check Waci profile creation that each scope has output descriptors configured.
-func (o *Operation) createIssuerProfileHandler(rw http.ResponseWriter, req *http.Request) {
+func (o *Operation) createIssuerProfileHandler( // nolint:funlen,gocyclo,cyclop
+	rw http.ResponseWriter, req *http.Request) {
 	data := &ProfileDataRequest{}
 
 	if err := json.NewDecoder(req.Body).Decode(&data); err != nil {
@@ -367,7 +378,16 @@ func (o *Operation) createIssuerProfileHandler(rw http.ResponseWriter, req *http
 		return
 	}
 
-	newDidDoc, err := o.publicDIDCreator.Create()
+	var newDidDoc *did.Doc
+
+	var err error
+
+	if data.IsDIDCommV2 {
+		newDidDoc, err = o.publicDIDCreator.CreateV2()
+	} else {
+		newDidDoc, err = o.publicDIDCreator.Create()
+	}
+
 	if err != nil {
 		commhttp.WriteErrorResponseWithLog(rw, http.StatusInternalServerError,
 			fmt.Sprintf("failed to create public did : %s", err.Error()), profileEndpoint, logger)
@@ -443,19 +463,21 @@ func (o *Operation) walletConnectHandler(rw http.ResponseWriter, req *http.Reque
 	}
 
 	state := req.URL.Query().Get(stateQueryParam)
-	if state == "" {
-		cred := strings.Trim(req.FormValue(credScopeQueryParam), " ")
-		if cred != "" {
-			o.credScopeHandler(rw, req, profile, cred)
-			return
-		}
+	cred := strings.Trim(req.FormValue(credScopeQueryParam), " ")
 
+	switch {
+	case state != "":
+		o.walletConnectStateFlow(rw, req, profile, state)
+	case cred != "":
+		o.credScopeHandler(rw, req, profile, cred)
+	default:
 		commhttp.WriteErrorResponseWithLog(rw, http.StatusBadRequest,
 			"failed to get state from the url", walletConnectEndpoint, logger)
-
-		return
 	}
+}
 
+func (o *Operation) walletConnectStateFlow(
+	rw http.ResponseWriter, req *http.Request, profile *issuer.ProfileData, state string) {
 	tknResp, err := o.retrieveIssuerToken(profile, state)
 	if err != nil {
 		commhttp.WriteErrorResponseWithLog(rw, http.StatusInternalServerError,
@@ -472,7 +494,7 @@ func (o *Operation) walletConnectHandler(rw http.ResponseWriter, req *http.Reque
 	}
 
 	// store the txn data
-	txnID, err := o.createTxn(profile, state, tknResp.Token)
+	txnID, err := o.createTxnWithState(profile, state, tknResp.Token)
 	if err != nil {
 		commhttp.WriteErrorResponseWithLog(rw, http.StatusInternalServerError,
 			fmt.Sprintf("failed to create txn : %s", err.Error()), walletConnectEndpoint, logger)
@@ -770,7 +792,7 @@ func (o *Operation) getOIDCAccessToken(txnID string, profile *issuer.ProfileData
 	return tok2.AccessToken, nil
 }
 
-func (o *Operation) validateWalletResponseHandler(rw http.ResponseWriter, req *http.Request) { //nolint: funlen
+func (o *Operation) validateWalletResponseHandler(rw http.ResponseWriter, req *http.Request) { // nolint: funlen
 	// get the txnID
 	txnID := req.URL.Query().Get(txnIDQueryParam)
 
@@ -1016,14 +1038,52 @@ func (o *Operation) validateAndGetConnection(connectData *issuervc.DIDConnectCre
 	return conn, nil
 }
 
-func (o *Operation) createTxn(profile *issuer.ProfileData, state, token string) (string, error) {
-	invitation, err := o.oobClient.CreateInvitation(nil, outofband.WithLabel("issuer"),
-		outofband.WithGoal("", oobGoalCode))
+func (o *Operation) createTxn( // nolint:funlen
+	profile *issuer.ProfileData,
+	state, token, credScope string,
+) (string, error) {
+	var invBytes []byte
+
+	if profile.IsDIDCommV2 { // nolint:nestif
+		invitationV2, err := o.oobV2Client.CreateInvitation(
+			outofbandv2.WithFrom(profile.PublicDID),
+			outofbandv2.WithLabel("issuer"),
+			outofbandv2.WithGoal("", oobGoalCode),
+		)
+		if err != nil {
+			return "", fmt.Errorf("failed to create invitation : %w", err)
+		}
+
+		invBytes, err = json.Marshal(invitationV2)
+		if err != nil {
+			return "", fmt.Errorf("marshal invitation: %w", err)
+		}
+	} else {
+		invitationV1, err := o.oobClient.CreateInvitation(nil, outofband.WithLabel("issuer"),
+			outofband.WithGoal("", oobGoalCode))
+		if err != nil {
+			return "", fmt.Errorf("failed to create invitation : %w", err)
+		}
+
+		invBytes, err = json.Marshal(invitationV1)
+		if err != nil {
+			return "", fmt.Errorf("marshal invitation: %w", err)
+		}
+	}
+
+	invitation := &wallet.GenericInvitation{}
+
+	err := json.Unmarshal(invBytes, invitation)
 	if err != nil {
-		return "", fmt.Errorf("failed to create invitation : %w", err)
+		return "", fmt.Errorf("unmarshal invitation: %w", err)
 	}
 
 	txnID := uuid.New().String()
+
+	if credScope != "" {
+		state = ""
+		token = uuid.New().String()
+	}
 
 	// store the txn data
 	data := &txnData{
@@ -1031,6 +1091,7 @@ func (o *Operation) createTxn(profile *issuer.ProfileData, state, token string) 
 		State:             state,
 		DIDCommInvitation: invitation,
 		Token:             token,
+		CredScope:         credScope,
 	}
 
 	dataBytes, err := json.Marshal(data)
@@ -1046,36 +1107,12 @@ func (o *Operation) createTxn(profile *issuer.ProfileData, state, token string) 
 	return txnID, nil
 }
 
+func (o *Operation) createTxnWithState(profile *issuer.ProfileData, state, token string) (string, error) {
+	return o.createTxn(profile, state, token, "")
+}
+
 func (o *Operation) createTxnWithCredScope(profile *issuer.ProfileData, credScope string) (string, error) {
-	invitation, err := o.oobClient.CreateInvitation(nil, outofband.WithLabel("issuer"),
-		outofband.WithGoal("", oobGoalCode))
-	if err != nil {
-		return "", fmt.Errorf("failed to create invitation : %w", err)
-	}
-
-	txnID := uuid.New().String()
-
-	token := uuid.New().String()
-
-	// store the txn data
-	data := &txnData{
-		IssuerID:          profile.ID,
-		DIDCommInvitation: invitation,
-		CredScope:         credScope,
-		Token:             token,
-	}
-
-	dataBytes, err := json.Marshal(data)
-	if err != nil {
-		return "", fmt.Errorf("failed to marshal txn data: %w", err)
-	}
-
-	err = o.txnStore.Put(txnID, dataBytes)
-	if err != nil {
-		return "", fmt.Errorf("failed to store txn data: %w", err)
-	}
-
-	return txnID, nil
+	return o.createTxn(profile, "", "", credScope)
 }
 
 func (o *Operation) getTxn(id string) (*txnData, error) {
@@ -1198,14 +1235,14 @@ func (o *Operation) didCommActionListener(ch <-chan service.DIDCommAction) {
 		var args interface{}
 
 		switch msg.Message.Type() {
-		case issuecredsvc.RequestCredentialMsgTypeV2:
+		case issuecredsvc.RequestCredentialMsgTypeV2, issuecredsvc.RequestCredentialMsgTypeV3:
 			args, err = o.handleRequestCredential(msg)
 		case presentproofsvc.RequestPresentationMsgTypeV2:
 			args, err = o.handleRequestPresentation(msg)
 		case presentproofsvc.RequestPresentationMsgTypeV3:
 			// TODO handle presentproofsvc.RequestPresentationMsgTypeV3 properly, for now it's the same as V2.
 			args, err = o.handleRequestPresentation(msg)
-		case issuecredsvc.ProposeCredentialMsgTypeV2:
+		case issuecredsvc.ProposeCredentialMsgTypeV2, issuecredsvc.ProposeCredentialMsgTypeV3:
 			args, err = o.handleProposeCredential(msg)
 		default:
 			err = fmt.Errorf("unsupported message type : %s", msg.Message.Type())
@@ -1239,18 +1276,35 @@ func (o *Operation) didCommStateMsgListener(stateMsgCh <-chan service.StateMsg) 
 
 // nolint:funlen,gocyclo,cyclop
 func (o *Operation) handleProposeCredential(msg service.DIDCommAction) (issuecredsvc.Opt, error) {
-	var proposal issuecredential.ProposeCredentialV2
+	var invitationID string
 
-	err := msg.Message.Decode(&proposal)
-	if err != nil {
-		return nil, fmt.Errorf("failed to decode propose credential message: %w", err)
+	// TODO: update afgo to support parsing InvitationID for ProposeCredentialParams
+	switch msg.Message.Type() {
+	case issuecredsvc.ProposeCredentialMsgTypeV2:
+		var proposal issuecredential.ProposeCredentialV2
+
+		err := msg.Message.Decode(&proposal)
+		if err != nil {
+			return nil, fmt.Errorf("failed to decode propose credential message: %w", err)
+		}
+
+		invitationID = proposal.InvitationID
+	case issuecredsvc.ProposeCredentialMsgTypeV3:
+		var proposal issuecredential.ProposeCredentialV3
+
+		err := msg.Message.Decode(&proposal)
+		if err != nil {
+			return nil, fmt.Errorf("failed to decode propose credential message: %w", err)
+		}
+
+		invitationID = proposal.InvitationID
 	}
 
-	if proposal.InvitationID == "" {
+	if invitationID == "" {
 		return nil, errors.New("invalid invitation ID, failed to correlate incoming propose credential message")
 	}
 
-	userInvMap, err := o.getUserInvitationMapping(proposal.InvitationID)
+	userInvMap, err := o.getUserInvitationMapping(invitationID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get user invitation mapping : %w", err)
 	}
@@ -1309,6 +1363,7 @@ func (o *Operation) handleProposeCredential(msg service.DIDCommAction) (issuecre
 	offerCred := prepareOfferCredentialMessage(manifest, fulfillment)
 
 	// save fulfillment for subsequent WACI steps.
+	// TODO question: why is this saved under the message ID instead of thread ID?
 	err = o.saveCredentialFulfillment(msg.Message.ID(), fulfillment)
 	if err != nil {
 		return nil, fmt.Errorf("failed to persist credential fulfillment : %w", err)
@@ -1421,7 +1476,11 @@ func (o *Operation) handleRequestCredential(msg service.DIDCommAction) (interfac
 
 // TODO read credential application from msg nd validate if found [Issue#564]
 func (o *Operation) handleWACIRequestCredential(msg service.DIDCommAction, profile *issuer.ProfileData, userConnMap *UserConnectionMapping) (issuecredsvc.Opt, error) { // nolint:lll
-	thID, err := msg.Message.ThreadID()
+	var thID string
+
+	var err error
+
+	thID, err = msg.Message.ThreadID()
 	if err != nil {
 		return nil, fmt.Errorf("failed to read threadID from request credential message: %w", err)
 	}
@@ -1813,6 +1872,15 @@ func outofbandClient(ariesCtx outofband.Provider) (*outofband.Client, error) {
 	return c, nil
 }
 
+func outofbandV2Client(ariesCtx outofband.Provider) (*outofbandv2.Client, error) {
+	c, err := outofbandv2.New(ariesCtx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create new outofband 2.0 client: %w", err)
+	}
+
+	return c, nil
+}
+
 func didExchangeClient(ariesCtx aries.CtxProvider, stateMsgCh chan service.StateMsg) (*didexchange.Client, error) {
 	didExClient, err := didexchange.New(ariesCtx)
 	if err != nil {
@@ -2086,5 +2154,7 @@ func mapProfileReqToData(data *ProfileDataRequest, didDoc *did.Doc) (*issuer.Pro
 		LinkedWalletURL:             data.LinkedWalletURL,
 		IssuerID:                    data.IssuerID,
 		CMStyle:                     data.CMStyle,
+		PublicDID:                   didDoc.ID,
+		IsDIDCommV2:                 data.IsDIDCommV2,
 	}, nil
 }

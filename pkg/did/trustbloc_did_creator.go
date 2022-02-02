@@ -153,7 +153,7 @@ func (p *TrustblocDIDCreator) newKey() (crypto.PublicKey, error) {
 func (p *TrustblocDIDCreator) templateV2() (*did.Doc, error) {
 	didDoc := did.Doc{}
 
-	auth, err := p.createVerification("#key-1", p.keyType, did.Authentication)
+	auth, err := p.createVerification("", p.keyType, did.Authentication)
 	if err != nil {
 		return nil, fmt.Errorf("creating did doc Authentication: %w", err)
 	}
@@ -166,6 +166,13 @@ func (p *TrustblocDIDCreator) templateV2() (*did.Doc, error) {
 	}
 
 	didDoc.KeyAgreement = append(didDoc.KeyAgreement, *kagr)
+
+	assrt, err := p.createVerification("", p.keyType, did.AssertionMethod)
+	if err != nil {
+		return nil, fmt.Errorf("creating did doc AssertionMethod: %w", err)
+	}
+
+	didDoc.AssertionMethod = append(didDoc.AssertionMethod, *assrt)
 
 	didDoc.Service = []did.Service{{
 		ID:              uuid.NewString(),
@@ -190,6 +197,10 @@ func (p *TrustblocDIDCreator) createVerificationMethod(id string, kt kms.KeyType
 	kid, pkBytes, err := p.km.CreateAndExportPubKeyBytes(kt)
 	if err != nil {
 		return nil, fmt.Errorf("creating public key: %w", err)
+	}
+
+	if id == "" {
+		id = "#" + kid
 	}
 
 	var j *jwk.JWK

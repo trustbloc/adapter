@@ -1177,7 +1177,7 @@ func readCMOutputDescriptorFile(outputDescriptorsFile string) (cmOutputDescripto
 	}
 
 	for _, outputDescriptorsValues := range cmOutputDescriptors {
-		err = cm.Validate(outputDescriptorsValues)
+		err = cm.ValidateOutputDescriptors(outputDescriptorsValues)
 		if err != nil {
 			return nil, fmt.Errorf("aries-framework - failed to validate output descriptors: %w", err)
 		}
