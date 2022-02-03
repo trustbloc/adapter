@@ -14,7 +14,7 @@ such as DIDComm, [W3C Verifiable Credentials(VC)](https://w3c.github.io/vc-data-
 
 The Adapter contains following components.
 - [Issuer Adapter](./docs/issuer/v0.1.7/README.md)
-- [Relying Party (RP) Adapter](./docs/rp/v0.1.7/README.md) 
+- [Relying Party (RP) Adapter](./docs/rp/README.md) 
 
 The TrustBloc Adapters provide support for DIDComm to go through a router using [Blinded Routing](./docs/blinded_routing.md) feature. 
 
