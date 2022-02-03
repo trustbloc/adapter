@@ -9,8 +9,8 @@ package operation
 import (
 	"encoding/json"
 
-	"github.com/hyperledger/aries-framework-go/pkg/client/outofband"
 	"github.com/hyperledger/aries-framework-go/pkg/doc/cm"
+	"github.com/hyperledger/aries-framework-go/pkg/wallet"
 
 	adaptervc "github.com/trustbloc/edge-adapter/pkg/vc"
 )
@@ -28,6 +28,7 @@ type ProfileDataRequest struct {
 	OIDCClientParams            *OIDCClientParams `json:"oidcParams,omitempty"`
 	CredentialScopes            []string          `json:"credScopes,omitempty"`
 	LinkedWalletURL             string            `json:"linkedWallet,omitempty"`
+	IsDIDCommV2                 bool              `json:"isDIDCommV2,omitempty"`
 	// Issuer ID identifies who is the issuer of the credential manifests being issued.
 	IssuerID string `json:"issuerID,omitempty"`
 	// CMStyle represents an entity styles object as defined in credential manifest spec.
@@ -49,20 +50,20 @@ type WalletConnect struct {
 // txnData contains session data.
 type txnData struct {
 	// Todo #580 rename IssuerID to ProfileID
-	IssuerID          string                `json:"issuerID,omitempty"`
-	State             string                `json:"state,omitempty"`
-	DIDCommInvitation *outofband.Invitation `json:"didCommInvitation,omitempty"`
-	Token             string                `json:"token,omitempty"`
-	CredScope         string                `json:"cred,omitempty"`
+	IssuerID          string                    `json:"issuerID,omitempty"`
+	State             string                    `json:"state,omitempty"`
+	DIDCommInvitation *wallet.GenericInvitation `json:"didCommInvitation,omitempty"`
+	Token             string                    `json:"token,omitempty"`
+	CredScope         string                    `json:"cred,omitempty"`
 }
 
 // CredentialHandlerRequest wallet chapi request.
 type CredentialHandlerRequest struct {
-	Query             *CHAPIQuery           `json:"query,omitempty"`
-	DIDCommInvitation *outofband.Invitation `json:"invitation,omitempty"`
-	Credentials       []json.RawMessage     `json:"credentials,omitempty"`
-	WACI              bool                  `json:"waci,omitempty"`
-	WalletRedirect    string                `json:"walletRedirect,omitempty"`
+	Query             *CHAPIQuery               `json:"query,omitempty"`
+	DIDCommInvitation *wallet.GenericInvitation `json:"invitation,omitempty"`
+	Credentials       []json.RawMessage         `json:"credentials,omitempty"`
+	WACI              bool                      `json:"waci,omitempty"`
+	WalletRedirect    string                    `json:"walletRedirect,omitempty"`
 }
 
 // CHAPIQuery chapi query type data.

@@ -29,6 +29,7 @@ import (
 	issuecredsvc "github.com/hyperledger/aries-framework-go/pkg/didcomm/protocol/issuecredential"
 	"github.com/hyperledger/aries-framework-go/pkg/didcomm/protocol/mediator"
 	outofbandsvc "github.com/hyperledger/aries-framework-go/pkg/didcomm/protocol/outofband"
+	outofbandv2svc "github.com/hyperledger/aries-framework-go/pkg/didcomm/protocol/outofbandv2"
 	presentproofsvc "github.com/hyperledger/aries-framework-go/pkg/didcomm/protocol/presentproof"
 	"github.com/hyperledger/aries-framework-go/pkg/doc/cm"
 	"github.com/hyperledger/aries-framework-go/pkg/doc/verifiable"
@@ -50,6 +51,7 @@ import (
 	"github.com/trustbloc/edge-adapter/pkg/internal/mock/issuecredential"
 	"github.com/trustbloc/edge-adapter/pkg/internal/mock/messenger"
 	mockoutofband "github.com/trustbloc/edge-adapter/pkg/internal/mock/outofband"
+	mockoutofbandv2 "github.com/trustbloc/edge-adapter/pkg/internal/mock/outofbandv2"
 	"github.com/trustbloc/edge-adapter/pkg/internal/mock/presentproof"
 	"github.com/trustbloc/edge-adapter/pkg/profile/issuer"
 	mockprovider "github.com/trustbloc/edge-adapter/pkg/restapi/internal/mocks/provider"
@@ -105,7 +107,7 @@ func TestNew(t *testing.T) {
 		}
 	})
 
-	t.Run("mediator client error", func(t *testing.T) {
+	t.Run("oobv2 client error", func(t *testing.T) {
 		t.Parallel()
 
 		config := config(t)
@@ -113,6 +115,25 @@ func TestNew(t *testing.T) {
 			Provider: &ariesmockprovider.Provider{
 				ServiceMap: map[string]interface{}{
 					outofbandsvc.Name: &mockoutofband.MockService{},
+				},
+			},
+		}
+
+		c, err := New(config)
+		require.Nil(t, c)
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "failed to create aries outofband v2 client")
+	})
+
+	t.Run("mediator client error", func(t *testing.T) {
+		t.Parallel()
+
+		config := config(t)
+		config.AriesCtx = &mockprovider.MockProvider{
+			Provider: &ariesmockprovider.Provider{
+				ServiceMap: map[string]interface{}{
+					outofbandsvc.Name:   &mockoutofband.MockService{},
+					outofbandv2svc.Name: &mockoutofbandv2.MockService{},
 				},
 			},
 		}
@@ -139,6 +160,7 @@ func TestNew(t *testing.T) {
 					didexchange.DIDExchange: &mocksvc.MockDIDExchangeSvc{},
 					issuecredsvc.Name:       &issuecredential.MockIssueCredentialSvc{},
 					presentproofsvc.Name:    &presentproof.MockPresentProofSvc{},
+					outofbandv2svc.Name:     &mockoutofbandv2.MockService{},
 				},
 			},
 		}
@@ -499,6 +521,8 @@ func TestCreateProfile(t *testing.T) {
 			SecretExpiry: 0,
 		}
 
+		vReq.IsDIDCommV2 = true
+
 		vReqBytes, err := json.Marshal(vReq)
 		require.NoError(t, err)
 
@@ -515,6 +539,7 @@ func TestCreateProfile(t *testing.T) {
 		require.Equal(t, vReq.SupportsAssuranceCredential, profileRes.SupportsAssuranceCredential)
 		require.Equal(t, vReq.IssuerID, profileRes.IssuerID)
 		require.Equal(t, vReq.SupportsWACI, profileRes.SupportsWACI)
+		require.Equal(t, vReq.IsDIDCommV2, profileRes.IsDIDCommV2)
 	})
 
 	t.Run("create profile - success with default oidc", func(t *testing.T) {
@@ -735,8 +760,6 @@ func TestGetProfile(t *testing.T) {
 	endpoint := getProfileEndpoint
 	handler := getHandler(t, op, endpoint)
 
-	urlVars := make(map[string]string)
-
 	t.Run("get profile - success", func(t *testing.T) {
 		t.Parallel()
 
@@ -744,7 +767,9 @@ func TestGetProfile(t *testing.T) {
 		err := op.profileStore.SaveProfile(vReq)
 		require.NoError(t, err)
 
-		urlVars[idPathParam] = vReq.ID
+		urlVars := map[string]string{
+			idPathParam: vReq.ID,
+		}
 
 		rr := serveHTTPMux(t, handler, endpoint, nil, urlVars)
 
@@ -760,7 +785,9 @@ func TestGetProfile(t *testing.T) {
 	t.Run("get profile - no data found", func(t *testing.T) {
 		t.Parallel()
 
-		urlVars[idPathParam] = "invalid-name"
+		urlVars := map[string]string{
+			idPathParam: "invalid-name",
+		}
 
 		rr := serveHTTPMux(t, handler, endpoint, nil, urlVars)
 
@@ -928,6 +955,7 @@ func TestConnectWallet(t *testing.T) { // nolint:tparallel // data race
 					issuecredsvc.Name:       &issuecredential.MockIssueCredentialSvc{},
 					presentproofsvc.Name:    &presentproof.MockPresentProofSvc{},
 					outofbandsvc.Name:       &mockoutofband.MockService{},
+					outofbandv2svc.Name:     &mockoutofbandv2.MockService{},
 				},
 				KMSValue:             &mockkms.KeyManager{CrAndExportPubKeyErr: errors.New("key generation error")},
 				ServiceEndpointValue: "endpoint",
@@ -1195,6 +1223,7 @@ func TestValidateWalletResponse(t *testing.T) {
 
 	data := createProfileData(profileID)
 	data.URL = callbackURL
+	data.IsDIDCommV2 = true
 
 	err = c.profileStore.SaveProfile(data)
 	require.NoError(t, err)
@@ -1213,7 +1242,7 @@ func TestValidateWalletResponse(t *testing.T) {
 	state := uuid.New().String()
 	token := uuid.New().String()
 
-	txnID, err := c.createTxn(data, state, token)
+	txnID, err := c.createTxnWithState(data, state, token)
 	require.NoError(t, err)
 
 	txn, err := c.getTxn(txnID)
@@ -1299,7 +1328,7 @@ func TestValidateWalletResponse(t *testing.T) {
 	t.Run("test validate response - invalid vp", func(t *testing.T) {
 		t.Parallel()
 
-		txnID, err = c.createTxn(createProfileData("profile1"), uuid.New().String(), token)
+		txnID, err = c.createTxnWithState(createProfileData("profile1"), uuid.New().String(), token)
 		require.NoError(t, err)
 
 		rr := serveHTTP(t, handler.Handle(), http.MethodPost,
@@ -1310,7 +1339,7 @@ func TestValidateWalletResponse(t *testing.T) {
 	})
 
 	t.Run("test validate response - profile not found", func(t *testing.T) { // nolint:paralleltest // data race
-		txnID, err = c.createTxn(createProfileData("invalid-profile"), uuid.New().String(), token)
+		txnID, err = c.createTxnWithState(createProfileData("invalid-profile"), uuid.New().String(), token)
 		require.NoError(t, err)
 
 		txn, err = c.getTxn(txnID)
@@ -1421,7 +1450,7 @@ func TestValidateWalletResponse(t *testing.T) {
 		err = ops.profileStore.SaveProfile(data)
 		require.NoError(t, err)
 
-		id, err := ops.createTxn(createProfileData(profileID), state, token)
+		id, err := ops.createTxnWithState(createProfileData(profileID), state, token)
 		require.NoError(t, err)
 
 		ops.tokenStore = &mockstorage.Store{ErrPut: errors.New("error put")}
@@ -1484,7 +1513,7 @@ func TestRequestOIDCAuthHandler(t *testing.T) {
 	err = c.profileStore.SaveProfile(data)
 	require.NoError(t, err)
 
-	txnID, err := c.createTxn(data, "state", "token")
+	txnID, err := c.createTxnWithState(data, "state", "token")
 	require.NoError(t, err)
 
 	t.Run("success", func(t *testing.T) {
@@ -1563,7 +1592,7 @@ func TestRequestOIDCAuthHandler(t *testing.T) {
 
 		data2 := createProfileData(profileID + "_version_2")
 
-		txnID2, err := c.createTxn(data2, "state2", "token2")
+		txnID2, err := c.createTxnWithState(data2, "state2", "token2")
 		require.NoError(t, err)
 
 		reqPath := fmt.Sprintf("%s?%s=%s&%s=%s", oidcAuthRequestEndpoint,
@@ -1653,7 +1682,7 @@ func TestOIDCCallback(t *testing.T) { // nolint:tparallel // data race
 	err = c.profileStore.SaveProfile(data)
 	require.NoError(t, err)
 
-	txnID, err := c.createTxn(data, "state", "token")
+	txnID, err := c.createTxnWithState(data, "state", "token")
 	require.NoError(t, err)
 
 	t.Run("success", func(t *testing.T) { // nolint:paralleltest // data race
@@ -1840,7 +1869,7 @@ func TestOIDCCallback(t *testing.T) { // nolint:tparallel // data race
 	t.Run("failure - getting issuer profile", func(t *testing.T) { // nolint:paralleltest // data race
 		cbHandler := getHandler(t, c, oidcCallbackEndpoint)
 
-		txnID2, err := c.createTxn(
+		txnID2, err := c.createTxnWithState(
 			&issuer.ProfileData{
 				ID:  "test-issuer-profile",
 				URL: "invalid.url",
@@ -2006,7 +2035,7 @@ func TestCredentialInteractionRequest(t *testing.T) {
 			err := c.profileStore.SaveProfile(profile)
 			require.NoError(t, err)
 
-			txnID, txnErr := c.createTxn(profile, uuid.New().String(), uuid.New().String())
+			txnID, txnErr := c.createTxnWithState(profile, uuid.New().String(), uuid.New().String())
 			require.NoError(t, txnErr)
 
 			getCHAPIRequestHandler := getHandler(t, c, getCredentialInteractionRequestEndpoint)
@@ -2038,7 +2067,7 @@ func TestCredentialInteractionRequest(t *testing.T) {
 			err := c.profileStore.SaveProfile(profile)
 			require.NoError(t, err)
 
-			txnID, err := c.createTxn(profile, uuid.New().String(), uuid.New().String())
+			txnID, err := c.createTxnWithState(profile, uuid.New().String(), uuid.New().String())
 			require.NoError(t, err)
 
 			getCHAPIRequestHandler := getHandler(t, c, getCredentialInteractionRequestEndpoint)
@@ -2082,7 +2111,7 @@ func TestCredentialInteractionRequest(t *testing.T) {
 			err := c.profileStore.SaveProfile(profile)
 			require.NoError(t, err)
 
-			txnID, err := c.createTxn(profile, uuid.New().String(), uuid.New().String())
+			txnID, err := c.createTxnWithState(profile, uuid.New().String(), uuid.New().String())
 			require.NoError(t, err)
 
 			c.userTokens[txnID] = &mockToken
@@ -2118,7 +2147,7 @@ func TestCredentialInteractionRequest(t *testing.T) {
 			err := c.profileStore.SaveProfile(profile)
 			require.NoError(t, err)
 
-			txnID, txnErr := c.createTxn(profile, uuid.New().String(), uuid.New().String())
+			txnID, txnErr := c.createTxnWithState(profile, uuid.New().String(), uuid.New().String())
 			require.NoError(t, txnErr)
 
 			getCHAPIRequestHandler := getHandler(t, c, getCredentialInteractionRequestEndpoint)
@@ -2148,7 +2177,7 @@ func TestCredentialInteractionRequest(t *testing.T) {
 			err := c.profileStore.SaveProfile(profile)
 			require.NoError(t, err)
 
-			txnID, txnErr := c.createTxn(profile, uuid.New().String(), uuid.New().String())
+			txnID, txnErr := c.createTxnWithState(profile, uuid.New().String(), uuid.New().String())
 			require.NoError(t, txnErr)
 
 			getCHAPIRequestHandler := getHandler(t, c, getCredentialInteractionRequestEndpoint)
@@ -2206,7 +2235,7 @@ func TestCredentialInteractionRequest(t *testing.T) {
 
 		profile := createProfileData("profile1")
 
-		txnID, err := c.createTxn(profile, uuid.New().String(), uuid.New().String())
+		txnID, err := c.createTxnWithState(profile, uuid.New().String(), uuid.New().String())
 		require.NoError(t, err)
 
 		getCHAPIRequestHandler := getHandler(t, c, getCredentialInteractionRequestEndpoint)
@@ -2229,7 +2258,7 @@ func TestCredentialInteractionRequest(t *testing.T) {
 		err = c.profileStore.SaveProfile(profile)
 		require.NoError(t, err)
 
-		txnID, err := c.createTxn(profile, uuid.New().String(), uuid.New().String())
+		txnID, err := c.createTxnWithState(profile, uuid.New().String(), uuid.New().String())
 		require.NoError(t, err)
 
 		getCHAPIRequestHandler := getHandler(t, c, getCredentialInteractionRequestEndpoint)
@@ -2403,6 +2432,7 @@ func TestIssueCredentialHandler(t *testing.T) {
 						issuecredsvc.Name:       &issuecredential.MockIssueCredentialSvc{},
 						presentproofsvc.Name:    &presentproof.MockPresentProofSvc{},
 						outofbandsvc.Name:       &mockoutofband.MockService{},
+						outofbandv2svc.Name:     &mockoutofbandv2.MockService{},
 					},
 					ServiceEndpointValue: "endpoint",
 					VDRegistryValue: &mockvdr.MockVDRegistry{
@@ -3498,6 +3528,86 @@ func TestWACIIssuanceHandler(t *testing.T) {
 			actionCh <- service.DIDCommAction{
 				Message: service.NewDIDCommMsgMap(issuecredsvc.ProposeCredentialV2{
 					Type:         issuecredsvc.ProposeCredentialMsgTypeV2,
+					InvitationID: invitationID,
+				}),
+				Continue: func(args interface{}) {
+					done <- struct{}{}
+				},
+				Properties: &actionEventEvent{},
+			}
+
+			select {
+			case <-done:
+			case <-time.After(65 * time.Second):
+				require.Fail(t, "tests are not validated due to timeout")
+			}
+		})
+
+		t.Run("test propose credential v3 success", func(t *testing.T) {
+			t.Parallel()
+
+			actionCh := make(chan service.DIDCommAction, 1)
+
+			c, err := New(config(t))
+			require.NoError(t, err)
+
+			c.httpClient = &mockHTTPClient{
+				respValue: &http.Response{
+					StatusCode: http.StatusOK, Body: ioutil.NopCloser(bytes.NewReader([]byte(prCardData))),
+				},
+			}
+
+			connID := uuid.New().String()
+			c.connectionLookup = &mockconn.MockConnectionsLookup{
+				ConnIDByDIDs: connID,
+			}
+
+			c.cmOutputDescriptor = map[string][]*cm.OutputDescriptor{
+				mockCredScope: {
+					&cm.OutputDescriptor{
+						ID:     uuid.New().String(),
+						Schema: "https://www.w3.org/2018/credentials/examples/v1",
+					},
+				},
+			}
+
+			invitationID := uuid.New().String()
+			issuerID := uuid.New().String()
+
+			profile := createProfileData(issuerID)
+			profile.SupportsWACI = true
+
+			err = c.profileStore.SaveProfile(profile)
+			require.NoError(t, err)
+
+			usrInvitationMapping := &UserInvitationMapping{
+				InvitationID: invitationID,
+				IssuerID:     issuerID,
+				TxID:         uuid.New().String(),
+				TxToken:      uuid.New().String(),
+			}
+
+			err = c.storeUserInvitationMapping(usrInvitationMapping)
+			require.NoError(t, err)
+
+			txDataSample := &txnData{
+				IssuerID:  profile.ID,
+				CredScope: mockCredScope,
+			}
+
+			tdByte, err := json.Marshal(txDataSample)
+			require.NoError(t, err)
+
+			err = c.txnStore.Put(usrInvitationMapping.TxID, tdByte)
+			require.NoError(t, err)
+
+			go c.didCommActionListener(actionCh)
+
+			done := make(chan struct{})
+
+			actionCh <- service.DIDCommAction{
+				Message: service.NewDIDCommMsgMap(issuecredsvc.ProposeCredentialV3{
+					Type:         issuecredsvc.ProposeCredentialMsgTypeV3,
 					InvitationID: invitationID,
 				}),
 				Continue: func(args interface{}) {

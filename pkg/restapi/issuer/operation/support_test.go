@@ -27,6 +27,7 @@ import (
 	issuecredsvc "github.com/hyperledger/aries-framework-go/pkg/didcomm/protocol/issuecredential"
 	"github.com/hyperledger/aries-framework-go/pkg/didcomm/protocol/mediator"
 	outofbandsvc "github.com/hyperledger/aries-framework-go/pkg/didcomm/protocol/outofband"
+	outofbandv2svc "github.com/hyperledger/aries-framework-go/pkg/didcomm/protocol/outofbandv2"
 	presentproofsvc "github.com/hyperledger/aries-framework-go/pkg/didcomm/protocol/presentproof"
 	"github.com/hyperledger/aries-framework-go/pkg/doc/did"
 	"github.com/hyperledger/aries-framework-go/pkg/doc/verifiable"
@@ -46,6 +47,7 @@ import (
 	"github.com/trustbloc/edge-adapter/pkg/internal/mock/issuecredential"
 	"github.com/trustbloc/edge-adapter/pkg/internal/mock/messenger"
 	mockoutofband "github.com/trustbloc/edge-adapter/pkg/internal/mock/outofband"
+	mockoutofbandv2 "github.com/trustbloc/edge-adapter/pkg/internal/mock/outofbandv2"
 	"github.com/trustbloc/edge-adapter/pkg/internal/mock/presentproof"
 	"github.com/trustbloc/edge-adapter/pkg/internal/testutil"
 	"github.com/trustbloc/edge-adapter/pkg/profile/issuer"
@@ -68,6 +70,7 @@ func getAriesCtx(t *testing.T) aries.CtxProvider {
 				issuecredsvc.Name:       &issuecredential.MockIssueCredentialSvc{},
 				presentproofsvc.Name:    &presentproof.MockPresentProofSvc{},
 				outofbandsvc.Name:       &mockoutofband.MockService{},
+				outofbandv2svc.Name:     &mockoutofbandv2.MockService{},
 			},
 			KMSValue:             &mockkms.KeyManager{ImportPrivateKeyErr: fmt.Errorf("error import priv key")},
 			CryptoValue:          &mockcrypto.Crypto{},
@@ -159,7 +162,7 @@ func getDefaultTestVP(t *testing.T) []byte {
 	return getTestVP(t, inviteeDID, inviterDID, uuid.New().String())
 }
 
-func getTestVP(t *testing.T, inviteeDID, inviterDID, threadID string) []byte { //nolint: unparam
+func getTestVP(t *testing.T, inviteeDID, inviterDID, threadID string) []byte { // nolint: unparam
 	t.Helper()
 
 	vc, err := verifiable.ParseCredential(
@@ -373,6 +376,10 @@ type stubPublicDIDCreator struct {
 }
 
 func (s *stubPublicDIDCreator) Create() (*did.Doc, error) {
+	return s.createValue, s.createErr
+}
+
+func (s *stubPublicDIDCreator) CreateV2() (*did.Doc, error) {
 	return s.createValue, s.createErr
 }
 

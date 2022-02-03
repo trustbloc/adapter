@@ -305,7 +305,8 @@ func (a *Steps) handleDIDCommConnectRequest(agentID, supportedVCContexts, issuer
 		return fmt.Errorf("failed to register msg svc: %w", err)
 	}
 
-	connectionID, err := a.AcceptOOBInvitation(agentID, request.DIDCommInvitation, issuerID)
+	connectionID, err := a.AcceptOOBInvitation(
+		agentID, (*outofband.Invitation)(request.DIDCommInvitation.AsV1()), issuerID)
 	if err != nil {
 		return fmt.Errorf("failed to accept oob invitation: %w", err)
 	}
@@ -365,7 +366,8 @@ func (a *Steps) didConnectReqWithRouting(agentID, routerURL, issuerID string) er
 		return fmt.Errorf("failed to unmarsal chapi request: %w", err)
 	}
 
-	connectionID, err := a.AcceptOOBInvitation(agentID, request.DIDCommInvitation, issuerID)
+	connectionID, err := a.AcceptOOBInvitation(
+		agentID, (*outofband.Invitation)(request.DIDCommInvitation.AsV1()), issuerID)
 	if err != nil {
 		return fmt.Errorf("failed to accept oob invitation: %w", err)
 	}

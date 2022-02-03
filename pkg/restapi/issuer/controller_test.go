@@ -14,6 +14,7 @@ import (
 	issuecredsvc "github.com/hyperledger/aries-framework-go/pkg/didcomm/protocol/issuecredential"
 	"github.com/hyperledger/aries-framework-go/pkg/didcomm/protocol/mediator"
 	outofbandsvc "github.com/hyperledger/aries-framework-go/pkg/didcomm/protocol/outofband"
+	outofbandv2svc "github.com/hyperledger/aries-framework-go/pkg/didcomm/protocol/outofbandv2"
 	presentproofsvc "github.com/hyperledger/aries-framework-go/pkg/didcomm/protocol/presentproof"
 	mocksvc "github.com/hyperledger/aries-framework-go/pkg/mock/didcomm/protocol/didexchange"
 	mockroute "github.com/hyperledger/aries-framework-go/pkg/mock/didcomm/protocol/mediator"
@@ -23,6 +24,7 @@ import (
 	"github.com/trustbloc/edge-adapter/pkg/internal/mock/issuecredential"
 	"github.com/trustbloc/edge-adapter/pkg/internal/mock/messenger"
 	"github.com/trustbloc/edge-adapter/pkg/internal/mock/outofband"
+	mockoutofbandv2 "github.com/trustbloc/edge-adapter/pkg/internal/mock/outofbandv2"
 	"github.com/trustbloc/edge-adapter/pkg/internal/mock/presentproof"
 	mockprovider "github.com/trustbloc/edge-adapter/pkg/restapi/internal/mocks/provider"
 	"github.com/trustbloc/edge-adapter/pkg/restapi/issuer/operation"
@@ -44,6 +46,7 @@ func TestNew(t *testing.T) {
 					issuecredsvc.Name:       &issuecredential.MockIssueCredentialSvc{},
 					presentproofsvc.Name:    &presentproof.MockPresentProofSvc{},
 					outofbandsvc.Name:       &outofband.MockService{},
+					outofbandv2svc.Name:     &mockoutofbandv2.MockService{},
 				},
 			},
 		}

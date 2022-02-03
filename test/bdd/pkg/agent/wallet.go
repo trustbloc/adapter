@@ -17,9 +17,10 @@ import (
 
 	"github.com/cucumber/godog"
 	"github.com/hyperledger/aries-framework-go/pkg/client/issuecredential"
-	"github.com/hyperledger/aries-framework-go/pkg/client/outofband"
 	"github.com/hyperledger/aries-framework-go/pkg/controller/command/vcwallet"
 	"github.com/hyperledger/aries-framework-go/pkg/didcomm/common/service"
+	issuecredsvc "github.com/hyperledger/aries-framework-go/pkg/didcomm/protocol/issuecredential"
+	"github.com/hyperledger/aries-framework-go/pkg/wallet"
 
 	issuerop "github.com/trustbloc/edge-adapter/pkg/restapi/issuer/operation"
 	"github.com/trustbloc/edge-adapter/test/bdd/pkg/bddutil"
@@ -38,14 +39,6 @@ const (
 	waitForResponseTimeout = 20 * time.Second
 	tokenExpiry            = 20 * time.Minute
 )
-
-// proposeCredentialRequest, due to bug in vcwallet generic invitation decoding.
-type proposeCredentialRequest struct {
-	vcwallet.WalletAuth
-
-	// out-of-band invitation to establish connection and send propose credential message.
-	Invitation *outofband.Invitation `json:"invitation"`
-}
 
 // Steps contains steps for aries agent.
 type walletSteps struct {
@@ -153,7 +146,7 @@ func (a *walletSteps) initiateWACIIssuance(walletID, issuerID, auth, controller 
 	}
 
 	// initiate WACI issuance interaction from wallet by proposing credential
-	proposeRequest, err := json.Marshal(&proposeCredentialRequest{
+	proposeRequest, err := json.Marshal(&vcwallet.ProposeCredentialRequest{
 		WalletAuth: vcwallet.WalletAuth{
 			UserID: walletID,
 			Auth:   auth,
@@ -178,9 +171,15 @@ func (a *walletSteps) initiateWACIIssuance(walletID, issuerID, auth, controller 
 		return "", fmt.Errorf("offer credential response validation failed : %w", err)
 	}
 
-	thID, err := response.OfferCredential.ThreadID()
-	if err != nil {
-		return "", fmt.Errorf("failed to get thread ID from offer credential : %w", err)
+	var thID string
+
+	if oob.Version() == service.V2 {
+		thID = response.OfferCredential.ParentThreadID()
+	} else {
+		thID, err = response.OfferCredential.ThreadID()
+		if err != nil {
+			return "", fmt.Errorf("failed to get thread ID from offer credential : %w", err)
+		}
 	}
 
 	if thID == "" {
@@ -238,7 +237,7 @@ func (a *walletSteps) concludeWACIIssuance(walletID, issuerID, auth, thID, contr
 	return nil
 }
 
-func (a *walletSteps) waitAndAcceptIncomingCredential(walletID string) error {
+func (a *walletSteps) waitAndAcceptIncomingCredential(walletID string) error { // nolint: gocyclo,cyclop
 	webhookURL, ok := a.WebhookURLs[walletID]
 	if !ok {
 		return fmt.Errorf("unable to find webhook URL registered for wallet agent [%s]", walletID)
@@ -247,7 +246,8 @@ func (a *walletSteps) waitAndAcceptIncomingCredential(walletID string) error {
 	msg, properties, err := PullMsgFromWebhookURL(webhookURL,
 		"issue-credential_actions",
 		func(message WebhookMessage) bool {
-			return message.Message.Type() == "https://didcomm.org/issue-credential/2.0/issue-credential"
+			return message.Message.Type() == issuecredsvc.IssueCredentialMsgTypeV2 ||
+				message.Message.Type() == issuecredsvc.IssueCredentialMsgTypeV3
 		})
 	if err != nil {
 		return fmt.Errorf("failed while waiting issue credential action topic: %w", err)
@@ -268,25 +268,25 @@ func (a *walletSteps) waitAndAcceptIncomingCredential(walletID string) error {
 		return fmt.Errorf("failed to accept credential from wallet '%s' : %w", walletID, err)
 	}
 
-	var response issuecredential.IssueCredentialV2
+	var response issuecredential.IssueCredential
 
 	err = msg.Decode(&response)
 	if err != nil {
 		return fmt.Errorf("failed to decode incoming issue credential message '%s' : %w", walletID, err)
 	}
 
-	if len(response.Formats) == 0 {
+	if len(response.Formats) == 0 && response.Type == issuecredsvc.IssueCredentialMsgTypeV2 {
 		return fmt.Errorf("wallet[%s] received invalid issue credential message: empty attachment formats", walletID)
 	}
 
-	if len(response.CredentialsAttach) == 0 {
+	if len(response.Attachments) == 0 {
 		return fmt.Errorf("wallet[%s] received invalid issue credential message: empty attachments", walletID)
 	}
 
 	return nil
 }
 
-func (a *walletSteps) decodeOOBInvitation(walletID, issuerID string) (*outofband.Invitation, error) {
+func (a *walletSteps) decodeOOBInvitation(walletID, issuerID string) (*wallet.GenericInvitation, error) {
 	invResBytes, ok := a.bddContext.Store[bddutil.GetDIDConnectRequestKey(issuerID, walletID)]
 	if !ok {
 		return nil, fmt.Errorf("failed to find valid invitation from issuer[%s], wallet[%s]", issuerID, walletID)
@@ -319,7 +319,7 @@ func (a *walletSteps) decodeOOBInvitation(walletID, issuerID string) (*outofband
 		return nil, fmt.Errorf("failed to decode oob invitation: %w", err)
 	}
 
-	inv := &outofband.Invitation{}
+	inv := &wallet.GenericInvitation{}
 
 	if err = json.Unmarshal(oobBytes, &inv); err != nil {
 		return nil, fmt.Errorf("'%s' failed to decode oob bytes : %w", walletID, err)
@@ -329,21 +329,21 @@ func (a *walletSteps) decodeOOBInvitation(walletID, issuerID string) (*outofband
 }
 
 func validateOfferCredential(msg *service.DIDCommMsgMap) error {
-	var offer issuecredential.OfferCredentialV2
+	var offer issuecredential.OfferCredential
 
 	if err := msg.Decode(&offer); err != nil {
 		return fmt.Errorf("failed to decode offer credential from incoming msg: %w", err)
 	}
 
 	if offer.Type == "" {
-		return errors.New("invalid offer credential message, empty type")
+		return fmt.Errorf("invalid offer credential message, empty type:\nmsg = %#v\noffer = %#v", msg, offer)
 	}
 
-	if len(offer.OffersAttach) == 0 {
+	if len(offer.Attachments) == 0 {
 		return errors.New("invalid offer credential message, expected attachments")
 	}
 
-	if len(offer.Formats) == 0 {
+	if offer.Type == issuecredsvc.OfferCredentialMsgTypeV2 && len(offer.Formats) == 0 {
 		return errors.New("invalid offer credential message, expected valid attachment formats")
 	}
 
