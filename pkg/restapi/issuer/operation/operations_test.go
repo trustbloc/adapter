@@ -32,6 +32,7 @@ import (
 	outofbandv2svc "github.com/hyperledger/aries-framework-go/pkg/didcomm/protocol/outofbandv2"
 	presentproofsvc "github.com/hyperledger/aries-framework-go/pkg/didcomm/protocol/presentproof"
 	"github.com/hyperledger/aries-framework-go/pkg/doc/cm"
+	"github.com/hyperledger/aries-framework-go/pkg/doc/presexch"
 	"github.com/hyperledger/aries-framework-go/pkg/doc/verifiable"
 	mocksvc "github.com/hyperledger/aries-framework-go/pkg/mock/didcomm/protocol/didexchange"
 	mockroute "github.com/hyperledger/aries-framework-go/pkg/mock/didcomm/protocol/mediator"
@@ -64,6 +65,39 @@ const (
 	mockOIDCProvider = "mock.provider.local"
 	mockCredScope    = "prc"
 )
+
+// nolint:gochecknoglobals
+var cmDescData = map[string]*CMAttachmentDescriptors{
+	mockCredScope: {
+		OutputDesc: []*cm.OutputDescriptor{
+			{
+				ID:     uuid.New().String(),
+				Schema: "https://www.w3.org/2018/credentials/examples/v1",
+			},
+		},
+		InputDesc: []*presexch.InputDescriptor{
+			{
+				ID:    uuid.NewString(),
+				Group: []string{"A"},
+				Schema: []*presexch.Schema{{
+					URI: fmt.Sprintf("%s#%s", verifiable.ContextID, verifiable.VCType),
+				}},
+			},
+		},
+	},
+}
+
+// nolint:gochecknoglobals
+var cmOutputDescData = map[string]*CMAttachmentDescriptors{
+	mockCredScope: {
+		OutputDesc: []*cm.OutputDescriptor{
+			{
+				ID:     uuid.New().String(),
+				Schema: "https://www.w3.org/2018/credentials/examples/v1",
+			},
+		},
+	},
+}
 
 func TestNew(t *testing.T) {
 	t.Parallel()
@@ -590,11 +624,13 @@ func TestCreateProfile(t *testing.T) {
 		vReqBytes, err := json.Marshal(vReq)
 		require.NoError(t, err)
 
-		op.cmOutputDescriptor = map[string][]*cm.OutputDescriptor{
+		op.cmDescriptors = map[string]*CMAttachmentDescriptors{
 			mockCredScope: {
-				&cm.OutputDescriptor{
-					ID:     uuid.New().String(),
-					Schema: "https://www.w3.org/2018/credentials/examples/v1",
+				OutputDesc: []*cm.OutputDescriptor{
+					{
+						ID:     uuid.New().String(),
+						Schema: "https://www.w3.org/2018/credentials/examples/v1",
+					},
 				},
 			},
 		}
@@ -1209,6 +1245,56 @@ func TestCredScopeHandler(t *testing.T) { // nolint:tparallel // data race
 		rr := serveHTTPMux(t, walletConnectHandler, walletConnectEndpoint+"?"+credScopeQueryParam+"="+credScope, nil, urlVars)
 
 		require.Equal(t, http.StatusInternalServerError, rr.Code)
+	})
+}
+
+func TestReadManifest(t *testing.T) { // nolint:tparallel // data race
+	t.Parallel()
+
+	t.Run("populate manifest with output and input descriptors", func(t *testing.T) { // nolint:paralleltest // data race
+		c, err := New(config(t))
+		require.NoError(t, err)
+
+		c.cmDescriptors = cmDescData
+
+		profileData := createProfileData(uuid.NewString())
+		profileData.CredentialScopes = []string{mockCredScope}
+		manifest := c.readCredentialManifest(profileData, mockCredScope)
+		require.NotNil(t, manifest.PresentationDefinition.ID)
+		require.Equal(t, manifest.ID, mockCredScope+manifestIDSuffix)
+		require.Equal(t, manifest.Issuer.ID, profileData.IssuerID)
+		require.NotNil(t, manifest.OutputDescriptors)
+		require.NotNil(t, manifest.PresentationDefinition.InputDescriptors)
+	})
+
+	t.Run("populate manifest with output descriptors only", func(t *testing.T) { // nolint:paralleltest // data race
+		c, err := New(config(t))
+		require.NoError(t, err)
+
+		c.cmDescriptors = cmOutputDescData
+		profileData := createProfileData(uuid.NewString())
+		profileData.CredentialScopes = []string{mockCredScope}
+		manifest := c.readCredentialManifest(profileData, mockCredScope)
+		require.Nil(t, manifest.PresentationDefinition)
+		require.Equal(t, manifest.ID, mockCredScope+manifestIDSuffix)
+		require.Equal(t, manifest.Issuer.ID, profileData.IssuerID)
+		require.NotNil(t, manifest.OutputDescriptors)
+		require.Nil(t, manifest.PresentationDefinition)
+	})
+
+	t.Run("populate manifest with no descriptors", func(t *testing.T) { // nolint:paralleltest // data race
+		c, err := New(config(t))
+		require.NoError(t, err)
+
+		profileData := createProfileData(uuid.NewString())
+		profileData.CredentialScopes = []string{mockCredScope}
+		manifest := c.readCredentialManifest(profileData, mockCredScope)
+		require.Nil(t, manifest.PresentationDefinition)
+		require.Nil(t, manifest.OutputDescriptors)
+		require.Equal(t, manifest.ID, mockCredScope+manifestIDSuffix)
+		require.Equal(t, manifest.Issuer.ID, profileData.IssuerID)
+		require.Nil(t, manifest.OutputDescriptors)
+		require.Nil(t, manifest.PresentationDefinition)
 	})
 }
 
@@ -3482,14 +3568,7 @@ func TestWACIIssuanceHandler(t *testing.T) {
 				ConnIDByDIDs: connID,
 			}
 
-			c.cmOutputDescriptor = map[string][]*cm.OutputDescriptor{
-				mockCredScope: {
-					&cm.OutputDescriptor{
-						ID:     uuid.New().String(),
-						Schema: "https://www.w3.org/2018/credentials/examples/v1",
-					},
-				},
-			}
+			c.cmDescriptors = cmOutputDescData
 
 			invitationID := uuid.New().String()
 			issuerID := uuid.New().String()
@@ -3562,14 +3641,7 @@ func TestWACIIssuanceHandler(t *testing.T) {
 				ConnIDByDIDs: connID,
 			}
 
-			c.cmOutputDescriptor = map[string][]*cm.OutputDescriptor{
-				mockCredScope: {
-					&cm.OutputDescriptor{
-						ID:     uuid.New().String(),
-						Schema: "https://www.w3.org/2018/credentials/examples/v1",
-					},
-				},
-			}
+			c.cmDescriptors = cmOutputDescData
 
 			invitationID := uuid.New().String()
 			issuerID := uuid.New().String()
@@ -3633,14 +3705,7 @@ func TestWACIIssuanceHandler(t *testing.T) {
 
 			invitationID := uuid.New().String()
 			issuerID := uuid.New().String()
-			c.cmOutputDescriptor = map[string][]*cm.OutputDescriptor{
-				mockCredScope: {
-					&cm.OutputDescriptor{
-						ID:     uuid.New().String(),
-						Schema: "https://www.w3.org/2018/credentials/examples/v1",
-					},
-				},
-			}
+			c.cmDescriptors = cmOutputDescData
 			profile := createProfileData(issuerID)
 			profile.SupportsWACI = true
 
@@ -3666,7 +3731,8 @@ func TestWACIIssuanceHandler(t *testing.T) {
 
 			// validate manifest data error
 			txDataSample := &txnData{
-				IssuerID: profile.ID,
+				IssuerID:  profile.ID,
+				CredScope: mockCredScope,
 			}
 
 			tdByte, err := json.Marshal(txDataSample)
@@ -3675,13 +3741,19 @@ func TestWACIIssuanceHandler(t *testing.T) {
 			err = c.txnStore.Put(usrInvitationMapping.TxID, tdByte)
 			require.NoError(t, err)
 
+			c.cmDescriptors = map[string]*CMAttachmentDescriptors{
+				mockCredScope: {
+					OutputDesc: []*cm.OutputDescriptor{},
+				},
+			}
+
 			testFailure(actionCh, service.NewDIDCommMsgMap(issuecredsvc.ProposeCredentialV2{
 				Type:         issuecredsvc.ProposeCredentialMsgTypeV2,
 				InvitationID: invitationID,
 			}), "failed to validate credential manifest object")
 
 			// credential data error
-			txDataSample.CredScope = mockCredScope
+			txDataSample.CredScope = ""
 			tdCredByte, err := json.Marshal(txDataSample)
 			require.NoError(t, err)
 
@@ -3812,8 +3884,8 @@ func TestWACIIssuanceHandler(t *testing.T) {
 
 			// txnStore put error
 			c.txnStore = &mockStoreWrapper{
-				Store:  c.txnStore,
-				errPut: errors.New("error inserting data"),
+				Store:    c.txnStore,
+				errBatch: errors.New("error inserting data"),
 			}
 
 			c.httpClient = &mockHTTPClient{
@@ -3855,17 +3927,39 @@ func TestWACIIssuanceHandler(t *testing.T) {
 			err = c.profileStore.SaveProfile(profile)
 			require.NoError(t, err)
 
-			err = c.storeUserConnectionMapping(&UserConnectionMapping{
+			usrConnMap := &UserConnectionMapping{
 				ConnectionID: connectionID,
 				IssuerID:     issuerID,
 				Token:        uuid.NewString(),
 				State:        uuid.NewString(),
-			})
+				TxnID:        uuid.NewString(),
+			}
+
+			err = c.storeUserConnectionMapping(usrConnMap)
+			require.NoError(t, err)
+
+			c.cmDescriptors = cmOutputDescData
+
+			// validate manifest data error
+			txDataSample := &txnData{
+				IssuerID:  profile.ID,
+				CredScope: mockCredScope,
+			}
+
+			tdByte, err := json.Marshal(txDataSample)
+			require.NoError(t, err)
+
+			err = c.txnStore.Put(usrConnMap.TxnID, tdByte)
 			require.NoError(t, err)
 
 			thID := uuid.NewString()
-			fulfillment := createCredentialFulFillment(t, c, profile)
-			require.NoError(t, c.saveCredentialFulfillment(thID, fulfillment))
+			manifestID := uuid.NewString()
+			fulfillment := createCredentialFulfillment(t, c, profile)
+			require.NoError(t, c.saveCredentialAttachmentData(thID, credentialOffered{
+				FulFillment: fulfillment,
+			}))
+
+			application := createCredentialApplication(t, c, manifestID, profile)
 
 			go c.didCommActionListener(actionCh)
 
@@ -3873,8 +3967,17 @@ func TestWACIIssuanceHandler(t *testing.T) {
 
 			msg := service.NewDIDCommMsgMap(issuecredsvc.RequestCredentialV2{
 				Type: issuecredsvc.RequestCredentialMsgTypeV2,
+				RequestsAttach: []decorator.Attachment{
+					{
+						ID: manifestID,
+						Data: decorator.AttachmentData{
+							JSON: application,
+						},
+					},
+				},
 			})
 			msg.SetThread(thID, "")
+			msg.SetID(thID)
 
 			actionCh <- service.DIDCommAction{
 				Message: msg,
@@ -3912,24 +4015,77 @@ func TestWACIIssuanceHandler(t *testing.T) {
 			err = c.profileStore.SaveProfile(profile)
 			require.NoError(t, err)
 
-			err = c.storeUserConnectionMapping(&UserConnectionMapping{
+			usrConnMap := &UserConnectionMapping{
 				ConnectionID: connectionID,
 				IssuerID:     issuerID,
 				Token:        uuid.NewString(),
 				State:        uuid.NewString(),
-			})
+				TxnID:        uuid.NewString(),
+			}
+
+			err = c.storeUserConnectionMapping(usrConnMap)
+			require.NoError(t, err)
+			c.cmDescriptors = cmDescData
+
+			// validate manifest data error
+			txDataSample := &txnData{
+				IssuerID:  profile.ID,
+				CredScope: mockCredScope,
+			}
+
+			tdByte, err := json.Marshal(txDataSample)
+			require.NoError(t, err)
+
+			err = c.txnStore.Put(usrConnMap.TxnID, tdByte)
 			require.NoError(t, err)
 
 			thID := uuid.NewString()
-			fulfillment := createCredentialFulFillment(t, c, profile)
-			require.NoError(t, c.saveCredentialFulfillment(thID, fulfillment))
+			fulfillment := createCredentialFulfillment(t, c, profile)
+			manifestID := txDataSample.CredScope + manifestIDSuffix
+			require.NoError(t, c.saveCredentialAttachmentData(thID, credentialOffered{
+				FulFillment: fulfillment,
+				ManifestID:  manifestID,
+			}))
 
 			go c.didCommActionListener(actionCh)
 
 			msg := service.NewDIDCommMsgMap(issuecredsvc.RequestCredentialV2{
 				Type: issuecredsvc.RequestCredentialMsgTypeV2,
 			})
+
+			// test failed to get credential manifestID from store
+			testFailure(actionCh, msg, "failed to get credential manifestID from store")
+			msg = service.NewDIDCommMsgMap(issuecredsvc.RequestCredentialV2{
+				Type: issuecredsvc.RequestCredentialMsgTypeV2,
+				RequestsAttach: []decorator.Attachment{
+					{ID: manifestID,
+						Data: decorator.AttachmentData{
+							JSON: &verifiable.Presentation{},
+						}},
+				},
+			})
 			msg.SetThread(thID, "")
+			msg.SetID(thID)
+
+			require.NoError(t, c.saveCredentialAttachmentData(thID, credentialOffered{
+				FulFillment: fulfillment,
+				ManifestID:  manifestID,
+			}))
+
+			// test read and validate cred application -> credential_application object missing from attachment
+			testFailure(actionCh, msg, "credential_application object missing from attachment")
+			application := createCredentialApplication(t, c, manifestID, profile)
+			msg = service.NewDIDCommMsgMap(issuecredsvc.RequestCredentialV2{
+				Type: issuecredsvc.RequestCredentialMsgTypeV2,
+				RequestsAttach: []decorator.Attachment{
+					{ID: manifestID,
+						Data: decorator.AttachmentData{
+							JSON: application,
+						}},
+				},
+			})
+			msg.SetThread(thID, "")
+			msg.SetID(thID)
 
 			// test credential fulfillment signing failure
 			testFailure(actionCh, msg, "failed to sign credential fulfillment")
@@ -3939,16 +4095,11 @@ func TestWACIIssuanceHandler(t *testing.T) {
 				Store:     c.txnStore,
 				errDelete: errors.New("delete error"),
 			}
-			require.NoError(t, c.saveCredentialFulfillment(thID, fulfillment))
-			testFailure(actionCh, msg, "failed to sign credential fulfillment")
-
-			// test read credential fulfillment error
-			c.txnStore = &mockStoreWrapper{
-				Store:  c.txnStore,
-				errGet: errors.New("get error"),
-			}
-			testFailure(actionCh, msg, "failed to read credential fulfillment")
-
+			require.NoError(t, c.saveCredentialAttachmentData(thID, credentialOffered{
+				FulFillment: fulfillment,
+			}))
+			testFailure(actionCh, msg, "failed to get unmarhsal and validate credential "+
+				"application against credential manifest")
 			// test missing threadID
 			mockMsg := &mockMsgWrapper{
 				DIDCommMsgMap: &msg,
@@ -3963,7 +4114,32 @@ func TestWACIIssuanceHandler(t *testing.T) {
 	})
 }
 
-func createCredentialFulFillment(t *testing.T, o *Operation, profile *issuer.ProfileData) *verifiable.Presentation {
+func createCredentialFulfillment(t *testing.T, o *Operation, profile *issuer.ProfileData) *verifiable.Presentation {
+	t.Helper()
+
+	o.httpClient = &mockHTTPClient{
+		respValue: &http.Response{
+			StatusCode: http.StatusOK,
+			Body:       ioutil.NopCloser(bytes.NewReader([]byte(prCardData))),
+		},
+	}
+
+	vc, err := o.createCredential(profile.URL, "", "", "", false, profile)
+	require.NoError(t, err)
+
+	// prepare fulfilment
+	presentation, err := verifiable.NewPresentation(verifiable.WithCredentials(vc))
+	require.NoError(t, err)
+
+	fulfilment, err := cm.PresentCredentialFulfillment(&cm.CredentialManifest{ID: uuid.NewString()},
+		cm.WithExistingPresentationForPresentCredentialFulfillment(presentation))
+	require.NoError(t, err)
+
+	return fulfilment
+}
+
+func createCredentialApplication(t *testing.T, o *Operation,
+	manifestID string, profile *issuer.ProfileData) *verifiable.Presentation {
 	t.Helper()
 
 	o.httpClient = &mockHTTPClient{
@@ -3980,11 +4156,11 @@ func createCredentialFulFillment(t *testing.T, o *Operation, profile *issuer.Pro
 	presentation, err := verifiable.NewPresentation(verifiable.WithCredentials(vc))
 	require.NoError(t, err)
 
-	fulfillment, err := cm.PresentCredentialFulfillment(&cm.CredentialManifest{ID: uuid.NewString()},
-		cm.WithExistingPresentationForPresentCredentialFulfillment(presentation))
+	application, err := cm.PresentCredentialApplication(&cm.CredentialManifest{ID: manifestID},
+		cm.WithExistingPresentationForPresentCredentialApplication(presentation))
 	require.NoError(t, err)
 
-	return fulfillment
+	return application
 }
 
 func TestGetConnectionIDFromEvent(t *testing.T) {
@@ -4243,6 +4419,7 @@ type mockStoreWrapper struct {
 	errPut    error
 	errGet    error
 	errDelete error
+	errBatch  error
 }
 
 // Put returns mocked results.
@@ -4261,6 +4438,15 @@ func (s *mockStoreWrapper) Get(k string) ([]byte, error) {
 	}
 
 	return s.Store.Get(k) // nolint:wrapcheck
+}
+
+// Get returns mocked results.
+func (s *mockStoreWrapper) Batch(batchOps []storage.Operation) error {
+	if s.errBatch != nil {
+		return s.errBatch
+	}
+
+	return s.Store.Batch(batchOps) // nolint:wrapcheck
 }
 
 // Delete returns mocked results.
