@@ -1335,11 +1335,6 @@ func (o *Operation) handleProposeCredential(msg service.DIDCommAction) (issuecre
 	// read credential manifest
 	manifest := o.readCredentialManifest(profile, txn.CredScope)
 
-	err = manifest.Validate()
-	if err != nil {
-		return nil, fmt.Errorf("failed to validate credential manifest object: %w", err)
-	}
-
 	// get unsigned credential
 	vc, err := o.createCredential(getUserDataURL(profile.URL), userInvMap.TxToken, oauthToken,
 		"", false, profile)

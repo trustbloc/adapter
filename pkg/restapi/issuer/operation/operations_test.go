@@ -3675,11 +3675,6 @@ func TestWACIIssuanceHandler(t *testing.T) {
 			err = c.txnStore.Put(usrInvitationMapping.TxID, tdByte)
 			require.NoError(t, err)
 
-			testFailure(actionCh, service.NewDIDCommMsgMap(issuecredsvc.ProposeCredentialV2{
-				Type:         issuecredsvc.ProposeCredentialMsgTypeV2,
-				InvitationID: invitationID,
-			}), "failed to validate credential manifest object")
-
 			// credential data error
 			txDataSample.CredScope = mockCredScope
 			tdCredByte, err := json.Marshal(txDataSample)
