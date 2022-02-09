@@ -542,6 +542,22 @@ func TestCreateProfile(t *testing.T) {
 		return &mockOIDC, nil
 	}
 
+	profileDataReq := ProfileDataRequest{
+		ID:                          uuid.NewString(),
+		Name:                        "Issuer Profile 1",
+		SupportedVCContexts:         []string{"https://w3id.org/citizenship/v3"},
+		SupportsAssuranceCredential: false,
+		URL:                         "http://issuer.example.com",
+		SupportsWACI:                true,
+		IssuerID:                    uuid.New().String(),
+		OIDCClientParams: &OIDCClientParams{
+			ClientID:     "client id",
+			ClientSecret: "client secret",
+			SecretExpiry: 0,
+		},
+		CredentialScopes: []string{mockCredScope},
+	}
+
 	endpoint := profileEndpoint
 	handler := getHandler(t, op, endpoint)
 
@@ -611,17 +627,7 @@ func TestCreateProfile(t *testing.T) {
 	t.Run("create waci profile with cm output descriptors - success", func(t *testing.T) {
 		t.Parallel()
 
-		vReq := createProfileData(uuid.New().String())
-		vReq.SupportsWACI = true
-		vReq.IssuerID = ""
-		vReq.CredentialScopes = []string{mockCredScope}
-		vReq.OIDCClientParams = &issuer.OIDCClientParams{
-			ClientID:     "client id",
-			ClientSecret: "client secret",
-			SecretExpiry: 0,
-		}
-
-		vReqBytes, err := json.Marshal(vReq)
+		vReqBytes, err := json.Marshal(profileDataReq)
 		require.NoError(t, err)
 
 		op.cmDescriptors = map[string]*CMAttachmentDescriptors{
@@ -643,13 +649,13 @@ func TestCreateProfile(t *testing.T) {
 		profileRes := &issuer.ProfileData{}
 		err = json.Unmarshal(rr.Body.Bytes(), &profileRes)
 		require.NoError(t, err)
-		require.Equal(t, vReq.ID, profileRes.ID)
-		require.Equal(t, vReq.Name, profileRes.Name)
-		require.Equal(t, vReq.URL, profileRes.URL)
-		require.Equal(t, vReq.SupportsAssuranceCredential, profileRes.SupportsAssuranceCredential)
-		require.Equal(t, vReq.CredentialScopes, profileRes.CredentialScopes)
+		require.Equal(t, profileDataReq.ID, profileRes.ID)
+		require.Equal(t, profileDataReq.Name, profileRes.Name)
+		require.Equal(t, profileDataReq.URL, profileRes.URL)
+		require.Equal(t, profileDataReq.SupportsAssuranceCredential, profileRes.SupportsAssuranceCredential)
+		require.Equal(t, profileDataReq.CredentialScopes, profileRes.CredentialScopes)
 		require.NotNil(t, profileRes.IssuerID)
-		require.Equal(t, vReq.SupportsWACI, profileRes.SupportsWACI)
+		require.Equal(t, profileDataReq.SupportsWACI, profileRes.SupportsWACI)
 	})
 
 	t.Run("create profile - invalid request", func(t *testing.T) {
@@ -755,11 +761,7 @@ func TestCreateProfile(t *testing.T) {
 		ops, err := New(config(t))
 		require.NoError(t, err)
 
-		vReq := createProfileData(uuid.New().String())
-		vReq.SupportsWACI = true
-		vReq.CredentialScopes = []string{mockCredScope}
-
-		vReqBytes, err := json.Marshal(vReq)
+		vReqBytes, err := json.Marshal(profileDataReq)
 		require.NoError(t, err)
 
 		rr := serveHTTP(t, getHandler(t, ops, endpoint).Handle(), http.MethodPost, endpoint, vReqBytes)

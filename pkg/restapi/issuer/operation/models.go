@@ -26,7 +26,7 @@ type ProfileDataRequest struct {
 	SupportsWACI                bool              `json:"supportsWACI"`
 	OIDCProviderURL             string            `json:"oidcProvider"`
 	OIDCClientParams            *OIDCClientParams `json:"oidcParams,omitempty"`
-	CredentialScopes            []string          `json:"credScopes,omitempty"`
+	CredentialScopes            []string          `json:"scopes,omitempty"`
 	LinkedWalletURL             string            `json:"linkedWallet,omitempty"`
 	IsDIDCommV2                 bool              `json:"isDIDCommV2,omitempty"`
 	// Issuer ID identifies who is the issuer of the credential manifests being issued.
