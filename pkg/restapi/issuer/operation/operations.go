@@ -1968,7 +1968,11 @@ func prepareOfferCredentialMessage(manifest *cm.CredentialManifest, fulfillment 
 				ID:        manifestAttachID,
 				MediaType: offerCredentialAttachMediaType,
 				Data: decorator.AttachmentData{
-					JSON: manifest,
+					JSON: struct {
+						Manifest *cm.CredentialManifest `json:"credential_manifest,omitempty"`
+					}{
+						Manifest: manifest,
+					},
 				},
 			},
 			{
