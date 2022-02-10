@@ -62,7 +62,7 @@ func (e *Steps) RegisterSteps(s *godog.Suite) {
 		e.retrieveProfileWithOIDC)
 	s.Step(`^Issuer adapter shows the wallet connect UI when the issuer "([^"]*)" wants to connect to the wallet$`,
 		e.walletConnect)
-	s.Step(`^Issuer adapter shows the wallet connect UI when the issuer "([^"]*)" with cred scope "([^"]*)" wants to connect to the wallet$`,
+	s.Step(`^Issuer adapter shows the wallet connect UI when the issuer "([^"]*)" with scopes "([^"]*)" wants to connect to the wallet$`,
 		e.walletConnectOIDC)
 	s.Step(`^Issuer adapter gets oidc authorization for the issuer "([^"]*)"$`,
 		e.oidcLogin)
@@ -74,10 +74,10 @@ func (e *Steps) RegisterSteps(s *godog.Suite) {
 	s.Step(`^Issuer has a profile with name "([^"]*)", issuerURL "([^"]*)", oidc provider "([^"]*)" and supportedVCContexts "([^"]*)"$`, e.createAndValidateProfileWithOIDC)
 
 	// waci steps
-	s.Step(`^Issuer Profile with id "([^"]*)", name "([^"]*)", issuerURL "([^"]*)", supportedVCContexts "([^"]*)", credScopes "([^"]*)", issuer id "([^"]*)", linked wallet "([^"]*)" and oidc provider "([^"]*)" with WACI support$`, e.createProfileWithWACI)
-	s.Step(`^Issuer Profile with id "([^"]*)", name "([^"]*)", issuerURL "([^"]*)", supportedVCContexts "([^"]*)", credScopes "([^"]*)", issuer id "([^"]*)", linked wallet "([^"]*)" and oidc provider "([^"]*)" with DIDComm V2 and WACI support$`, e.createProfileWithWACIDIDCommV2)
-	s.Step(`^Retrieved profile with id "([^"]*)" contains name "([^"]*)", issuerURL "([^"]*)", supportedVCContexts "([^"]*)", credScopes "([^"]*)", issuer id "([^"]*)", linked wallet "([^"]*)" and oidc provider "([^"]*)" with WACI support$`, e.retrieveProfileWithWACI)
-	s.Step(`^Retrieved profile with id "([^"]*)" contains name "([^"]*)", issuerURL "([^"]*)", supportedVCContexts "([^"]*)", credScopes "([^"]*)", issuer id "([^"]*)", linked wallet "([^"]*)" and oidc provider "([^"]*)" with DIDComm V2 and WACI support$`, e.retrieveProfileWithWACIDIDCommV2)
+	s.Step(`^Issuer Profile with id "([^"]*)", name "([^"]*)", issuerURL "([^"]*)", supportedVCContexts "([^"]*)", scopes "([^"]*)", issuer id "([^"]*)", linked wallet "([^"]*)" and oidc provider "([^"]*)" with WACI support$`, e.createProfileWithWACI)
+	s.Step(`^Issuer Profile with id "([^"]*)", name "([^"]*)", issuerURL "([^"]*)", supportedVCContexts "([^"]*)", scopes "([^"]*)", issuer id "([^"]*)", linked wallet "([^"]*)" and oidc provider "([^"]*)" with DIDComm V2 and WACI support$`, e.createProfileWithWACIDIDCommV2)
+	s.Step(`^Retrieved profile with id "([^"]*)" contains name "([^"]*)", issuerURL "([^"]*)", supportedVCContexts "([^"]*)", scopes "([^"]*)", issuer id "([^"]*)", linked wallet "([^"]*)" and oidc provider "([^"]*)" with WACI support$`, e.retrieveProfileWithWACI)
+	s.Step(`^Retrieved profile with id "([^"]*)" contains name "([^"]*)", issuerURL "([^"]*)", supportedVCContexts "([^"]*)", scopes "([^"]*)", issuer id "([^"]*)", linked wallet "([^"]*)" and oidc provider "([^"]*)" with DIDComm V2 and WACI support$`, e.retrieveProfileWithWACIDIDCommV2)
 }
 
 func (e *Steps) createBasicProfile(id, name, issuerURL, supportedVCContexts,
