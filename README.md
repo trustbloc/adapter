@@ -13,7 +13,7 @@ operations. The edge-adapter uses the capabilities provided by [Hyperledger Arie
 such as DIDComm, [W3C Verifiable Credentials(VC)](https://w3c.github.io/vc-data-model/), [W3C Decentralized Identifiers(DIDs)](https://w3c.github.io/did-core/), etc.
 
 The Adapter contains following components.
-- [Issuer Adapter](./docs/issuer/v0.1.7/README.md)
+- [Issuer Adapter](./docs/issuer/README.md)
 - [Relying Party (RP) Adapter](./docs/rp/README.md) 
 
 The TrustBloc Adapters provide support for DIDComm to go through a router using [Blinded Routing](./docs/blinded_routing.md) feature. 
