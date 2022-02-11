@@ -5,15 +5,16 @@
 This document serves as a guide for integrating [OpenID Connect 1.0](https://openid.net/specs/openid-connect-core-1_0.html)
 client systems to the RP Adapter. The reader is expected to be familiar with OIDC and the OAuth2 authorization code flow.
 
-## Overview
+## Flow diagram
+TODO
+
+## Steps
 
 Follow these steps to integrate as a relying party:
 
-1. [Register your client](#register-oidc-client)
-2. [Redirect the user with your OIDC request](#request-end-user-credentials)
+1. [Register a client](#register-oidc-client)
+2. [Redirect the user with OIDC request](#request-end-user-credentials)
 3. Exchange auth code for the `access_token` and [parse the id_token](#id-token)
-
-## Steps
 
 ### Register OIDC Client
 
@@ -177,6 +178,6 @@ a JSON-LD document into a JWT while preserving the cryptographic security guaran
 ### Available Scopes
 
 The scopes the Adapter supports are currently configured in a simple
-[JSON format](https://github.com/trustbloc/edge-sandbox/blob/main/test/bdd/fixtures/demo/adapter-config/rp/presentationdefinitions.json)
+[JSON format](../../../test/bdd/fixtures/testdata/presentationdefinitions.json)
 that is not exposed in via any other means. Consult the system administrator for the currently supported scopes before
-[registering your client](#register-your-oidc-client).
+[registering client](#register-oidc-client).
