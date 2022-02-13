@@ -2001,6 +2001,7 @@ func prepareIssueCredentialMessage(fulfillment *verifiable.Presentation, redirec
 			{
 				ID:        fulfillmentAttachID,
 				MediaType: offerCredentialAttachMediaType,
+				Format:    credentialFulfillmentFormat,
 				Data: decorator.AttachmentData{
 					JSON: fulfillment,
 				},
