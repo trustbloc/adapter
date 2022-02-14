@@ -3939,8 +3939,9 @@ func TestWACIIssuanceHandler(t *testing.T) {
 
 			err = c.storeUserConnectionMapping(usrConnMap)
 			require.NoError(t, err)
-
-			c.cmDescriptors = cmOutputDescData
+			manifestID := mockCredScope + manifestIDSuffix
+			presDefID := uuid.NewString()
+			c.cmDescriptors = prepareCMAttachmentDescriptors(manifestID, presDefID)
 
 			// validate manifest data error
 			txDataSample := &txnData{
@@ -3955,13 +3956,18 @@ func TestWACIIssuanceHandler(t *testing.T) {
 			require.NoError(t, err)
 
 			thID := uuid.NewString()
-			manifestID := uuid.NewString()
 			fulfillment := createCredentialFulfillment(t, c, profile)
 			require.NoError(t, c.saveCredentialAttachmentData(thID, credentialOffered{
-				FulFillment: fulfillment,
+				FulFillment:       fulfillment,
+				ManifestID:        manifestID,
+				PresentationDefID: presDefID,
 			}))
 
-			application := createCredentialApplication(t, c, manifestID, profile)
+			manifest := c.readCredentialManifest(profile, mockCredScope)
+			manifest.ID = manifestID
+			manifest.PresentationDefinition.ID = presDefID
+
+			application := createCredentialApplicationWithPresentationSubmission(t, c, presDefID, manifest, profile)
 
 			go c.didCommActionListener(actionCh)
 
@@ -4044,10 +4050,6 @@ func TestWACIIssuanceHandler(t *testing.T) {
 			thID := uuid.NewString()
 			fulfillment := createCredentialFulfillment(t, c, profile)
 			manifestID := txDataSample.CredScope + manifestIDSuffix
-			require.NoError(t, c.saveCredentialAttachmentData(thID, credentialOffered{
-				FulFillment: fulfillment,
-				ManifestID:  manifestID,
-			}))
 
 			go c.didCommActionListener(actionCh)
 
@@ -4070,12 +4072,12 @@ func TestWACIIssuanceHandler(t *testing.T) {
 			msg.SetID(thID)
 
 			require.NoError(t, c.saveCredentialAttachmentData(thID, credentialOffered{
-				FulFillment: fulfillment,
-				ManifestID:  manifestID,
+				ManifestID: manifestID,
 			}))
 
 			// test read and validate cred application -> credential_application object missing from attachment
-			testFailure(actionCh, msg, "credential_application object missing from attachment")
+			testFailure(actionCh, msg, "missing credential_application field")
+
 			application := createCredentialApplication(t, c, manifestID, profile)
 			msg = service.NewDIDCommMsgMap(issuecredsvc.RequestCredentialV2{
 				Type: issuecredsvc.RequestCredentialMsgTypeV2,
@@ -4089,6 +4091,20 @@ func TestWACIIssuanceHandler(t *testing.T) {
 			msg.SetThread(thID, "")
 			msg.SetID(thID)
 
+			// test credential application missing corresponding presentation submission
+			testFailure(actionCh, msg, "Credential Application attachment is "+
+				"missing a corresponding Presentation Submission")
+
+			c.cmDescriptors = cmOutputDescData
+
+			// test credential fulfillment reading failure
+			testFailure(actionCh, msg, "failed to read credential fulfillment")
+
+			require.NoError(t, c.saveCredentialAttachmentData(thID, credentialOffered{
+				FulFillment: fulfillment,
+				ManifestID:  manifestID,
+			}))
+
 			// test credential fulfillment signing failure
 			testFailure(actionCh, msg, "failed to sign credential fulfillment")
 
@@ -4100,8 +4116,6 @@ func TestWACIIssuanceHandler(t *testing.T) {
 			require.NoError(t, c.saveCredentialAttachmentData(thID, credentialOffered{
 				FulFillment: fulfillment,
 			}))
-			testFailure(actionCh, msg, "failed to get unmarhsal and validate credential "+
-				"application against credential manifest")
 			// test missing threadID
 			mockMsg := &mockMsgWrapper{
 				DIDCommMsgMap: &msg,
@@ -4140,6 +4154,20 @@ func createCredentialFulfillment(t *testing.T, o *Operation, profile *issuer.Pro
 	return fulfilment
 }
 
+func toMap(t *testing.T, v interface{}) map[string]interface{} {
+	t.Helper()
+
+	bits, err := json.Marshal(v)
+	require.NoError(t, err)
+
+	m := make(map[string]interface{})
+
+	err = json.Unmarshal(bits, &m)
+	require.NoError(t, err)
+
+	return m
+}
+
 func createCredentialApplication(t *testing.T, o *Operation,
 	manifestID string, profile *issuer.ProfileData) *verifiable.Presentation {
 	t.Helper()
@@ -4159,6 +4187,37 @@ func createCredentialApplication(t *testing.T, o *Operation,
 	require.NoError(t, err)
 
 	application, err := cm.PresentCredentialApplication(&cm.CredentialManifest{ID: manifestID},
+		cm.WithExistingPresentationForPresentCredentialApplication(presentation))
+	require.NoError(t, err)
+
+	return application
+}
+
+func createCredentialApplicationWithPresentationSubmission(t *testing.T, o *Operation,
+	presDefID string, manifest *cm.CredentialManifest, profile *issuer.ProfileData) *verifiable.Presentation {
+	t.Helper()
+
+	o.httpClient = &mockHTTPClient{
+		respValue: &http.Response{
+			StatusCode: http.StatusOK,
+			Body:       ioutil.NopCloser(bytes.NewReader([]byte(prCardData))),
+		},
+	}
+
+	vc, err := o.createCredential(profile.URL, "", "", "", false, profile)
+	require.NoError(t, err)
+
+	// prepare fulfillment with submission
+	presentation, err := verifiable.NewPresentation(verifiable.WithCredentials(vc))
+	require.NoError(t, err)
+
+	presentation.CustomFields = make(map[string]interface{})
+	presentation.CustomFields["presentation_submission"] = toMap(t, &presexch.PresentationSubmission{
+		ID:           uuid.NewString(),
+		DefinitionID: presDefID,
+	})
+
+	application, err := cm.PresentCredentialApplication(manifest,
 		cm.WithExistingPresentationForPresentCredentialApplication(presentation))
 	require.NoError(t, err)
 
@@ -4469,4 +4528,26 @@ type mockMsgWrapper struct {
 
 func (m *mockMsgWrapper) ThreadID() (string, error) {
 	return m.thID, m.thIDerr
+}
+
+func prepareCMAttachmentDescriptors(manifestID, presDefID string) map[string]*CMAttachmentDescriptors {
+	return map[string]*CMAttachmentDescriptors{
+		mockCredScope: {
+			OutputDesc: []*cm.OutputDescriptor{
+				{
+					ID:     manifestID,
+					Schema: "https://www.w3.org/2018/credentials/examples/v1",
+				},
+			},
+			InputDesc: []*presexch.InputDescriptor{
+				{
+					ID:    presDefID,
+					Group: []string{"A"},
+					Schema: []*presexch.Schema{{
+						URI: fmt.Sprintf("%s#%s", verifiable.ContextID, verifiable.VCType),
+					}},
+				},
+			},
+		},
+	}
 }

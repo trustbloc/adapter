@@ -23,6 +23,7 @@ import (
 	"time"
 
 	"github.com/cenkalti/backoff"
+	"github.com/google/uuid"
 	"github.com/gorilla/mux"
 	"github.com/hyperledger/aries-framework-go-ext/component/storage/mongodb"
 	"github.com/hyperledger/aries-framework-go-ext/component/storage/mysql"
@@ -38,6 +39,7 @@ import (
 	"github.com/hyperledger/aries-framework-go/pkg/doc/cm"
 	ariesld "github.com/hyperledger/aries-framework-go/pkg/doc/ld"
 	"github.com/hyperledger/aries-framework-go/pkg/doc/ldcontext/remote"
+	"github.com/hyperledger/aries-framework-go/pkg/doc/presexch"
 	"github.com/hyperledger/aries-framework-go/pkg/framework/aries"
 	"github.com/hyperledger/aries-framework-go/pkg/framework/aries/api"
 	"github.com/hyperledger/aries-framework-go/pkg/framework/aries/defaults"
@@ -1179,10 +1181,20 @@ func readCMOutputDescriptorFile(cmDescriptorsFile string) (cmDescriptor map[stri
 	for _, descriptors := range cmDescriptor {
 		err := cm.ValidateOutputDescriptors(descriptors.OutputDesc)
 		if err != nil {
-			return nil, fmt.Errorf("aries-framework - failed to validate output descriptors: %w", err)
+			return nil, fmt.Errorf("aries-framework - failed to validate output "+
+				"descriptors: %w", err)
+		}
+
+		if descriptors.InputDesc != nil {
+			presDef := presexch.PresentationDefinition{ID: uuid.NewString(), InputDescriptors: descriptors.InputDesc}
+
+			err := presDef.ValidateSchema()
+			if err != nil {
+				return nil, fmt.Errorf("aries-framework - failed to validate input "+
+					"descriptors: %w", err)
+			}
 		}
 	}
-	// TODO Issue#563 validate input descriptor if exists
 
 	return cmDescriptor, nil
 }

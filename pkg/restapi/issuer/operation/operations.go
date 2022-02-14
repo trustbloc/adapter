@@ -114,6 +114,7 @@ const (
 
 	manifestIDSuffix      = "_mID"
 	manifestDataPrefix    = "manifest_"
+	presDefDataPrefix     = "presDef_"
 	fulfillmentDataPrefix = "full_"
 )
 
@@ -144,8 +145,9 @@ type didExClient interface {
 }
 
 type credentialOffered struct {
-	FulFillment *verifiable.Presentation
-	ManifestID  string
+	FulFillment       *verifiable.Presentation
+	ManifestID        string
+	PresentationDefID string
 }
 
 // CMAttachmentDescriptors defines the part of properties of credential manifest
@@ -1205,6 +1207,10 @@ func (o *Operation) saveCredentialAttachmentData(thID string, credOffered creden
 			Value: []byte(credOffered.ManifestID),
 		},
 		{
+			Key:   presDefDataPrefix + thID,
+			Value: []byte(credOffered.PresentationDefID),
+		},
+		{
 			Key:   fulfillmentDataPrefix + thID,
 			Value: fulfilmentBytes,
 		},
@@ -1219,7 +1225,8 @@ func (o *Operation) saveCredentialAttachmentData(thID string, credOffered creden
 func (o *Operation) readAndValidateCredentialApplication(msg service.DIDCommAction,
 	credManifest *cm.CredentialManifest) error {
 	// reading credential application if issuer have sent, out presentation_definition along with manifest
-	// TODO [Issue#563] validate signatures and proofs of credential application
+	// TODO - Aries Validate signatures and proofs of credential application should be part of
+	// cm.ValidateCredentialApplicationAttachment function.
 	if credManifest.PresentationDefinition != nil {
 		applicationAttachments, err := getAttachments(msg)
 		if err != nil {
@@ -1230,16 +1237,9 @@ func (o *Operation) readAndValidateCredentialApplication(msg service.DIDCommActi
 			return errors.New("invalid request credential message, expected valid credential application")
 		}
 
-		credentialApplicationBytes, err := getCredentialApplicationFromAttachment(&applicationAttachments[0])
+		err = cm.ValidateCredentialApplicationAttachment(&applicationAttachments[0], credManifest)
 		if err != nil {
-			return fmt.Errorf("failed to get credential application from request "+
-				"credential attachments: %w", err)
-		}
-
-		_, err = cm.UnmarshalAndValidateAgainstCredentialManifest(credentialApplicationBytes, credManifest)
-		if err != nil {
-			return fmt.Errorf("failed to get unmarhsal and validate credential application against "+
-				"credential manifest: %w", err)
+			return fmt.Errorf("failed to validate credential application attachment: %w", err)
 		}
 
 		return nil
@@ -1333,9 +1333,8 @@ func (o *Operation) didCommStateMsgListener(stateMsgCh <-chan service.StateMsg) 
 }
 
 // nolint:funlen,gocyclo,cyclop
-// TODO [Issue#563] Avoid adding manifest attachment in the msg if the cm output descriptor is not found.
 func (o *Operation) handleProposeCredential(msg service.DIDCommAction) (issuecredsvc.Opt, error) {
-	var invitationID string
+	var invitationID, presDefID string
 
 	// TODO: update afgo to support parsing InvitationID for ProposeCredentialParams
 	switch msg.Message.Type() {
@@ -1402,6 +1401,10 @@ func (o *Operation) handleProposeCredential(msg service.DIDCommAction) (issuecre
 		}
 	}
 
+	if manifest.PresentationDefinition != nil {
+		presDefID = manifest.PresentationDefinition.ID
+	}
+
 	// get unsigned credential
 	vc, err := o.createCredential(getUserDataURL(profile.URL), userInvMap.TxToken, oauthToken,
 		"", false, profile)
@@ -1427,8 +1430,9 @@ func (o *Operation) handleProposeCredential(msg service.DIDCommAction) (issuecre
 	// save fulfillment and manifestID for subsequent WACI steps.
 	// TODO question: why is this saved under the message ID instead of thread ID?
 	err = o.saveCredentialAttachmentData(msg.Message.ID(), credentialOffered{
-		FulFillment: fulfillment,
-		ManifestID:  manifest.ID,
+		FulFillment:       fulfillment,
+		ManifestID:        manifest.ID,
+		PresentationDefID: presDefID,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to persist credential fulfillment : %w", err)
@@ -1539,6 +1543,7 @@ func (o *Operation) handleRequestCredential(msg service.DIDCommAction) (interfac
 	}), nil
 }
 
+// nolint:funlen,gocyclo,cyclop
 func (o *Operation) handleWACIRequestCredential(msg service.DIDCommAction, profile *issuer.ProfileData,
 	userConnMap *UserConnectionMapping) (issuecredsvc.Opt, error) {
 	var thID string
@@ -1571,6 +1576,17 @@ func (o *Operation) handleWACIRequestCredential(msg service.DIDCommAction, profi
 	// is heavy. Therefore, only persisting Manifest ID when we read the credential manifest on the fly
 	// it always creates the new manifest ID (We need this functionality of creating new ID for the wallet demo.)
 	manifest.ID = strings.Trim(string(manifestID), "\"")
+
+	if manifest.PresentationDefinition != nil {
+		var presDefID []byte
+
+		presDefID, err = o.txnStore.Get(presDefDataPrefix + thID)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get credential presentation definition ID from store: %w", err)
+		}
+
+		manifest.PresentationDefinition.ID = strings.Trim(string(presDefID), "\"")
+	}
 
 	err = o.readAndValidateCredentialApplication(msg, manifest)
 	if err != nil {
@@ -1630,25 +1646,6 @@ func getAttachments(action service.DIDCommAction) ([]decorator.GenericAttachment
 	}
 
 	return attachments, nil
-}
-
-func getCredentialApplicationFromAttachment(attachment *decorator.GenericAttachment) ([]byte, error) {
-	attachmentAsMap, ok := attachment.Data.JSON.(map[string]interface{})
-	if !ok {
-		return nil, errors.New("couldn't assert attachment as a map")
-	}
-
-	credentialApplicationRaw, ok := attachmentAsMap["credential_application"]
-	if !ok {
-		return nil, errors.New("credential_application object missing from attachment")
-	}
-
-	credentialApplicationBytes, err := json.Marshal(credentialApplicationRaw)
-	if err != nil {
-		return nil, fmt.Errorf("failed to marshal credential application: %w", err)
-	}
-
-	return credentialApplicationBytes, nil
 }
 
 func (o *Operation) handleRequestPresentation(msg service.DIDCommAction) (interface{}, error) {
