@@ -34,6 +34,41 @@ var inputDescriptors = `{
   }
 }`
 
+// nolint:gochecknoglobals
+var cmOutDescData = `{
+  "udc-scope": {
+    "output_descriptor": [{
+      "uri": "https://trustbloc.github.io/context/vc/examples-ext-v1.jsonld"
+    }]
+  }
+}`
+
+// nolint:gochecknoglobals
+var cmDescData = `{
+   "udc-scope-1":{
+      "output_descriptor":[
+         {
+            "id":"udc_output",
+            "schema":"https://www.w3.org/2018/credentials/examples/v1"
+         }
+      ],
+      "input_descriptor":[
+         {
+            "testing":"prc_input"
+         }
+      ]
+   }
+}`
+
+// nolint:gochecknoglobals
+var cmDescDataWrongFormat = `{
+  "udc-scope": {
+    "input_descriptor": [{
+      "schema": "https://www.w3.org/2018/credentials/examples/v1"
+    }],
+  }
+}`
+
 type mockServer struct{}
 
 func (s *mockServer) ListenAndServe(host, certPath, keyPath string, handler http.Handler) error {
@@ -609,6 +644,12 @@ func TestReadOutputDescriptorFile(t *testing.T) { // nolint:paralleltest
 				require.NotNil(t, v)
 			}
 		})
+	t.Run("cm output descriptor file is not provided", // nolint:paralleltest
+		func(t *testing.T) {
+			cmOutputdesc, err := readCMOutputDescriptorFile("")
+			require.NoError(t, err)
+			require.Empty(t, cmOutputdesc)
+		})
 	t.Run("no such output descriptor file", // nolint:paralleltest
 		func(t *testing.T) {
 			cmOutputdesc, err := readCMOutputDescriptorFile("./testingWrongFile")
@@ -616,6 +657,46 @@ func TestReadOutputDescriptorFile(t *testing.T) { // nolint:paralleltest
 			require.Equal(t, "read credential manifest descriptors file : open testingWrongFile: no such file or directory",
 				err.Error())
 			require.Nil(t, cmOutputdesc)
+		})
+	t.Run("aries-framework - failed to unmarshal credential manifest descriptors file", // nolint:paralleltest
+		func(t *testing.T) {
+			file, err := ioutil.TempFile("", "*.json")
+			require.NoError(t, err)
+
+			_, err = file.WriteString(cmDescDataWrongFormat)
+			require.NoError(t, err)
+
+			cmOutputdesc, err := readCMOutputDescriptorFile(file.Name())
+			require.Error(t, err)
+			require.Contains(t, err.Error(), "failed to unmarshal credential manifest descriptors file")
+			require.Nil(t, cmOutputdesc)
+		})
+	t.Run("aries-framework - failed to validate output descriptors", // nolint:paralleltest
+		func(t *testing.T) {
+			file, err := ioutil.TempFile("", "*.json")
+			require.NoError(t, err)
+
+			_, err = file.WriteString(cmOutDescData)
+			require.NoError(t, err)
+
+			cmOutputdesc, err := readCMOutputDescriptorFile(file.Name())
+			require.Error(t, err)
+			require.Contains(t, err.Error(), "aries-framework - failed to validate output descriptors: "+
+				"missing ID for output descriptor")
+			require.Nil(t, cmOutputdesc)
+		})
+	t.Run("aries-framework - failed to validate input descriptors", // nolint:paralleltest
+		func(t *testing.T) {
+			file, err := ioutil.TempFile("", "*.json")
+			require.NoError(t, err)
+
+			_, err = file.WriteString(cmDescData)
+			require.NoError(t, err)
+
+			cmDesc, err := readCMOutputDescriptorFile(file.Name())
+			require.Error(t, err)
+			require.Contains(t, err.Error(), "aries-framework - failed to validate input descriptors")
+			require.Nil(t, cmDesc)
 		})
 }
 func TestTLSSystemCertPoolInvalidArgsEnvVar(t *testing.T) { // nolint:paralleltest // shared environment variables
