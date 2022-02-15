@@ -1,12 +1,15 @@
 # Building and Testing
 
 ## Prerequisites
-- Go 1.17
-- Docker
-- Docker-Compose
+- [Go 1.17](https://go.dev/doc/install)
+- [Docker](https://docs.docker.com/get-docker/) (make sure to set your `Docker` to use `Docker-Compose V1`)
+- [Docker-Compose V1](https://docs.docker.com/compose/install/)
+- [npm v8](https://docs.npmjs.com/cli/v8/configuring-npm/install)  
+- GitHub packages setup: you will need to authenticate to GitHub packages with your [personal token](https://help.github.com/en/github/authenticating-to-github/creating-a-personal-access-token-for-the-command-line#creating-a-token).
+- Configuring npm for use with GitHub Packages echo "//npm.pkg.github.com/:_authToken=${PERSONAL_TOKEN}" > ~/.npmrc
 - Make
 - bash
-- npm v7  
+
 
 ## Host file
 Add following entries to the host file.
