@@ -6,7 +6,18 @@ This document serves as a guide for integrating [OpenID Connect 1.0](https://ope
 client systems to the RP Adapter. The reader is expected to be familiar with OIDC and the OAuth2 authorization code flow.
 
 ## Flow diagram
-TODO
+
+```mermaid
+sequenceDiagram
+    participant rp as rp/verifier
+    participant rp_adapter_core as rp adapter core
+    participant rp_adapter_oidc as rp adapter oidc (hydra)
+    rp->>rp_adapter_core: register client (one time)
+    rp->>rp_adapter_oidc: oidc auth redirect
+    rp_adapter_oidc->>rp: oidc auth callback
+    rp->>rp_adapter_oidc: oidc token endpoint
+    rp_adapter_oidc->>rp: id_token with user data
+```
 
 ## Steps
 
