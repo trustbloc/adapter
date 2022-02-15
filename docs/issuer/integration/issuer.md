@@ -7,7 +7,19 @@ a [OpenID Connect 1.0](https://openid.net/specs/openid-connect-core-1_0.html) cl
 the Issuer. The reader is expected to be familiar with OIDC and the OAuth2 authorization code flow.
 
 ## Flow diagram
-TODO
+
+```mermaid
+sequenceDiagram
+    participant issuer as issuer
+    participant issuer_adapter as issuer adapter
+    issuer->>issuer: register client/profile (one time)
+    issuer->>issuer_adapter: Redirect /<profile-id>/connect/wallet?cred=<scope>&txnID=<uuid>
+    issuer_adapter->>issuer: Redirect oidc auth
+    issuer->>issuer_adapter: Redirect oidc auth callback
+    issuer_adapter->>issuer: HTTP POST <issuer-url-from-profile>/data
+    issuer->>issuer_adapter: user data
+    issuer_adapter->>issuer: Redirect <issuer-url-from-profile>/cb?txnID=<txnID_from_initial_call>
+```
 
 ## Steps
 Follow these steps to integrate as a Issuer:
