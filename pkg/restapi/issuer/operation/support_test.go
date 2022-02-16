@@ -190,6 +190,7 @@ func createProfileData(profileID string) *issuer.ProfileData {
 		PresentationSigningKey:      "did:example:123xyz#key-1",
 		SupportsWACI:                false,
 		IssuerID:                    uuid.New().String(),
+		IsDIDCommV1:                 true,
 	}
 }
 

@@ -18,7 +18,7 @@ type Tenant struct {
 	Scopes               []string
 	RequiresBlindedRoute bool
 	SupportsWACI         bool
-	IsDIDCommV2          bool
+	IsDIDCommV1          bool
 	LinkedWalletURL      string
 }
 

@@ -28,7 +28,7 @@ type ProfileDataRequest struct {
 	OIDCClientParams            *OIDCClientParams `json:"oidcParams,omitempty"`
 	CredentialScopes            []string          `json:"scopes,omitempty"`
 	LinkedWalletURL             string            `json:"linkedWallet,omitempty"`
-	IsDIDCommV2                 bool              `json:"isDIDCommV2,omitempty"`
+	IsDIDCommV1                 bool              `json:"isDIDCommV1,omitempty"`
 	// Issuer ID identifies who is the issuer of the credential manifests being issued.
 	IssuerID string `json:"issuerID,omitempty"`
 	// CMStyle represents an entity styles object as defined in credential manifest spec.

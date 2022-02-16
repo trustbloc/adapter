@@ -192,7 +192,7 @@ type consentRequestCtx struct {
 	UserData        *userDataCollection
 	SupportsWACI    bool
 	LinkedWalletURL string
-	IsDIDCommV2     bool
+	IsDIDCommV1     bool
 }
 
 type userDataCollection struct {
@@ -433,7 +433,7 @@ func (o *Operation) hydraLoginHandlerIterOne(w http.ResponseWriter, r *http.Requ
 				Label:           tenant.Label,
 				SupportsWACI:    tenant.SupportsWACI,
 				LinkedWalletURL: tenant.LinkedWalletURL,
-				IsDIDCommV2:     tenant.IsDIDCommV2,
+				IsDIDCommV1:     tenant.IsDIDCommV1,
 			},
 			Request: &rp.DataRequest{
 				Scope: login.GetPayload().RequestedScope,
@@ -683,7 +683,7 @@ func (o *Operation) hydraConsentHandler(w http.ResponseWriter, r *http.Request) 
 		RPLabel:         conn.RP.Label,
 		SupportsWACI:    conn.RP.SupportsWACI,
 		LinkedWalletURL: conn.RP.LinkedWalletURL,
-		IsDIDCommV2:     conn.RP.IsDIDCommV2,
+		IsDIDCommV1:     conn.RP.IsDIDCommV1,
 		UserData:        &userDataCollection{},
 	})
 	if err != nil {
@@ -748,7 +748,7 @@ func (o *Operation) getPresentationsRequest(w http.ResponseWriter, r *http.Reque
 
 	var invBytes []byte
 
-	if cr.IsDIDCommV2 { // nolint:nestif
+	if !cr.IsDIDCommV1 { // nolint:nestif
 		invitationV2, e := o.oobv2Client.CreateInvitation(
 			outofbandv2.WithFrom(cr.RPPublicDID),
 			outofbandv2.WithLabel(cr.RPLabel),
@@ -1683,10 +1683,10 @@ func (o *Operation) createRPTenant(w http.ResponseWriter, r *http.Request) {
 
 	var publicDID *did.Doc
 
-	if request.IsDIDCommV2 {
-		publicDID, err = o.publicDIDCreator.CreateV2()
-	} else {
+	if request.IsDIDCommV1 {
 		publicDID, err = o.publicDIDCreator.Create()
+	} else {
+		publicDID, err = o.publicDIDCreator.CreateV2()
 	}
 
 	if err != nil {
@@ -1708,7 +1708,7 @@ func (o *Operation) createRPTenant(w http.ResponseWriter, r *http.Request) {
 		RequiresBlindedRoute: request.RequiresBlindedRoute,
 		SupportsWACI:         request.SupportsWACI,
 		LinkedWalletURL:      request.LinkedWalletURL,
-		IsDIDCommV2:          request.IsDIDCommV2,
+		IsDIDCommV1:          request.IsDIDCommV1,
 	})
 	if err != nil {
 		msg := fmt.Sprintf("failed to save relying party : %s", err)
@@ -1727,7 +1727,7 @@ func (o *Operation) createRPTenant(w http.ResponseWriter, r *http.Request) {
 		RequiresBlindedRoute: request.RequiresBlindedRoute,
 		SupportsWACI:         request.SupportsWACI,
 		LinkedWalletURL:      request.LinkedWalletURL,
-		IsDIDCommV2:          request.IsDIDCommV2,
+		IsDIDCommV1:          request.IsDIDCommV1,
 	})
 }
 

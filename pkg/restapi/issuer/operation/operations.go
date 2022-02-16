@@ -401,10 +401,10 @@ func (o *Operation) createIssuerProfileHandler( // nolint:funlen,gocyclo,cyclop
 
 	var err error
 
-	if data.IsDIDCommV2 {
-		newDidDoc, err = o.publicDIDCreator.CreateV2()
-	} else {
+	if data.IsDIDCommV1 {
 		newDidDoc, err = o.publicDIDCreator.Create()
+	} else {
+		newDidDoc, err = o.publicDIDCreator.CreateV2()
 	}
 
 	if err != nil {
@@ -1063,7 +1063,18 @@ func (o *Operation) createTxn( // nolint:funlen
 ) (string, error) {
 	var invBytes []byte
 
-	if profile.IsDIDCommV2 { // nolint:nestif
+	if profile.IsDIDCommV1 { // nolint:nestif
+		invitationV1, err := o.oobClient.CreateInvitation(nil, outofband.WithLabel("issuer"),
+			outofband.WithGoal("", oobGoalCode))
+		if err != nil {
+			return "", fmt.Errorf("failed to create invitation : %w", err)
+		}
+
+		invBytes, err = json.Marshal(invitationV1)
+		if err != nil {
+			return "", fmt.Errorf("marshal invitation: %w", err)
+		}
+	} else {
 		invitationV2, err := o.oobV2Client.CreateInvitation(
 			outofbandv2.WithFrom(profile.PublicDID),
 			outofbandv2.WithLabel("issuer"),
@@ -1074,17 +1085,6 @@ func (o *Operation) createTxn( // nolint:funlen
 		}
 
 		invBytes, err = json.Marshal(invitationV2)
-		if err != nil {
-			return "", fmt.Errorf("marshal invitation: %w", err)
-		}
-	} else {
-		invitationV1, err := o.oobClient.CreateInvitation(nil, outofband.WithLabel("issuer"),
-			outofband.WithGoal("", oobGoalCode))
-		if err != nil {
-			return "", fmt.Errorf("failed to create invitation : %w", err)
-		}
-
-		invBytes, err = json.Marshal(invitationV1)
 		if err != nil {
 			return "", fmt.Errorf("marshal invitation: %w", err)
 		}
@@ -2302,6 +2302,6 @@ func mapProfileReqToData(data *ProfileDataRequest, didDoc *did.Doc) (*issuer.Pro
 		IssuerID:                    data.IssuerID,
 		CMStyle:                     data.CMStyle,
 		PublicDID:                   didDoc.ID,
-		IsDIDCommV2:                 data.IsDIDCommV2,
+		IsDIDCommV1:                 data.IsDIDCommV1,
 	}, nil
 }

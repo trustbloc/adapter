@@ -164,7 +164,7 @@ func (s *Steps) connectToWalletBridge(userID, agentID string) error {
 	return s.controller.ConnectToWalletBridge(userID, agentID)
 }
 
-func (s *Steps) createTenant(label, scopesStr, blindedRouteStr, linkedWallet string, supportsWACI, isDIDCommV2 bool) error { // nolint:funlen,lll
+func (s *Steps) createTenant(label, scopesStr, blindedRouteStr, linkedWallet string, supportsWACI, isDIDCommV1 bool) error { // nolint:funlen,lll
 	callbackServer := httptest.NewServer(s)
 	callbackURL := callbackServer.URL + "/" + label
 	scopes := strings.Split(scopesStr, ",")
@@ -181,7 +181,7 @@ func (s *Steps) createTenant(label, scopesStr, blindedRouteStr, linkedWallet str
 		RequiresBlindedRoute: blindedRoute,
 		SupportsWACI:         supportsWACI,
 		LinkedWalletURL:      linkedWallet,
-		IsDIDCommV2:          isDIDCommV2,
+		IsDIDCommV1:          isDIDCommV1,
 	})
 	if err != nil {
 		return fmt.Errorf("failed to marshal request: %w", err)
@@ -398,7 +398,7 @@ func validateTenantRegistration(expected *tenantContext, result *models.OAuth2Cl
 }
 
 func (s *Steps) registerTenantFlow(label, scopesStr string) error {
-	err := s.createTenant(label, scopesStr, "false", "", false, false)
+	err := s.createTenant(label, scopesStr, "false", "", false, true)
 	if err != nil {
 		return fmt.Errorf("failed to create tenant: %w", err)
 	}
@@ -412,7 +412,7 @@ func (s *Steps) registerTenantFlow(label, scopesStr string) error {
 }
 
 func (s *Steps) registerTenantFlowWithWACI(label, scopesStr, linkedWallet string) error {
-	err := s.createTenant(label, scopesStr, "false", linkedWallet, true, false)
+	err := s.createTenant(label, scopesStr, "false", linkedWallet, true, true)
 	if err != nil {
 		return fmt.Errorf("failed to create tenant: %w", err)
 	}
@@ -426,7 +426,7 @@ func (s *Steps) registerTenantFlowWithWACI(label, scopesStr, linkedWallet string
 }
 
 func (s *Steps) registerTenantFlowWithWACIAndDIDCommV2(label, scopesStr, linkedWallet string) error {
-	err := s.createTenant(label, scopesStr, "false", linkedWallet, true, true)
+	err := s.createTenant(label, scopesStr, "false", linkedWallet, true, false)
 	if err != nil {
 		return fmt.Errorf("failed to create tenant: %w", err)
 	}
