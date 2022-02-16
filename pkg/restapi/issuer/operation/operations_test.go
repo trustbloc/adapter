@@ -571,7 +571,7 @@ func TestCreateProfile(t *testing.T) {
 			SecretExpiry: 0,
 		}
 
-		vReq.IsDIDCommV2 = true
+		vReq.IsDIDCommV1 = false
 
 		vReqBytes, err := json.Marshal(vReq)
 		require.NoError(t, err)
@@ -589,7 +589,7 @@ func TestCreateProfile(t *testing.T) {
 		require.Equal(t, vReq.SupportsAssuranceCredential, profileRes.SupportsAssuranceCredential)
 		require.Equal(t, vReq.IssuerID, profileRes.IssuerID)
 		require.Equal(t, vReq.SupportsWACI, profileRes.SupportsWACI)
-		require.Equal(t, vReq.IsDIDCommV2, profileRes.IsDIDCommV2)
+		require.Equal(t, vReq.IsDIDCommV1, profileRes.IsDIDCommV1)
 	})
 
 	t.Run("create profile - success with default oidc", func(t *testing.T) {
@@ -1311,7 +1311,7 @@ func TestValidateWalletResponse(t *testing.T) {
 
 	data := createProfileData(profileID)
 	data.URL = callbackURL
-	data.IsDIDCommV2 = true
+	data.IsDIDCommV1 = false
 
 	err = c.profileStore.SaveProfile(data)
 	require.NoError(t, err)

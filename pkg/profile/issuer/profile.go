@@ -51,7 +51,7 @@ type ProfileData struct {
 	IssuerID                    string            `json:"issuerID,omitempty"`
 	CMStyle                     cm.Styles         `json:"styles,omitempty"`
 	PublicDID                   string            `json:"publicDID,omitempty"`
-	IsDIDCommV2                 bool              `json:"isDIDCommV2,omitempty"`
+	IsDIDCommV1                 bool              `json:"isDIDCommV1,omitempty"`
 }
 
 // OIDCClientParams optional set of oidc client parameters that the issuer may set, for static client registration.

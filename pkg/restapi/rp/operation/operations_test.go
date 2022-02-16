@@ -1462,7 +1462,7 @@ func TestGetPresentationsRequest(t *testing.T) {
 		provider := mem.NewProvider()
 		saveUserConn(t, provider, &rp.UserConnection{
 			User:    &rp.User{Subject: userSubject},
-			RP:      &rp.Tenant{ClientID: rpClientID},
+			RP:      &rp.Tenant{ClientID: rpClientID, IsDIDCommV1: true},
 			Request: &rp.DataRequest{},
 		})
 
@@ -1515,6 +1515,7 @@ func TestGetPresentationsRequest(t *testing.T) {
 				},
 			},
 			RPPublicDID: rpPublicDID.String(),
+			IsDIDCommV1: true,
 		})
 
 		r := httptest.NewRecorder()
@@ -1544,7 +1545,7 @@ func TestGetPresentationsRequest(t *testing.T) {
 		provider := mem.NewProvider()
 		saveUserConn(t, provider, &rp.UserConnection{
 			User:    &rp.User{Subject: userSubject},
-			RP:      &rp.Tenant{ClientID: rpClientID, SupportsWACI: true, LinkedWalletURL: "example.com"},
+			RP:      &rp.Tenant{ClientID: rpClientID, SupportsWACI: true, LinkedWalletURL: "example.com", IsDIDCommV1: true},
 			Request: &rp.DataRequest{},
 		})
 
@@ -1600,6 +1601,7 @@ func TestGetPresentationsRequest(t *testing.T) {
 			RPPublicDID:     rpPublicDID.String(),
 			SupportsWACI:    true,
 			LinkedWalletURL: "example.com",
+			IsDIDCommV1:     true,
 		})
 
 		r := httptest.NewRecorder()
@@ -1686,7 +1688,6 @@ func TestGetPresentationsRequest(t *testing.T) {
 			RPPublicDID:     rpPublicDID.String(),
 			SupportsWACI:    true,
 			LinkedWalletURL: "example.com",
-			IsDIDCommV2:     true,
 		})
 
 		r := httptest.NewRecorder()
@@ -1738,7 +1739,7 @@ func TestGetPresentationsRequest(t *testing.T) {
 		store := mem.NewProvider()
 		saveUserConn(t, store, &rp.UserConnection{
 			User:    &rp.User{Subject: userSubject},
-			RP:      &rp.Tenant{ClientID: rpClientID},
+			RP:      &rp.Tenant{ClientID: rpClientID, IsDIDCommV1: true},
 			Request: &rp.DataRequest{},
 		})
 
@@ -1768,6 +1769,7 @@ func TestGetPresentationsRequest(t *testing.T) {
 				},
 			},
 			RPPublicDID: rpPublicDID.String(),
+			IsDIDCommV1: true,
 		})
 
 		r := httptest.NewRecorder()
@@ -1818,7 +1820,6 @@ func TestGetPresentationsRequest(t *testing.T) {
 				},
 			},
 			RPPublicDID: rpPublicDID.String(),
-			IsDIDCommV2: true,
 		})
 
 		r := httptest.NewRecorder()

@@ -40,7 +40,7 @@ type CreateRPTenantRequest struct {
 	RequiresBlindedRoute bool     `json:"requiresBlindedRoute"`
 	SupportsWACI         bool     `json:"supportsWACI"`
 	LinkedWalletURL      string   `json:"linkedWalletURL"`
-	IsDIDCommV2          bool     `json:"isDIDCommV2"`
+	IsDIDCommV1          bool     `json:"isDIDCommV1"`
 }
 
 // CreateRPTenantResponse API response body to register an RP tenant.
@@ -52,7 +52,7 @@ type CreateRPTenantResponse struct {
 	RequiresBlindedRoute bool     `json:"requiresBlindedRoute"`
 	SupportsWACI         bool     `json:"supportsWACI"`
 	LinkedWalletURL      string   `json:"linkedWalletURL"`
-	IsDIDCommV2          bool     `json:"isDIDCommV2"`
+	IsDIDCommV1          bool     `json:"isDIDCommV1"`
 }
 
 // HandleCHAPIResponse is the input message to the chapiResponseHandler handler.
