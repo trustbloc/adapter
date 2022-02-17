@@ -68,10 +68,116 @@
                }
             }
          }
+      ]
+   },
+   "mDL":{
+      "output_descriptor":[
+         {
+            "id":"driver_license_output",
+            "schema":"https://schema.org/EducationalOccupationalCredential",
+            "display":{
+               "title":{
+                  "path":[
+                     "$.name",
+                     "$.vc.name"
+                  ],
+                  "schema":{
+                     "type":"string"
+                  },
+                  "fallback":"Washington State Driver License"
+               },
+               "subtitle":{
+                  "path":[
+                     "$.class",
+                     "$.vc.class"
+                  ],
+                  "schema":{
+                     "type":"string"
+                  },
+                  "fallback":"Class A, Commercial"
+               },
+               "description":{
+                  "text":"License to operate a vehicle with a gross combined weight rating (GCWR) of 26,001 or more pounds, as long as the GVWR of the vehicle(s) being towed is over 10,000 pounds."
+               },
+               "properties":[
+                  {
+                     "path":[
+                        "$.donor",
+                        "$.vc.donor"
+                     ],
+                     "schema":{
+                        "type":"boolean"
+                     },
+                     "fallback":"Unknown",
+                     "label":"Organ Donor"
+                  }
+               ]
+            },
+            "styles":{
+               "thumbnail":{
+                  "uri":"https://dol.wa.com/logo.png",
+                  "alt":"Washington State Seal"
+               },
+               "hero":{
+                  "uri":"https://dol.wa.com/happy-people-driving.png",
+                  "alt":"Happy people driving"
+               },
+               "background":{
+                  "color":"#ff0000"
+               },
+               "text":{
+                  "color":"#d4d400"
+               }
+            }
+         }
       ],
-      "options":{
-         "challenge":"508adef4-b8e0-4edf-a53d-a260371c1423",
-         "domain":"9rf25a28rs96"
-      }
+      "input_descriptor":[
+         {
+            "id":"prc_input",
+            "name":"Permanent Resident Card",
+            "purpose":"We need PRC to verify your status.",
+            "schema":[
+               {
+                  "uri":"https://w3id.org/citizenship#PermanentResidentCard"
+               }
+            ],
+            "constraints":{
+               "fields":[
+                  {
+                     "path":[
+                        "$.credentialSubject.givenName"
+                     ],
+                     "filter":{
+                        "type":"string"
+                     }
+                  },
+                  {
+                     "path":[
+                        "$.credentialSubject.familyName"
+                     ],
+                     "filter":{
+                        "type":"string"
+                     }
+                  },
+                  {
+                     "path":[
+                        "$.credentialSubject.birthCountry"
+                     ],
+                     "filter":{
+                        "type":"string"
+                     }
+                  },
+                  {
+                     "path":[
+                        "$.credentialSubject.birthDate"
+                     ],
+                     "filter":{
+                        "type":"string"
+                     }
+                  }
+               ]
+            }
+         }
+      ]
    }
 }

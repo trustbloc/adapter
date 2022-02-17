@@ -1623,7 +1623,7 @@ func getAttachments(action service.DIDCommAction) ([]decorator.GenericAttachment
 		return nil, fmt.Errorf("failed to decode didComm action message: %w", err)
 	}
 
-	attachmentsRaw, ok := didCommMsgAsMap["requests~attach"]
+	attachmentsRaw, ok := didCommMsgAsMap["attachments"]
 	if !ok {
 		return nil, errors.New("missing attachments from DIDComm message map")
 	}
