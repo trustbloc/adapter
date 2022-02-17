@@ -3973,9 +3973,9 @@ func TestWACIIssuanceHandler(t *testing.T) {
 
 			done := make(chan struct{})
 
-			msg := service.NewDIDCommMsgMap(issuecredsvc.RequestCredentialV2{
+			msg := service.NewDIDCommMsgMap(issuecredsvc.RequestCredentialV3{
 				Type: issuecredsvc.RequestCredentialMsgTypeV2,
-				RequestsAttach: []decorator.Attachment{
+				Attachments: []decorator.AttachmentV2{
 					{
 						ID: manifestID,
 						Data: decorator.AttachmentData{
@@ -4059,9 +4059,9 @@ func TestWACIIssuanceHandler(t *testing.T) {
 
 			// test failed to get credential manifestID from store
 			testFailure(actionCh, msg, "failed to get credential manifestID from store")
-			msg = service.NewDIDCommMsgMap(issuecredsvc.RequestCredentialV2{
-				Type: issuecredsvc.RequestCredentialMsgTypeV2,
-				RequestsAttach: []decorator.Attachment{
+			msg = service.NewDIDCommMsgMap(issuecredsvc.RequestCredentialV3{
+				Type: issuecredsvc.RequestCredentialMsgTypeV3,
+				Attachments: []decorator.AttachmentV2{
 					{ID: manifestID,
 						Data: decorator.AttachmentData{
 							JSON: &verifiable.Presentation{},
@@ -4079,9 +4079,9 @@ func TestWACIIssuanceHandler(t *testing.T) {
 			testFailure(actionCh, msg, "missing credential_application field")
 
 			application := createCredentialApplication(t, c, manifestID, profile)
-			msg = service.NewDIDCommMsgMap(issuecredsvc.RequestCredentialV2{
-				Type: issuecredsvc.RequestCredentialMsgTypeV2,
-				RequestsAttach: []decorator.Attachment{
+			msg = service.NewDIDCommMsgMap(issuecredsvc.RequestCredentialV3{
+				Type: issuecredsvc.RequestCredentialMsgTypeV3,
+				Attachments: []decorator.AttachmentV2{
 					{ID: manifestID,
 						Data: decorator.AttachmentData{
 							JSON: application,
