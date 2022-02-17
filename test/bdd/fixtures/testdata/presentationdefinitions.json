@@ -36,6 +36,15 @@
       ]
     }
   },
+  "prc:local": {
+    "name": "Permanent Resident Card",
+    "purpose": "Verify your identity.",
+    "schema": [
+      {
+        "uri": "https://w3id.org/citizenship#PermanentResidentCard"
+      }
+    ]
+  },
   "credit_score:remote": {
     "schema": [{
       "uri": "https://example.org/examples#AuthorizationCredential"

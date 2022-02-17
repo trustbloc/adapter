@@ -1039,12 +1039,11 @@ func createAriesAgent( // nolint:gocyclo,cyclop
 		return nil, errors.New("didcomm inbound host is mandatory")
 	}
 
-	// TODO - enable TLS on aries inbound transports: https://github.com/trustbloc/edge-adapter/issues/303
 	inboundTransportOpt := defaults.WithInboundHTTPAddr(
 		parameters.didCommParameters.inboundHostInternal,
 		parameters.didCommParameters.inboundHostExternal,
-		"",
-		"",
+		parameters.tlsParams.serveCertPath,
+		parameters.tlsParams.serveKeyPath,
 	)
 
 	outbound, err := arieshttp.NewOutbound(arieshttp.WithOutboundTLSConfig(tlsConfig))
