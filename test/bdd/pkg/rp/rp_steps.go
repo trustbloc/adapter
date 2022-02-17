@@ -56,7 +56,7 @@ import (
 
 const (
 	// AdapterURL is RP adapter endpoint.
-	AdapterURL = "https://localhost:8070"
+	AdapterURL = "https://rp-adapter-rest.trustbloc.local:8070"
 
 	hydraAdminURL  = "https://localhost:4445/"
 	hydraPublicURL = "https://localhost:4444/"

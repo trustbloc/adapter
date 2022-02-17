@@ -17,7 +17,7 @@ services:
       - ADAPTER_REST_TLS_SERVE_CERT=/etc/tls/ec-pubCert.pem
       - ADAPTER_REST_TLS_SERVE_KEY=/etc/tls/ec-key.pem
       - ADAPTER_REST_DIDCOMM_INBOUND_HOST=0.0.0.0:9071
-      - ADAPTER_REST_DIDCOMM_INBOUND_HOST_EXTERNAL=http://issuer-adapter-rest.trustbloc.local:9071
+      - ADAPTER_REST_DIDCOMM_INBOUND_HOST_EXTERNAL=https://issuer-adapter-rest.trustbloc.local:9071
       - ADAPTER_REST_TRUSTBLOC_DOMAIN=${BLOC_DOMAIN}
       - ADAPTER_REST_UNIVERSAL_RESOLVER_URL=http://did.rest.example.com:8072/1.0/identifiers
       - ADAPTER_REST_DSN=mongodb://mongodb.example.com:27017
@@ -45,8 +45,8 @@ services:
     depends_on:
       - mongodb.example.com
 
-  rp.adapter.rest.example.com:
-    container_name: rp.adapter.rest.example.com
+  rp-adapter-rest.trustbloc.local:
+    container_name: rp-adapter-rest.trustbloc.local
     image: ${RP_ADAPTER_REST_IMAGE}:latest
     environment:
       - ADAPTER_REST_HOST_URL=0.0.0.0:8070
@@ -57,14 +57,14 @@ services:
       - ADAPTER_REST_DSN=mongodb://mongodb.example.com:27017
       - ADAPTER_REST_OP_URL=http://PUT-SOMETHING-HERE.com
       - ADAPTER_REST_PRESENTATION_DEFINITIONS_FILE=/etc/testdata/presentationdefinitions.json
-      - ADAPTER_REST_DIDCOMM_INBOUND_HOST=0.0.0.0:8071
-      - ADAPTER_REST_DIDCOMM_INBOUND_HOST_EXTERNAL=http://rp.adapter.rest.example.com:8071
+      - ADAPTER_REST_DIDCOMM_INBOUND_HOST=0.0.0.0:8075
+      - ADAPTER_REST_DIDCOMM_INBOUND_HOST_EXTERNAL=https://rp-adapter-rest.trustbloc.local:8075
       - ADAPTER_REST_TRUSTBLOC_DOMAIN=${BLOC_DOMAIN}
       - ADAPTER_REST_HYDRA_URL=https://hydra.trustbloc.local:4445
       - ADAPTER_REST_UNIVERSAL_RESOLVER_URL=http://did.rest.example.com:8072/1.0/identifiers
       - ADAPTER_REST_DSN_TIMEOUT=45
       - ADAPTER_REST_WALLET_APP_URL=http://demoapp/load
-      - ADAPTER_REST_EXTERNAL_URL=https://rp.adapter.rest.example.com:8070
+      - ADAPTER_REST_EXTERNAL_URL=https://rp-adapter-rest.trustbloc.local:8070
       - ADAPTER_REST_DID_ANCHOR_ORIGIN=https://testnet.orb.local
       - ADAPTER_REST_CONTEXT_PROVIDER_URL=${CONTEXT_PROVIDER_URL}
       - ADAPTER_REST_KEY_TYPE=${AGENT_KEY_TYPE}
@@ -72,6 +72,7 @@ services:
       - ADAPTER_REST_MEDIA_TYPE_PROFILES=${AGENT_MEDIA_TYPE_PROFILES}
     ports:
       - 8070:8070
+      - 8075:8075
     entrypoint: ""
     command: /bin/sh -c "adapter-rest start"
     volumes:
@@ -107,8 +108,8 @@ services:
     environment:
       - DSN=mysql://rpadapterhydra:rpadapterhydra-secret-pw@tcp(mysql:3306)/rpadapterhydra?max_conns=20&max_idle_conns=4
       - URLS_SELF_ISSUER=https://localhost:4444
-      - URLS_CONSENT=https://localhost:8070/consent
-      - URLS_LOGIN=https://localhost:8070/login
+      - URLS_CONSENT=https://rp-adapter-rest.trustbloc.local:8070/consent
+      - URLS_LOGIN=https://rp-adapter-rest.trustbloc.local:8070/login
       - SECRETS_SYSTEM=testSecretsSystem
       - OIDC_SUBJECT_TYPES_SUPPORTED=public
       - OIDC_SUBJECT_TYPE_PAIRWISE_SALT=testSecretsSystem

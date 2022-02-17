@@ -16,6 +16,7 @@ Add following entries to the host file.
 
 ```
 127.0.0.1 testnet.orb.local
+127.0.0.1 rp-adapter-rest.trustbloc.local
 127.0.0.1 issuer-adapter-rest.trustbloc.local
 127.0.0.1 issuer-hydra.trustbloc.local
 127.0.0.1 mock-issuer-login.trustbloc.local

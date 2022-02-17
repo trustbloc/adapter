@@ -14,7 +14,7 @@ Feature: RP Adapter
 
   @rp_adapter_healthcheck
   Scenario: RP adapter healthcheck
-    When an HTTP GET is sent to "https://localhost:8070/healthcheck"
+    When an HTTP GET is sent to "https://rp-adapter-rest.trustbloc.local:8070/healthcheck"
     Then the JSON path "status" of the response equals "success"
 
   @rp_register_party

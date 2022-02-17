@@ -61,6 +61,7 @@ jobs:
       - name: Run Issuer Adapter BDD test
         run: |
           echo '127.0.0.1 testnet.orb.local' | sudo tee -a /etc/hosts
+          echo '127.0.0.1 rp-adapter-rest.trustbloc.local' | sudo tee -a /etc/hosts
           echo '127.0.0.1 issuer-adapter-rest.trustbloc.local' | sudo tee -a /etc/hosts
           echo '127.0.0.1 issuer-hydra.trustbloc.local' | sudo tee -a /etc/hosts
           echo '127.0.0.1 mock-issuer-login.trustbloc.local' | sudo tee -a /etc/hosts
@@ -85,6 +86,7 @@ jobs:
       - name: Run RP Adapter BDD test
         run: |
           echo '127.0.0.1 testnet.orb.local' | sudo tee -a /etc/hosts
+          echo '127.0.0.1 rp-adapter-rest.trustbloc.local' | sudo tee -a /etc/hosts
           echo '127.0.0.1 issuer-adapter-rest.trustbloc.local' | sudo tee -a /etc/hosts
           echo '127.0.0.1 issuer-hydra.trustbloc.local' | sudo tee -a /etc/hosts
           echo '127.0.0.1 mock-issuer-login.trustbloc.local' | sudo tee -a /etc/hosts
