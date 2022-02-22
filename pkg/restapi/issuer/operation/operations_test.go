@@ -54,6 +54,7 @@ import (
 	mockoutofband "github.com/trustbloc/edge-adapter/pkg/internal/mock/outofband"
 	mockoutofbandv2 "github.com/trustbloc/edge-adapter/pkg/internal/mock/outofbandv2"
 	"github.com/trustbloc/edge-adapter/pkg/internal/mock/presentproof"
+	"github.com/trustbloc/edge-adapter/pkg/memcmdescriptor"
 	"github.com/trustbloc/edge-adapter/pkg/profile/issuer"
 	mockprovider "github.com/trustbloc/edge-adapter/pkg/restapi/internal/mocks/provider"
 	adaptervc "github.com/trustbloc/edge-adapter/pkg/vc"
@@ -67,34 +68,30 @@ const (
 )
 
 // nolint:gochecknoglobals
-var cmDescData = map[string]*CMAttachmentDescriptors{
-	mockCredScope: {
-		OutputDesc: []*cm.OutputDescriptor{
-			{
-				ID:     uuid.New().String(),
-				Schema: "https://www.w3.org/2018/credentials/examples/v1",
-			},
+var cmDescData = memcmdescriptor.CMAttachmentDescriptors{
+	OutputDesc: []*cm.OutputDescriptor{
+		{
+			ID:     uuid.New().String(),
+			Schema: "https://www.w3.org/2018/credentials/examples/v1",
 		},
-		InputDesc: []*presexch.InputDescriptor{
-			{
-				ID:    uuid.NewString(),
-				Group: []string{"A"},
-				Schema: []*presexch.Schema{{
-					URI: fmt.Sprintf("%s#%s", verifiable.ContextID, verifiable.VCType),
-				}},
-			},
+	},
+	InputDesc: []*presexch.InputDescriptor{
+		{
+			ID:    uuid.NewString(),
+			Group: []string{"A"},
+			Schema: []*presexch.Schema{{
+				URI: fmt.Sprintf("%s#%s", verifiable.ContextID, verifiable.VCType),
+			}},
 		},
 	},
 }
 
 // nolint:gochecknoglobals
-var cmOutputDescData = map[string]*CMAttachmentDescriptors{
-	mockCredScope: {
-		OutputDesc: []*cm.OutputDescriptor{
-			{
-				ID:     uuid.New().String(),
-				Schema: "https://www.w3.org/2018/credentials/examples/v1",
-			},
+var cmOutputDescData = memcmdescriptor.CMAttachmentDescriptors{
+	OutputDesc: []*cm.OutputDescriptor{
+		{
+			ID:     uuid.New().String(),
+			Schema: "https://www.w3.org/2018/credentials/examples/v1",
 		},
 	},
 }
@@ -630,16 +627,7 @@ func TestCreateProfile(t *testing.T) {
 		vReqBytes, err := json.Marshal(profileDataReq)
 		require.NoError(t, err)
 
-		op.cmDescriptors = map[string]*CMAttachmentDescriptors{
-			mockCredScope: {
-				OutputDesc: []*cm.OutputDescriptor{
-					{
-						ID:     uuid.New().String(),
-						Schema: "https://www.w3.org/2018/credentials/examples/v1",
-					},
-				},
-			},
-		}
+		op.cmDescriptors = mockCMDescriptorsProvider(cmOutputDescData)
 
 		h := getHandler(t, op, endpoint)
 		rr := serveHTTP(t, h.Handle(), http.MethodPost, endpoint, vReqBytes)
@@ -760,6 +748,11 @@ func TestCreateProfile(t *testing.T) {
 
 		ops, err := New(config(t))
 		require.NoError(t, err)
+
+		ops.cmDescriptors = &mockCMDescriptorProvider{
+			createValue: &cmOutputDescData,
+			found:       false,
+		}
 
 		vReqBytes, err := json.Marshal(profileDataReq)
 		require.NoError(t, err)
@@ -1257,7 +1250,7 @@ func TestReadManifest(t *testing.T) { // nolint:tparallel // data race
 		c, err := New(config(t))
 		require.NoError(t, err)
 
-		c.cmDescriptors = cmDescData
+		c.cmDescriptors = mockCMDescriptorsProvider(cmDescData)
 
 		profileData := createProfileData(uuid.NewString())
 		profileData.CredentialScopes = []string{mockCredScope}
@@ -1273,7 +1266,7 @@ func TestReadManifest(t *testing.T) { // nolint:tparallel // data race
 		c, err := New(config(t))
 		require.NoError(t, err)
 
-		c.cmDescriptors = cmOutputDescData
+		c.cmDescriptors = mockCMDescriptorsProvider(cmOutputDescData)
 		profileData := createProfileData(uuid.NewString())
 		profileData.CredentialScopes = []string{mockCredScope}
 		manifest := c.readCredentialManifest(profileData, mockCredScope)
@@ -1287,6 +1280,14 @@ func TestReadManifest(t *testing.T) { // nolint:tparallel // data race
 	t.Run("populate manifest with no descriptors", func(t *testing.T) { // nolint:paralleltest // data race
 		c, err := New(config(t))
 		require.NoError(t, err)
+
+		c.cmDescriptors = &mockCMDescriptorProvider{
+			createValue: &memcmdescriptor.CMAttachmentDescriptors{
+				OutputDesc: nil,
+				InputDesc:  nil,
+			},
+			found: true,
+		}
 
 		profileData := createProfileData(uuid.NewString())
 		profileData.CredentialScopes = []string{mockCredScope}
@@ -3570,7 +3571,7 @@ func TestWACIIssuanceHandler(t *testing.T) {
 				ConnIDByDIDs: connID,
 			}
 
-			c.cmDescriptors = cmOutputDescData
+			c.cmDescriptors = mockCMDescriptorsProvider(cmOutputDescData)
 
 			invitationID := uuid.New().String()
 			issuerID := uuid.New().String()
@@ -3643,7 +3644,7 @@ func TestWACIIssuanceHandler(t *testing.T) {
 				ConnIDByDIDs: connID,
 			}
 
-			c.cmDescriptors = cmOutputDescData
+			c.cmDescriptors = mockCMDescriptorsProvider(cmOutputDescData)
 
 			invitationID := uuid.New().String()
 			issuerID := uuid.New().String()
@@ -3707,7 +3708,7 @@ func TestWACIIssuanceHandler(t *testing.T) {
 
 			invitationID := uuid.New().String()
 			issuerID := uuid.New().String()
-			c.cmDescriptors = cmOutputDescData
+			c.cmDescriptors = mockCMDescriptorsProvider(cmOutputDescData)
 			profile := createProfileData(issuerID)
 			profile.SupportsWACI = true
 
@@ -3743,16 +3744,28 @@ func TestWACIIssuanceHandler(t *testing.T) {
 			err = c.txnStore.Put(usrInvitationMapping.TxID, tdByte)
 			require.NoError(t, err)
 
-			c.cmDescriptors = map[string]*CMAttachmentDescriptors{
-				mockCredScope: {
-					OutputDesc: []*cm.OutputDescriptor{},
+			cd := memcmdescriptor.CMAttachmentDescriptors{
+				OutputDesc: []*cm.OutputDescriptor{
+					{
+						Schema: "https://www.w3.org/2018/credentials/examples/v1",
+					},
 				},
+			}
+
+			c.cmDescriptors = &mockCMDescriptorProvider{
+				createValue: &cd,
+				found:       true,
 			}
 
 			testFailure(actionCh, service.NewDIDCommMsgMap(issuecredsvc.ProposeCredentialV2{
 				Type:         issuecredsvc.ProposeCredentialMsgTypeV2,
 				InvitationID: invitationID,
 			}), "failed to validate credential manifest object")
+
+			c.cmDescriptors = &mockCMDescriptorProvider{
+				createValue: &cmOutputDescData,
+				found:       true,
+			}
 
 			// credential data error
 			txDataSample.CredScope = ""
@@ -3941,7 +3954,10 @@ func TestWACIIssuanceHandler(t *testing.T) {
 			require.NoError(t, err)
 			manifestID := mockCredScope + manifestIDSuffix
 			presDefID := uuid.NewString()
-			c.cmDescriptors = prepareCMAttachmentDescriptors(manifestID, presDefID)
+			c.cmDescriptors = &mockCMDescriptorProvider{
+				createValue: prepareCMAttachmentDescriptors(manifestID, presDefID),
+				found:       true,
+			}
 
 			// validate manifest data error
 			txDataSample := &txnData{
@@ -4033,7 +4049,7 @@ func TestWACIIssuanceHandler(t *testing.T) {
 
 			err = c.storeUserConnectionMapping(usrConnMap)
 			require.NoError(t, err)
-			c.cmDescriptors = cmDescData
+			c.cmDescriptors = mockCMDescriptorsProvider(cmDescData)
 
 			// validate manifest data error
 			txDataSample := &txnData{
@@ -4095,7 +4111,7 @@ func TestWACIIssuanceHandler(t *testing.T) {
 			testFailure(actionCh, msg, "Credential Application attachment is "+
 				"missing a corresponding Presentation Submission")
 
-			c.cmDescriptors = cmOutputDescData
+			c.cmDescriptors = mockCMDescriptorsProvider(cmOutputDescData)
 
 			// test credential fulfillment reading failure
 			testFailure(actionCh, msg, "failed to read credential fulfillment")
@@ -4530,24 +4546,39 @@ func (m *mockMsgWrapper) ThreadID() (string, error) {
 	return m.thID, m.thIDerr
 }
 
-func prepareCMAttachmentDescriptors(manifestID, presDefID string) map[string]*CMAttachmentDescriptors {
-	return map[string]*CMAttachmentDescriptors{
-		mockCredScope: {
-			OutputDesc: []*cm.OutputDescriptor{
-				{
-					ID:     manifestID,
-					Schema: "https://www.w3.org/2018/credentials/examples/v1",
-				},
-			},
-			InputDesc: []*presexch.InputDescriptor{
-				{
-					ID:    presDefID,
-					Group: []string{"A"},
-					Schema: []*presexch.Schema{{
-						URI: fmt.Sprintf("%s#%s", verifiable.ContextID, verifiable.VCType),
-					}},
-				},
+func prepareCMAttachmentDescriptors(manifestID, presDefID string) *memcmdescriptor.CMAttachmentDescriptors {
+	return &memcmdescriptor.CMAttachmentDescriptors{
+		OutputDesc: []*cm.OutputDescriptor{
+			{
+				ID:     manifestID,
+				Schema: "https://www.w3.org/2018/credentials/examples/v1",
 			},
 		},
+		InputDesc: []*presexch.InputDescriptor{
+			{
+				ID:    presDefID,
+				Group: []string{"A"},
+				Schema: []*presexch.Schema{{
+					URI: fmt.Sprintf("%s#%s", verifiable.ContextID, verifiable.VCType),
+				}},
+			},
+		},
+	}
+}
+
+type mockCMDescriptorProvider struct {
+	createValue *memcmdescriptor.CMAttachmentDescriptors
+	found       bool
+}
+
+func (m *mockCMDescriptorProvider) FetchCMDescriptorsByScope(scope string) (*memcmdescriptor.CMAttachmentDescriptors,
+	bool) {
+	return m.createValue, m.found
+}
+
+func mockCMDescriptorsProvider(cmDescriptor memcmdescriptor.CMAttachmentDescriptors) cmDescriptorProvider {
+	return &mockCMDescriptorProvider{
+		createValue: &cmDescriptor,
+		found:       true,
 	}
 }

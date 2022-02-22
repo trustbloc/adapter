@@ -52,6 +52,7 @@ import (
 	"github.com/trustbloc/edge-adapter/pkg/aries"
 	adaptercrypto "github.com/trustbloc/edge-adapter/pkg/crypto"
 	"github.com/trustbloc/edge-adapter/pkg/internal/common/support"
+	"github.com/trustbloc/edge-adapter/pkg/memcmdescriptor"
 	"github.com/trustbloc/edge-adapter/pkg/profile/issuer"
 	"github.com/trustbloc/edge-adapter/pkg/restapi"
 	commhttp "github.com/trustbloc/edge-adapter/pkg/restapi/internal/common/http"
@@ -150,11 +151,8 @@ type credentialOffered struct {
 	PresentationDefID string
 }
 
-// CMAttachmentDescriptors defines the part of properties of credential manifest
-type CMAttachmentDescriptors struct {
-	OutputDesc []*cm.OutputDescriptor      `json:"output_descriptor,omitempty"`
-	InputDesc  []*presexch.InputDescriptor `json:"input_descriptor,omitempty"`
-	Options    map[string]string           `json:"options,omitempty"`
+type cmDescriptorProvider interface {
+	FetchCMDescriptorsByScope(scope string) (*memcmdescriptor.CMAttachmentDescriptors, bool)
 }
 
 // Config defines configuration for issuer operations.
@@ -172,7 +170,7 @@ type Config struct {
 	ExternalURL          string
 	DidDomain            string
 	JSONLDDocumentLoader ld.DocumentLoader
-	CMDescriptors        map[string]*CMAttachmentDescriptors
+	CMDescriptors        cmDescriptorProvider
 }
 
 // New returns issuer rest instance.
@@ -366,7 +364,7 @@ type Operation struct {
 	getOIDCClientFunc    func(string, string) (oidcClient, error)
 	didDomain            string
 	jsonldDocLoader      ld.DocumentLoader
-	cmDescriptors        map[string]*CMAttachmentDescriptors
+	cmDescriptors        cmDescriptorProvider
 }
 
 // GetRESTHandlers get all controller API handler available for this service.
@@ -425,10 +423,10 @@ func (o *Operation) createIssuerProfileHandler( // nolint:funlen,gocyclo,cyclop
 
 	if profileData.SupportsWACI {
 		for _, pCredScope := range profileData.CredentialScopes {
-			if _, ok := o.cmDescriptors[pCredScope]; !ok {
+			if _, ok := o.cmDescriptors.FetchCMDescriptorsByScope(pCredScope); !ok {
 				commhttp.WriteErrorResponseWithLog(rw, http.StatusBadRequest,
-					fmt.Sprintf("failed to find the allowed cred scope in credential manifest output descriptor"+
-						"object %s", pCredScope), profileEndpoint, logger)
+					fmt.Sprintf("failed to find the allowed cred scope in credential manifest output descriptor "+
+						"object -> %s", pCredScope), profileEndpoint, logger)
 
 				return
 			}
@@ -1932,7 +1930,7 @@ func (o *Operation) readCredentialManifest(profileData *issuer.ProfileData,
 		},
 	}
 
-	if attachmentDescriptors, ok := o.cmDescriptors[txnCredScope]; ok {
+	if attachmentDescriptors, ok := o.cmDescriptors.FetchCMDescriptorsByScope(txnCredScope); ok {
 		if attachmentDescriptors.OutputDesc != nil {
 			credentialManifest.OutputDescriptors = attachmentDescriptors.OutputDesc
 		}
