@@ -632,33 +632,27 @@ func TestAdapterModes(t *testing.T) { // nolint:paralleltest // shared environme
 		require.Contains(t, err.Error(), "failed to initialize wallet bridge")
 	})
 }
-func TestReadOutputDescriptorFile(t *testing.T) { // nolint:paralleltest
+func TestGetCMOutputDescriptorProvider(t *testing.T) { // nolint:paralleltest
 	t.Run("read output descriptor file success", // nolint:paralleltest
 		func(t *testing.T) {
-			cmOutputdesc, err := readCMOutputDescriptorFile("./testdata/outputdescriptors.json")
+			cmOutputdesc, err := getCMOutputDescriptorProvider("./testdata/outputdescriptors.json")
 			require.NoError(t, err)
 			require.NotNil(t, cmOutputdesc)
-			for k, v := range cmOutputdesc {
-				require.Equal(t, "udc-scope-1", k)
-				require.Equal(t, 1, len(cmOutputdesc))
-				require.NotNil(t, v)
-			}
 		})
 	t.Run("cm output descriptor file is not provided", // nolint:paralleltest
 		func(t *testing.T) {
-			cmOutputdesc, err := readCMOutputDescriptorFile("")
+			cmOutputdesc, err := getCMOutputDescriptorProvider("")
 			require.NoError(t, err)
 			require.Empty(t, cmOutputdesc)
 		})
 	t.Run("no such output descriptor file", // nolint:paralleltest
 		func(t *testing.T) {
-			cmOutputdesc, err := readCMOutputDescriptorFile("./testingWrongFile")
+			cmOutputdesc, err := getCMOutputDescriptorProvider("./testingWrongFile")
 			require.Error(t, err)
-			require.Equal(t, "read credential manifest descriptors file : open testingWrongFile: no such file or directory",
-				err.Error())
+			require.Contains(t, err.Error(), "read credential manifest descriptors file")
 			require.Nil(t, cmOutputdesc)
 		})
-	t.Run("aries-framework - failed to unmarshal credential manifest descriptors file", // nolint:paralleltest
+	t.Run("aries-framework - failed to decode credential manifest descriptors file", // nolint:paralleltest
 		func(t *testing.T) {
 			file, err := ioutil.TempFile("", "*.json")
 			require.NoError(t, err)
@@ -666,9 +660,9 @@ func TestReadOutputDescriptorFile(t *testing.T) { // nolint:paralleltest
 			_, err = file.WriteString(cmDescDataWrongFormat)
 			require.NoError(t, err)
 
-			cmOutputdesc, err := readCMOutputDescriptorFile(file.Name())
+			cmOutputdesc, err := getCMOutputDescriptorProvider(file.Name())
 			require.Error(t, err)
-			require.Contains(t, err.Error(), "failed to unmarshal credential manifest descriptors file")
+			require.Contains(t, err.Error(), "failed to decode credential manifest descriptors file")
 			require.Nil(t, cmOutputdesc)
 		})
 	t.Run("aries-framework - failed to validate output descriptors", // nolint:paralleltest
@@ -679,7 +673,7 @@ func TestReadOutputDescriptorFile(t *testing.T) { // nolint:paralleltest
 			_, err = file.WriteString(cmOutDescData)
 			require.NoError(t, err)
 
-			cmOutputdesc, err := readCMOutputDescriptorFile(file.Name())
+			cmOutputdesc, err := getCMOutputDescriptorProvider(file.Name())
 			require.Error(t, err)
 			require.Contains(t, err.Error(), "aries-framework - failed to validate output descriptors: "+
 				"missing ID for output descriptor")
@@ -693,7 +687,7 @@ func TestReadOutputDescriptorFile(t *testing.T) { // nolint:paralleltest
 			_, err = file.WriteString(cmDescData)
 			require.NoError(t, err)
 
-			cmDesc, err := readCMOutputDescriptorFile(file.Name())
+			cmDesc, err := getCMOutputDescriptorProvider(file.Name())
 			require.Error(t, err)
 			require.Contains(t, err.Error(), "aries-framework - failed to validate input descriptors")
 			require.Nil(t, cmDesc)

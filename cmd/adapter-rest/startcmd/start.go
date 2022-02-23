@@ -9,7 +9,6 @@ package startcmd
 import (
 	"crypto/tls"
 	"crypto/x509"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io/ioutil"
@@ -23,7 +22,6 @@ import (
 	"time"
 
 	"github.com/cenkalti/backoff"
-	"github.com/google/uuid"
 	"github.com/gorilla/mux"
 	"github.com/hyperledger/aries-framework-go-ext/component/storage/mongodb"
 	"github.com/hyperledger/aries-framework-go-ext/component/storage/mysql"
@@ -36,10 +34,8 @@ import (
 	ldrest "github.com/hyperledger/aries-framework-go/pkg/controller/rest/ld"
 	"github.com/hyperledger/aries-framework-go/pkg/didcomm/messaging/msghandler"
 	arieshttp "github.com/hyperledger/aries-framework-go/pkg/didcomm/transport/http"
-	"github.com/hyperledger/aries-framework-go/pkg/doc/cm"
 	ariesld "github.com/hyperledger/aries-framework-go/pkg/doc/ld"
 	"github.com/hyperledger/aries-framework-go/pkg/doc/ldcontext/remote"
-	"github.com/hyperledger/aries-framework-go/pkg/doc/presexch"
 	"github.com/hyperledger/aries-framework-go/pkg/framework/aries"
 	"github.com/hyperledger/aries-framework-go/pkg/framework/aries/api"
 	"github.com/hyperledger/aries-framework-go/pkg/framework/aries/defaults"
@@ -57,6 +53,7 @@ import (
 	"github.com/trustbloc/edge-adapter/pkg/did"
 	"github.com/trustbloc/edge-adapter/pkg/hydra"
 	"github.com/trustbloc/edge-adapter/pkg/ld"
+	"github.com/trustbloc/edge-adapter/pkg/memcmdescriptor"
 	"github.com/trustbloc/edge-adapter/pkg/presentationex"
 	"github.com/trustbloc/edge-adapter/pkg/restapi/healthcheck"
 	"github.com/trustbloc/edge-adapter/pkg/restapi/issuer"
@@ -826,7 +823,7 @@ func addIssuerHandlers(parameters *adapterRestParameters, framework *aries.Aries
 		return fmt.Errorf("aries-framework - failed to get aries context : %w", err)
 	}
 
-	cmDescriptors, err := readCMOutputDescriptorFile(parameters.cmOutputDescriptorsFilePath)
+	cmDescriptorsProvider, err := getCMOutputDescriptorProvider(parameters.cmOutputDescriptorsFilePath)
 	if err != nil {
 		return fmt.Errorf("failed to read and validate manifest output descriptors : %w", err)
 	}
@@ -863,7 +860,7 @@ func addIssuerHandlers(parameters *adapterRestParameters, framework *aries.Aries
 		ExternalURL:          parameters.externalURL,
 		DidDomain:            parameters.trustblocDomain,
 		JSONLDDocumentLoader: ariesCtx.JSONLDDocumentLoader(),
-		CMDescriptors:        cmDescriptors,
+		CMDescriptors:        cmDescriptorsProvider,
 	})
 	if err != nil {
 		return fmt.Errorf("failed to init issuer ops: %w", err)
@@ -1161,39 +1158,27 @@ func getPresentationExchangeProvider(configFile string) (*presentationex.Provide
 	return p, nil
 }
 
-func readCMOutputDescriptorFile(cmDescriptorsFile string) (cmDescriptor map[string]*issuerops.CMAttachmentDescriptors,
-	err error) {
+func getCMOutputDescriptorProvider(cmDescriptorsFile string) (*memcmdescriptor.Provider, error) {
 	if cmDescriptorsFile == "" {
-		return make(map[string]*issuerops.CMAttachmentDescriptors), nil
+		return &memcmdescriptor.Provider{}, nil
 	}
 
-	credentialDescriptorsBytes, err := ioutil.ReadFile(filepath.Clean(cmDescriptorsFile))
+	reader, err := os.Open(filepath.Clean(cmDescriptorsFile))
 	if err != nil {
-		return nil, fmt.Errorf("read credential manifest descriptors file : %w", err)
+		return nil, fmt.Errorf("read credential manifest descriptors file %s: %w", cmDescriptorsFile, err)
 	}
 
-	err = json.Unmarshal(credentialDescriptorsBytes, &cmDescriptor)
+	defer func() {
+		closeErr := reader.Close()
+		if closeErr != nil {
+			logger.Warnf("failed to close %s: %w", cmDescriptorsFile, closeErr)
+		}
+	}()
+
+	memCMProvider, err := memcmdescriptor.New(reader)
 	if err != nil {
-		return nil, fmt.Errorf("failed to unmarshal credential manifest descriptors file: %w", err)
+		return nil, fmt.Errorf("failed to init cm output descriptor provider: %w", err)
 	}
 
-	for _, descriptors := range cmDescriptor {
-		err := cm.ValidateOutputDescriptors(descriptors.OutputDesc)
-		if err != nil {
-			return nil, fmt.Errorf("aries-framework - failed to validate output "+
-				"descriptors: %w", err)
-		}
-
-		if descriptors.InputDesc != nil {
-			presDef := presexch.PresentationDefinition{ID: uuid.NewString(), InputDescriptors: descriptors.InputDesc}
-
-			err := presDef.ValidateSchema()
-			if err != nil {
-				return nil, fmt.Errorf("aries-framework - failed to validate input "+
-					"descriptors: %w", err)
-			}
-		}
-	}
-
-	return cmDescriptor, nil
+	return memCMProvider, nil
 }

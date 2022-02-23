@@ -97,6 +97,7 @@ func config(t *testing.T) *Config {
 		PublicDIDCreator:     &stubPublicDIDCreator{createValue: mockdiddoc.GetMockDIDDoc("did:example:def567")},
 		OIDCClientStoreKey:   oidcClientStoreKey,
 		JSONLDDocumentLoader: testutil.DocumentLoader(t),
+		CMDescriptors:        mockCMDescriptorsProvider(cmDescData),
 	}
 }
 
