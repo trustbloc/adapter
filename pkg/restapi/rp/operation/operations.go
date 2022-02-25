@@ -1858,6 +1858,8 @@ func createRouteSvc(config *Config, connectionLookup connectionRecorder) (routeS
 		ConnectionLookup:  connectionLookup,
 		MediatorSvc:       mediatorSvc,
 		KeyManager:        config.AriesContextProvider.KMS(),
+		KeyType:           config.AriesContextProvider.KeyType(),
+		KeyAgrType:        config.AriesContextProvider.KeyAgreementType(),
 	})
 	if err != nil {
 		return nil, fmt.Errorf("create service : %w", err)

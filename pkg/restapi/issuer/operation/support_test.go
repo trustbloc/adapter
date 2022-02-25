@@ -31,6 +31,7 @@ import (
 	presentproofsvc "github.com/hyperledger/aries-framework-go/pkg/didcomm/protocol/presentproof"
 	"github.com/hyperledger/aries-framework-go/pkg/doc/did"
 	"github.com/hyperledger/aries-framework-go/pkg/doc/verifiable"
+	"github.com/hyperledger/aries-framework-go/pkg/kms"
 	mockcrypto "github.com/hyperledger/aries-framework-go/pkg/mock/crypto"
 	mocksvc "github.com/hyperledger/aries-framework-go/pkg/mock/didcomm/protocol/didexchange"
 	mockroute "github.com/hyperledger/aries-framework-go/pkg/mock/didcomm/protocol/mediator"
@@ -79,6 +80,8 @@ func getAriesCtx(t *testing.T) aries.CtxProvider {
 				CreateValue:  mockdiddoc.GetMockDIDDoc("did:example:def567"),
 				ResolveValue: mockdiddoc.GetMockDIDDoc("did:example:def567"),
 			},
+			KeyTypeValue:          kms.ED25519Type,
+			KeyAgreementTypeValue: kms.ED25519Type,
 		},
 	}
 }

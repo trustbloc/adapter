@@ -18,8 +18,10 @@ import (
 	"github.com/hyperledger/aries-framework-go/pkg/didcomm/protocol/decorator"
 	mediatorsvc "github.com/hyperledger/aries-framework-go/pkg/didcomm/protocol/mediator"
 	"github.com/hyperledger/aries-framework-go/pkg/doc/did"
+	"github.com/hyperledger/aries-framework-go/pkg/kms"
 	mockroute "github.com/hyperledger/aries-framework-go/pkg/mock/didcomm/protocol/mediator"
 	mockdiddoc "github.com/hyperledger/aries-framework-go/pkg/mock/diddoc"
+	mockkms "github.com/hyperledger/aries-framework-go/pkg/mock/kms"
 	mockvdr "github.com/hyperledger/aries-framework-go/pkg/mock/vdr"
 	"github.com/hyperledger/aries-framework-go/spi/storage"
 	"github.com/stretchr/testify/require"
@@ -213,6 +215,88 @@ func TestDIDCommMsgListener(t *testing.T) {
 
 func TestDIDDocReq(t *testing.T) {
 	t.Parallel()
+
+	t.Run("create did doc vm error", func(t *testing.T) {
+		t.Parallel()
+
+		config := config()
+
+		expectErr := "expected err"
+
+		config.KeyManager = &mockkms.KeyManager{CrAndExportPubKeyErr: errors.New(expectErr)}
+
+		done := make(chan struct{})
+		config.AriesMessenger = &messenger.MockMessenger{
+			ReplyToFunc: func(msgID string, msg service.DIDCommMsgMap, _ ...service.Opt) error {
+				pMsg := &ErrorResp{}
+				dErr := msg.Decode(pMsg)
+				require.NoError(t, dErr)
+				require.Equal(t, pMsg.Type, didDocResp)
+				require.Contains(t, pMsg.Data.ErrorMsg, expectErr)
+
+				done <- struct{}{}
+
+				return nil
+			},
+		}
+
+		c, err := New(config)
+		require.NoError(t, err)
+
+		msgCh := make(chan message.Msg, 1)
+		go c.didCommMsgListener(msgCh)
+
+		msgCh <- message.Msg{DIDCommMsg: service.NewDIDCommMsgMap(DIDDocReq{
+			ID:   uuid.New().String(),
+			Type: didDocReq,
+		})}
+
+		select {
+		case <-done:
+		case <-time.After(5 * time.Second):
+			require.Fail(t, "tests are not validated due to timeout")
+		}
+	})
+
+	t.Run("create did doc keyagreement vm error", func(t *testing.T) {
+		t.Parallel()
+
+		config := config()
+
+		config.KeyAgrType = "foo"
+
+		done := make(chan struct{})
+		config.AriesMessenger = &messenger.MockMessenger{
+			ReplyToFunc: func(msgID string, msg service.DIDCommMsgMap, _ ...service.Opt) error {
+				pMsg := &ErrorResp{}
+				dErr := msg.Decode(pMsg)
+				require.NoError(t, dErr)
+				require.Equal(t, pMsg.Type, didDocResp)
+				require.Contains(t, pMsg.Data.ErrorMsg, "failed to create new keyagreement VM")
+
+				done <- struct{}{}
+
+				return nil
+			},
+		}
+
+		c, err := New(config)
+		require.NoError(t, err)
+
+		msgCh := make(chan message.Msg, 1)
+		go c.didCommMsgListener(msgCh)
+
+		msgCh <- message.Msg{DIDCommMsg: service.NewDIDCommMsgMap(DIDDocReq{
+			ID:   uuid.New().String(),
+			Type: didDocReq,
+		})}
+
+		select {
+		case <-done:
+		case <-time.After(5 * time.Second):
+			require.Fail(t, "tests are not validated due to timeout")
+		}
+	})
 
 	t.Run("create did doc error", func(t *testing.T) {
 		t.Parallel()
@@ -710,6 +794,45 @@ func TestGetDIDService(t *testing.T) {
 		require.Equal(t, config.ServiceEndpoint, doc.Service[0].ServiceEndpoint)
 	})
 
+	t.Run("create verification method error", func(t *testing.T) {
+		t.Parallel()
+
+		expectErr := errors.New("expected error")
+
+		config := config()
+		config.KeyManager = &mockkms.KeyManager{CrAndExportPubKeyErr: expectErr}
+
+		c, err := New(config)
+		require.NoError(t, err)
+
+		connID := uuid.New().String()
+		err = c.store.Put(connID, []byte(uuid.New().String()))
+		require.NoError(t, err)
+
+		_, err = c.GetDIDDoc(connID, false)
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "failed to create new verification method")
+		require.ErrorIs(t, err, expectErr)
+	})
+
+	t.Run("create keyagreement error", func(t *testing.T) {
+		t.Parallel()
+
+		config := config()
+		config.KeyAgrType = "#foo"
+
+		c, err := New(config)
+		require.NoError(t, err)
+
+		connID := uuid.New().String()
+		err = c.store.Put(connID, []byte(uuid.New().String()))
+		require.NoError(t, err)
+
+		_, err = c.GetDIDDoc(connID, false)
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "failed to create new keyagreement VM")
+	})
+
 	t.Run("error when not registered and blinded routing is required", func(t *testing.T) {
 		t.Parallel()
 
@@ -855,5 +978,148 @@ func TestGetDIDService(t *testing.T) {
 		_, err = c.GetDIDDoc(connID, false)
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "register did doc recipient key")
+	})
+
+	t.Run("add keyagreement key to router error", func(t *testing.T) {
+		t.Parallel()
+
+		config := config()
+
+		didDoc := &did.Doc{
+			Service: []did.Service{
+				{
+					ID:   uuid.New().String(),
+					Type: didCommServiceType,
+				},
+			},
+			KeyAgreement: []did.Verification{
+				{
+					VerificationMethod: did.VerificationMethod{
+						ID: "foo",
+					},
+				},
+			},
+		}
+
+		config.VDRIRegistry = &mockvdr.MockVDRegistry{CreateValue: didDoc}
+
+		config.MediatorClient = &mockmediator.MockClient{
+			GetConfigFunc: func(connID string) (*mediatorsvc.Config, error) {
+				return &mediatorsvc.Config{}, nil
+			},
+		}
+
+		expectErr := errors.New("add key error")
+
+		config.MediatorSvc = &mockroute.MockMediatorSvc{AddKeyErr: expectErr}
+
+		c, err := New(config)
+		require.NoError(t, err)
+
+		connID := uuid.New().String()
+		err = c.store.Put(connID, []byte(uuid.New().String()))
+		require.NoError(t, err)
+
+		_, err = c.GetDIDDoc(connID, false)
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "register did doc keyAgreement key")
+		require.ErrorIs(t, err, expectErr)
+	})
+}
+
+func TestService_newVerificationMethod(t *testing.T) {
+	t.Parallel()
+
+	t.Run("success: ed25519", func(t *testing.T) {
+		t.Parallel()
+
+		config := config()
+
+		config.KeyManager = realKMS(t)
+
+		c, err := New(config)
+		require.NoError(t, err)
+
+		vm, err := c.newVerificationMethod(kms.ED25519Type)
+		require.NoError(t, err)
+		require.Equal(t, ed25519VerificationKey2018, vm.Type)
+	})
+
+	t.Run("success: x25519", func(t *testing.T) {
+		t.Parallel()
+
+		config := config()
+
+		config.KeyManager = realKMS(t)
+
+		c, err := New(config)
+		require.NoError(t, err)
+
+		vm, err := c.newVerificationMethod(kms.X25519ECDHKWType)
+		require.NoError(t, err)
+		require.Equal(t, x25519KeyAgreementKey2019, vm.Type)
+	})
+
+	t.Run("success: jwk", func(t *testing.T) {
+		t.Parallel()
+
+		config := config()
+
+		config.KeyManager = realKMS(t)
+
+		c, err := New(config)
+		require.NoError(t, err)
+
+		vm, err := c.newVerificationMethod(kms.NISTP256ECDHKWType)
+		require.NoError(t, err)
+		require.Equal(t, jsonWebKey2020, vm.Type)
+	})
+
+	t.Run("fail: create key", func(t *testing.T) {
+		t.Parallel()
+
+		config := config()
+
+		expectErr := errors.New("expected err")
+
+		config.KeyManager = &mockkms.KeyManager{CrAndExportPubKeyErr: expectErr}
+
+		c, err := New(config)
+		require.NoError(t, err)
+
+		_, err = c.newVerificationMethod(kms.ED25519Type)
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "creating public key")
+		require.ErrorIs(t, err, expectErr)
+	})
+
+	t.Run("fail: invalid x25519 key", func(t *testing.T) {
+		t.Parallel()
+
+		config := config()
+
+		config.KeyManager = &mockkms.KeyManager{CrAndExportPubKeyValue: []byte("foo")}
+
+		c, err := New(config)
+		require.NoError(t, err)
+
+		_, err = c.newVerificationMethod(kms.X25519ECDHKWType)
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "unmarshal X25519 key")
+	})
+
+	t.Run("fail: invalid jwk key", func(t *testing.T) {
+		t.Parallel()
+
+		config := config()
+
+		config.KeyManager = &mockkms.KeyManager{CrAndExportPubKeyValue: []byte("foo")}
+
+		c, err := New(config)
+		require.NoError(t, err)
+
+		_, err = c.newVerificationMethod(kms.NISTP256ECDHKWType)
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "creating jwk")
 	})
 }

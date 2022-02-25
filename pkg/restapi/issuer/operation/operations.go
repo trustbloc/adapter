@@ -262,6 +262,8 @@ func New(config *Config) (*Operation, error) { // nolint:funlen,gocyclo,cyclop
 		ConnectionLookup:  connectionLookup,
 		MediatorSvc:       mediatorSvc,
 		KeyManager:        config.AriesCtx.KMS(),
+		KeyType:           config.AriesCtx.KeyType(),
+		KeyAgrType:        config.AriesCtx.KeyAgreementType(),
 	})
 	if err != nil {
 		return nil, fmt.Errorf("create message service : %w", err)
