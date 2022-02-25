@@ -770,8 +770,7 @@ func (o *Operation) getPresentationsRequest(w http.ResponseWriter, r *http.Reque
 
 		cr.InvitationID = invitationV2.ID
 	} else {
-		invitation, e := o.oobClient.CreateInvitation(
-			[]interface{}{cr.RPPublicDID},
+		invitation, e := o.oobClient.CreateInvitation(nil,
 			outofband.WithLabel(cr.RPLabel),
 			outofband.WithHandshakeProtocols(didexchangesvc.PIURI),
 			outofband.WithGoal("", "streamlined-vp"),
