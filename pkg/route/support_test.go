@@ -7,13 +7,21 @@ SPDX-License-Identifier: Apache-2.0
 package route
 
 import (
+	"testing"
+
 	"github.com/google/uuid"
 	"github.com/hyperledger/aries-framework-go/component/storageutil/mem"
 	"github.com/hyperledger/aries-framework-go/pkg/didcomm/messaging/msghandler"
 	"github.com/hyperledger/aries-framework-go/pkg/doc/did"
+	"github.com/hyperledger/aries-framework-go/pkg/kms"
+	"github.com/hyperledger/aries-framework-go/pkg/kms/localkms"
 	mockroute "github.com/hyperledger/aries-framework-go/pkg/mock/didcomm/protocol/mediator"
 	mockkms "github.com/hyperledger/aries-framework-go/pkg/mock/kms"
+	mockprovider "github.com/hyperledger/aries-framework-go/pkg/mock/provider"
+	mockstore "github.com/hyperledger/aries-framework-go/pkg/mock/storage"
 	mockvdr "github.com/hyperledger/aries-framework-go/pkg/mock/vdr"
+	"github.com/hyperledger/aries-framework-go/pkg/secretlock/noop"
+	"github.com/stretchr/testify/require"
 
 	mockconn "github.com/trustbloc/edge-adapter/pkg/internal/mock/connection"
 	mockdidex "github.com/trustbloc/edge-adapter/pkg/internal/mock/didexchange"
@@ -33,6 +41,8 @@ func config() *Config {
 		ConnectionLookup:  &mockconn.MockConnectionsLookup{ConnIDByDIDs: uuid.New().String()},
 		MediatorSvc:       &mockroute.MockMediatorSvc{},
 		KeyManager:        &mockkms.KeyManager{},
+		KeyType:           kms.ED25519Type,
+		KeyAgrType:        kms.ED25519Type,
 	}
 }
 
@@ -46,4 +56,19 @@ func getDIDDoc() *did.Doc {
 			},
 		},
 	}
+}
+
+func realKMS(t *testing.T) kms.KeyManager {
+	t.Helper()
+
+	ctx := &mockprovider.Provider{
+		StorageProviderValue:              mockstore.NewMockStoreProvider(),
+		ProtocolStateStorageProviderValue: mockstore.NewMockStoreProvider(),
+		SecretLockValue:                   &noop.NoLock{},
+	}
+
+	keyManager, err := localkms.New("prefixname://test.kms", ctx)
+	require.NoError(t, err)
+
+	return keyManager
 }

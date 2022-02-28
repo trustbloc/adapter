@@ -770,8 +770,7 @@ func (o *Operation) getPresentationsRequest(w http.ResponseWriter, r *http.Reque
 
 		cr.InvitationID = invitationV2.ID
 	} else {
-		invitation, e := o.oobClient.CreateInvitation(
-			[]interface{}{cr.RPPublicDID},
+		invitation, e := o.oobClient.CreateInvitation(nil,
 			outofband.WithLabel(cr.RPLabel),
 			outofband.WithHandshakeProtocols(didexchangesvc.PIURI),
 			outofband.WithGoal("", "streamlined-vp"),
@@ -1859,6 +1858,8 @@ func createRouteSvc(config *Config, connectionLookup connectionRecorder) (routeS
 		ConnectionLookup:  connectionLookup,
 		MediatorSvc:       mediatorSvc,
 		KeyManager:        config.AriesContextProvider.KMS(),
+		KeyType:           config.AriesContextProvider.KeyType(),
+		KeyAgrType:        config.AriesContextProvider.KeyAgreementType(),
 	})
 	if err != nil {
 		return nil, fmt.Errorf("create service : %w", err)
