@@ -889,6 +889,12 @@ func (a *Steps) ResolveDID(agent, didID string) (*did.Doc, error) {
 
 // SaveDID saves the did document.
 func (a *Steps) SaveDID(agent, friendlyName string, d *did.Doc) error {
+	requestURL := a.ControllerURLs[agent] + vdr.SaveDIDPath
+
+	return saveDID(requestURL, friendlyName, d)
+}
+
+func saveDID(requestURL, friendlyName string, d *did.Doc) error {
 	bits, err := d.JSONBytes()
 	if err != nil {
 		return fmt.Errorf("failed to marshal did doc: %w", err)
@@ -901,8 +907,6 @@ func (a *Steps) SaveDID(agent, friendlyName string, d *did.Doc) error {
 	if err != nil {
 		return fmt.Errorf("failed to marshal request to save did doc: %w", err)
 	}
-
-	requestURL := a.ControllerURLs[agent] + vdr.SaveDIDPath
 
 	err = bddutil.SendHTTP(http.MethodPost, requestURL, request, nil)
 	if err != nil {
@@ -953,6 +957,11 @@ func (a *Steps) AcceptRequestPresentation(agent string, presentation *verifiable
 func (a *Steps) SignCredential(agent, signingDID string, cred *verifiable.Credential) (*verifiable.Credential, error) {
 	destination := a.ControllerURLs[agent]
 
+	return signCredential(destination, signingDID, agent, cred)
+}
+
+func signCredential(destination, signingDID, agent string,
+	cred *verifiable.Credential) (*verifiable.Credential, error) {
 	inputBits, err := json.Marshal(cred)
 	if err != nil {
 		return nil, fmt.Errorf("'%s' failed to marshal credential: %w", agent, err)
@@ -1061,12 +1070,16 @@ func (a *Steps) GeneratePresentation(agent, signingDID, verificationMethod strin
 // CreateKey creates a key of the given type.
 // Returns the key's ID and the public key material.
 func (a *Steps) CreateKey(agent string, t kms.KeyType) (id string, key []byte, err error) {
+	requestURL := a.ControllerURLs[agent] + kms2.CreateKeySetPath
+
+	return createKey(requestURL, t)
+}
+
+func createKey(requestURL string, t kms.KeyType) (id string, key []byte, err error) {
 	request, err := json.Marshal(&kmscmd.CreateKeySetRequest{KeyType: string(t)})
 	if err != nil {
 		return "", nil, fmt.Errorf("failed to marshal createKeySet request: %w", err)
 	}
-
-	requestURL := a.ControllerURLs[agent] + kms2.CreateKeySetPath
 
 	response := &kmscmd.CreateKeySetResponse{}
 

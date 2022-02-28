@@ -1222,25 +1222,42 @@ func (o *Operation) saveCredentialAttachmentData(thID string, credOffered creden
 
 func (o *Operation) readAndValidateCredentialApplication(msg service.DIDCommAction,
 	credManifest *cm.CredentialManifest) error {
-	// reading credential application if issuer have sent, out presentation_definition along with manifest
-	// TODO - Aries Validate signatures and proofs of credential application should be part of
-	// cm.ValidateCredentialApplicationAttachment function.
 	if credManifest.PresentationDefinition != nil {
 		applicationAttachments, err := getAttachments(msg)
 		if err != nil {
 			return fmt.Errorf("failed to get request credential attachments: %w", err)
 		}
 
-		if len(applicationAttachments) != 1 {
-			return errors.New("invalid request credential message, expected valid credential application")
-		}
-
-		err = cm.ValidateCredentialApplicationAttachment(&applicationAttachments[0], credManifest)
+		credentialApplicationBytes, err := json.MarshalIndent(applicationAttachments[0].Data.JSON,
+			"", "	")
 		if err != nil {
-			return fmt.Errorf("failed to validate credential application attachment: %w", err)
+			return fmt.Errorf("failed to marshal credential_application object: %w", err)
 		}
 
-		return nil
+		err = o.validateCredentialApplication(credentialApplicationBytes, credManifest)
+		if err != nil {
+			return fmt.Errorf("failed to validate credential application: %w", err)
+		}
+	}
+
+	return nil
+}
+
+func (o *Operation) validateCredentialApplication(credentialApplicationBytes []byte,
+	credManifest *cm.CredentialManifest) error {
+	application, err := verifiable.ParsePresentation(credentialApplicationBytes,
+		verifiable.WithPresPublicKeyFetcher(verifiable.NewVDRKeyResolver(o.vdriRegistry).PublicKeyFetcher()),
+		verifiable.WithPresJSONLDDocumentLoader(o.jsonldDocLoader))
+	if err != nil {
+		return fmt.Errorf("failed to parse credential application: %w", err)
+	}
+	// TODO issue-#635 Figure out the way to pass the matched credentials result back to the issuer
+	_, err = cm.ValidateCredentialApplication(application, credManifest, o.jsonldDocLoader,
+		presexch.WithCredentialOptions(verifiable.WithJSONLDDocumentLoader(o.jsonldDocLoader),
+			verifiable.WithPublicKeyFetcher(verifiable.NewVDRKeyResolver(o.vdriRegistry).PublicKeyFetcher())),
+	)
+	if err != nil {
+		return fmt.Errorf("credential manifest: failed to validate credential application: %w", err)
 	}
 
 	return nil
@@ -1935,11 +1952,9 @@ func (o *Operation) readCredentialManifest(profileData *issuer.ProfileData,
 			credentialManifest.OutputDescriptors = attachmentDescriptors.OutputDesc
 		}
 
-		if attachmentDescriptors.InputDesc != nil {
-			credentialManifest.PresentationDefinition = &presexch.PresentationDefinition{
-				ID:               uuid.NewString(),
-				InputDescriptors: attachmentDescriptors.InputDesc,
-			}
+		if attachmentDescriptors.PresentationDefinition != nil {
+			attachmentDescriptors.PresentationDefinition.ID = uuid.NewString()
+			credentialManifest.PresentationDefinition = attachmentDescriptors.PresentationDefinition
 		}
 	}
 

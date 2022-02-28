@@ -7,6 +7,8 @@ SPDX-License-Identifier: Apache-2.0
 package agent
 
 import (
+	"crypto/ed25519"
+	"crypto/tls"
 	_ "embed" //nolint // This is needed to use go:embed
 	"encoding/base64"
 	"encoding/json"
@@ -18,15 +20,24 @@ import (
 	"time"
 
 	"github.com/cucumber/godog"
+	"github.com/google/uuid"
+	"github.com/hyperledger/aries-framework-go-ext/component/vdr/orb"
 	"github.com/hyperledger/aries-framework-go/pkg/client/issuecredential"
 	"github.com/hyperledger/aries-framework-go/pkg/controller/command/vcwallet"
+	kms2 "github.com/hyperledger/aries-framework-go/pkg/controller/rest/kms"
+	"github.com/hyperledger/aries-framework-go/pkg/controller/rest/vdr"
 	"github.com/hyperledger/aries-framework-go/pkg/didcomm/common/service"
 	"github.com/hyperledger/aries-framework-go/pkg/didcomm/protocol/decorator"
 	issuecredsvc "github.com/hyperledger/aries-framework-go/pkg/didcomm/protocol/issuecredential"
 	"github.com/hyperledger/aries-framework-go/pkg/doc/cm"
+	"github.com/hyperledger/aries-framework-go/pkg/doc/did"
+	"github.com/hyperledger/aries-framework-go/pkg/doc/jose/jwk/jwksupport"
 	"github.com/hyperledger/aries-framework-go/pkg/doc/verifiable"
+	vdrapi "github.com/hyperledger/aries-framework-go/pkg/framework/aries/api/vdr"
+	"github.com/hyperledger/aries-framework-go/pkg/kms"
 	"github.com/hyperledger/aries-framework-go/pkg/wallet"
 
+	adapterdid "github.com/trustbloc/edge-adapter/pkg/did"
 	issuerop "github.com/trustbloc/edge-adapter/pkg/restapi/issuer/operation"
 	"github.com/trustbloc/edge-adapter/test/bdd/pkg/bddutil"
 	"github.com/trustbloc/edge-adapter/test/bdd/pkg/context"
@@ -46,8 +57,9 @@ const (
 	requestCredentialPath = walletOperationID + "/request-credential"
 
 	// time constants
-	waitForResponseTimeout = 20 * time.Second
-	tokenExpiry            = 20 * time.Minute
+	waitForResponseTimeout   = 20 * time.Second
+	tokenExpiry              = 20 * time.Minute
+	trustblocDIDMethodDomain = "testnet.orb.local"
 )
 
 // nolint:gochecknoglobals
@@ -348,18 +360,37 @@ func (a *walletSteps) initiateWACIIssuance(walletID, issuerID, auth, controller,
 	return manifest, thID, nil
 }
 
-func generatePresentationWithCredentialApplication(credentialManifest *cm.CredentialManifest) (*verifiable.Presentation,
+func (a *walletSteps) generatePresentationWithCredentialApplication(credentialManifest *cm.CredentialManifest,
+	issuerID string) (*verifiable.Presentation,
 	error) {
 	presentationWithCA, err := cm.PresentCredentialApplication(credentialManifest)
 	if err != nil {
 		return nil, fmt.Errorf("failed to generate presentation with credential application : %w", err)
 	}
 
-	cred := &verifiable.Credential{}
-
-	err = json.Unmarshal(vcPRC, cred)
+	l, err := bddutil.DocumentLoader()
 	if err != nil {
-		return nil, fmt.Errorf("failed to unmarshal credential : %w", err)
+		return nil, fmt.Errorf("failed to init document loader: %w", err)
+	}
+
+	cred, err := verifiable.ParseCredential(vcPRC,
+		verifiable.WithDisabledProofCheck(),
+		verifiable.WithJSONLDDocumentLoader(l))
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse vc : %w", err)
+	}
+
+	// sign the permanent resident card VC
+	// TODO - the issuer adapter is incorrectly using their public TB DID to sign credential
+	//  https://github.com/trustbloc/edge-adapter/issues/302
+	signingDID, err := a.newTrustBlocDID(issuerID)
+	if err != nil {
+		return nil, fmt.Errorf("'%s' failed to create a new trustbloc DID: %w", issuerID, err)
+	}
+	// TODO this credential should ideally be signed by a different issuer
+	signedCredential, err := a.signCredential(issuerID, signingDID.ID, cred)
+	if err != nil {
+		return nil, fmt.Errorf("'%s' failed to sign the VC: %w cred %v", issuerID, err, signedCredential)
 	}
 
 	presentationWithCA.AddCredentials(cred)
@@ -369,7 +400,7 @@ func generatePresentationWithCredentialApplication(credentialManifest *cm.Creden
 
 func (a *walletSteps) concludeWACIIssuance(walletID, issuerID, auth, thID, controller string,
 	manifest *cm.CredentialManifest) error {
-	presentation, err := generatePresentationWithCredentialApplication(manifest)
+	presentation, err := a.generatePresentationWithCredentialApplication(manifest, walletID)
 	if err != nil {
 		return fmt.Errorf("failed to generate credential application attachment: %w", err)
 	}
@@ -403,7 +434,7 @@ func (a *walletSteps) concludeWACIIssuance(walletID, issuerID, auth, thID, contr
 
 	err = bddutil.SendHTTP(http.MethodPost, controller+requestCredentialPath, requestCredential, &interactionResponse)
 	if err != nil {
-		return fmt.Errorf("'%s', failed to request credential from wallet : %w", walletID, err)
+		return fmt.Errorf("'%s', failed to request credential from wallet : %w, %s", walletID, err, string(rawPresentation))
 	}
 
 	logger.Infof("wallet[%s] received credential fulfillment response: %+v", interactionResponse)
@@ -696,4 +727,89 @@ func walletAuthKey(walletID string) string {
 
 func walletRedirectKey(walletID, issuerID string) string {
 	return fmt.Sprintf("wallet_redirect_%s_%s", walletID, issuerID)
+}
+
+// SignCredential signs the credential.
+func (a *walletSteps) signCredential(agent, signingDID string,
+	cred *verifiable.Credential) (*verifiable.Credential, error) {
+	destination := a.ControllerURLs[agent]
+
+	return signCredential(destination, signingDID, agent, cred)
+}
+
+// CreateKey creates a key of the given type.
+// Returns the key's ID and the public key material.
+func (a *walletSteps) createKey(agent string, t kms.KeyType) (id string, key []byte, err error) {
+	requestURL := a.ControllerURLs[agent] + kms2.CreateKeySetPath
+
+	return createKey(requestURL, t)
+}
+
+// SaveDID saves the did document.
+func (a *walletSteps) saveDID(agent, friendlyName string, d *did.Doc) error {
+	requestURL := a.ControllerURLs[agent] + vdr.SaveDIDPath
+
+	return saveDID(requestURL, friendlyName, d)
+}
+
+// creating trustbloc did for signing pr card. This is just to simulate wallet has stored signed pr card to use for
+// issuing driving license use case
+func (a *walletSteps) newTrustBlocDID(agentID string) (*did.Doc, error) {
+	keys := [3]struct {
+		keyID string
+		bits  []byte
+	}{}
+
+	var err error
+
+	for i := range keys {
+		keys[i].keyID, keys[i].bits, err = a.createKey(agentID, kms.ED25519Type)
+		if err != nil {
+			return nil, fmt.Errorf("'%s' failed to create a new key set: %w", agentID, err)
+		}
+	}
+
+	orbClient, err := orb.New(nil, orb.WithDomain(trustblocDIDMethodDomain),
+		orb.WithTLSConfig(&tls.Config{RootCAs: a.bddContext.TLSConfig().RootCAs, MinVersion: tls.VersionTLS12}))
+	if err != nil {
+		return nil, fmt.Errorf("failed to init orb VDR %w", err)
+	}
+
+	didDoc := did.Doc{}
+
+	jwk, err := jwksupport.JWKFromKey(ed25519.PublicKey(keys[0].bits))
+	if err != nil {
+		return nil, fmt.Errorf("failed to create jwk: %w", err)
+	}
+
+	vm, err := did.NewVerificationMethodFromJWK(keys[0].keyID, adapterdid.JSONWebKey2020, "", jwk)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create new vm: %w", err)
+	}
+
+	didDoc.Authentication = append(didDoc.Authentication, *did.NewReferencedVerification(vm, did.Authentication))
+	didDoc.AssertionMethod = append(didDoc.AssertionMethod, *did.NewReferencedVerification(vm, did.AssertionMethod))
+
+	docResolution, err := orbClient.Create(&didDoc,
+		vdrapi.WithOption(orb.RecoveryPublicKeyOpt, ed25519.PublicKey(keys[1].bits)),
+		vdrapi.WithOption(orb.UpdatePublicKeyOpt, ed25519.PublicKey(keys[2].bits)),
+		vdrapi.WithOption(orb.AnchorOriginOpt, "https://testnet.orb.local"),
+	)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create new trustbloc did: %w", err)
+	}
+
+	friendlyName := uuid.New().String()
+
+	resolvedDoc, err := bddutil.ResolveDID(a.bddContext.VDRI, docResolution.DIDDocument.ID, 10)
+	if err != nil {
+		return nil, fmt.Errorf("failed to resolve did=%s err: %w", docResolution.DIDDocument.ID, err)
+	}
+
+	err = a.saveDID(agentID, friendlyName, resolvedDoc)
+	if err != nil {
+		return nil, fmt.Errorf("failed to save new trustbloc did: %w", err)
+	}
+
+	return resolvedDoc, nil
 }

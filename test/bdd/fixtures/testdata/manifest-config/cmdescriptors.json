@@ -131,7 +131,8 @@
             }
          }
       ],
-      "input_descriptor":[
+ "presentation_definition": {
+      "input_descriptors":[
          {
             "id":"prc_input",
             "name":"Permanent Resident Card",
@@ -180,4 +181,5 @@
          }
       ]
    }
+}
 }
