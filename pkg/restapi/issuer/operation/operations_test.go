@@ -75,13 +75,15 @@ var cmDescData = memcmdescriptor.CMAttachmentDescriptors{
 			Schema: "https://www.w3.org/2018/credentials/examples/v1",
 		},
 	},
-	InputDesc: []*presexch.InputDescriptor{
-		{
-			ID:    uuid.NewString(),
-			Group: []string{"A"},
-			Schema: []*presexch.Schema{{
-				URI: fmt.Sprintf("%s#%s", verifiable.ContextID, verifiable.VCType),
-			}},
+	PresentationDefinition: &presexch.PresentationDefinition{
+		InputDescriptors: []*presexch.InputDescriptor{
+			{
+				ID:    uuid.NewString(),
+				Group: []string{"A"},
+				Schema: []*presexch.Schema{{
+					URI: fmt.Sprintf("%s#%s", verifiable.ContextID, verifiable.VCType),
+				}},
+			},
 		},
 	},
 }
@@ -95,6 +97,24 @@ var cmOutputDescData = memcmdescriptor.CMAttachmentDescriptors{
 		},
 	},
 }
+
+// nolint:gochecknoglobals
+var credentialApplicationData = `{
+  "@context": [
+    "https://www.w3.org/2018/credentials/v1",
+    "https://identity.foundation/credential-manifest/application/v1"
+  ],
+  "credential_application": {
+    "id": "dc59653c-7e15-4718-80a4-46d6fb01ab7b",
+    "manifest_id": "dcc75a16-19f5-4273-84ce-4da69ee2b7fe",
+    "format": {}
+  },
+  "type": [
+    "VerifiablePresentation",
+    "CredentialApplication"
+  ],
+  "verifiableCredential": []
+}`
 
 func TestNew(t *testing.T) {
 	t.Parallel()
@@ -1283,8 +1303,8 @@ func TestReadManifest(t *testing.T) { // nolint:tparallel // data race
 
 		c.cmDescriptors = &mockCMDescriptorProvider{
 			createValue: &memcmdescriptor.CMAttachmentDescriptors{
-				OutputDesc: nil,
-				InputDesc:  nil,
+				OutputDesc:             nil,
+				PresentationDefinition: nil,
 			},
 			found: true,
 		}
@@ -4075,12 +4095,14 @@ func TestWACIIssuanceHandler(t *testing.T) {
 
 			// test failed to get credential manifestID from store
 			testFailure(actionCh, msg, "failed to get credential manifestID from store")
+			// Adding presentation with no crdential application attachment
+			app := createCredentialFulfillment(t, c, profile)
 			msg = service.NewDIDCommMsgMap(issuecredsvc.RequestCredentialV3{
 				Type: issuecredsvc.RequestCredentialMsgTypeV3,
 				Attachments: []decorator.AttachmentV2{
 					{ID: manifestID,
 						Data: decorator.AttachmentData{
-							JSON: &verifiable.Presentation{},
+							JSON: app,
 						}},
 				},
 			})
@@ -4092,7 +4114,7 @@ func TestWACIIssuanceHandler(t *testing.T) {
 			}))
 
 			// test read and validate cred application -> credential_application object missing from attachment
-			testFailure(actionCh, msg, "missing credential_application field")
+			testFailure(actionCh, msg, "invalid credential application, missing 'credential_application'")
 
 			application := createCredentialApplication(t, c, manifestID, profile)
 			msg = service.NewDIDCommMsgMap(issuecredsvc.RequestCredentialV3{
@@ -4108,8 +4130,8 @@ func TestWACIIssuanceHandler(t *testing.T) {
 			msg.SetID(thID)
 
 			// test credential application missing corresponding presentation submission
-			testFailure(actionCh, msg, "Credential Application attachment is "+
-				"missing a corresponding Presentation Submission")
+			testFailure(actionCh, msg, "failed to parse descriptor map: missing "+
+				"'presentation_submission' on verifiable presentation")
 
 			c.cmDescriptors = mockCMDescriptorsProvider(cmOutputDescData)
 
@@ -4142,6 +4164,22 @@ func TestWACIIssuanceHandler(t *testing.T) {
 			// test error getting threadID
 			mockMsg.thIDerr = errors.New("thid error")
 			testFailure(actionCh, mockMsg, "failed to read threadID from request credential message")
+		})
+
+		t.Run("test validate credential application failure", func(t *testing.T) {
+			t.Parallel()
+
+			c, err := New(config(t))
+			require.NoError(t, err)
+
+			err = c.validateCredentialApplication([]byte(`{`), nil)
+			require.Error(t, err)
+			require.Contains(t, err.Error(), "failed to parse credential application:"+
+				" JSON unmarshalling of verifiable presentation")
+
+			err = c.validateCredentialApplication([]byte(credentialApplicationData), &cm.CredentialManifest{})
+			require.Error(t, err)
+			require.Contains(t, err.Error(), "credential manifest: failed to validate credential application")
 		})
 	})
 }
@@ -4554,13 +4592,15 @@ func prepareCMAttachmentDescriptors(manifestID, presDefID string) *memcmdescript
 				Schema: "https://www.w3.org/2018/credentials/examples/v1",
 			},
 		},
-		InputDesc: []*presexch.InputDescriptor{
-			{
-				ID:    presDefID,
-				Group: []string{"A"},
-				Schema: []*presexch.Schema{{
-					URI: fmt.Sprintf("%s#%s", verifiable.ContextID, verifiable.VCType),
-				}},
+		PresentationDefinition: &presexch.PresentationDefinition{
+			InputDescriptors: []*presexch.InputDescriptor{
+				{
+					ID:    presDefID,
+					Group: []string{"A"},
+					Schema: []*presexch.Schema{{
+						URI: fmt.Sprintf("%s#%s", verifiable.ContextID, verifiable.VCType),
+					}},
+				},
 			},
 		},
 	}

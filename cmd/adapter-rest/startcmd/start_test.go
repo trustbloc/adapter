@@ -52,11 +52,13 @@ var cmDescData = `{
             "schema":"https://www.w3.org/2018/credentials/examples/v1"
          }
       ],
-      "input_descriptor":[
+   "presentation_definition": {
+      "input_descriptors":[
          {
             "testing":"prc_input"
          }
       ]
+     }
    }
 }`
 

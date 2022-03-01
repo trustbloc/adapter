@@ -25,24 +25,27 @@ var cmOutDescData = `{
 
 // nolint:gochecknoglobals
 var cmDescData = `
-  {
+{
    "prc":{
-      "output_descriptor":[
-         {
+     "output_descriptor":[
+		{
             "id":"udc_output",
             "schema":"https://www.w3.org/2018/credentials/examples/v1"
-          }
+		}
       ],
-      "input_descriptor":[
-         {
-            "id":"prc_input",
-            "schema":[
-               {
+      "presentation_definition":{
+         "id":"8246867e-fdce-48de-a825-9d84ec16c6c9",
+         "input_descriptors":[
+            {
+               "id":"prc_input",
+               "schema":[
+                 {
                   "uri":"https://w3id.org/citizenship#PermanentResidentCard"
-               }
-            ]
-         }
-      ]
+                 }
+               ]
+            }
+         ]
+      }
    }
 }
 `
@@ -57,11 +60,13 @@ var invalidCMDescData = `
             "schema":"https://www.w3.org/2018/credentials/examples/v1"
           }
       ],
+     "presentation_definition": {
       "input_descriptor":[
          {
             "id":"prc_input"
          }
       ]
+    }
    }
 }
 `

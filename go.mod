@@ -10,7 +10,7 @@ require (
 	github.com/coreos/go-oidc v2.2.1+incompatible
 	github.com/google/uuid v1.3.0
 	github.com/gorilla/mux v1.8.0
-	github.com/hyperledger/aries-framework-go v0.1.8-0.20220209203615-cbec86033851
+	github.com/hyperledger/aries-framework-go v0.1.8-0.20220223054038-ed669027d7f3
 	github.com/hyperledger/aries-framework-go-ext/component/vdr/orb v0.1.4-0.20211219215001-23cd75276fdc
 	github.com/hyperledger/aries-framework-go/component/storageutil v0.0.0-20220106195936-a9d6794663ed
 	github.com/hyperledger/aries-framework-go/spi v0.0.0-20220106195936-a9d6794663ed

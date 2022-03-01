@@ -17,11 +17,9 @@ import (
 
 // CMAttachmentDescriptors defines the part of properties of credential manifest
 type CMAttachmentDescriptors struct {
-	OutputDesc []*cm.OutputDescriptor `json:"output_descriptor,omitempty"`
-	// TODO [#Issue-612] Support for submission requirement will put whole presentation_definition here
-	// instead of input_descriptor
-	InputDesc []*presexch.InputDescriptor `json:"input_descriptor,omitempty"`
-	Options   map[string]string           `json:"options,omitempty"`
+	OutputDesc             []*cm.OutputDescriptor           `json:"output_descriptor,omitempty"`
+	PresentationDefinition *presexch.PresentationDefinition `json:"presentation_definition,omitempty"`
+	Options                map[string]string                `json:"options,omitempty"`
 }
 
 // Provider provide credential attachment descriptors ops.
@@ -32,7 +30,7 @@ type Provider struct {
 // New return new provider for credential manifest descriptor provider.
 func New(cmDescriptorsFile io.Reader) (*Provider, error) {
 	p := &Provider{
-		cmDescriptors: map[string]*CMAttachmentDescriptors{},
+		cmDescriptors: make(map[string]*CMAttachmentDescriptors),
 	}
 
 	err := json.NewDecoder(cmDescriptorsFile).Decode(&p.cmDescriptors)
@@ -47,10 +45,10 @@ func New(cmDescriptorsFile io.Reader) (*Provider, error) {
 				"descriptors: %w", err)
 		}
 
-		if descriptors.InputDesc != nil {
-			presDef := presexch.PresentationDefinition{ID: uuid.NewString(), InputDescriptors: descriptors.InputDesc}
+		if descriptors.PresentationDefinition != nil {
+			descriptors.PresentationDefinition.ID = uuid.NewString()
 
-			err := presDef.ValidateSchema()
+			err = descriptors.PresentationDefinition.ValidateSchema()
 			if err != nil {
 				return nil, fmt.Errorf("aries-framework - failed to validate input "+
 					"descriptors: %w", err)
