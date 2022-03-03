@@ -65,6 +65,7 @@ const (
 	inviterDID       = "did:example:e6025bfdbb8f"
 	mockOIDCProvider = "mock.provider.local"
 	mockCredScope    = "prc"
+	mockUIEndpoint   = "/ui"
 )
 
 // nolint:gochecknoglobals
@@ -850,7 +851,7 @@ func TestGetProfile(t *testing.T) {
 func TestConnectWallet(t *testing.T) { // nolint:tparallel // data race
 	t.Parallel()
 
-	uiEndpoint := "/ui"
+	uiEndpoint := mockUIEndpoint
 	profileID := "test-1"
 	state := uuid.New().String()
 	endpoint := walletConnectEndpoint
@@ -3777,6 +3778,8 @@ func TestWACIIssuanceHandler(t *testing.T) {
 				found:       true,
 			}
 
+			c.uiEndpoint = mockUIEndpoint
+
 			testFailure(actionCh, service.NewDIDCommMsgMap(issuecredsvc.ProposeCredentialV2{
 				Type:         issuecredsvc.ProposeCredentialMsgTypeV2,
 				InvitationID: invitationID,
@@ -4052,6 +4055,7 @@ func TestWACIIssuanceHandler(t *testing.T) {
 			}
 
 			issuerID := uuid.New().String()
+			c.uiEndpoint = mockUIEndpoint
 
 			profile := createProfileData(issuerID)
 			profile.SupportsWACI = true

@@ -29,6 +29,7 @@ import (
 	"github.com/hyperledger/aries-framework-go/pkg/client/outofband"
 	"github.com/hyperledger/aries-framework-go/pkg/client/outofbandv2"
 	"github.com/hyperledger/aries-framework-go/pkg/client/presentproof"
+	"github.com/hyperledger/aries-framework-go/pkg/didcomm/common/model"
 	"github.com/hyperledger/aries-framework-go/pkg/didcomm/common/service"
 	"github.com/hyperledger/aries-framework-go/pkg/didcomm/messaging/msghandler"
 	"github.com/hyperledger/aries-framework-go/pkg/didcomm/protocol/decorator"
@@ -112,6 +113,8 @@ const (
 	credentialFulfillmentFormat    = "dif/credential-manifest/fulfillment@v1.0"
 	offerCredentialAttachMediaType = "application/json"
 	redirectStatusOK               = "OK"
+	redirectStatusError            = "FAIL"
+	redirectErrorURL               = "/error"
 
 	manifestIDSuffix      = "_mID"
 	manifestDataPrefix    = "manifest_"
@@ -1305,28 +1308,29 @@ func (o *Operation) getUserInvitationMapping(connID string) (*UserInvitationMapp
 
 func (o *Operation) didCommActionListener(ch <-chan service.DIDCommAction) {
 	for msg := range ch {
-		var err error
-
 		var args interface{}
+
+		var pr *model.ProblemReport
 
 		switch msg.Message.Type() {
 		case issuecredsvc.RequestCredentialMsgTypeV2, issuecredsvc.RequestCredentialMsgTypeV3:
-			args, err = o.handleRequestCredential(msg)
-		case presentproofsvc.RequestPresentationMsgTypeV2:
-			args, err = o.handleRequestPresentation(msg)
-		case presentproofsvc.RequestPresentationMsgTypeV3:
+			args, pr = o.handleRequestCredential(msg)
+		case presentproofsvc.RequestPresentationMsgTypeV2, presentproofsvc.RequestPresentationMsgTypeV3:
 			// TODO handle presentproofsvc.RequestPresentationMsgTypeV3 properly, for now it's the same as V2.
-			args, err = o.handleRequestPresentation(msg)
+			args, pr = o.handleRequestPresentation(msg)
 		case issuecredsvc.ProposeCredentialMsgTypeV2, issuecredsvc.ProposeCredentialMsgTypeV3:
-			args, err = o.handleProposeCredential(msg)
+			args, pr = o.handleProposeCredential(msg)
 		default:
-			err = fmt.Errorf("unsupported message type : %s", msg.Message.Type())
+			pr = &model.ProblemReport{
+				Description: model.Code{
+					Code: fmt.Sprintf("unsupported message type : %s", msg.Message.Type()),
+				},
+			}
 		}
 
-		if err != nil {
-			logger.Errorf("msgType=[%s] id=[%s] errMsg=[%s]", msg.Message.Type(), msg.Message.ID(), err.Error())
-
-			msg.Stop(fmt.Errorf("handle %s : %w", msg.Message.Type(), err))
+		if pr != nil {
+			logger.Errorf("msgType=[%s] id=[%s] problemReport=[%s]", msg.Message.Type(), msg.Message.ID(), pr)
+			msg.Stop(fmt.Errorf("handle %s : %s", msg.Message.Type(), pr))
 		} else {
 			logger.Infof("msgType=[%s] id=[%s] msg=[%s]", msg.Message.Type(), msg.Message.ID(), "success")
 
@@ -1350,7 +1354,7 @@ func (o *Operation) didCommStateMsgListener(stateMsgCh <-chan service.StateMsg) 
 }
 
 // nolint:funlen,gocyclo,cyclop
-func (o *Operation) handleProposeCredential(msg service.DIDCommAction) (issuecredsvc.Opt, error) {
+func (o *Operation) handleProposeCredential(msg service.DIDCommAction) (issuecredsvc.Opt, *model.ProblemReport) {
 	var invitationID, presDefID string
 
 	// TODO: update afgo to support parsing InvitationID for ProposeCredentialParams
@@ -1360,7 +1364,8 @@ func (o *Operation) handleProposeCredential(msg service.DIDCommAction) (issuecre
 
 		err := msg.Message.Decode(&proposal)
 		if err != nil {
-			return nil, fmt.Errorf("failed to decode propose credential message: %w", err)
+			return nil, prepareProblemReport(o.uiEndpoint+redirectErrorURL,
+				fmt.Errorf("failed to decode propose credential message: %w", err))
 		}
 
 		invitationID = proposal.InvitationID
@@ -1369,28 +1374,33 @@ func (o *Operation) handleProposeCredential(msg service.DIDCommAction) (issuecre
 
 		err := msg.Message.Decode(&proposal)
 		if err != nil {
-			return nil, fmt.Errorf("failed to decode propose credential message: %w", err)
+			return nil, prepareProblemReport(o.uiEndpoint+redirectErrorURL,
+				fmt.Errorf("failed to decode propose credential message: %w", err))
 		}
 
 		invitationID = proposal.InvitationID
 	}
 
 	if invitationID == "" {
-		return nil, errors.New("invalid invitation ID, failed to correlate incoming propose credential message")
+		return nil, prepareProblemReport(o.uiEndpoint+redirectErrorURL,
+			errors.New("invalid invitation ID, failed to correlate incoming propose credential message"))
 	}
 
 	userInvMap, err := o.getUserInvitationMapping(invitationID)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get user invitation mapping : %w", err)
+		return nil, prepareProblemReport(o.uiEndpoint+redirectErrorURL,
+			fmt.Errorf("failed to get user invitation mapping : %w", err))
 	}
 
 	profile, err := o.profileStore.GetProfile(userInvMap.IssuerID)
 	if err != nil {
-		return nil, fmt.Errorf("failed to fetch issuer profile : %w", err)
+		return nil, prepareProblemReport(o.uiEndpoint+redirectErrorURL,
+			fmt.Errorf("failed to fetch issuer profile : %w", err))
 	}
 
 	if !profile.SupportsWACI {
-		return nil, errors.New("unsupported protocol, propose credential message handled for WACI only")
+		return nil, prepareProblemReport(o.uiEndpoint+redirectErrorURL,
+			errors.New("unsupported protocol, propose credential message handled for WACI only"))
 	}
 
 	oauthToken := ""
@@ -1398,13 +1408,15 @@ func (o *Operation) handleProposeCredential(msg service.DIDCommAction) (issuecre
 	if profile.OIDCProviderURL != "" {
 		oauthToken, err = o.getOIDCAccessToken(userInvMap.TxID, profile)
 		if err != nil {
-			return nil, fmt.Errorf("failed to get OIDC access token for WACI transaction: %w", err)
+			return nil, prepareProblemReport(o.uiEndpoint+redirectErrorURL,
+				fmt.Errorf("failed to get OIDC access token for WACI transaction: %w", err))
 		}
 	}
 
 	txn, err := o.getTxn(userInvMap.TxID)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get trasaction data: %w", err)
+		return nil, prepareProblemReport(o.uiEndpoint+redirectErrorURL,
+			fmt.Errorf("failed to get trasaction data: %w", err))
 	}
 
 	// read credential manifest
@@ -1414,7 +1426,8 @@ func (o *Operation) handleProposeCredential(msg service.DIDCommAction) (issuecre
 	if manifest.OutputDescriptors != nil {
 		err = manifest.Validate()
 		if err != nil {
-			return nil, fmt.Errorf("failed to validate credential manifest object: %w", err)
+			return nil, prepareProblemReport(o.uiEndpoint+redirectErrorURL,
+				fmt.Errorf("failed to validate credential manifest object: %w", err))
 		}
 	}
 
@@ -1426,19 +1439,22 @@ func (o *Operation) handleProposeCredential(msg service.DIDCommAction) (issuecre
 	vc, err := o.createCredential(getUserDataURL(profile.URL), userInvMap.TxToken, oauthToken,
 		"", false, profile)
 	if err != nil {
-		return nil, fmt.Errorf("failed to fetch credential data : %w", err)
+		return nil, prepareProblemReport(o.uiEndpoint+redirectErrorURL,
+			fmt.Errorf("failed to fetch credential data : %w", err))
 	}
 
 	// prepare fulfillment
 	presentation, err := verifiable.NewPresentation(verifiable.WithCredentials(vc))
 	if err != nil {
-		return nil, fmt.Errorf("failed to prepare presentation : %w", err)
+		return nil, prepareProblemReport(o.uiEndpoint+redirectErrorURL,
+			fmt.Errorf("failed to prepare presentation : %w", err))
 	}
 
 	fulfillment, err := cm.PresentCredentialFulfillment(manifest,
 		cm.WithExistingPresentationForPresentCredentialFulfillment(presentation))
 	if err != nil {
-		return nil, fmt.Errorf("failed to prepare credential fulfillment : %w", err)
+		return nil, prepareProblemReport(o.uiEndpoint+redirectErrorURL,
+			fmt.Errorf("failed to prepare credential fulfillment : %w", err))
 	}
 
 	// prepare offer credential
@@ -1452,13 +1468,15 @@ func (o *Operation) handleProposeCredential(msg service.DIDCommAction) (issuecre
 		PresentationDefID: presDefID,
 	})
 	if err != nil {
-		return nil, fmt.Errorf("failed to persist credential fulfillment : %w", err)
+		return nil, prepareProblemReport(o.uiEndpoint+redirectErrorURL,
+			fmt.Errorf("failed to persist credential fulfillment : %w", err))
 	}
 
 	// save user connection mapping for subsequent WACI steps.
 	connID, err := o.getConnectionIDFromEvent(msg)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get connection ID from event : %w", err)
+		return nil, prepareProblemReport(o.uiEndpoint+redirectErrorURL,
+			fmt.Errorf("failed to get connection ID from event : %w", err))
 	}
 
 	err = o.storeUserConnectionMapping(&UserConnectionMapping{
@@ -1469,7 +1487,8 @@ func (o *Operation) handleProposeCredential(msg service.DIDCommAction) (issuecre
 		State:        userInvMap.State,
 	})
 	if err != nil {
-		return nil, fmt.Errorf("failed to save user connection mapping : %w", err)
+		return nil, prepareProblemReport(o.uiEndpoint+redirectErrorURL,
+			fmt.Errorf("failed to save user connection mapping : %w", err))
 	}
 
 	// TODO for now not removing entry for user invitation mapping,
@@ -1479,20 +1498,23 @@ func (o *Operation) handleProposeCredential(msg service.DIDCommAction) (issuecre
 }
 
 // nolint:funlen,gocyclo,cyclop
-func (o *Operation) handleRequestCredential(msg service.DIDCommAction) (interface{}, error) {
+func (o *Operation) handleRequestCredential(msg service.DIDCommAction) (interface{}, *model.ProblemReport) {
 	connID, err := o.getConnectionIDFromEvent(msg)
 	if err != nil {
-		return nil, fmt.Errorf("connection using DIDs not found : %w", err)
+		return nil, prepareProblemReport(o.uiEndpoint+redirectErrorURL,
+			fmt.Errorf("connection using DIDs not found : %w", err))
 	}
 
 	userConnMap, err := o.getUserConnectionMapping(connID)
 	if err != nil {
-		return nil, fmt.Errorf("get token from the connectionID : %w", err)
+		return nil, prepareProblemReport(o.uiEndpoint+redirectErrorURL,
+			fmt.Errorf("get token from the connectionID : %w", err))
 	}
 
 	profile, err := o.profileStore.GetProfile(userConnMap.IssuerID)
 	if err != nil {
-		return nil, fmt.Errorf("fetch issuer profile : %w", err)
+		return nil, prepareProblemReport(o.uiEndpoint+redirectErrorURL,
+			fmt.Errorf("fetch issuer profile : %w", err))
 	}
 
 	if profile.SupportsWACI {
@@ -1501,31 +1523,36 @@ func (o *Operation) handleRequestCredential(msg service.DIDCommAction) (interfac
 
 	authorizationCreReq, err := fetchAuthorizationCreReq(msg)
 	if err != nil {
-		return nil, fmt.Errorf("failed to fetch authz credential request: %w", err)
+		return nil, prepareProblemReport(o.uiEndpoint+redirectErrorURL,
+			fmt.Errorf("failed to fetch authz credential request: %w", err))
 	}
 
 	newDidDoc, err := o.routeSvc.GetDIDDoc(connID, profile.RequiresBlindedRoute)
 	if err != nil {
-		return nil, fmt.Errorf(
-			"create new issuer did [connID=%s requiresBlindedRoute=%t]: %w",
-			connID, profile.RequiresBlindedRoute, err)
+		return nil, prepareProblemReport(o.uiEndpoint+redirectErrorURL,
+			fmt.Errorf(
+				"create new issuer did [connID=%s requiresBlindedRoute=%t]: %w",
+				connID, profile.RequiresBlindedRoute, err))
 	}
 
 	docJSON, err := newDidDoc.JSONBytes()
 	if err != nil {
-		return nil, fmt.Errorf("failed to marshal new did doc: %w", err)
+		return nil, prepareProblemReport(o.uiEndpoint+redirectErrorURL,
+			fmt.Errorf("failed to marshal new did doc: %w", err))
 	}
 
 	rpDIDDoc, err := did.ParseDocument(authorizationCreReq.RPDIDDoc.Doc)
 	if err != nil {
-		return nil, fmt.Errorf("parse rp did doc : %w", err)
+		return nil, prepareProblemReport(o.uiEndpoint+redirectErrorURL,
+			fmt.Errorf("parse rp did doc : %w", err))
 	}
 
 	rpDIDDoc.ID = authorizationCreReq.RPDIDDoc.ID
 
 	_, err = o.didExClient.CreateConnection(newDidDoc.ID, rpDIDDoc)
 	if err != nil {
-		return nil, fmt.Errorf("create connection with rp : %w", err)
+		return nil, prepareProblemReport(o.uiEndpoint+redirectErrorURL,
+			fmt.Errorf("create connection with rp : %w", err))
 	}
 
 	vc := issuervc.CreateAuthorizationCredential(newDidDoc.ID, docJSON, authorizationCreReq.RPDIDDoc,
@@ -1533,7 +1560,8 @@ func (o *Operation) handleRequestCredential(msg service.DIDCommAction) (interfac
 
 	vc, err = o.vccrypto.SignCredential(vc, profile.CredentialSigningKey)
 	if err != nil {
-		return nil, fmt.Errorf("sign authorization credential : %w", err)
+		return nil, prepareProblemReport(o.uiEndpoint+redirectErrorURL,
+			fmt.Errorf("sign authorization credential : %w", err))
 	}
 
 	handle := &AuthorizationCredentialHandle{
@@ -1549,7 +1577,8 @@ func (o *Operation) handleRequestCredential(msg service.DIDCommAction) (interfac
 
 	err = o.storeAuthorizationCredHandle(handle)
 	if err != nil {
-		return nil, fmt.Errorf("store authorization credential : %w", err)
+		return nil, prepareProblemReport(o.uiEndpoint+redirectErrorURL,
+			fmt.Errorf("store authorization credential : %w", err))
 	}
 
 	return issuecredential.WithIssueCredential(&issuecredential.IssueCredential{
@@ -1562,28 +1591,32 @@ func (o *Operation) handleRequestCredential(msg service.DIDCommAction) (interfac
 
 // nolint:funlen,gocyclo,cyclop
 func (o *Operation) handleWACIRequestCredential(msg service.DIDCommAction, profile *issuer.ProfileData,
-	userConnMap *UserConnectionMapping) (issuecredsvc.Opt, error) {
+	userConnMap *UserConnectionMapping) (issuecredsvc.Opt, *model.ProblemReport) {
 	var thID string
 
 	var err error
 
 	thID, err = msg.Message.ThreadID()
 	if err != nil {
-		return nil, fmt.Errorf("failed to read threadID from request credential message: %w", err)
+		return nil, prepareProblemReport(o.uiEndpoint+redirectErrorURL,
+			fmt.Errorf("failed to read threadID from request credential message: %w", err))
 	}
 
 	if thID == "" {
-		return nil, errors.New("failed to correlate WACI interaction, missing thread ID")
+		return nil, prepareProblemReport(o.uiEndpoint+redirectErrorURL,
+			errors.New("failed to correlate WACI interaction, missing thread ID"))
 	}
 
 	txn, err := o.getTxn(userConnMap.TxnID)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get trasaction data: %w", err)
+		return nil, prepareProblemReport(o.uiEndpoint+redirectErrorURL,
+			fmt.Errorf("failed to get trasaction data: %w", err))
 	}
 
 	manifestID, err := o.txnStore.Get(manifestDataPrefix + thID)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get credential manifestID from store: %w", err)
+		return nil, prepareProblemReport(o.uiEndpoint+redirectErrorURL,
+			fmt.Errorf("failed to get credential manifestID from store: %w", err))
 	}
 
 	// read credential manifest for the specific scope
@@ -1599,7 +1632,8 @@ func (o *Operation) handleWACIRequestCredential(msg service.DIDCommAction, profi
 
 		presDefID, err = o.txnStore.Get(presDefDataPrefix + thID)
 		if err != nil {
-			return nil, fmt.Errorf("failed to get credential presentation definition ID from store: %w", err)
+			return nil, prepareProblemReport(o.uiEndpoint+redirectErrorURL,
+				fmt.Errorf("failed to get credential presentation definition ID from store: %w", err))
 		}
 
 		manifest.PresentationDefinition.ID = strings.Trim(string(presDefID), "\"")
@@ -1607,12 +1641,14 @@ func (o *Operation) handleWACIRequestCredential(msg service.DIDCommAction, profi
 
 	err = o.readAndValidateCredentialApplication(msg, manifest)
 	if err != nil {
-		return nil, fmt.Errorf("failed to read and validate credential application: %w", err)
+		return nil, prepareProblemReport(o.uiEndpoint+redirectErrorURL,
+			fmt.Errorf("failed to read and validate credential application: %w", err))
 	}
 
 	fulfillment, err := o.readCredentialFulfillment(thID)
 	if err != nil {
-		return nil, fmt.Errorf("failed to read credential fulfillment: %w", err)
+		return nil, prepareProblemReport(o.uiEndpoint+redirectErrorURL,
+			fmt.Errorf("failed to read credential fulfillment: %w", err))
 	}
 
 	err = o.deleteCredentialFulfillment(thID)
@@ -1622,7 +1658,8 @@ func (o *Operation) handleWACIRequestCredential(msg service.DIDCommAction, profi
 
 	vp, err := o.vccrypto.SignPresentation(fulfillment, profile.PresentationSigningKey)
 	if err != nil {
-		return nil, fmt.Errorf("failed to sign credential fulfillment: %w", err)
+		return nil, prepareProblemReport(o.uiEndpoint+redirectErrorURL,
+			fmt.Errorf("failed to sign credential fulfillment: %w", err))
 	}
 
 	redirectURL := fmt.Sprintf(redirectURLFmt, getCallBackURL(profile.URL), userConnMap.State)
@@ -1665,49 +1702,57 @@ func getAttachments(action service.DIDCommAction) ([]decorator.GenericAttachment
 	return attachments, nil
 }
 
-func (o *Operation) handleRequestPresentation(msg service.DIDCommAction) (interface{}, error) {
+func (o *Operation) handleRequestPresentation(msg service.DIDCommAction) (interface{}, *model.ProblemReport) {
 	authorizationCred, err := fetchAuthorizationCred(msg, o.vdriRegistry, o.jsonldDocLoader)
 	if err != nil {
-		return nil, fmt.Errorf("failed to fetch authz credential: %w", err)
+		return nil, prepareProblemReport(o.uiEndpoint+redirectErrorURL,
+			fmt.Errorf("failed to fetch authz credential: %w", err))
 	}
 
 	data, err := o.txnStore.Get(authorizationCred.ID)
 	if err != nil {
-		return nil, fmt.Errorf("authorization credential not found : %w", err)
+		return nil, prepareProblemReport(o.uiEndpoint+redirectErrorURL,
+			fmt.Errorf("authorization credential not found : %w", err))
 	}
 
 	authorizationCredHandle := &AuthorizationCredentialHandle{}
 
 	err = json.Unmarshal(data, authorizationCredHandle)
 	if err != nil {
-		return nil, fmt.Errorf("authorization credential handle : %w", err)
+		return nil, prepareProblemReport(o.uiEndpoint+redirectErrorURL,
+			fmt.Errorf("authorization credential handle : %w", err))
 	}
 
 	profile, err := o.profileStore.GetProfile(authorizationCredHandle.IssuerID)
 	if err != nil {
-		return nil, fmt.Errorf("fetch issuer profile : %w", err)
+		return nil, prepareProblemReport(o.uiEndpoint+redirectErrorURL,
+			fmt.Errorf("fetch issuer profile : %w", err))
 	}
 
 	docResolution, err := o.vdriRegistry.Resolve(authorizationCredHandle.IssuerDID)
 	if err != nil {
-		return nil, fmt.Errorf("failed to resolve issuer did %s: %w", authorizationCredHandle.IssuerDID, err)
+		return nil, prepareProblemReport(o.uiEndpoint+redirectErrorURL,
+			fmt.Errorf("failed to resolve issuer did %s: %w", authorizationCredHandle.IssuerDID, err))
 	}
 
 	vp, err := o.generateUserPresentation(authorizationCredHandle, profile, docResolution.DIDDocument)
 	if err != nil {
-		return nil, fmt.Errorf("failed to generate user presentation: %w", err)
+		return nil, prepareProblemReport(o.uiEndpoint+redirectErrorURL,
+			fmt.Errorf("failed to generate user presentation: %w", err))
 	}
 
 	verificationMethod, err := adaptercrypto.GetVerificationMethodFromDID(docResolution.DIDDocument,
 		did.Authentication)
 	if err != nil {
-		return nil, fmt.Errorf("failed to obtain a authentication verification method from issuer did %s: %w",
-			authorizationCredHandle.IssuerDID, err)
+		return nil, prepareProblemReport(o.uiEndpoint+redirectErrorURL,
+			fmt.Errorf("failed to obtain a authentication verification method from issuer did %s: %w",
+				authorizationCredHandle.IssuerDID, err))
 	}
 
 	vp, err = o.vccrypto.SignPresentation(vp, verificationMethod)
 	if err != nil {
-		return nil, fmt.Errorf("sign presentation : %w", err)
+		return nil, prepareProblemReport(o.uiEndpoint+redirectErrorURL,
+			fmt.Errorf("sign presentation : %w", err))
 	}
 
 	return presentproof.WithPresentation(&presentproof.Presentation{
@@ -2025,6 +2070,20 @@ func prepareIssueCredentialMessage(fulfillment *verifiable.Presentation, redirec
 		},
 	}
 }
+
+func prepareProblemReport(redirectURL string, errMsg error) *model.ProblemReport {
+	return &model.ProblemReport{
+		Type: issuecredsvc.ProblemReportMsgTypeV2,
+		Description: model.Code{
+			Code: errMsg.Error(),
+		},
+		WebRedirect: &decorator.WebRedirect{
+			Status: redirectStatusError,
+			URL:    redirectURL,
+		},
+	}
+}
+
 func outofbandClient(ariesCtx outofband.Provider) (*outofband.Client, error) {
 	c, err := outofband.New(ariesCtx)
 	if err != nil {
