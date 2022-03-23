@@ -7,28 +7,36 @@
             "display":{
                "title":{
                   "path":[
-                     "$.name",
-                     "$.vc.name"
+                     "$.name"
                   ],
+                  "fallback":"Permanent Resident Card",
                   "schema":{
                      "type":"string"
-                  },
-                  "fallback":"Permanent Resident Card"
+                  }
                },
                "subtitle":{
                   "path":[
-                     "$.description",
-                     "$.vc.description"
+                     "$.description"
                   ],
+                  "fallback":"Government of Example Permanent Resident Card.",
                   "schema":{
                      "type":"string"
-                  },
-                  "fallback":""
+                  }
                },
                "description":{
-                  "text":"PR card of John Smith."
+                  "text":"Sample Permanent Resident Card issued by Government of Example Citizenship & Immigration Services"
                },
                "properties":[
+                  {
+                     "path":[
+                        "$.credentialSubject.image"
+                     ],
+                     "schema":{
+                        "type":"string",
+                        "format":"image/png"
+                     },
+                     "label":"Card Holder"
+                  },
                   {
                      "path":[
                         "$.credentialSubject.givenName"
@@ -36,8 +44,7 @@
                      "schema":{
                         "type":"string"
                      },
-                     "fallback":"Not Applicable",
-                     "label":"Card Holder's first name"
+                     "label":"Given Name"
                   },
                   {
                      "path":[
@@ -46,25 +53,63 @@
                      "schema":{
                         "type":"string"
                      },
-                     "fallback":"Unknown",
-                     "label":"Card Holder's family name"
+                     "label":"Family Name"
+                  },
+                  {
+                     "path":[
+                        "$.credentialSubject.gender"
+                     ],
+                     "schema":{
+                        "type":"string"
+                     },
+                     "fallback":"Not disclosed",
+                     "label":"Gender"
+                  },
+                  {
+                     "path":[
+                        "$.credentialSubject.birthDate"
+                     ],
+                     "schema":{
+                        "type":"string",
+                        "format":"date"
+                     },
+                     "label":"Date of Birth"
+                  },
+                  {
+                     "path":[
+                        "$.credentialSubject.birthCountry"
+                     ],
+                     "schema":{
+                        "type":"string"
+                     },
+                     "label":"Country of Birth"
+                  },
+                  {
+                     "path":[
+                        "$.credentialSubject.residentSince"
+                     ],
+                     "schema":{
+                        "type":"string",
+                        "format":"date"
+                     },
+                     "label":"Resident Since"
                   }
                ]
             },
             "styles":{
                "thumbnail":{
-                  "uri":"http://example-university.org/logo.png",
-                  "alt":"Example University logo"
+                  "uri":"credential--uscis-icon.svg",
+                  "alt":"Citizenship & Immigration Services"
                },
                "hero":{
-                  "uri":"http://example-university.org/hero.png",
-                  "alt":"Example University students in graduation ceremony"
+                  "uri":"https://example.com/trust.png",
+                  "alt":"Service we trust"
                },
                "background":{
-                  "color":"#ff0000"
+                  "color":"#2b5283"
                },
                "text":{
-                  "color":"#d4d400"
+                  "color":"#fff"
                }
             }
          }
@@ -131,55 +176,55 @@
             }
          }
       ],
- "presentation_definition": {
-      "input_descriptors":[
-         {
-            "id":"prc_input",
-            "name":"Permanent Resident Card",
-            "purpose":"We need PRC to verify your status.",
-            "schema":[
-               {
-                  "uri":"https://w3id.org/citizenship#PermanentResidentCard"
-               }
-            ],
-            "constraints":{
-               "fields":[
+      "presentation_definition":{
+         "input_descriptors":[
+            {
+               "id":"prc_input",
+               "name":"Permanent Resident Card",
+               "purpose":"We need PRC to verify your status.",
+               "schema":[
                   {
-                     "path":[
-                        "$.credentialSubject.givenName"
-                     ],
-                     "filter":{
-                        "type":"string"
-                     }
-                  },
-                  {
-                     "path":[
-                        "$.credentialSubject.familyName"
-                     ],
-                     "filter":{
-                        "type":"string"
-                     }
-                  },
-                  {
-                     "path":[
-                        "$.credentialSubject.birthCountry"
-                     ],
-                     "filter":{
-                        "type":"string"
-                     }
-                  },
-                  {
-                     "path":[
-                        "$.credentialSubject.birthDate"
-                     ],
-                     "filter":{
-                        "type":"string"
-                     }
+                     "uri":"https://w3id.org/citizenship#PermanentResidentCard"
                   }
-               ]
+               ],
+               "constraints":{
+                  "fields":[
+                     {
+                        "path":[
+                           "$.credentialSubject.givenName"
+                        ],
+                        "filter":{
+                           "type":"string"
+                        }
+                     },
+                     {
+                        "path":[
+                           "$.credentialSubject.familyName"
+                        ],
+                        "filter":{
+                           "type":"string"
+                        }
+                     },
+                     {
+                        "path":[
+                           "$.credentialSubject.birthCountry"
+                        ],
+                        "filter":{
+                           "type":"string"
+                        }
+                     },
+                     {
+                        "path":[
+                           "$.credentialSubject.birthDate"
+                        ],
+                        "filter":{
+                           "type":"string"
+                        }
+                     }
+                  ]
+               }
             }
-         }
-      ]
+         ]
+      }
    }
-}
 }
