@@ -121,20 +121,6 @@ services:
         aliases:
           - mock-issuer.com
 
-  edv.rest.example.com:
-    container_name: edv.rest.example.com
-    image: ${EDV_REST_IMAGE}:${EDV_REST_IMAGE_TAG}
-    environment:
-      - EDV_HOST_URL=0.0.0.0:${EDV_PORT}
-      - EDV_DATABASE_TYPE=mem
-    ports:
-      - ${EDV_PORT}:${EDV_PORT}
-    command: start
-    networks:
-      adapter-rest_bdd_net:
-        aliases:
-          - edv.rest.example.com
-
 networks:
   adapter-rest_bdd_net:
     external: true
