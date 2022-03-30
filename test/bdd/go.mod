@@ -12,16 +12,16 @@ require (
 	github.com/cucumber/godog v0.9.0
 	github.com/fsouza/go-dockerclient v1.7.4
 	github.com/google/uuid v1.3.0
-	github.com/hyperledger/aries-framework-go v0.1.8-0.20220326012408-071ce8fc905c
-	github.com/hyperledger/aries-framework-go-ext/component/vdr/orb v0.1.4-0.20220325184342-8ccd5c996898
-	github.com/hyperledger/aries-framework-go/component/storageutil v0.0.0-20220326012408-071ce8fc905c
+	github.com/hyperledger/aries-framework-go v0.1.8
+	github.com/hyperledger/aries-framework-go-ext/component/vdr/orb v0.1.4-0.20220330151152-6bbd64bde42e
+	github.com/hyperledger/aries-framework-go/component/storageutil v0.0.0-20220330140627-07042d78580c
 	github.com/ory/hydra-client-go v1.4.10
 	github.com/piprate/json-gold v0.4.1-0.20210813112359-33b90c4ca86c
 	github.com/sirupsen/logrus v1.8.1
 	github.com/tidwall/gjson v1.6.7
 	github.com/trustbloc/edge-adapter v0.0.0
-	github.com/trustbloc/edge-core v0.1.8-0.20220324215259-0ab3fd8db3f3
-	github.com/trustbloc/hub-router v0.1.8-0.20220328145943-bdc626b86eb0
+	github.com/trustbloc/edge-core v0.1.8
+	github.com/trustbloc/hub-router v0.1.8
 	golang.org/x/oauth2 v0.0.0-20211104180415-d3ed0bb246c8
 )
 
@@ -71,9 +71,9 @@ require (
 	github.com/google/tink/go v1.6.1-0.20210519071714-58be99b3c4d0 // indirect
 	github.com/google/trillian v1.3.14-0.20210520152752-ceda464a95a3 // indirect
 	github.com/gorilla/mux v1.8.0 // indirect
-	github.com/hyperledger/aries-framework-go-ext/component/vdr/sidetree v0.0.0-20220325181924-aed46b24a321 // indirect
+	github.com/hyperledger/aries-framework-go-ext/component/vdr/sidetree v0.0.0-20220330145438-233eb7999876 // indirect
 	github.com/hyperledger/aries-framework-go/component/storage/edv v0.0.0-20220322085443-50e8f9bd208b // indirect
-	github.com/hyperledger/aries-framework-go/spi v0.0.0-20220326012408-071ce8fc905c // indirect
+	github.com/hyperledger/aries-framework-go/spi v0.0.0-20220330133350-1c2d9d65aea4 // indirect
 	github.com/ipfs/go-cid v0.0.7 // indirect
 	github.com/jinzhu/copier v0.0.0-20190924061706-b57f9002281a // indirect
 	github.com/kawamuray/jsonpath v0.0.0-20201211160320-7483bafabd7e // indirect

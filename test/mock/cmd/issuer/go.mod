@@ -9,7 +9,7 @@ go 1.17
 require (
 	github.com/google/uuid v1.3.0
 	github.com/gorilla/mux v1.7.4
-	github.com/trustbloc/edge-core v0.1.8-0.20220324215259-0ab3fd8db3f3
+	github.com/trustbloc/edge-core v0.1.8
 )
 
 require (
