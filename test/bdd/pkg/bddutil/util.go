@@ -30,7 +30,7 @@ import (
 	"github.com/trustbloc/edge-core/pkg/log"
 )
 
-var logger = log.New("hub-router/bddutil")
+var logger = log.New("mediator/bddutil")
 
 func checkRedirect(req *http.Request, via []*http.Request) error {
 	logger.Infof("Redirect: method=%s url=%s", req.Method, req.URL.String())
