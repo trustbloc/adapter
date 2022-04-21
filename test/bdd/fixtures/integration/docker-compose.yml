@@ -7,37 +7,37 @@ version: '2'
 
 services:
 
-  hub-router.com:
-    container_name: hub-router.com
-    image: ${HUB_ROUTER_IMAGE}:${HUB_ROUTER_IMAGE_TAG}
+  mediator.com:
+    container_name: mediator.com
+    image: ${MEDIATOR_IMAGE}:${MEDIATOR_IMAGE_TAG}
     environment:
-      - HUB_ROUTER_HOST_URL=0.0.0.0:${HUB_ROUTER_PORT}
-      - HUB_ROUTER_TLS_CACERTS=/etc/tls/ec-cacert.pem
-      - HUB_ROUTER_TLS_SYSTEMCERTPOOL=true      
-      - HUB_ROUTER_DIDCOMM_HTTP_HOST=0.0.0.0:${HUB_ROUTER_DIDCOMM_HTTP_PORT}
-      - HUB_ROUTER_DIDCOMM_HTTP_HOST_EXTERNAL=http://hub-router.com:${HUB_ROUTER_DIDCOMM_HTTP_PORT}
-      - HUB_ROUTER_DIDCOMM_WS_HOST=0.0.0.0:${HUB_ROUTER_DIDCOMM_WS_PORT}
-      - HUB_ROUTER_DIDCOMM_WS_HOST_EXTERNAL=ws://hub-router.com:${HUB_ROUTER_DIDCOMM_WS_PORT}
-      - HUB_ROUTER_DSN_PERSISTENT=mem://test
-      - HUB_ROUTER_DSN_TRANSIENT=mem://test
-      - HUB_ROUTER_DSN_TIMEOUT=45
-      - HUB_ROUTER_LOGLEVEL=INFO
-      - HUB_ROUTER_ORB_DOMAINS=testnet.orb.local
-      - HUB_ROUTER_KEY_TYPE=${AGENT_KEY_TYPE}
-      - HUB_ROUTER_KEY_AGREEMENT_TYPE=${AGENT_KEY_AGREEMENT_TYPE}
-      - HUB_ROUTER_HTTP_RESOLVER=orb@https://testnet.orb.local/sidetree/v1/identifiers
+      - MEDIATOR_HOST_URL=0.0.0.0:${MEDIATOR_PORT}
+      - MEDIATOR_TLS_CACERTS=/etc/tls/ec-cacert.pem
+      - MEDIATOR_TLS_SYSTEMCERTPOOL=true      
+      - MEDIATOR_DIDCOMM_HTTP_HOST=0.0.0.0:${MEDIATOR_DIDCOMM_HTTP_PORT}
+      - MEDIATOR_DIDCOMM_HTTP_HOST_EXTERNAL=http://mediator.com:${MEDIATOR_DIDCOMM_HTTP_PORT}
+      - MEDIATOR_DIDCOMM_WS_HOST=0.0.0.0:${MEDIATOR_DIDCOMM_WS_PORT}
+      - MEDIATOR_DIDCOMM_WS_HOST_EXTERNAL=ws://mediator.com:${MEDIATOR_DIDCOMM_WS_PORT}
+      - MEDIATOR_DSN_PERSISTENT=mem://test
+      - MEDIATOR_DSN_TRANSIENT=mem://test
+      - MEDIATOR_DSN_TIMEOUT=45
+      - MEDIATOR_LOGLEVEL=INFO
+      - MEDIATOR_ORB_DOMAINS=testnet.orb.local
+      - MEDIATOR_KEY_TYPE=${AGENT_KEY_TYPE}
+      - MEDIATOR_KEY_AGREEMENT_TYPE=${AGENT_KEY_AGREEMENT_TYPE}
+      - MEDIATOR_HTTP_RESOLVER=orb@https://testnet.orb.local/sidetree/v1/identifiers
     ports:
-      - ${HUB_ROUTER_PORT}:${HUB_ROUTER_PORT}
-      - ${HUB_ROUTER_DIDCOMM_HTTP_PORT}:${HUB_ROUTER_DIDCOMM_HTTP_PORT}
-      - ${HUB_ROUTER_DIDCOMM_WS_PORT}:${HUB_ROUTER_DIDCOMM_WS_PORT}
+      - ${MEDIATOR_PORT}:${MEDIATOR_PORT}
+      - ${MEDIATOR_DIDCOMM_HTTP_PORT}:${MEDIATOR_DIDCOMM_HTTP_PORT}
+      - ${MEDIATOR_DIDCOMM_WS_PORT}:${MEDIATOR_DIDCOMM_WS_PORT}
     entrypoint: ""
-    command: /bin/sh -c "hub-router start"
+    command: /bin/sh -c "mediator start"
     volumes:
       - ../keys/tls:/etc/tls
     networks:
       adapter-rest_bdd_net:
         aliases:
-          - hub-router.com
+          - mediator.com
 
   mock-wallet.com:
     container_name: mock-wallet.com

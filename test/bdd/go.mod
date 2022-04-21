@@ -21,7 +21,7 @@ require (
 	github.com/tidwall/gjson v1.6.7
 	github.com/trustbloc/edge-adapter v0.0.0
 	github.com/trustbloc/edge-core v0.1.8
-	github.com/trustbloc/hub-router v0.1.8
+	github.com/trustbloc/mediator v0.1.9-0.20220412212634-eb92bae4edc4
 	golang.org/x/oauth2 v0.0.0-20211104180415-d3ed0bb246c8
 )
 

@@ -15,7 +15,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/hyperledger/aries-framework-go/pkg/controller/command/messaging"
 	"github.com/hyperledger/aries-framework-go/pkg/doc/did"
-	routerops "github.com/trustbloc/hub-router/pkg/restapi/operation"
+	routerops "github.com/trustbloc/mediator/pkg/restapi/operation"
 
 	routesvc "github.com/trustbloc/edge-adapter/pkg/route"
 	"github.com/trustbloc/edge-adapter/test/bdd/pkg/bddutil"

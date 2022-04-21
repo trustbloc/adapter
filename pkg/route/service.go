@@ -324,7 +324,7 @@ const (
 	jsonWebKey2020             = "JsonWebKey2020"
 )
 
-// TODO: copied from hub-router, should push shared code upstream
+// TODO: copied from mediator, should push shared code upstream
 func (o *Service) newVerificationMethod(kt kms.KeyType) (*did.VerificationMethod, error) {
 	kid, pkBytes, err := o.keyManager.CreateAndExportPubKeyBytes(kt)
 	if err != nil {
