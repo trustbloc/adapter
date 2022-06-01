@@ -37,6 +37,7 @@ import (
 	issuecredsvc "github.com/hyperledger/aries-framework-go/pkg/didcomm/protocol/issuecredential"
 	mediatorsvc "github.com/hyperledger/aries-framework-go/pkg/didcomm/protocol/mediator"
 	presentproofsvc "github.com/hyperledger/aries-framework-go/pkg/didcomm/protocol/presentproof"
+	"github.com/hyperledger/aries-framework-go/pkg/didcomm/transport"
 	"github.com/hyperledger/aries-framework-go/pkg/doc/cm"
 	"github.com/hyperledger/aries-framework-go/pkg/doc/did"
 	"github.com/hyperledger/aries-framework-go/pkg/doc/presexch"
@@ -138,7 +139,7 @@ type mediatorClientProvider interface {
 }
 
 type routeService interface {
-	GetDIDDoc(connID string, requiresBlindedRoute bool) (*did.Doc, error)
+	GetDIDDoc(connID string, requiresBlindedRoute, isDIDCommv1 bool) (*did.Doc, error)
 }
 
 type didExClient interface {
@@ -1068,7 +1069,8 @@ func (o *Operation) createTxn( // nolint:funlen
 
 	if profile.IsDIDCommV1 { // nolint:nestif
 		invitationV1, err := o.oobClient.CreateInvitation(nil, outofband.WithLabel("issuer"),
-			outofband.WithGoal("", oobGoalCode))
+			outofband.WithGoal("", oobGoalCode),
+			outofband.WithAccept(transport.MediaTypeProfileDIDCommAIP1, transport.MediaTypeAIP2RFC0019Profile))
 		if err != nil {
 			return "", fmt.Errorf("failed to create invitation : %w", err)
 		}
@@ -1082,6 +1084,7 @@ func (o *Operation) createTxn( // nolint:funlen
 			outofbandv2.WithFrom(profile.PublicDID),
 			outofbandv2.WithLabel("issuer"),
 			outofbandv2.WithGoal("", oobGoalCode),
+			outofbandv2.WithAccept(transport.MediaTypeAIP2RFC0587Profile, transport.MediaTypeDIDCommV2Profile),
 		)
 		if err != nil {
 			return "", fmt.Errorf("failed to create invitation : %w", err)
@@ -1527,7 +1530,7 @@ func (o *Operation) handleRequestCredential(msg service.DIDCommAction) (interfac
 			fmt.Errorf("failed to fetch authz credential request: %w", err))
 	}
 
-	newDidDoc, err := o.routeSvc.GetDIDDoc(connID, profile.RequiresBlindedRoute)
+	newDidDoc, err := o.routeSvc.GetDIDDoc(connID, profile.RequiresBlindedRoute, profile.IsDIDCommV1)
 	if err != nil {
 		return nil, prepareProblemReport(o.uiEndpoint+redirectErrorURL,
 			fmt.Errorf(

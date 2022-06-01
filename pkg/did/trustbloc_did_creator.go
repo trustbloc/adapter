@@ -14,6 +14,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/hyperledger/aries-framework-go-ext/component/vdr/orb"
+	"github.com/hyperledger/aries-framework-go/pkg/common/model"
 	"github.com/hyperledger/aries-framework-go/pkg/doc/did"
 	"github.com/hyperledger/aries-framework-go/pkg/doc/jose/jwk"
 	"github.com/hyperledger/aries-framework-go/pkg/doc/jose/jwk/jwksupport"
@@ -135,7 +136,7 @@ func (p *TrustblocDIDCreator) templateV1() (*did.Doc, error) {
 		Type:            "did-communication",
 		Priority:        0,
 		RecipientKeys:   []string{didcommRecipientKey},
-		ServiceEndpoint: p.didcommInboundURL,
+		ServiceEndpoint: model.NewDIDCommV1Endpoint(p.didcommInboundURL),
 	}}
 
 	return didDoc, nil
@@ -176,7 +177,7 @@ func (p *TrustblocDIDCreator) templateV2() (*did.Doc, error) {
 
 	didDoc.Service = []did.Service{{
 		ID:              uuid.NewString(),
-		ServiceEndpoint: p.didcommInboundURL,
+		ServiceEndpoint: model.NewDIDCommV2Endpoint([]model.DIDCommV2Endpoint{{URI: p.didcommInboundURL}}),
 		Type:            "DIDCommMessaging",
 	}}
 

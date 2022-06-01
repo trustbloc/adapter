@@ -11,6 +11,7 @@ import (
 	"testing"
 
 	"github.com/hyperledger/aries-framework-go/component/storageutil/mem"
+	"github.com/hyperledger/aries-framework-go/pkg/common/model"
 	"github.com/hyperledger/aries-framework-go/pkg/doc/did"
 	"github.com/hyperledger/aries-framework-go/pkg/framework/aries"
 	"github.com/hyperledger/aries-framework-go/pkg/kms"
@@ -66,7 +67,8 @@ func newPeerDID(t *testing.T) *did.Doc {
 
 	didDoc := &did.Doc{}
 
-	didDoc.Service = []did.Service{{ServiceEndpoint: "http://agent.example.com/didcomm", Type: "did-communication"}}
+	didDoc.Service = []did.Service{{ServiceEndpoint: model.NewDIDCommV1Endpoint("http://agent.example.com/didcomm"),
+		Type: "did-communication"}}
 
 	didDoc.VerificationMethod = []did.VerificationMethod{verMethod(t, ctx.KMS())}
 

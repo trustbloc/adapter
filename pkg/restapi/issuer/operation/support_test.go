@@ -442,7 +442,7 @@ type mockRouteSvc struct {
 	GetDIDDocErr   error
 }
 
-func (s *mockRouteSvc) GetDIDDoc(connID string, requiredBlindedRouting bool) (*did.Doc, error) {
+func (s *mockRouteSvc) GetDIDDoc(connID string, requiredBlindedRouting, isDIDCommV1 bool) (*did.Doc, error) {
 	return s.GetDIDDocValue, s.GetDIDDocErr
 }
 

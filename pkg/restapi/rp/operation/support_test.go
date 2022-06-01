@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/hyperledger/aries-framework-go/component/storageutil/mem"
+	"github.com/hyperledger/aries-framework-go/pkg/common/model"
 	"github.com/hyperledger/aries-framework-go/pkg/didcomm/messaging/msghandler"
 	"github.com/hyperledger/aries-framework-go/pkg/doc/did"
 	"github.com/hyperledger/aries-framework-go/pkg/doc/signature/jsonld"
@@ -136,7 +137,8 @@ func newPeerDID(t *testing.T, agent *ariesctx.Provider) *did.Doc {
 
 	d, err := agent.VDRegistry().Create(
 		peer.DIDMethod, &did.Doc{
-			Service: []did.Service{{ServiceEndpoint: "http://agent.example.com/didcomm", Type: "did-communication"}},
+			Service: []did.Service{{ServiceEndpoint: model.NewDIDCommV1Endpoint("http://agent.example.com/didcomm"),
+				Type: "did-communication"}},
 			VerificationMethod: []did.VerificationMethod{*did.NewVerificationMethodFromBytes(
 				"#"+keyID,
 				crypto2.Ed25519VerificationKey2018,

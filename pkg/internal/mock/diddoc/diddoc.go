@@ -11,6 +11,7 @@ import (
 	"crypto/rand"
 	"time"
 
+	"github.com/hyperledger/aries-framework-go/pkg/common/model"
 	"github.com/hyperledger/aries-framework-go/pkg/doc/did"
 )
 
@@ -31,7 +32,7 @@ func GetMockDIDDoc(didID string) *did.Doc {
 	service := did.Service{
 		ID:              "did:example:123456789abcdefghi#did-communication",
 		Type:            "did-communication",
-		ServiceEndpoint: "https://agent.example.com/",
+		ServiceEndpoint: model.NewDIDCommV1Endpoint("https://agent.example.com/"),
 		RecipientKeys:   []string{creator},
 		Priority:        0,
 	}

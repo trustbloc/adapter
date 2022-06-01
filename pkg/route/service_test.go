@@ -14,6 +14,7 @@ import (
 	"github.com/google/uuid"
 	mockstorage "github.com/hyperledger/aries-framework-go/component/storageutil/mock"
 	"github.com/hyperledger/aries-framework-go/pkg/client/didexchange"
+	"github.com/hyperledger/aries-framework-go/pkg/common/model"
 	"github.com/hyperledger/aries-framework-go/pkg/didcomm/common/service"
 	"github.com/hyperledger/aries-framework-go/pkg/didcomm/protocol/decorator"
 	mediatorsvc "github.com/hyperledger/aries-framework-go/pkg/didcomm/protocol/mediator"
@@ -185,7 +186,7 @@ func TestDIDCommMsgListener(t *testing.T) {
 		msgCh := make(chan message.Msg, 1)
 		go c.didCommMsgListener(msgCh)
 
-		didDoc := mockdiddoc.GetMockDIDDoc(t)
+		didDoc := mockdiddoc.GetMockDIDDoc(t, false)
 		txnID := uuid.New().String()
 
 		err = c.store.Put(txnID, []byte(didDoc.ID))
@@ -527,7 +528,7 @@ func TestRegisterRouteReq(t *testing.T) { // nolint:gocyclo,cyclop
 		c, err := New(config)
 		require.NoError(t, err)
 
-		didDoc := mockdiddoc.GetMockDIDDoc(t)
+		didDoc := mockdiddoc.GetMockDIDDoc(t, false)
 		didDocBytes, err := didDoc.JSONBytes()
 		require.NoError(t, err)
 
@@ -583,7 +584,7 @@ func TestRegisterRouteReq(t *testing.T) { // nolint:gocyclo,cyclop
 		msgCh := make(chan message.Msg, 1)
 		go c.didCommMsgListener(msgCh)
 
-		didDoc := mockdiddoc.GetMockDIDDoc(t)
+		didDoc := mockdiddoc.GetMockDIDDoc(t, false)
 		txnID := uuid.New().String()
 
 		err = c.store.Put(txnID, []byte(didDoc.ID))
@@ -639,7 +640,7 @@ func TestRegisterRouteReq(t *testing.T) { // nolint:gocyclo,cyclop
 		msgCh := make(chan message.Msg, 1)
 		go c.didCommMsgListener(msgCh)
 
-		didDoc := mockdiddoc.GetMockDIDDoc(t)
+		didDoc := mockdiddoc.GetMockDIDDoc(t, false)
 		txnID := uuid.New().String()
 
 		err = c.store.Put(txnID, []byte(didDoc.ID))
@@ -693,7 +694,7 @@ func TestRegisterRouteReq(t *testing.T) { // nolint:gocyclo,cyclop
 		msgCh := make(chan message.Msg, 1)
 		go c.didCommMsgListener(msgCh)
 
-		didDoc := mockdiddoc.GetMockDIDDoc(t)
+		didDoc := mockdiddoc.GetMockDIDDoc(t, false)
 		txnID := uuid.New().String()
 
 		err = c.store.Put(txnID, []byte(didDoc.ID))
@@ -736,7 +737,7 @@ func TestGetDIDService(t *testing.T) {
 				{
 					ID:              uuid.New().String(),
 					Type:            didCommServiceType,
-					ServiceEndpoint: routerEndpoint,
+					ServiceEndpoint: model.NewDIDCommV1Endpoint(routerEndpoint),
 					RoutingKeys:     keys,
 					RecipientKeys:   []string{"1ert5", "x5356s"},
 				},
@@ -757,9 +758,11 @@ func TestGetDIDService(t *testing.T) {
 		err = c.store.Put(connID, []byte(uuid.New().String()))
 		require.NoError(t, err)
 
-		doc, err := c.GetDIDDoc(connID, false)
+		doc, err := c.GetDIDDoc(connID, false, true)
 		require.NoError(t, err)
-		require.Equal(t, routerEndpoint, doc.Service[0].ServiceEndpoint)
+		uri, err := doc.Service[0].ServiceEndpoint.URI()
+		require.NoError(t, err)
+		require.Equal(t, routerEndpoint, uri)
 		require.Equal(t, keys, doc.Service[0].RoutingKeys)
 	})
 
@@ -772,7 +775,7 @@ func TestGetDIDService(t *testing.T) {
 				{
 					ID:              uuid.New().String(),
 					Type:            didCommServiceType,
-					ServiceEndpoint: config.ServiceEndpoint,
+					ServiceEndpoint: model.NewDIDCommV1Endpoint(config.ServiceEndpoint),
 				},
 			},
 		}}
@@ -789,9 +792,11 @@ func TestGetDIDService(t *testing.T) {
 		c, err := New(config)
 		require.NoError(t, err)
 
-		doc, err := c.GetDIDDoc("", false)
+		doc, err := c.GetDIDDoc("", false, false)
 		require.NoError(t, err)
-		require.Equal(t, config.ServiceEndpoint, doc.Service[0].ServiceEndpoint)
+		uri, err := doc.Service[0].ServiceEndpoint.URI()
+		require.NoError(t, err)
+		require.Equal(t, config.ServiceEndpoint, uri)
 	})
 
 	t.Run("create verification method error", func(t *testing.T) {
@@ -809,7 +814,7 @@ func TestGetDIDService(t *testing.T) {
 		err = c.store.Put(connID, []byte(uuid.New().String()))
 		require.NoError(t, err)
 
-		_, err = c.GetDIDDoc(connID, false)
+		_, err = c.GetDIDDoc(connID, false, false)
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "failed to create new verification method")
 		require.ErrorIs(t, err, expectErr)
@@ -828,7 +833,7 @@ func TestGetDIDService(t *testing.T) {
 		err = c.store.Put(connID, []byte(uuid.New().String()))
 		require.NoError(t, err)
 
-		_, err = c.GetDIDDoc(connID, false)
+		_, err = c.GetDIDDoc(connID, false, false)
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "failed to create new keyagreement VM")
 	})
@@ -850,7 +855,7 @@ func TestGetDIDService(t *testing.T) {
 		c, err := New(config)
 		require.NoError(t, err)
 
-		_, err = c.GetDIDDoc("", true)
+		_, err = c.GetDIDDoc("", true, false)
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "no router registered to support blinded routing")
 	})
@@ -872,7 +877,7 @@ func TestGetDIDService(t *testing.T) {
 		err = c.store.Put(connID, []byte(uuid.New().String()))
 		require.NoError(t, err)
 
-		_, err = c.GetDIDDoc(connID, false)
+		_, err = c.GetDIDDoc(connID, false, false)
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "get mediator config")
 	})
@@ -891,7 +896,7 @@ func TestGetDIDService(t *testing.T) {
 		err = c.store.Put(connID, []byte(uuid.New().String()))
 		require.NoError(t, err)
 
-		_, err = c.GetDIDDoc(connID, false)
+		_, err = c.GetDIDDoc(connID, false, false)
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "get conn id to router conn id mapping")
 	})
@@ -923,7 +928,7 @@ func TestGetDIDService(t *testing.T) {
 		err = c.store.Put(connID, []byte(uuid.New().String()))
 		require.NoError(t, err)
 
-		_, err = c.GetDIDDoc(connID, false)
+		_, err = c.GetDIDDoc(connID, false, false)
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "did document missing did-communication service type")
 	})
@@ -948,7 +953,7 @@ func TestGetDIDService(t *testing.T) {
 		err = c.store.Put(connID, []byte(uuid.New().String()))
 		require.NoError(t, err)
 
-		_, err = c.GetDIDDoc(connID, false)
+		_, err = c.GetDIDDoc(connID, false, false)
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "create error")
 	})
@@ -975,7 +980,7 @@ func TestGetDIDService(t *testing.T) {
 		err = c.store.Put(connID, []byte(uuid.New().String()))
 		require.NoError(t, err)
 
-		_, err = c.GetDIDDoc(connID, false)
+		_, err = c.GetDIDDoc(connID, false, false)
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "register did doc recipient key")
 	})
@@ -1020,7 +1025,7 @@ func TestGetDIDService(t *testing.T) {
 		err = c.store.Put(connID, []byte(uuid.New().String()))
 		require.NoError(t, err)
 
-		_, err = c.GetDIDDoc(connID, false)
+		_, err = c.GetDIDDoc(connID, false, false)
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "register did doc keyAgreement key")
 		require.ErrorIs(t, err, expectErr)

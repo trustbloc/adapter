@@ -971,7 +971,7 @@ func (s *Steps) checkPresentProofStatus(walletID, tenantID, status string) error
 
 	var webRedirect struct {
 		PayloadV1 decorator.WebRedirect `json:"~web-redirect,omitempty"`
-		PayloadV2 decorator.WebRedirect `json:"web-redirect,omitempty"`
+		PayloadV2 decorator.WebRedirect `json:"web_redirect,omitempty"`
 	}
 
 	err = msg.Decode(&webRedirect)
@@ -983,7 +983,7 @@ func (s *Steps) checkPresentProofStatus(walletID, tenantID, status string) error
 	errV2 := validateWebRedirect(webRedirect.PayloadV2, status)
 
 	if errV1 != nil && errV2 != nil {
-		return errV1
+		return fmt.Errorf("web redirect is empty")
 	}
 
 	return nil
