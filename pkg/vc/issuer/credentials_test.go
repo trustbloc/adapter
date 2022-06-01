@@ -166,7 +166,7 @@ func TestCreateAuthorizationCredential(t *testing.T) {
 	t.Run("test create didcomm init credential", func(t *testing.T) {
 		t.Parallel()
 
-		didDocument := mockdiddoc.GetMockDIDDoc(t)
+		didDocument := mockdiddoc.GetMockDIDDoc(t, false)
 
 		didDocJSON, err := didDocument.JSONBytes()
 		require.NoError(t, err)

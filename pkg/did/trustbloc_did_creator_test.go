@@ -12,6 +12,7 @@ import (
 	"fmt"
 	"testing"
 
+	"github.com/hyperledger/aries-framework-go/pkg/common/model"
 	"github.com/hyperledger/aries-framework-go/pkg/doc/did"
 	vdrapi "github.com/hyperledger/aries-framework-go/pkg/framework/aries/api/vdr"
 	"github.com/hyperledger/aries-framework-go/pkg/kms"
@@ -301,7 +302,7 @@ func newDIDDoc() *did.Doc {
 			Type:            "did-communication",
 			Priority:        0,
 			RecipientKeys:   []string{},
-			ServiceEndpoint: "http://example.com",
+			ServiceEndpoint: model.NewDIDCommV1Endpoint("http://example.com"),
 		}},
 	}
 }

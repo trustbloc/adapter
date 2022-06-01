@@ -34,6 +34,7 @@ import (
 	mediatorsvc "github.com/hyperledger/aries-framework-go/pkg/didcomm/protocol/mediator"
 	oobv2svc "github.com/hyperledger/aries-framework-go/pkg/didcomm/protocol/outofbandv2"
 	presentproofsvc "github.com/hyperledger/aries-framework-go/pkg/didcomm/protocol/presentproof"
+	"github.com/hyperledger/aries-framework-go/pkg/didcomm/transport"
 	"github.com/hyperledger/aries-framework-go/pkg/doc/did"
 	"github.com/hyperledger/aries-framework-go/pkg/doc/presexch"
 	"github.com/hyperledger/aries-framework-go/pkg/doc/verifiable"
@@ -148,7 +149,7 @@ type PublicDIDCreator interface {
 }
 
 type routeService interface {
-	GetDIDDoc(connID string, requiresBlindedRoute bool) (*did.Doc, error)
+	GetDIDDoc(connID string, requiresBlindedRoute, isDIDcommV1 bool) (*did.Doc, error)
 }
 
 type connectionRecorder interface {
@@ -752,6 +753,7 @@ func (o *Operation) getPresentationsRequest(w http.ResponseWriter, r *http.Reque
 		invitationV2, e := o.oobv2Client.CreateInvitation(
 			outofbandv2.WithFrom(cr.RPPublicDID),
 			outofbandv2.WithLabel(cr.RPLabel),
+			outofbandv2.WithAccept(transport.MediaTypeAIP2RFC0587Profile, transport.MediaTypeDIDCommV2Profile),
 		)
 		if e != nil {
 			handleError(w, http.StatusInternalServerError,
@@ -774,6 +776,7 @@ func (o *Operation) getPresentationsRequest(w http.ResponseWriter, r *http.Reque
 			outofband.WithLabel(cr.RPLabel),
 			outofband.WithHandshakeProtocols(didexchangesvc.PIURI),
 			outofband.WithGoal("", "streamlined-vp"),
+			outofband.WithAccept(transport.MediaTypeProfileDIDCommAIP1, transport.MediaTypeAIP2RFC0019Profile),
 		)
 		if e != nil {
 			handleError(w, http.StatusInternalServerError,
@@ -1491,7 +1494,7 @@ func (o *Operation) handleDIDDocReq(msg message.Msg) (service.DIDCommMsgMap, err
 		return nil, fmt.Errorf("get rp tenant data : %w", err)
 	}
 
-	newDidDoc, err := o.routeSvc.GetDIDDoc(connID, rpTenant.RequiresBlindedRoute)
+	newDidDoc, err := o.routeSvc.GetDIDDoc(connID, rpTenant.RequiresBlindedRoute, rpTenant.IsDIDCommV1)
 	if err != nil {
 		return nil, fmt.Errorf("create new peer did : %w", err)
 	}

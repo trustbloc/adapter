@@ -12,8 +12,8 @@ require (
 	github.com/cucumber/godog v0.9.0
 	github.com/fsouza/go-dockerclient v1.7.4
 	github.com/google/uuid v1.3.0
-	github.com/hyperledger/aries-framework-go v0.1.9-0.20220412155017-81442062e607
-	github.com/hyperledger/aries-framework-go-ext/component/vdr/orb v1.0.0-rc.1
+	github.com/hyperledger/aries-framework-go v0.1.9-0.20220531182402-04bfea80427b
+	github.com/hyperledger/aries-framework-go-ext/component/vdr/orb v1.0.0-rc.1.0.20220530120019-3080f681b76c
 	github.com/hyperledger/aries-framework-go/component/storageutil v0.0.0-20220330140627-07042d78580c
 	github.com/ory/hydra-client-go v1.4.10
 	github.com/piprate/json-gold v0.4.1
@@ -21,7 +21,7 @@ require (
 	github.com/tidwall/gjson v1.6.7
 	github.com/trustbloc/edge-adapter v0.0.0
 	github.com/trustbloc/edge-core v0.1.8
-	github.com/trustbloc/mediator v0.1.9-0.20220412212634-eb92bae4edc4
+	github.com/trustbloc/mediator v0.1.9-0.20220601072622-ba783390e9b1
 	golang.org/x/oauth2 v0.0.0-20211104180415-d3ed0bb246c8
 )
 
@@ -71,7 +71,7 @@ require (
 	github.com/google/tink/go v1.6.1 // indirect
 	github.com/google/trillian v1.3.14-0.20210520152752-ceda464a95a3 // indirect
 	github.com/gorilla/mux v1.8.0 // indirect
-	github.com/hyperledger/aries-framework-go-ext/component/vdr/sidetree v1.0.0-rc.1 // indirect
+	github.com/hyperledger/aries-framework-go-ext/component/vdr/sidetree v1.0.0-rc.1.0.20220530114906-35b469518049 // indirect
 	github.com/hyperledger/aries-framework-go/component/storage/edv v0.0.0-20220330133350-1c2d9d65aea4 // indirect
 	github.com/hyperledger/aries-framework-go/spi v0.0.0-20220330140627-07042d78580c // indirect
 	github.com/ipfs/go-cid v0.0.7 // indirect

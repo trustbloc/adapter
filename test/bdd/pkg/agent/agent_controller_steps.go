@@ -37,6 +37,7 @@ import (
 	issuecredsvc "github.com/hyperledger/aries-framework-go/pkg/didcomm/protocol/issuecredential"
 	"github.com/hyperledger/aries-framework-go/pkg/didcomm/protocol/outofbandv2"
 	presentproofsvc "github.com/hyperledger/aries-framework-go/pkg/didcomm/protocol/presentproof"
+	"github.com/hyperledger/aries-framework-go/pkg/didcomm/transport"
 	"github.com/hyperledger/aries-framework-go/pkg/doc/did"
 	"github.com/hyperledger/aries-framework-go/pkg/doc/presexch"
 	"github.com/hyperledger/aries-framework-go/pkg/doc/signature/suite/ed25519signature2018"
@@ -534,7 +535,8 @@ func (a *Steps) createInvitation(agent string) (*outofband.Invitation, error) {
 		return nil, fmt.Errorf("unable to find controller URL registered for agent [%s]", agent)
 	}
 
-	request, err := json.Marshal(&oobcmd.CreateInvitationArgs{Label: agent})
+	request, err := json.Marshal(&oobcmd.CreateInvitationArgs{Label: agent,
+		Accept: []string{transport.MediaTypeProfileDIDCommAIP1, transport.MediaTypeAIP2RFC0019Profile}})
 	if err != nil {
 		return nil, fmt.Errorf("'%s'failed to create an outofband invitation : %w", agent, err)
 	}

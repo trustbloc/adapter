@@ -14,6 +14,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/hyperledger/aries-framework-go/pkg/client/didexchange"
+	"github.com/hyperledger/aries-framework-go/pkg/common/model"
 	ariescrypto "github.com/hyperledger/aries-framework-go/pkg/crypto"
 	"github.com/hyperledger/aries-framework-go/pkg/didcomm/common/service"
 	"github.com/hyperledger/aries-framework-go/pkg/didcomm/messaging/msghandler"
@@ -131,7 +132,8 @@ func New(config *Config) (*Service, error) {
 
 // GetDIDDoc returns the did doc with router endpoint/keys if its registered, else returns the doc
 // with default endpoint.
-func (o *Service) GetDIDDoc(connID string, requiresBlindedRoute bool) (*did.Doc, error) { //nolint:gocyclo,funlen,cyclop
+//nolint:gocyclo,funlen,cyclop
+func (o *Service) GetDIDDoc(connID string, requiresBlindedRoute, isDIDcommV1 bool) (*did.Doc, error) {
 	verMethod, err := o.newVerificationMethod(kms.ED25519Type)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create new verification method: %w", err)
@@ -155,12 +157,17 @@ func (o *Service) GetDIDDoc(connID string, requiresBlindedRoute bool) (*did.Doc,
 			return nil, errors.New("no router registered to support blinded routing")
 		}
 
+		svc := did.Service{Type: didCommV2ServiceType, ServiceEndpoint: model.NewDIDCommV2Endpoint(
+			[]model.DIDCommV2Endpoint{{URI: o.endpoint}})}
+
+		if isDIDcommV1 {
+			svc = did.Service{Type: didCommServiceType, ServiceEndpoint: model.NewDIDCommV1Endpoint(o.endpoint)}
+		}
+
 		docResolution, errCreate := o.vdriRegistry.Create(
 			peer.DIDMethod,
 			&did.Doc{
-				Service: []did.Service{{
-					ServiceEndpoint: o.endpoint,
-				}},
+				Service:            []did.Service{svc},
 				VerificationMethod: []did.VerificationMethod{*verMethod},
 				KeyAgreement:       []did.Verification{*ka},
 			},
@@ -177,13 +184,20 @@ func (o *Service) GetDIDDoc(connID string, requiresBlindedRoute bool) (*did.Doc,
 		return nil, fmt.Errorf("get mediator config [routerConnID=%s]: %w", routerConnID, err)
 	}
 
+	svc := did.Service{Type: didCommV2ServiceType,
+		ServiceEndpoint: model.NewDIDCommV2Endpoint([]model.DIDCommV2Endpoint{{
+			URI:         config.Endpoint(),
+			RoutingKeys: config.Keys()}})}
+
+	if isDIDcommV1 {
+		svc = did.Service{Type: didCommServiceType, RoutingKeys: config.Keys(),
+			ServiceEndpoint: model.NewDIDCommV1Endpoint(config.Endpoint())}
+	}
+
 	docResolution, err := o.vdriRegistry.Create(
 		peer.DIDMethod,
 		&did.Doc{
-			Service: []did.Service{{
-				ServiceEndpoint: config.Endpoint(),
-				RoutingKeys:     config.Keys(),
-			}},
+			Service:            []did.Service{svc},
 			VerificationMethod: []did.VerificationMethod{*verMethod},
 			KeyAgreement:       []did.Verification{*ka},
 		},
@@ -287,7 +301,8 @@ func (o *Service) handleDIDDocReq(msg service.DIDCommMsg) (service.DIDCommMsgMap
 		peer.DIDMethod,
 		&did.Doc{
 			Service: []did.Service{{
-				ServiceEndpoint: o.endpoint,
+				Type:            didCommServiceType,
+				ServiceEndpoint: model.NewDIDCommV1Endpoint(o.endpoint),
 			}},
 			VerificationMethod: []did.VerificationMethod{*verMethod},
 			KeyAgreement:       []did.Verification{*ka},
