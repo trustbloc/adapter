@@ -23,6 +23,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/hyperledger/aries-framework-go-ext/component/vdr/orb"
 	"github.com/hyperledger/aries-framework-go/pkg/client/issuecredential"
+	"github.com/hyperledger/aries-framework-go/pkg/controller/command/didcommwallet"
 	"github.com/hyperledger/aries-framework-go/pkg/controller/command/vcwallet"
 	kms2 "github.com/hyperledger/aries-framework-go/pkg/controller/rest/kms"
 	"github.com/hyperledger/aries-framework-go/pkg/controller/rest/vdr"
@@ -163,7 +164,7 @@ func (a *walletSteps) initiateWACIIssuanceV1(walletID, issuerID, auth, controlle
 	}
 
 	// initiate WACI issuance interaction from wallet by proposing credential
-	proposeRequest, err := json.Marshal(&vcwallet.ProposeCredentialRequest{
+	proposeRequest, err := json.Marshal(&didcommwallet.ProposeCredentialRequest{
 		WalletAuth: vcwallet.WalletAuth{
 			UserID: walletID,
 			Auth:   auth,
@@ -174,7 +175,7 @@ func (a *walletSteps) initiateWACIIssuanceV1(walletID, issuerID, auth, controlle
 		return "", fmt.Errorf("failed to prepare wallet create profile request : %w", err)
 	}
 
-	var response vcwallet.ProposeCredentialResponse
+	var response didcommwallet.ProposeCredentialResponse
 
 	err = bddutil.SendHTTP(http.MethodPost, controller+proposeCredentialPath, proposeRequest, &response)
 	if err != nil {
@@ -230,7 +231,7 @@ func validateOfferCredentialV1(msg *service.DIDCommMsgMap) error {
 
 func (a *walletSteps) concludeWACIIssuanceV1(walletID, issuerID, auth, thID, controller string) error {
 	// conclude WACI interaction by sending credential request
-	requestCredential, err := json.Marshal(vcwallet.RequestCredentialRequest{
+	requestCredential, err := json.Marshal(didcommwallet.RequestCredentialRequest{
 		WalletAuth: vcwallet.WalletAuth{
 			UserID: walletID,
 			Auth:   auth,
@@ -248,7 +249,7 @@ func (a *walletSteps) concludeWACIIssuanceV1(walletID, issuerID, auth, thID, con
 		status <- a.waitAndAcceptIncomingCredential(walletID)
 	}()
 
-	var interactionResponse vcwallet.RequestCredentialResponse
+	var interactionResponse didcommwallet.RequestCredentialResponse
 
 	err = bddutil.SendHTTP(http.MethodPost, controller+requestCredentialPath, requestCredential, &interactionResponse)
 	if err != nil {
@@ -317,7 +318,7 @@ func (a *walletSteps) initiateWACIIssuance(walletID, issuerID, auth, controller,
 	}
 
 	// initiate WACI issuance interaction from wallet by proposing credential
-	proposeRequest, err := json.Marshal(&vcwallet.ProposeCredentialRequest{
+	proposeRequest, err := json.Marshal(&didcommwallet.ProposeCredentialRequest{
 		WalletAuth: vcwallet.WalletAuth{
 			UserID: walletID,
 			Auth:   auth,
@@ -328,7 +329,7 @@ func (a *walletSteps) initiateWACIIssuance(walletID, issuerID, auth, controller,
 		return nil, "", fmt.Errorf("failed to prepare wallet create profile request : %w", err)
 	}
 
-	var response vcwallet.ProposeCredentialResponse
+	var response didcommwallet.ProposeCredentialResponse
 
 	err = bddutil.SendHTTP(http.MethodPost, controller+proposeCredentialPath, proposeRequest, &response)
 	if err != nil {
@@ -411,7 +412,7 @@ func (a *walletSteps) concludeWACIIssuance(walletID, issuerID, auth, thID, contr
 	}
 
 	// conclude WACI interaction by sending credential request with credential application
-	requestCredential, err := json.Marshal(vcwallet.RequestCredentialRequest{
+	requestCredential, err := json.Marshal(didcommwallet.RequestCredentialRequest{
 		WalletAuth: vcwallet.WalletAuth{
 			UserID: walletID,
 			Auth:   auth,
@@ -430,7 +431,7 @@ func (a *walletSteps) concludeWACIIssuance(walletID, issuerID, auth, thID, contr
 		status <- a.waitAndAcceptIncomingCredential(walletID)
 	}()
 
-	var interactionResponse vcwallet.RequestCredentialResponse
+	var interactionResponse didcommwallet.RequestCredentialResponse
 
 	err = bddutil.SendHTTP(http.MethodPost, controller+requestCredentialPath, requestCredential, &interactionResponse)
 	if err != nil {

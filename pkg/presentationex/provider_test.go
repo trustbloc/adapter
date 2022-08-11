@@ -90,21 +90,6 @@ func TestProvider_Create(t *testing.T) {
 		_, err = p.Create([]string{"INVALID"})
 		require.Error(t, err)
 	})
-
-	t.Run("invalid schema", func(t *testing.T) {
-		t.Parallel()
-
-		p, err := New(reader(t, map[string]*presexch.InputDescriptor{
-			"test": {
-				Schema: nil,
-			},
-		}))
-		require.NoError(t, err)
-
-		_, err = p.Create([]string{"test"})
-		require.Error(t, err)
-		require.Contains(t, err.Error(), "presentation_definition jsonschema validation failure")
-	})
 }
 
 func reader(t *testing.T, jsn interface{}) io.Reader {

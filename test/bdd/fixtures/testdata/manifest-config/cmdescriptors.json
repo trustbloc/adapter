@@ -33,7 +33,7 @@
                      ],
                      "schema":{
                         "type":"string",
-                        "format":"image/png"
+                        "contentMediaType":"image/png"
                      },
                      "label":"Card Holder"
                   },

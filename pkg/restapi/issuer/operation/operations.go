@@ -1260,7 +1260,7 @@ func (o *Operation) validateCredentialApplication(credentialApplicationBytes []b
 		return fmt.Errorf("failed to parse credential application: %w", err)
 	}
 	// TODO issue-#635 Figure out the way to pass the matched credentials result back to the issuer
-	_, err = cm.ValidateCredentialApplication(application, credManifest, o.jsonldDocLoader,
+	err = cm.ValidateCredentialApplication(application, credManifest, o.jsonldDocLoader,
 		presexch.WithCredentialOptions(verifiable.WithJSONLDDocumentLoader(o.jsonldDocLoader),
 			verifiable.WithPublicKeyFetcher(verifiable.NewVDRKeyResolver(o.vdriRegistry).PublicKeyFetcher())),
 	)
