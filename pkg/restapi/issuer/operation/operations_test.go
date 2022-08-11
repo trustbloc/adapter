@@ -74,6 +74,19 @@ var cmDescData = memcmdescriptor.CMAttachmentDescriptors{
 		{
 			ID:     uuid.New().String(),
 			Schema: "https://www.w3.org/2018/credentials/examples/v1",
+			Display: cm.DataDisplayDescriptor{
+				Subtitle: cm.DisplayMappingObject{
+					Paths:  []string{"p1"},
+					Schema: cm.Schema{Type: "string"},
+				},
+				Description: cm.DisplayMappingObject{
+					Paths:  []string{"p1"},
+					Schema: cm.Schema{Type: "string"},
+				},
+				Title: cm.DisplayMappingObject{
+					Paths:  []string{"p1"},
+					Schema: cm.Schema{Type: "string"},
+				}},
 		},
 	},
 	PresentationDefinition: &presexch.PresentationDefinition{
@@ -95,6 +108,19 @@ var cmOutputDescData = memcmdescriptor.CMAttachmentDescriptors{
 		{
 			ID:     uuid.New().String(),
 			Schema: "https://www.w3.org/2018/credentials/examples/v1",
+			Display: cm.DataDisplayDescriptor{
+				Subtitle: cm.DisplayMappingObject{
+					Paths:  []string{"p1"},
+					Schema: cm.Schema{Type: "string"},
+				},
+				Description: cm.DisplayMappingObject{
+					Paths:  []string{"p1"},
+					Schema: cm.Schema{Type: "string"},
+				},
+				Title: cm.DisplayMappingObject{
+					Paths:  []string{"p1"},
+					Schema: cm.Schema{Type: "string"},
+				}},
 		},
 	},
 }
@@ -3647,8 +3673,6 @@ func TestWACIIssuanceHandler(t *testing.T) {
 		})
 
 		t.Run("test propose credential v3 success", func(t *testing.T) {
-			t.Parallel()
-
 			actionCh := make(chan service.DIDCommAction, 1)
 
 			c, err := New(config(t))
@@ -3768,6 +3792,19 @@ func TestWACIIssuanceHandler(t *testing.T) {
 			cd := memcmdescriptor.CMAttachmentDescriptors{
 				OutputDesc: []*cm.OutputDescriptor{
 					{
+						Display: cm.DataDisplayDescriptor{
+							Subtitle: cm.DisplayMappingObject{
+								Paths:  []string{"p1"},
+								Schema: cm.Schema{Type: "string"},
+							},
+							Description: cm.DisplayMappingObject{
+								Paths:  []string{"p1"},
+								Schema: cm.Schema{Type: "string"},
+							},
+							Title: cm.DisplayMappingObject{
+								Paths:  []string{"p1"},
+								Schema: cm.Schema{Type: "string"},
+							}},
 						Schema: "https://www.w3.org/2018/credentials/examples/v1",
 					},
 				},
@@ -4594,6 +4631,19 @@ func prepareCMAttachmentDescriptors(manifestID, presDefID string) *memcmdescript
 			{
 				ID:     manifestID,
 				Schema: "https://www.w3.org/2018/credentials/examples/v1",
+				Display: cm.DataDisplayDescriptor{
+					Subtitle: cm.DisplayMappingObject{
+						Paths:  []string{"p1"},
+						Schema: cm.Schema{Type: "string"},
+					},
+					Description: cm.DisplayMappingObject{
+						Paths:  []string{"p1"},
+						Schema: cm.Schema{Type: "string"},
+					},
+					Title: cm.DisplayMappingObject{
+						Paths:  []string{"p1"},
+						Schema: cm.Schema{Type: "string"},
+					}},
 			},
 		},
 		PresentationDefinition: &presexch.PresentationDefinition{

@@ -30,6 +30,53 @@ var cmDescData = `
      "output_descriptor":[
 		{
             "id":"udc_output",
+             "display": {
+        "title": {
+          "path": [
+            "$.name",
+            "$.vc.name"
+          ],
+          "schema": {
+            "type": "string"
+          },
+          "fallback": "Permanent Resident Card"
+        },
+        "subtitle": {
+          "path": [
+            "$.description",
+            "$.vc.description"
+          ],
+          "schema": {
+            "type": "string"
+          },
+          "fallback": ""
+        },
+        "description": {
+          "text": "PR card of John Smith."
+        },
+        "properties": [
+          {
+            "path": [
+              "$.credentialSubject.givenName"
+            ],
+            "schema": {
+              "type": "string"
+            },
+            "fallback": "Not Applicable",
+            "label": "Card Holder's first name"
+          },
+          {
+            "path": [
+              "$.credentialSubject.familyName"
+            ],
+            "schema": {
+              "type": "string"
+            },
+            "fallback": "Unknown",
+            "label": "Card Holder's family name"
+          }
+        ]
+      },
             "schema":"https://www.w3.org/2018/credentials/examples/v1"
 		}
       ],
@@ -57,6 +104,53 @@ var invalidCMDescData = `
       "output_descriptor":[
          {
             "id":"udc_output",
+             "display": {
+        "title": {
+          "path": [
+            "$.name",
+            "$.vc.name"
+          ],
+          "schema": {
+            "type": "string"
+          },
+          "fallback": "Permanent Resident Card"
+        },
+        "subtitle": {
+          "path": [
+            "$.description",
+            "$.vc.description"
+          ],
+          "schema": {
+            "type": "string"
+          },
+          "fallback": ""
+        },
+        "description": {
+          "text": "PR card of John Smith."
+        },
+        "properties": [
+          {
+            "path": [
+              "$.credentialSubject.givenName"
+            ],
+            "schema": {
+              "type": "string"
+            },
+            "fallback": "Not Applicable",
+            "label": "Card Holder's first name"
+          },
+          {
+            "path": [
+              "$.credentialSubject.familyName"
+            ],
+            "schema": {
+              "type": "string"
+            },
+            "fallback": "Unknown",
+            "label": "Card Holder's family name"
+          }
+        ]
+      },
             "schema":"https://www.w3.org/2018/credentials/examples/v1"
           }
       ],

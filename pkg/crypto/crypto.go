@@ -190,3 +190,7 @@ func (s *kmsSigner) Sign(data []byte) ([]byte, error) {
 
 	return v, nil
 }
+
+func (s *kmsSigner) Alg() string {
+	return ""
+}
