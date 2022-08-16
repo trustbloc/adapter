@@ -110,7 +110,6 @@ const (
 
 	// WACI interaction constants
 	credentialManifestFormat       = "dif/credential-manifest/manifest@v1.0"
-	credentialManifestVersion      = "0.1.0"
 	credentialFulfillmentFormat    = "dif/credential-manifest/fulfillment@v1.0"
 	offerCredentialAttachMediaType = "application/json"
 	redirectStatusOK               = "OK"
@@ -1988,12 +1987,11 @@ func (o *Operation) hanlDIDExStateMsg(msg service.StateMsg) error {
 func (o *Operation) readCredentialManifest(profileData *issuer.ProfileData,
 	txnCredScope string) *cm.CredentialManifest {
 	credentialManifest := &cm.CredentialManifest{
-		ID:      txnCredScope + manifestIDSuffix,
-		Version: credentialManifestVersion,
+		ID: txnCredScope + manifestIDSuffix,
 		Issuer: cm.Issuer{
 			ID:     profileData.IssuerID,
 			Name:   profileData.Name,
-			Styles: profileData.CMStyle,
+			Styles: &profileData.CMStyle,
 		},
 	}
 
