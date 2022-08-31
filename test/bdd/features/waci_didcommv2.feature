@@ -16,7 +16,7 @@ Feature: WACI DIDComm V2
     And   Retrieved profile with id "<profileID>" contains name "<profileName>", issuerURL "<issuerURL>", supportedVCContexts "<supportedVCContexts>", scopes "<scopes>", issuer id "<issuerID>", linked wallet "<linkedWallet>" and oidc provider "https://issuer-hydra.trustbloc.local:9044/" with DIDComm V2 and WACI support
     Then  Issuer adapter shows the wallet connect UI when the issuer "<profileID>" with scopes "<scopes>" wants to connect to the wallet
     And   Issuer adapter ("<profileID>") creates DIDComm connection invitation for "<walletID>"
-    # While performing WACI interaction, validation of offer credential attachment(manifest and fulfillment) and
+    # While performing WACI interaction, validation of offer credential attachment(manifest and response) and
     # request credential with credential application attachment presentation is sent via universal wallet
     And   "<walletID>" accepts invitation from issuer adapter "<profileID>" and performs WACI credential issuance interaction with manifest with PEx requirement "false"
     And   "<walletID>" received web redirect info from "<profileID>" after successful completion of WACI credential issuance interaction

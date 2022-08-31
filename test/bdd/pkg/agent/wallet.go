@@ -44,10 +44,8 @@ import (
 	"github.com/trustbloc/edge-adapter/test/bdd/pkg/context"
 )
 
-var (
-	//go:embed testdata/vc_prc.json
-	vcPRC []byte //nolint:gochecknoglobals
-)
+//go:embed testdata/vc_prc.json
+var vcPRC []byte //nolint:gochecknoglobals
 
 const (
 	// wallet controller URLs
@@ -256,7 +254,7 @@ func (a *walletSteps) concludeWACIIssuanceV1(walletID, issuerID, auth, thID, con
 		return fmt.Errorf("'%s', failed to request credential from wallet : %w", walletID, err)
 	}
 
-	logger.Debugf("wallet[%s] received credential fulfillment response: %+v", interactionResponse)
+	logger.Debugf("wallet[%s] received credential response response: %+v", interactionResponse)
 
 	select {
 	case e := <-status:
@@ -438,7 +436,7 @@ func (a *walletSteps) concludeWACIIssuance(walletID, issuerID, auth, thID, contr
 		return fmt.Errorf("'%s', failed to request credential from wallet : %w, %s", walletID, err, string(rawPresentation))
 	}
 
-	logger.Infof("wallet[%s] received credential fulfillment response: %+v", interactionResponse)
+	logger.Infof("wallet[%s] received credential response response: %+v", interactionResponse)
 
 	select {
 	case e := <-status:
@@ -505,14 +503,14 @@ func (a *walletSteps) waitAndAcceptIncomingCredential(walletID string) error { /
 		return fmt.Errorf("wallet[%s] received invalid issue credential message: empty attachments", walletID)
 	}
 
-	credentialFulfillment, err := getCredentialFulfillmentFromAttachment(&response.Attachments[0])
+	credentialResponse, err := getCredentialResponseFromAttachment(&response.Attachments[0])
 	if err != nil {
-		return fmt.Errorf("failed to credential fulfillment from attachment %w", err)
+		return fmt.Errorf("failed to credential response from attachment %w", err)
 	}
 
-	if !stringsContains(credentialFulfillment.ManifestID, expectedManifestIDs) {
-		return fmt.Errorf("expected credential fulfillment's manifest ID to be %s, but got %s instead",
-			expectedManifestIDs, credentialFulfillment.ManifestID)
+	if !stringsContains(credentialResponse.ManifestID, expectedManifestIDs) {
+		return fmt.Errorf("expected credential response's manifest ID to be %s, but got %s instead",
+			expectedManifestIDs, credentialResponse.ManifestID)
 	}
 
 	return nil
@@ -612,27 +610,27 @@ func validateOfferCredAttachments(offer *issuecredential.OfferCredential,
 		}
 	}
 
-	// The Credential Fulfillment we receive from the issuer acts as a preview for the credentials we eventually
+	// The Credential Response we receive from the issuer acts as a preview for the credentials we eventually
 	// wish to receive.
-	credentialFulfillment, err := getCredentialFulfillmentFromAttachment(&offer.Attachments[1])
+	credentialResponse, err := getCredentialResponseFromAttachment(&offer.Attachments[1])
 	if err != nil {
-		return nil, fmt.Errorf("failed to credential fulfillment from attachment %w", err)
+		return nil, fmt.Errorf("failed to credential response from attachment %w", err)
 	}
 
 	if !stringsContains(credentialManifest.ID, expectedManifestIDs) {
-		return nil, fmt.Errorf("expected credential fulfillment's manifest ID to be %v"+
-			"but got %s instead", expectedManifestIDs, credentialFulfillment.ManifestID)
+		return nil, fmt.Errorf("expected credential response's manifest ID to be %v"+
+			"but got %s instead", expectedManifestIDs, credentialResponse.ManifestID)
 	}
 
-	err = resolveVCBasedOnCredentialFulfillment(credentialFulfillment, offer.Attachments[1].Data.JSON)
+	err = resolveVCBasedOnCredentialResponse(credentialResponse, offer.Attachments[1].Data.JSON)
 	if err != nil {
-		return nil, fmt.Errorf("failed to resolve vc based on credential fulfillment %w", err)
+		return nil, fmt.Errorf("failed to resolve vc based on credential response %w", err)
 	}
 
 	return credentialManifest, nil
 }
 
-func resolveVCBasedOnCredentialFulfillment(credentialFulfillment *cm.CredentialFulfillment,
+func resolveVCBasedOnCredentialResponse(credentialResponse *cm.CredentialResponse,
 	dataFromAttachment interface{}) error {
 	documentLoader, err := bddutil.DocumentLoader()
 	if err != nil {
@@ -640,7 +638,7 @@ func resolveVCBasedOnCredentialFulfillment(credentialFulfillment *cm.CredentialF
 	}
 
 	// These VCs are only previews - they lack proofs.
-	vcs, err := credentialFulfillment.ResolveDescriptorMaps(dataFromAttachment,
+	vcs, err := credentialResponse.ResolveDescriptorMaps(dataFromAttachment,
 		verifiable.WithJSONLDDocumentLoader(documentLoader))
 	if err != nil {
 		return fmt.Errorf("failed to resolve DescriptorMaps %w", err)
@@ -683,33 +681,33 @@ func getCredentialManifestFromAttachment(attachment *decorator.GenericAttachment
 }
 
 //nolint:dupl
-func getCredentialFulfillmentFromAttachment(attachment *decorator.GenericAttachment) (*cm.CredentialFulfillment,
+func getCredentialResponseFromAttachment(attachment *decorator.GenericAttachment) (*cm.CredentialResponse,
 	error) {
 	attachmentAsMap, ok := attachment.Data.JSON.(map[string]interface{})
 	if !ok {
 		return nil, errors.New("couldn't assert attachment as a map")
 	}
 
-	credentialFulfillmentRaw, ok := attachmentAsMap["credential_fulfillment"]
+	credentialResponseRaw, ok := attachmentAsMap["credential_response"]
 	if !ok {
-		return nil, errors.New("credential_fulfillment object missing from attachment")
+		return nil, errors.New("credential_response object missing from attachment")
 	}
 
-	credentialFulfillmentBytes, err := json.Marshal(credentialFulfillmentRaw)
+	credentialResponseBytes, err := json.Marshal(credentialResponseRaw)
 	if err != nil {
-		return nil, fmt.Errorf("failed to marshal credential fulfillment error = %w", err)
+		return nil, fmt.Errorf("failed to marshal credential response error = %w", err)
 	}
 
-	var credentialFulfillment cm.CredentialFulfillment
+	var credentialResponse cm.CredentialResponse
 
-	// This unmarshal call also triggers the credential fulfillment validation code, which ensures that the
-	// credential fulfillment object is valid under the spec.
-	err = json.Unmarshal(credentialFulfillmentBytes, &credentialFulfillment)
+	// This unmarshal call also triggers the credential response validation code, which ensures that the
+	// credential response object is valid under the spec.
+	err = json.Unmarshal(credentialResponseBytes, &credentialResponse)
 	if err != nil {
-		return nil, fmt.Errorf("failed to unmarshal credential fulfillment error = %w", err)
+		return nil, fmt.Errorf("failed to unmarshal credential response error = %w", err)
 	}
 
-	return &credentialFulfillment, nil
+	return &credentialResponse, nil
 }
 
 func stringsContains(val string, slice []string) bool {
