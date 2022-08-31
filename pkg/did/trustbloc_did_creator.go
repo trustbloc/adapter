@@ -33,7 +33,7 @@ type trustblocDIDClient interface {
 
 // KeyManager creates keys.
 type KeyManager interface {
-	CreateAndExportPubKeyBytes(kt kms.KeyType) (string, []byte, error)
+	CreateAndExportPubKeyBytes(kt kms.KeyType, opts ...kms.KeyOpts) (string, []byte, error)
 }
 
 // TrustblocDIDCreator creates DIDs.

@@ -278,7 +278,7 @@ type mockKeyManager struct {
 	count      int
 }
 
-func (s *mockKeyManager) CreateAndExportPubKeyBytes(kt kms.KeyType) (string, []byte, error) {
+func (s *mockKeyManager) CreateAndExportPubKeyBytes(kt kms.KeyType, opts ...kms.KeyOpts) (string, []byte, error) {
 	if s.rejectType != "" && s.rejectType == kt {
 		return "", nil, fmt.Errorf("reject KeyType")
 	}

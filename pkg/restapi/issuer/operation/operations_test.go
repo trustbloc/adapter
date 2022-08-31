@@ -86,7 +86,8 @@ var cmDescData = memcmdescriptor.CMAttachmentDescriptors{
 				Title: &cm.DisplayMappingObject{
 					Paths:  []string{"p1"},
 					Schema: cm.Schema{Type: "string"},
-				}},
+				},
+			},
 		},
 	},
 	PresentationDefinition: &presexch.PresentationDefinition{
@@ -120,7 +121,8 @@ var cmOutputDescData = memcmdescriptor.CMAttachmentDescriptors{
 				Title: &cm.DisplayMappingObject{
 					Paths:  []string{"p1"},
 					Schema: cm.Schema{Type: "string"},
-				}},
+				},
+			},
 		},
 	},
 }
@@ -3804,7 +3806,8 @@ func TestWACIIssuanceHandler(t *testing.T) {
 							Title: &cm.DisplayMappingObject{
 								Paths:  []string{"p1"},
 								Schema: cm.Schema{Type: "string"},
-							}},
+							},
+						},
 						Schema: "https://www.w3.org/2018/credentials/examples/v1",
 					},
 				},
@@ -3973,7 +3976,7 @@ func TestWACIIssuanceHandler(t *testing.T) {
 			testFailure(actionCh, service.NewDIDCommMsgMap(issuecredsvc.ProposeCredentialV2{
 				Type:         issuecredsvc.ProposeCredentialMsgTypeV2,
 				InvitationID: newInvitationID,
-			}), "failed to persist credential fulfillment")
+			}), "failed to persist credential response")
 		})
 	})
 
@@ -4032,9 +4035,9 @@ func TestWACIIssuanceHandler(t *testing.T) {
 			require.NoError(t, err)
 
 			thID := uuid.NewString()
-			fulfillment := createCredentialFulfillment(t, c, profile)
+			response := createCredentialResponse(t, c, profile)
 			require.NoError(t, c.saveCredentialAttachmentData(thID, credentialOffered{
-				FulFillment:       fulfillment,
+				Response:          response,
 				ManifestID:        manifestID,
 				PresentationDefID: presDefID,
 			}))
@@ -4125,7 +4128,7 @@ func TestWACIIssuanceHandler(t *testing.T) {
 			require.NoError(t, err)
 
 			thID := uuid.NewString()
-			fulfillment := createCredentialFulfillment(t, c, profile)
+			response := createCredentialResponse(t, c, profile)
 			manifestID := txDataSample.CredScope + manifestIDSuffix
 
 			go c.didCommActionListener(actionCh)
@@ -4137,14 +4140,16 @@ func TestWACIIssuanceHandler(t *testing.T) {
 			// test failed to get credential manifestID from store
 			testFailure(actionCh, msg, "failed to get credential manifestID from store")
 			// Adding presentation with no crdential application attachment
-			app := createCredentialFulfillment(t, c, profile)
+			app := createCredentialResponse(t, c, profile)
 			msg = service.NewDIDCommMsgMap(issuecredsvc.RequestCredentialV3{
 				Type: issuecredsvc.RequestCredentialMsgTypeV3,
 				Attachments: []decorator.AttachmentV2{
-					{ID: manifestID,
+					{
+						ID: manifestID,
 						Data: decorator.AttachmentData{
 							JSON: app,
-						}},
+						},
+					},
 				},
 			})
 			msg.SetThread(thID, "")
@@ -4161,10 +4166,12 @@ func TestWACIIssuanceHandler(t *testing.T) {
 			msg = service.NewDIDCommMsgMap(issuecredsvc.RequestCredentialV3{
 				Type: issuecredsvc.RequestCredentialMsgTypeV3,
 				Attachments: []decorator.AttachmentV2{
-					{ID: manifestID,
+					{
+						ID: manifestID,
 						Data: decorator.AttachmentData{
 							JSON: application,
-						}},
+						},
+					},
 				},
 			})
 			msg.SetThread(thID, "")
@@ -4176,24 +4183,24 @@ func TestWACIIssuanceHandler(t *testing.T) {
 
 			c.cmDescriptors = mockCMDescriptorsProvider(cmOutputDescData)
 
-			// test credential fulfillment reading failure
-			testFailure(actionCh, msg, "failed to read credential fulfillment")
+			// test credential response reading failure
+			testFailure(actionCh, msg, "failed to read credential response")
 
 			require.NoError(t, c.saveCredentialAttachmentData(thID, credentialOffered{
-				FulFillment: fulfillment,
-				ManifestID:  manifestID,
+				Response:   response,
+				ManifestID: manifestID,
 			}))
 
-			// test credential fulfillment signing failure
-			testFailure(actionCh, msg, "failed to sign credential fulfillment")
+			// test credential response signing failure
+			testFailure(actionCh, msg, "failed to sign credential response")
 
-			// test delete credential fulfillment error(JUST WARNING)
+			// test delete credential response error(JUST WARNING)
 			c.txnStore = &mockStoreWrapper{
 				Store:     c.txnStore,
 				errDelete: errors.New("delete error"),
 			}
 			require.NoError(t, c.saveCredentialAttachmentData(thID, credentialOffered{
-				FulFillment: fulfillment,
+				Response: response,
 			}))
 			// test missing threadID
 			mockMsg := &mockMsgWrapper{
@@ -4225,7 +4232,7 @@ func TestWACIIssuanceHandler(t *testing.T) {
 	})
 }
 
-func createCredentialFulfillment(t *testing.T, o *Operation, profile *issuer.ProfileData) *verifiable.Presentation {
+func createCredentialResponse(t *testing.T, o *Operation, profile *issuer.ProfileData) *verifiable.Presentation {
 	t.Helper()
 
 	o.httpClient = &mockHTTPClient{
@@ -4238,15 +4245,15 @@ func createCredentialFulfillment(t *testing.T, o *Operation, profile *issuer.Pro
 	vc, err := o.createCredential(profile.URL, "", "", "", false, profile)
 	require.NoError(t, err)
 
-	// prepare fulfilment
+	// prepare response
 	presentation, err := verifiable.NewPresentation(verifiable.WithCredentials(vc))
 	require.NoError(t, err)
 
-	fulfilment, err := cm.PresentCredentialFulfillment(&cm.CredentialManifest{ID: uuid.NewString()},
-		cm.WithExistingPresentationForPresentCredentialFulfillment(presentation))
+	response, err := cm.PresentCredentialResponse(&cm.CredentialManifest{ID: uuid.NewString()},
+		cm.WithExistingPresentationForPresentCredentialResponse(presentation))
 	require.NoError(t, err)
 
-	return fulfilment
+	return response
 }
 
 func toMap(t *testing.T, v interface{}) map[string]interface{} {
@@ -4277,7 +4284,7 @@ func createCredentialApplication(t *testing.T, o *Operation,
 	vc, err := o.createCredential(profile.URL, "", "", "", false, profile)
 	require.NoError(t, err)
 
-	// prepare fulfillment
+	// prepare response
 	presentation, err := verifiable.NewPresentation(verifiable.WithCredentials(vc))
 	require.NoError(t, err)
 
@@ -4302,7 +4309,7 @@ func createCredentialApplicationWithPresentationSubmission(t *testing.T, o *Oper
 	vc, err := o.createCredential(profile.URL, "", "", "", false, profile)
 	require.NoError(t, err)
 
-	// prepare fulfillment with submission
+	// prepare response with submission
 	presentation, err := verifiable.NewPresentation(verifiable.WithCredentials(vc))
 	require.NoError(t, err)
 
@@ -4643,7 +4650,8 @@ func prepareCMAttachmentDescriptors(manifestID, presDefID string) *memcmdescript
 					Title: &cm.DisplayMappingObject{
 						Paths:  []string{"p1"},
 						Schema: cm.Schema{Type: "string"},
-					}},
+					},
+				},
 			},
 		},
 		PresentationDefinition: &presexch.PresentationDefinition{

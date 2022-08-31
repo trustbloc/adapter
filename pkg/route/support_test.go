@@ -17,9 +17,9 @@ import (
 	"github.com/hyperledger/aries-framework-go/pkg/kms/localkms"
 	mockroute "github.com/hyperledger/aries-framework-go/pkg/mock/didcomm/protocol/mediator"
 	mockkms "github.com/hyperledger/aries-framework-go/pkg/mock/kms"
-	mockprovider "github.com/hyperledger/aries-framework-go/pkg/mock/provider"
 	mockstore "github.com/hyperledger/aries-framework-go/pkg/mock/storage"
 	mockvdr "github.com/hyperledger/aries-framework-go/pkg/mock/vdr"
+	"github.com/hyperledger/aries-framework-go/pkg/secretlock"
 	"github.com/hyperledger/aries-framework-go/pkg/secretlock/noop"
 	"github.com/stretchr/testify/require"
 
@@ -58,13 +58,28 @@ func getDIDDoc() *did.Doc {
 	}
 }
 
+type mockKMSProvider struct {
+	store             kms.Store
+	secretLockService secretlock.Service
+}
+
+func (m *mockKMSProvider) StorageProvider() kms.Store {
+	return m.store
+}
+
+func (m *mockKMSProvider) SecretLock() secretlock.Service {
+	return m.secretLockService
+}
+
 func realKMS(t *testing.T) kms.KeyManager {
 	t.Helper()
 
-	ctx := &mockprovider.Provider{
-		StorageProviderValue:              mockstore.NewMockStoreProvider(),
-		ProtocolStateStorageProviderValue: mockstore.NewMockStoreProvider(),
-		SecretLockValue:                   &noop.NoLock{},
+	kmsStore, err := kms.NewAriesProviderWrapper(mockstore.NewMockStoreProvider())
+	require.NoError(t, err)
+
+	ctx := &mockKMSProvider{
+		store:             kmsStore,
+		secretLockService: &noop.NoLock{},
 	}
 
 	keyManager, err := localkms.New("prefixname://test.kms", ctx)

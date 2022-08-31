@@ -110,16 +110,16 @@ const (
 
 	// WACI interaction constants
 	credentialManifestFormat       = "dif/credential-manifest/manifest@v1.0"
-	credentialFulfillmentFormat    = "dif/credential-manifest/fulfillment@v1.0"
+	credentialResponseFormat       = "dif/credential-manifest/response@v1.0"
 	offerCredentialAttachMediaType = "application/json"
 	redirectStatusOK               = "OK"
 	redirectStatusError            = "FAIL"
 	redirectErrorURL               = "/error"
 
-	manifestIDSuffix      = "_mID"
-	manifestDataPrefix    = "manifest_"
-	presDefDataPrefix     = "presDef_"
-	fulfillmentDataPrefix = "full_"
+	manifestIDSuffix   = "_mID"
+	manifestDataPrefix = "manifest_"
+	presDefDataPrefix  = "presDef_"
+	responseDataPrefix = "resp_"
 )
 
 type connections interface {
@@ -149,7 +149,7 @@ type didExClient interface {
 }
 
 type credentialOffered struct {
-	FulFillment       *verifiable.Presentation
+	Response          *verifiable.Presentation
 	ManifestID        string
 	PresentationDefID string
 }
@@ -1199,11 +1199,11 @@ func (o *Operation) storeUserInvitationMapping(mapping *UserInvitationMapping) e
 	return nil
 }
 
-// TODO fulfillment shouldn't be saved, need re-design [Issue#560]
+// TODO response shouldn't be saved, need re-design [Issue#560]
 func (o *Operation) saveCredentialAttachmentData(thID string, credOffered credentialOffered) error {
-	fulfilmentBytes, err := json.Marshal(credOffered.FulFillment)
+	responseBytes, err := json.Marshal(credOffered.Response)
 	if err != nil {
-		return fmt.Errorf("failed to marshal credential fulfilment: %w", err)
+		return fmt.Errorf("failed to marshal credential response: %w", err)
 	}
 
 	err = o.txnStore.Batch([]storage.Operation{
@@ -1216,8 +1216,8 @@ func (o *Operation) saveCredentialAttachmentData(thID string, credOffered creden
 			Value: []byte(credOffered.PresentationDefID),
 		},
 		{
-			Key:   fulfillmentDataPrefix + thID,
-			Value: fulfilmentBytes,
+			Key:   responseDataPrefix + thID,
+			Value: responseBytes,
 		},
 	})
 	if err != nil {
@@ -1270,10 +1270,10 @@ func (o *Operation) validateCredentialApplication(credentialApplicationBytes []b
 	return nil
 }
 
-func (o *Operation) readCredentialFulfillment(thID string) (*verifiable.Presentation, error) {
-	fbytes, err := o.txnStore.Get(fulfillmentDataPrefix + thID)
+func (o *Operation) readCredentialResponse(thID string) (*verifiable.Presentation, error) {
+	fbytes, err := o.txnStore.Get(responseDataPrefix + thID)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get credential fulfillment from store: %w", err)
+		return nil, fmt.Errorf("failed to get credential response from store: %w", err)
 	}
 
 	vp, err := verifiable.ParsePresentation(
@@ -1282,14 +1282,14 @@ func (o *Operation) readCredentialFulfillment(thID string) (*verifiable.Presenta
 		verifiable.WithPresJSONLDDocumentLoader(o.jsonldDocLoader),
 	)
 	if err != nil {
-		return nil, fmt.Errorf("failed to read credential fulfillment from store : %w", err)
+		return nil, fmt.Errorf("failed to read credential response from store : %w", err)
 	}
 
 	return vp, nil
 }
 
-func (o *Operation) deleteCredentialFulfillment(thID string) error {
-	return o.txnStore.Delete(fulfillmentDataPrefix + thID) // nolint:wrapcheck
+func (o *Operation) deleteCredentialResponse(thID string) error {
+	return o.txnStore.Delete(responseDataPrefix + thID) // nolint:wrapcheck
 }
 
 func (o *Operation) getUserInvitationMapping(connID string) (*UserInvitationMapping, error) {
@@ -1445,33 +1445,33 @@ func (o *Operation) handleProposeCredential(msg service.DIDCommAction) (issuecre
 			fmt.Errorf("failed to fetch credential data : %w", err))
 	}
 
-	// prepare fulfillment
+	// prepare response
 	presentation, err := verifiable.NewPresentation(verifiable.WithCredentials(vc))
 	if err != nil {
 		return nil, prepareProblemReport(o.uiEndpoint+redirectErrorURL,
 			fmt.Errorf("failed to prepare presentation : %w", err))
 	}
 
-	fulfillment, err := cm.PresentCredentialFulfillment(manifest,
-		cm.WithExistingPresentationForPresentCredentialFulfillment(presentation))
+	response, err := cm.PresentCredentialResponse(manifest,
+		cm.WithExistingPresentationForPresentCredentialResponse(presentation))
 	if err != nil {
 		return nil, prepareProblemReport(o.uiEndpoint+redirectErrorURL,
-			fmt.Errorf("failed to prepare credential fulfillment : %w", err))
+			fmt.Errorf("failed to prepare credential response : %w", err))
 	}
 
 	// prepare offer credential
-	offerCred := prepareOfferCredentialMessage(manifest, fulfillment)
+	offerCred := prepareOfferCredentialMessage(manifest, response)
 
-	// save fulfillment and manifestID for subsequent WACI steps.
+	// save response and manifestID for subsequent WACI steps.
 	// TODO question: why is this saved under the message ID instead of thread ID?
 	err = o.saveCredentialAttachmentData(msg.Message.ID(), credentialOffered{
-		FulFillment:       fulfillment,
+		Response:          response,
 		ManifestID:        manifest.ID,
 		PresentationDefID: presDefID,
 	})
 	if err != nil {
 		return nil, prepareProblemReport(o.uiEndpoint+redirectErrorURL,
-			fmt.Errorf("failed to persist credential fulfillment : %w", err))
+			fmt.Errorf("failed to persist credential response : %w", err))
 	}
 
 	// save user connection mapping for subsequent WACI steps.
@@ -1647,21 +1647,21 @@ func (o *Operation) handleWACIRequestCredential(msg service.DIDCommAction, profi
 			fmt.Errorf("failed to read and validate credential application: %w", err))
 	}
 
-	fulfillment, err := o.readCredentialFulfillment(thID)
+	response, err := o.readCredentialResponse(thID)
 	if err != nil {
 		return nil, prepareProblemReport(o.uiEndpoint+redirectErrorURL,
-			fmt.Errorf("failed to read credential fulfillment: %w", err))
+			fmt.Errorf("failed to read credential response: %w", err))
 	}
 
-	err = o.deleteCredentialFulfillment(thID)
+	err = o.deleteCredentialResponse(thID)
 	if err != nil {
-		logger.Warnf("failed to delete credential fulfillment: %s", err)
+		logger.Warnf("failed to delete credential response: %s", err)
 	}
 
-	vp, err := o.vccrypto.SignPresentation(fulfillment, profile.PresentationSigningKey)
+	vp, err := o.vccrypto.SignPresentation(response, profile.PresentationSigningKey)
 	if err != nil {
 		return nil, prepareProblemReport(o.uiEndpoint+redirectErrorURL,
-			fmt.Errorf("failed to sign credential fulfillment: %w", err))
+			fmt.Errorf("failed to sign credential response: %w", err))
 	}
 
 	redirectURL := fmt.Sprintf(redirectURLFmt, getCallBackURL(profile.URL), userConnMap.State)
@@ -2009,8 +2009,8 @@ func (o *Operation) readCredentialManifest(profileData *issuer.ProfileData,
 	return credentialManifest
 }
 
-func prepareOfferCredentialMessage(manifest *cm.CredentialManifest, fulfillment *verifiable.Presentation) *issuecredsvc.OfferCredentialParams { // nolint:lll
-	manifestAttachID, fulfillmentAttachID := uuid.New().String(), uuid.New().String()
+func prepareOfferCredentialMessage(manifest *cm.CredentialManifest, response *verifiable.Presentation) *issuecredsvc.OfferCredentialParams { // nolint:lll
+	manifestAttachID, responseAttachID := uuid.New().String(), uuid.New().String()
 
 	return &issuecredsvc.OfferCredentialParams{
 		Type: issuecredsvc.OfferCredentialMsgTypeV2,
@@ -2018,8 +2018,8 @@ func prepareOfferCredentialMessage(manifest *cm.CredentialManifest, fulfillment 
 			AttachID: manifestAttachID,
 			Format:   credentialManifestFormat,
 		}, {
-			AttachID: fulfillmentAttachID,
-			Format:   credentialFulfillmentFormat,
+			AttachID: responseAttachID,
+			Format:   credentialResponseFormat,
 		}},
 		Attachments: []decorator.GenericAttachment{
 			{
@@ -2035,33 +2035,33 @@ func prepareOfferCredentialMessage(manifest *cm.CredentialManifest, fulfillment 
 				},
 			},
 			{
-				ID:        fulfillmentAttachID,
+				ID:        responseAttachID,
 				MediaType: offerCredentialAttachMediaType,
-				Format:    credentialFulfillmentFormat,
+				Format:    credentialResponseFormat,
 				Data: decorator.AttachmentData{
-					JSON: fulfillment,
+					JSON: response,
 				},
 			},
 		},
 	}
 }
 
-func prepareIssueCredentialMessage(fulfillment *verifiable.Presentation, redirectURL string) *issuecredsvc.IssueCredentialParams { // nolint:lll
-	fulfillmentAttachID := uuid.New().String()
+func prepareIssueCredentialMessage(response *verifiable.Presentation, redirectURL string) *issuecredsvc.IssueCredentialParams { // nolint:lll
+	responseAttachID := uuid.New().String()
 
 	return &issuecredsvc.IssueCredentialParams{
 		Type: issuecredsvc.IssueCredentialMsgTypeV2,
 		Formats: []issuecredsvc.Format{{
-			AttachID: fulfillmentAttachID,
-			Format:   credentialFulfillmentFormat,
+			AttachID: responseAttachID,
+			Format:   credentialResponseFormat,
 		}},
 		Attachments: []decorator.GenericAttachment{
 			{
-				ID:        fulfillmentAttachID,
+				ID:        responseAttachID,
 				MediaType: offerCredentialAttachMediaType,
-				Format:    credentialFulfillmentFormat,
+				Format:    credentialResponseFormat,
 				Data: decorator.AttachmentData{
-					JSON: fulfillment,
+					JSON: response,
 				},
 			},
 		},
