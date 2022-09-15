@@ -42,6 +42,7 @@ import (
 	"github.com/hyperledger/aries-framework-go/pkg/kms"
 	ldsvc "github.com/hyperledger/aries-framework-go/pkg/ld"
 	"github.com/hyperledger/aries-framework-go/pkg/vdr/httpbinding"
+	"github.com/hyperledger/aries-framework-go/pkg/vdr/web"
 	"github.com/hyperledger/aries-framework-go/spi/storage"
 	jsonld "github.com/piprate/json-gold/ld"
 	"github.com/rs/cors"
@@ -1063,6 +1064,8 @@ func createAriesAgent( // nolint:gocyclo,cyclop
 
 		opts = append(opts, aries.WithVDR(universalResolverVDRI))
 	}
+
+	opts = append(opts, aries.WithVDR(web.New()))
 
 	store, tStore, err := initStores(parameters.dsnParams.dsn, parameters.dsnParams.timeout, dbPrefix,
 		"_aries", "_ariesps")
