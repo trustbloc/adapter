@@ -34,10 +34,12 @@ import (
 	ldrest "github.com/hyperledger/aries-framework-go/pkg/controller/rest/ld"
 	"github.com/hyperledger/aries-framework-go/pkg/didcomm/messaging/msghandler"
 	arieshttp "github.com/hyperledger/aries-framework-go/pkg/didcomm/transport/http"
+	ariesdid "github.com/hyperledger/aries-framework-go/pkg/doc/did"
 	ariesld "github.com/hyperledger/aries-framework-go/pkg/doc/ld"
 	"github.com/hyperledger/aries-framework-go/pkg/doc/ldcontext/remote"
 	"github.com/hyperledger/aries-framework-go/pkg/framework/aries"
 	"github.com/hyperledger/aries-framework-go/pkg/framework/aries/api"
+	"github.com/hyperledger/aries-framework-go/pkg/framework/aries/api/vdr"
 	"github.com/hyperledger/aries-framework-go/pkg/framework/aries/defaults"
 	"github.com/hyperledger/aries-framework-go/pkg/kms"
 	ldsvc "github.com/hyperledger/aries-framework-go/pkg/ld"
@@ -1065,7 +1067,13 @@ func createAriesAgent( // nolint:gocyclo,cyclop
 		opts = append(opts, aries.WithVDR(universalResolverVDRI))
 	}
 
-	opts = append(opts, aries.WithVDR(web.New()))
+	opts = append(opts, aries.WithVDR(&webVDR{
+		http: &http.Client{
+			Transport: &http.Transport{
+				TLSClientConfig: tlsConfig,
+			}},
+		VDR: web.New(),
+	}))
 
 	store, tStore, err := initStores(parameters.dsnParams.dsn, parameters.dsnParams.timeout, dbPrefix,
 		"_aries", "_ariesps")
@@ -1184,4 +1192,18 @@ func getCMOutputDescriptorProvider(cmDescriptorsFile string) (*memcmdescriptor.P
 	}
 
 	return memCMProvider, nil
+}
+
+type webVDR struct {
+	http *http.Client
+	*web.VDR
+}
+
+func (w *webVDR) Read(didID string, opts ...vdr.DIDMethodOption) (*ariesdid.DocResolution, error) {
+	docRes, err := w.VDR.Read(didID, append(opts, vdr.WithOption(web.HTTPClientOpt, w.http))...)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read did web: %w", err)
+	}
+
+	return docRes, nil
 }
