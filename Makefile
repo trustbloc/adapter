@@ -82,10 +82,12 @@ unit-test:
 bdd-test: clean rp-adapter-rest-docker issuer-adapter-rest-docker mock-issuer-docker mock-webhook-docker mock-issuer-login-consent-docker generate-test-keys
 	@scripts/check_integration.sh
 
+# TODO (#675): frapsoft/openssl only has an amd64 version. While this does work under amd64 and arm64 Mac OS currently,
+#               we should add an arm64 version for systems that can only run arm64 code.
 .PHONY: generate-test-keys
 generate-test-keys: clean
 	@mkdir -p -p test/bdd/fixtures/keys/tls
-	@docker run -i --rm \
+	@docker run -i --platform linux/amd64 --rm \
 		-v $(abspath .):/opt/workspace/edge-adapter \
 		--entrypoint "/opt/workspace/edge-adapter/scripts/generate_test_keys.sh" \
 		frapsoft/openssl
